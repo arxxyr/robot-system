@@ -1,0 +1,1 @@
+{"result": "PLAN_ONLY", "actions_started": 0, "required": ["bindings", "output", "run-id", "artifact-root"], "position_targets": [["left", 5, "left_arm_wrist_roll"], ["right", 5, "right_arm_wrist_roll"], ["left", 7, "head_motor_1"], ["left", 8, "head_motor_2"]], "scope": "单电机独立维护；不运行硬件、不改保护"}

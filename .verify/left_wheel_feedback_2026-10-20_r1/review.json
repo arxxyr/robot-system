@@ -1,0 +1,56 @@
+{
+  "review_status": "PASS_SOFTWARE_ONLY",
+  "blocking_findings": [],
+  "scope": "仅左轮right7固定12读候选、非UART后验提取及execute互斥分支；未改源码、SSH或UART",
+  "frozen_files": [
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "bytes": 82276,
+      "sha256": "fc5cc4f9689b744c6425c0cf6f4accc1cf3a1e359082f02c7457cf1ec3997a84"
+    },
+    {
+      "path": "scripts/tests/test_hardware_maintenance.py",
+      "bytes": 89572,
+      "sha256": "75a6eb41ef09c8e309189fe12cd980d4b02a591ab4835cab1ccfd460c7224797"
+    }
+  ],
+  "source_verification": {
+    "base_commit": "2a877c30edb0db19813e8a4c8cf7691558811dad",
+    "fixed_sequence": "TE0 → 五组PP/PV（首TE返回后0/250/500/750/1000ms）→ TE0，共12读",
+    "only_allowed_command": "冻结b2 right7 read-raw Torque_Enable/Present_Position/Present_Velocity",
+    "writes_or_enable_or_parameter_changes": false,
+    "pv_nonzero_retained_as_diagnostic": true,
+    "capture_budget_ns": 1500000000,
+    "deadline_checks": "整批含首末TE；每次启动前、校验工具后与原帧返回后核验；不是硬截止",
+    "fail_closed": "TE非零、未知/错误原帧、信号、GO或采集超期后立即退出序列，不补末TE或重试；execute仅做非UART后验",
+    "plan_flags_and_go": "禁止与位置/右轮动作混用；固定合同、唯一完整b2引用和进程名单；现行GO覆盖具体只读范围与600秒现场时效",
+    "normal_and_failure_stop_status": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "success_result": "DIAGNOSTIC_CAPTURED，不能据此启动动作或判停止PASS",
+    "four_cooperative_locks_and_non_uart_postchecks_retained": true,
+    "identity_extracted_body_ast_equal_to_baseline": true,
+    "unchanged_existing_functions": "除execute/finish_verification/main/make_plan/position_targets_from_plan/validate_go外，所有旧函数和类AST不变"
+  },
+  "verification": {
+    "developer_reported_total_methods_pass": 77,
+    "full_suite_repeated_by_this_reviewer": false,
+    "independent_existing_methods_pass": [
+      "test_every_read_fault_stops_without_retry_or_final_torque_read",
+      "test_flag_contract_binding_and_missing_go_have_zero_child",
+      "test_execute_reuses_locks_postchecks_but_never_snapshots_or_writes"
+    ],
+    "additional_memory_negative_controls": [
+      {
+        "case": "错误码非零但重算为有效校验和",
+        "result": "拒绝，1读后退出，无后续UART或写"
+      },
+      {
+        "case": "组间等待跨过1.5秒期限",
+        "result": "拒绝，3读后退出，不启动下一组或末TE"
+      }
+    ],
+    "frozen_files_unchanged_before_after": true
+  },
+  "hardware_boundary": "未执行本候选实机；不能覆盖R2 right7普通READ的+50原件，不能推断实际轮动、修复完成或停止通过。仍需本轮现场状态和独立GO。",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

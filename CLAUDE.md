@@ -52,6 +52,14 @@
 ```
 设计版本:  v0.1.2（冻结）
 
+当前准备:  2026-10-20 既有维护入口新增互斥左轮right7只读选择：首TE0、五组PP/PV、末TE0。
+           固定12读、约1秒观察及1.5秒软件预算；非零PV保留诊断值，不判停止通过或继续动作。
+           复用b2原帧工具、四锁/600秒GO和非UART后验，原位置/右9动作与STOP51不变。
+           本机/Orin同77项通过，新增8为子集；独审与原生fmt→根Clippy通过。
+           main fc5cc4f9、PLAN225b8511及62引用/USB/占用核对通过；软件所属pane已清理。
+           left_wheel_feedback_2026-10-20_r1/summary.json；未生成GO、无新UART，待本轮现场确认。
+           当前仍为下述R2人工断电回执；新SYNC_READ不替代原普通READ故障，D15及deployable=false保持。
+
 本轮实机:  2026-10-20 新右9顺序尚未执行，初始right7普通速度READ有效原帧为0032（+50）。
            此前独立读取Mode1/TE0/PP1212；全轮88次普通READ、动作写0，后续UART已封锁。
            原STOP51全UNKNOWN、模式身份UNKNOWN及NEEDS_MANUAL_POWER_CUT保持，不回填通过。

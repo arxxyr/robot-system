@@ -1172,4 +1172,230 @@ class RightPulseTests(unittest.TestCase):
         self.assertEqual(m.classify_stop_snapshot(after)['status'],'PASS')
 
 
+class FeedbackIO:
+    """右7只读内存端点；计时、故障及原帧可独立注入。"""
+    def __init__(self):
+        self.t=0;self.sequence=0;self.commands=[];self.calls=[]
+        self.child=None;self.interrupted=None;self.evidence_errors=[]
+        self.process_snapshots=[];self.journal=io.StringIO()
+        self.fail_at=None;self.torque_at=None;self.signal_at=None;self.bad_at=None
+        self.slow_at=None;self.slow_ns=0;self.velocity_index=0
+    def now(self):return self.t
+    def check(self):
+        if self.interrupted:raise ValueError('只读夹具信号')
+    def mark_signal(self,signum,_frame):self.interrupted=signum
+    def sleep(self,seconds,cleanup=False):
+        if not cleanup:self.check()
+        self.t+=round(seconds*1e9)
+    def command(self,argv,**kwargs):
+        if argv[0]!=m.RIGHT_PULSE_RAW['path']:
+            if 'fuser' in argv:return ''
+            raise AssertionError(argv)
+        self.check()
+        self.sequence+=1;self.calls.append(list(argv))
+        self.commands.append({'argv':list(argv),'started_ns':self.t})
+        self.t+=10_000_000+(self.slow_ns if self.sequence==self.slow_at else 0)
+        self.commands[-1]['finished_ns']=self.t
+        if self.sequence==self.fail_at:raise OSError('夹具通信失败')
+        if self.sequence==self.signal_at:self.interrupted=signal.SIGTERM
+        register=argv[4];address,width=m.LEFT_FEEDBACK_META[register]
+        value=0
+        if register=='Torque_Enable':value=int(self.sequence==self.torque_at)
+        if register=='Present_Position':value=1212
+        if register=='Present_Velocity':
+            value=(0,50,-50,50,0)[self.velocity_index];self.velocity_index+=1
+        value=abs(value)|(0x8000 if value<0 else 0)
+        tx=[255,255,254,5,130,address,width,7];tx.append((~sum(tx[2:]))&255)
+        rx=[255,255,7,width+2,0,*value.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
+        if self.sequence==self.bad_at:rx[-1]^=1
+        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':7,
+                           'register':register,'requested_register_address':address,'width':width,
+                           'raw_unsigned':value,'tx':tx,'rx':rx})+'\n'
+
+
+class LeftFeedbackTests(unittest.TestCase):
+    def setUp(self):
+        directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
+        self.root=Path(directory.name).resolve()
+        path=self.root/'fake-arm64'
+        elf=bytearray(64);elf[:6]=b'\x7fELF\x02\x01';elf[18:20]=(183).to_bytes(2,'little')
+        path.write_bytes(elf);path.chmod(0o755)
+        fixed={'path':str(path),'sha256':hashlib.sha256(elf).hexdigest(),'bytes':len(elf)}
+        replacement=patch.dict(m.RIGHT_PULSE_RAW,fixed,clear=True)
+        replacement.start();self.addCleanup(replacement.stop)
+        info=path.stat()
+        self.reference={**fixed,'uid':info.st_uid,'gid':info.st_gid,'mode':0o755,'device':info.st_dev,
+                        'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,
+                        'nlink':1,'symlink':False,'elf_machine':183}
+
+    def bindings(self):
+        return {'schema':'MAINTENANCE_BINDINGS_V1','tool':dict(m.RIGHT_PULSE_WRITE),
+                'host':{'hostname':'unit-host','uid':m.os.getuid(),'gid':m.os.getgid(),'boot_id':'unit-boot'},
+                'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
+                'refs':[dict(self.reference)],'binary_paths':[self.reference['path']]}
+
+    def plan(self):
+        root='/home/loosqk/robot-checks/feedback'
+        return m.make_plan(self.bindings(),root+'/run','feedback',root,left_wheel_feedback_only=True)
+
+    def go(self,plan,now):
+        facts={**{k:True for k in m.FACTS},'confirmed_at_ns':now}
+        return {'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
+                'plan_sha256':m.digest(plan),'issued_at_ns':now,'expires_at_ns':now+60_000_000_000,
+                'host':plan['bindings']['host'],'source':'内存夹具，无硬件授权',
+                'physical':{'left':dict(facts),'right':{**facts,'all_three_wheels_off_ground':True,
+                'base_stably_supported':True,'continuous_wheel_observation':True,
+                'base_confirmation_kind':'CURRENT_SETUP_READY','base_confirmation_scope':m.LEFT_FEEDBACK_SCOPE,
+                'base_confirmation_answer':'夹具只读'}}}
+
+    def engine(self):
+        return m.ProbeEngine(FeedbackIO(),self.plan())
+
+    def test_fixed_twelve_reads_record_fifty_without_stop_pass(self):
+        engine=self.engine();m.run_left_wheel_feedback(engine,lambda:None)
+        row=engine.rows[0]
+        self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED')
+        self.assertFalse(row['stop_verified']);self.assertFalse(row['same_frame'])
+        self.assertEqual([c[4] for c in engine.io.calls],
+                         ['Torque_Enable']+['Present_Position','Present_Velocity']*5+['Torque_Enable'])
+        self.assertTrue(all(c[:4]==[self.reference['path'],m.DEVICES['right'],'7','read-raw']
+                            for c in engine.io.calls))
+        pv=[s['raw']['raw_unsigned'] for s in row['samples'] if s['register']=='Present_Velocity']
+        self.assertEqual(pv,[0,50,0x8032,50,0])
+        self.assertEqual([s['started_ns']-row['observation_started_ns'] for s in row['samples']
+                          if s['register']=='Present_Position'],[0,250_000_000,500_000_000,750_000_000,1_000_000_000])
+        self.assertTrue(all(s['finished_ns']>s['started_ns'] for s in row['samples']))
+        self.assertFalse(engine.manual_cut)
+        with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+        self.assertEqual(len(engine.io.calls),12)
+
+    def test_every_read_fault_stops_without_retry_or_final_torque_read(self):
+        for fault in ('fail_at','bad_at','signal_at'):
+            for index in range(1,13):
+                engine=self.engine();setattr(engine.io,fault,index)
+                with self.subTest(fault=fault,index=index),self.assertRaises((ValueError,OSError)):
+                    m.run_left_wheel_feedback(engine,lambda:None)
+                self.assertEqual(len(engine.io.calls),index)
+                self.assertTrue(engine.rows[0]['uart_blocked']);self.assertTrue(engine.manual_cut)
+                self.assertEqual(engine.rows[0]['status'],'FAIL')
+        for index in (1,12):
+            engine=self.engine();engine.io.torque_at=index
+            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),index)
+            self.assertEqual(engine.rows[0]['samples'][-1]['raw']['raw_unsigned'],1)
+
+    def test_deadline_and_go_expiry_keep_last_frame_then_stop(self):
+        for index in (1,5,12):
+            engine=self.engine();engine.io.slow_at=index;engine.io.slow_ns=1_500_000_000
+            with self.assertRaisesRegex(ValueError,'窗口'):m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),index)
+            self.assertIn('raw',engine.rows[0]['samples'][-1])
+        engine=self.engine()
+        with self.assertRaisesRegex(ValueError,'GO'):
+            m.run_left_wheel_feedback(engine,lambda:m.require(engine.io.now()<1_035_000_000,'夹具GO到期'))
+        self.assertEqual(len(engine.io.calls),12)
+        self.assertIn('raw',engine.rows[0]['samples'][-1])
+
+    def test_tool_identity_and_prelaunch_expiry_reject_before_uart(self):
+        for key in ('sha256','inode','mode','mtime_ns'):
+            engine=self.engine();ref=m.left_feedback_tool_ref(engine.plan)
+            ref[key]='0'*64 if key=='sha256' else ref[key]+1
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertEqual(engine.io.calls,[])
+        engine=self.engine()
+        with self.assertRaises(ValueError):
+            m.run_left_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO已失效')))
+        self.assertEqual(engine.io.calls,[])
+        with self.assertRaises(ValueError):
+            m.left_feedback_raw(engine.io,self.reference,'Goal_Velocity',lambda:None)
+        self.assertEqual(engine.io.calls,[])
+        engine=self.engine()
+        with patch.object(m,'verify_ref',side_effect=lambda *a,**k:setattr(engine.io,'t',1_500_000_000)):
+            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+        self.assertEqual(engine.io.calls,[])
+
+    def test_raw_target_and_frame_metadata_mismatch_stop_after_one_read(self):
+        for key,value in (('motor_id',9),('serial_device',m.DEVICES['left']),('register','Present_Position'),
+                          ('width',True),('requested_register_address',58),('raw_unsigned',1),
+                          ('tx',[255]),('rx',[255])):
+            engine=self.engine();command=engine.io.command
+            def changed(argv,**kwargs):
+                raw=json.loads(command(argv,**kwargs));raw[key]=value
+                return json.dumps(raw)+'\n'
+            engine.io.command=changed
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                m.run_left_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),1)
+            self.assertTrue(engine.rows[0]['uart_blocked'])
+
+    def test_flag_contract_binding_and_missing_go_have_zero_child(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('禁止子进程')) as child:
+            for args in (['--left-wheel-feedback-only','--right-wheel-pulse'],
+                         ['--left-wheel-feedback-only','--position-target','head-1'],
+                         ['--left-wheel-feedback-only','--execute']):
+                with self.assertRaises(ValueError):m.main(args)
+            for key in ('target','reads','capture_budget_ns'):
+                plan=self.plan();plan['left_wheel_feedback_only'][key]=0
+                with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
+            for key in ('refs','binary_paths'):
+                plan=self.plan();plan['bindings'][key]=[]
+                with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
+            with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),0)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(m.main(['--left-wheel-feedback-only']),0)
+            self.assertEqual(json.loads(out.getvalue())['actions_started'],0)
+            child.assert_not_called()
+
+    def test_go_binds_readonly_scope_and_ten_minute_field_state(self):
+        plan=self.plan();go=self.go(plan,100);m.validate_go(go,plan,200)
+        for field in ('base_confirmation_scope','continuous_wheel_observation','confirmed_at_ns'):
+            bad=copy.deepcopy(go)
+            bad['physical']['right'][field]=m.RIGHT_PULSE_SCOPE if field=='base_confirmation_scope' else False
+            with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
+        go['expires_at_ns']=601_000_000_100
+        with self.assertRaises(ValueError):m.validate_go(go,plan,200)
+
+    def test_execute_reuses_locks_postchecks_but_never_snapshots_or_writes(self):
+        for fault in (None,3,'post'):
+            root=self.root/str(fault);root.mkdir()
+            helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+            bindings=self.bindings();bindings['proc_helper']={'path':str(helper)}
+            bindings['protection']={}
+            for side in m.SERIALS:
+                bindings['protection'][side]={}
+                for name in ('rx_trust.lock','estop_latch.lock'):
+                    path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
+                    bindings['protection'][side][name]={'path':str(path)}
+            executor=FeedbackIO();executor.fail_at=fault
+            read_text=Path.read_text
+            def read_boot(path,*args,**kwargs):
+                return 'unit-boot' if str(path)=='/proc/sys/kernel/random/boot_id' else read_text(path,*args,**kwargs)
+            with (patch.object(m,'MAINTENANCE_NAMESPACE',self.root),
+                  patch.object(m.sys,'platform','linux'),patch.object(m.os,'uname',return_value=SimpleNamespace(machine='aarch64',nodename='unit-host')),
+                  patch.object(Path,'read_text',read_boot),patch.object(m,'RealExecutor',return_value=executor),
+                  patch.object(m,'verify_ref',return_value=None),patch.object(m,'protected_and_refs'),patch.object(m,'verify_protection_file',return_value=None),
+                  patch.object(m,'idle'),patch.object(m,'usb_identity',return_value=None),patch.object(m,'inspect_unit',return_value=None),
+                  patch.object(m,'inspect_processes',return_value=None,
+                               side_effect=ValueError('后验身份未知') if fault=='post' else None) as process,
+                  patch.object(m,'inspect_holder',return_value=None),
+                  patch.object(m,'snapshot',side_effect=AssertionError('只读不可整机snapshot')) as snapshot,
+                  patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')) as motion,
+                  patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')) as finish,
+                  patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO())):
+                plan=m.make_plan(bindings,root/'run','feedback',root,left_wheel_feedback_only=True)
+                go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
+                self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
+                snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
+                self.assertEqual(process.call_count,1)
+            report=json.loads((root/'run/run.json').read_text())
+            self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
+            self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
+            self.assertEqual(report['identity_verification']['status'],'FAIL' if fault=='post' else 'PASS')
+            self.assertEqual(len(report['owned_locks']),4)
+            self.assertEqual(len(executor.calls),3 if fault==3 else 12)
+            self.assertTrue(Path(str(approval)+'.consumed').exists())
+            self.assertFalse(report['deployable'])
+
+
 if __name__=='__main__': unittest.main(verbosity=2)

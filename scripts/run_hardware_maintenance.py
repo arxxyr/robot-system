@@ -54,6 +54,39 @@ RIGHT_PULSE_SYNC = {'path':'/home/loosqk/robot-checks/right-wheel-reference-2026
                     'sha256':'22693d15bbf926a9a99b8f295c8fffbff92341b8151e9da1620b7d94701820b0','bytes':1517688}
 RIGHT_PULSE_METADATA = {'Model_Number':777,'Firmware_Major_Version':3,'Firmware_Minor_Version':10,
                         'Operating_Mode':1,'Phase':12,'Lock':1}
+LEFT_FEEDBACK_SCOPE = '仅左轮right7先读TE0，0/250/500/750/1000ms各读PP再PV，末读TE0，共12次只读；非零PV仅作诊断，不判停止通过、不写电机'
+LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Present_Position':(56,2),'Present_Velocity':(58,2)}
+LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
+
+
+def left_feedback_contract():
+    return {'scope':LEFT_FEEDBACK_SCOPE,'target':['right',7,'base_left_wheel'],
+            'raw_tool':dict(RIGHT_PULSE_RAW),'reads':12,'register_writes':0,
+            'sample_offsets_ns':[0,250_000_000,500_000_000,750_000_000,1_000_000_000],
+            'capture_budget_ns':1_500_000_000,'same_frame':False,'stop_verified':False,
+            'limitations':['1500ms是包含首末TE及五组读取的软件预算，不是硬截止',
+                           'PP/PV先后采样；非零PV保留原值，不转换成停止PASS或动作授权',
+                           '本轮SYNC_READ时序不替代R2普通READ故障原帧；未复现不表示已修复']}
+
+
+def left_feedback_tool_ref(plan):
+    refs=[ref for ref in plan['bindings'].get('refs',[])
+          if all(ref.get(k)==v for k,v in RIGHT_PULSE_RAW.items())
+          and all(k in ref for k in LEFT_FEEDBACK_IDENTITY)]
+    require(len(refs)==1,'左轮只读必须唯一完整b2身份引用')
+    return refs[0]
+
+
+def validate_left_feedback_plan(plan):
+    require('right_wheel_pulse' not in plan and plan.get('position_targets')==[]
+            and plan.get('left_wheel_feedback_only')==left_feedback_contract(),
+            '左轮只读禁止混入动作或更改固定序列')
+    require(RIGHT_PULSE_RAW['path'] in plan['bindings'].get('binary_paths',[]),
+            '左轮只读进程名单缺b2')
+    left_feedback_tool_ref(plan)
+    require(all(row.get('decision')=='DEFERRED' and row.get('reason_code')=='BASE_FIRMWARE_CONTRACT_UNVERIFIED'
+                for row in plan.get('base_targets',[])) and len(plan.get('base_targets',[]))==3,
+            '左轮只读不得解除三轮合同DEFERRED')
 
 
 def right_pulse_contract():
@@ -167,6 +200,9 @@ def select_position_targets(names=None):
 
 def position_targets_from_plan(plan):
     """执行只接受计划中已绑定的目标；不从全局四项列表补跑未选电机。"""
+    if 'left_wheel_feedback_only' in plan:
+        validate_left_feedback_plan(plan)
+        return []
     if 'right_wheel_pulse' in plan:
         validate_right_pulse_plan(plan)
         return []
@@ -184,10 +220,13 @@ def position_targets_from_plan(plan):
     return targets
 
 
-def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False):
-    require(type(right_wheel_pulse) is bool and not (right_wheel_pulse and position_target_names is not None),
-            '右轮诊断禁止混用位置选择')
-    position_targets = [] if right_wheel_pulse else select_position_targets(position_target_names)
+def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
+              left_wheel_feedback_only=False):
+    require(type(right_wheel_pulse) is bool and type(left_wheel_feedback_only) is bool
+            and not (right_wheel_pulse and left_wheel_feedback_only)
+            and not ((right_wheel_pulse or left_wheel_feedback_only) and position_target_names is not None),
+            '轮诊断禁止互相混用或混用位置选择')
+    position_targets = [] if right_wheel_pulse or left_wheel_feedback_only else select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -216,6 +255,10 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
         plan['right_wheel_pulse']=right_pulse_contract()
         plan['scope']=RIGHT_PULSE_SCOPE
         validate_right_pulse_plan(plan)
+    if left_wheel_feedback_only:
+        plan['left_wheel_feedback_only']=left_feedback_contract()
+        plan['scope']=LEFT_FEEDBACK_SCOPE
+        validate_left_feedback_plan(plan)
     return plan
 
 
@@ -236,7 +279,7 @@ def validate_go(go, plan, now_ns):
         require(type(facts["confirmed_at_ns"]) is int
                 and go["issued_at_ns"] - 3600_000_000_000 <= facts["confirmed_at_ns"] <= now_ns,
                 "现场确认时间错误")
-    if 'right_wheel_pulse' in plan:
+    if 'right_wheel_pulse' in plan or 'left_wheel_feedback_only' in plan:
         facts=go['physical']['right']
         require(0 < go['expires_at_ns']-go['issued_at_ns'] <= 600_000_000_000
                 and 0 <= now_ns-facts['confirmed_at_ns'] <= 600_000_000_000,
@@ -244,7 +287,8 @@ def validate_go(go, plan, now_ns):
         require(all(facts.get(key) is True for key in ('all_three_wheels_off_ground','base_stably_supported',
                     'continuous_wheel_observation'))
                 and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
-                and facts.get('base_confirmation_scope')==RIGHT_PULSE_SCOPE
+                and facts.get('base_confirmation_scope')==(
+                    LEFT_FEEDBACK_SCOPE if 'left_wheel_feedback_only' in plan else RIGHT_PULSE_SCOPE)
                 and isinstance(facts.get('base_confirmation_answer'),str) and facts['base_confirmation_answer'].strip(),
                 '缺本轮架空支撑/持续观察及具体动作现场确认')
 
@@ -572,6 +616,99 @@ def load_right_pulse_helper():
     helper.RAW_TOOL=dict(RIGHT_PULSE_RAW)
     helper.META={**helper.META,'Present_Position':(56,2)}
     return helper
+
+
+def left_feedback_raw(io, reference, register, check_ready):
+    """复用b2的只读原帧输出；此入口不能构造write或其他目标命令。"""
+    require(register in LEFT_FEEDBACK_META,'左轮只读字段越界')
+    verify_ref(reference,executable=True)
+    path=Path(reference['path'])
+    info=path.lstat()
+    actual={'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode),
+            'device':info.st_dev,'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,
+            'nlink':info.st_nlink,'symlink':path.is_symlink(),'elf_machine':183}
+    require(all(reference.get(k)==v for k,v in actual.items()) and info.st_nlink==1
+            and not path.is_symlink(),'左轮只读b2完整身份变化')
+    check_ready()
+    text=io.command([reference['path'],DEVICES['right'],'7','read-raw',register])
+    require(len(text.splitlines())==1,'左轮原帧输出不是单行JSON')
+    raw=strict_json(text)
+    address,width=LEFT_FEEDBACK_META[register]
+    require(isinstance(raw,dict) and set(raw)=={
+        'operation','serial_device','motor_id','register','requested_register_address','width','raw_unsigned','tx','rx'}
+        and all(type(raw[k]) is int for k in ('motor_id','requested_register_address','width'))
+        and (raw['operation'],raw['serial_device'],raw['motor_id'],raw['register'],
+             raw['requested_register_address'],raw['width'])==('sync_read',DEVICES['right'],7,register,address,width),
+        '左轮原帧目标/寄存器不符')
+    tx=[255,255,254,5,130,address,width,7]
+    tx.append((~sum(tx[2:]))&255)
+    rx=raw['rx'];value=raw['raw_unsigned']
+    require(type(raw['tx']) is list and all(type(v) is int for v in raw['tx']) and raw['tx']==tx
+            and type(rx) is list and all(type(v) is int and 0<=v<=255 for v in rx)
+            and len(rx)==6+width and rx[:5]==[255,255,7,width+2,0] and sum(rx[2:])&255==255
+            and type(value) is int and int.from_bytes(bytes(rx[5:5+width]),'little')==value,
+            '左轮原帧ID/长度/错误码/校验/原字不符')
+    return raw
+
+
+def run_left_wheel_feedback(engine, check_go):
+    """仅采集固定12读；非零PV不等于停止通过，异常不补读或重试。"""
+    require(not engine.rows,'左轮只读单次序列已经执行')
+    validate_left_feedback_plan(engine.plan)
+    io=engine.io
+    contract=engine.plan['left_wheel_feedback_only']
+    reference=left_feedback_tool_ref(engine.plan)
+    row={'side':'right','motor':7,'name':'base_left_wheel','kind':'feedback_only',
+         'status':'FAIL','samples':[],'errors':[],'register_writes':0,'same_frame':False,
+         'stop_verified':False,'uart_blocked':False,'started_ns':io.now()}
+    engine.rows.append(row)
+    deadline=row['started_ns']+contract['capture_budget_ns']
+    row['deadline_ns']=deadline
+
+    def ready():
+        io.check()
+        check_go()
+        require(io.child is None and not io.evidence_errors,'左轮只读child/原件异常')
+        require(io.now()<deadline,'左轮只读启动前已超窗')
+
+    def read(register,offset=None):
+        ready()
+        sample={'register':register,'scheduled_offset_ns':offset,'started_ns':io.now(),'status':'UNKNOWN'}
+        row['samples'].append(sample)
+        try:
+            raw=left_feedback_raw(io,reference,register,ready)
+            sample.update(raw=raw,status='READ_VALID')
+            # 原字与原帧先保留，再检查返回时授权和窗口；不为补末TE追加UART。
+            sample['finished_ns']=io.now()
+            sample['command_sequence']=io.sequence
+            io.check()
+            check_go()
+            require(io.child is None and not io.evidence_errors,'左轮只读child/原件异常')
+            require(io.now()<=deadline,'左轮只读返回超过采集窗口')
+            if register=='Torque_Enable':
+                require(raw['raw_unsigned']==0,'左轮TE非零，停止后续只读')
+        except BaseException as error:
+            sample.update(finished_ns=io.now(),error=repr(error))
+            raise
+
+    try:
+        read('Torque_Enable')
+        row['observation_started_ns']=io.now()
+        for offset in contract['sample_offsets_ns']:
+            wait=row['observation_started_ns']+offset-io.now()
+            if wait>0:
+                io.sleep(wait/1_000_000_000)
+            read('Present_Position',offset)
+            read('Present_Velocity',offset)
+        read('Torque_Enable')
+        row['status']='DIAGNOSTIC_CAPTURED'
+    except BaseException as error:
+        row['errors'].append(repr(error))
+        row['uart_blocked']=True
+        engine.manual_cut=True
+        raise
+    finally:
+        row['finished_ns']=io.now()
 
 
 def capture_right_pulse_wire(io,argv,original,attempt,**kwargs):
@@ -1039,6 +1176,15 @@ def finish_verification(report,io,engine,bindings,proc_helper):
         identity_checks.append({'name':'modes',**mode})
     except BaseException as error:
         identity_checks.append({'name':'modes','status':'UNKNOWN','error':repr(error)})
+    finish_identity_verification(report,io,bindings,proc_helper,identity_checks)
+    if report['stop_verification']['status']!='PASS' or report['identity_verification']['status']!='PASS':
+        print('爸爸，停止或身份后验未确认，请立即人工断电；禁止后续运动。',flush=True)
+
+
+def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=None):
+    """复用非UART后验；只读序列不借此产生停止判定。"""
+    if identity_checks is None:
+        identity_checks=[]
     tasks=[(f"ref:{reference['path']}",lambda reference=reference:verify_ref(reference)) for reference in bindings['refs']]
     tasks += [(f'protection:{side}/{name}',lambda side=side,name=name,reference=reference:verify_protection_file(side,name,reference))
               for side,files in bindings['protection'].items() for name,reference in files.items()]
@@ -1064,8 +1210,6 @@ def finish_verification(report,io,engine,bindings,proc_helper):
         identity_checks.append({'name':'original_evidence','status':'PASS'})
     identity_status='UNKNOWN' if any(c['status']=='UNKNOWN' for c in identity_checks) else 'FAIL' if any(c['status']=='FAIL' for c in identity_checks) else 'PASS'
     report['identity_verification']={'status':identity_status,'checks':identity_checks}
-    if report['stop_verification']['status']!='PASS' or identity_status!='PASS':
-        print('爸爸，停止或身份后验未确认，请立即人工断电；禁止后续运动。',flush=True)
 
 
 def classify_run_result(report):
@@ -1129,6 +1273,7 @@ def execute(plan, go, approval):
             and os.getgid() == os.getegid() == host['gid']
             and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == host['boot_id'], "真实主机身份不符")
     validate_go(go, plan, time.time_ns())
+    feedback_only='left_wheel_feedback_only' in plan
     pulse_helper=load_right_pulse_helper() if 'right_wheel_pulse' in plan else None
     script=Path(__file__).read_bytes()
     require(hashlib.sha256(script).hexdigest()==plan['script_sha256'] and len(script)==plan['script_bytes'], '执行脚本SHA/bytes变化')
@@ -1147,6 +1292,9 @@ def execute(plan, go, approval):
     engine = None
     report = {'schema':'MAINTENANCE_RUN_V2','plan':plan,'go':go,'result':'FAIL','hardware_layer':'直接wire维护',
               'S0_S1_head_base_integration':False,'H2_D15_closed':False,'deployable':False}
+    if feedback_only:
+        report['stop_verification']={'status':'NOT_EVALUATED_DIAGNOSTIC_ONLY'}
+        report['position_verification']={'status':'NOT_EVALUATED_DIAGNOSTIC_ONLY'}
     try:
         with contextlib.ExitStack() as stack:
             protected_and_refs(bindings)
@@ -1181,13 +1329,20 @@ def execute(plan, go, approval):
                 install_right_pulse_guard(engine,pulse_helper)
                 engine.right_pulse_go_check=lambda:validate_go(go,plan,time.time_ns())
             try:
-                report['before'],report['before_errors']=snapshot(io)
-                require(not report['before_errors'],'初始17电机读取失败')
-                validate_snapshot(report['before'])
-                run_motion_probes(engine,bindings,plan)
+                if feedback_only:
+                    run_left_wheel_feedback(engine,lambda:validate_go(go,plan,time.time_ns()))
+                else:
+                    report['before'],report['before_errors']=snapshot(io)
+                    require(not report['before_errors'],'初始17电机读取失败')
+                    validate_snapshot(report['before'])
+                    run_motion_probes(engine,bindings,plan)
             finally:
-                # 仍持四合作锁完成三类独立后验；不把精度误差当作停止证据失败。
-                finish_verification(report,io,engine,bindings,proc_helper)
+                if feedback_only:
+                    # 仅非UART后验；异常后不补读末TE，也不调用停止/恢复写。
+                    finish_identity_verification(report,io,bindings,proc_helper)
+                else:
+                    # 仍持四合作锁完成三类独立后验；不把精度误差当作停止证据失败。
+                    finish_verification(report,io,engine,bindings,proc_helper)
             io.check()
             require(not io.evidence_errors,'原始证据保存失败')
             report['result']='PASS'
@@ -1203,7 +1358,17 @@ def execute(plan, go, approval):
         report['commands']=io.commands
         report['process_snapshots']=io.process_snapshots
         report['evidence_errors']=io.evidence_errors
-        if engine:
+        if feedback_only:
+            captured=(engine is not None and len(engine.rows)==1
+                      and engine.rows[0]['status']=='DIAGNOSTIC_CAPTURED'
+                      and len(engine.rows[0]['samples'])==12 and not engine.manual_cut)
+            valid=(captured and not report.get('error') and io.interrupted is None
+                   and io.child is None and not io.evidence_errors
+                   and report.get('identity_verification',{}).get('status')=='PASS')
+            report['result']='DIAGNOSTIC_CAPTURED' if valid else 'NEEDS_MANUAL_POWER_CUT'
+            if not valid:
+                print('爸爸，左轮只读采集或身份失败，请立即人工断电；禁止后续UART。',flush=True)
+        elif engine:
             report['result']=classify_run_result(report)
         report['manual_power_cut_required']=report['result']=='NEEDS_MANUAL_POWER_CUT'
         # 先确认journal关闭结果再写最终报告，不能留下PASS原件后才因关闭失败exit1。
@@ -1223,11 +1388,14 @@ def execute(plan, go, approval):
         try:
             write_new(Path(plan['output'])/'run.json',report)
         except BaseException as error:
-            if report['result'] != 'NEEDS_MANUAL_POWER_CUT':
+            if feedback_only:
+                report['result']='NEEDS_MANUAL_POWER_CUT'
+                report['manual_power_cut_required']=True
+            elif report['result'] != 'NEEDS_MANUAL_POWER_CUT':
                 report['result']='FAIL'
             report['report_write_error']=repr(error)
             print(json.dumps(report,ensure_ascii=False),flush=True)
-    return 0 if report['result']=='PASS' else 1
+    return 0 if report['result'] in ('PASS','DIAGNOSTIC_CAPTURED') else 1
 
 
 def main(argv=None):
@@ -1242,9 +1410,13 @@ def main(argv=None):
                         help='可重复指定腕部/头部目标，按指定顺序执行；缺省为原四项')
     parser.add_argument('--right-wheel-pulse',action='store_true',
                         help='仅右9固定+500原始速度单次500ms诊断；禁止混用位置选择')
+    parser.add_argument('--left-wheel-feedback-only',action='store_true',
+                        help='仅左轮right7固定12次只读时序；不写电机、不判停止通过')
     options=parser.parse_args(argv)
-    require(not (options.right_wheel_pulse and options.position_target is not None),'右轮诊断禁止混用位置选择')
-    selected_targets = [] if options.right_wheel_pulse else select_position_targets(options.position_target)
+    require(not (options.right_wheel_pulse and options.left_wheel_feedback_only)
+            and not ((options.right_wheel_pulse or options.left_wheel_feedback_only)
+                     and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
+    selected_targets = [] if options.right_wheel_pulse or options.left_wheel_feedback_only else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
@@ -1252,7 +1424,8 @@ def main(argv=None):
                           'scope':'单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
-                   options.position_target,right_wheel_pulse=options.right_wheel_pulse)
+                   options.position_target,right_wheel_pulse=options.right_wheel_pulse,
+                   left_wheel_feedback_only=options.left_wheel_feedback_only)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0
