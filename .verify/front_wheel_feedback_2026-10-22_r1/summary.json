@@ -1,6 +1,6 @@
 {
   "schema": "FRONT_WHEEL_FEEDBACK_SUMMARY_V1",
-  "status": "SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "status": "HARDWARE_DIAGNOSTIC_CAPTURED_PHYSICAL_OBSERVATION_UNKNOWN",
   "baseline_commit": "6bb4ebcec5b246f29f07bb5e22ee964cf43f07dc",
   "trigger": {
     "prior_stage": "../base_zero_stop_2026-10-21_r1/summary.json",
@@ -13,9 +13,9 @@
   },
   "scope": "仅现有维护脚本新增固定前轮right8只读选项，首末TE/GV必须0，固定五组PP/PV原帧共14读；PV和PP跨度只作诊断，不改变任何电机停止判据",
   "reference_check": "已检查现有readonly15、普通READ抓帧及base_feedback_diagnostic_r2；旧入口目标/字段固定，不能仅换JSON形成前8时序。复用既有b2 read-raw、RealExecutor、GO、四锁及非UART身份收尾",
-  "uart": 0,
-  "hardware_go_issued": false,
-  "hardware_result": "NOT_RUN",
+  "uart": 14,
+  "hardware_go_issued": true,
+  "hardware_result": "DIAGNOSTIC_CAPTURED",
   "firmware_contract": "STILL_UNVERIFIED",
   "D15": "OPEN/DEFERRED",
   "deployable": false,
@@ -75,8 +75,9 @@
     "cli_option": "--front-wheel-feedback-only",
     "current_bindings": "current-bindings.json",
     "bindings_sha256": "636e54a9ed890d9eb9e53e12316ec16b5e2ed9ecdb5015e039cc6bc951f895ea",
-    "hardware_go_issued": false,
-    "hardware_result": "NOT_RUN"
+    "hardware_go_issued": true,
+    "hardware_result": "DIAGNOSTIC_CAPTURED",
+    "go_consumed": true
   },
   "cleanup": {
     "path": "software/cleanup.json",
@@ -90,7 +91,87 @@
     "only_owned_pane_tmp_removed": true,
     "original_target_retained": true
   },
-  "physical_power_state": "OFF_USER_REPORTED，来源上一轮power-off-receipt-r2.json；无新的供电或看护事实",
-  "root_acceptance": "PASS_SOFTWARE_ONLY",
-  "next": "只读采集前先取得当次供电、三轮架空稳定支撑及持续看护事实，再使用固定计划和一次GO；不重跑20秒动作、不自动修改前轮停止判据"
+  "physical_power_state": "本次用户已报告恢复供电，采集后未要求断电；本次看护已结束，不复用为新的动作现场事实",
+  "root_acceptance": "PASS_DIAGNOSTIC_CAPTURE_ONLY",
+  "next": "回到原右9一次+500/20秒及zero-stop-check验证；已准备现有入口的独立计划，需新的动作预告、全程观察确认及一次GO。原STOP51照常执行，再现前8+50仍拒绝，不把本次未复现当修复",
+  "uart_count_unit": "冻结read-raw工具调用；每次原工具另含PING/Model握手；参数写0",
+  "hardware": {
+    "run": "front-hardware/run.json",
+    "run_sha256": "d14ca4eec07e61eafab9f0acc78ece2310444d380d3fe963d4c983f288a72e79",
+    "plan_sha256": "f914606fef2677cb18d3b2ea86e879b9a3496372708b2ae9862f403d99d17253",
+    "target": [
+      "right",
+      8,
+      "base_front_wheel"
+    ],
+    "register_reads": 14,
+    "register_writes": 0,
+    "elapsed_ns": 1089587053,
+    "torque_enable_before_after": [
+      0,
+      0
+    ],
+    "goal_velocity_before_after": [
+      0,
+      0
+    ],
+    "positions_raw": [
+      3779,
+      3779,
+      3779,
+      3779,
+      3779
+    ],
+    "velocities_raw": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "position_span_raw": 0,
+    "stop_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "position_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "identity_verification": "PASS",
+    "identity_checks": 105,
+    "manual_power_cut_required": false,
+    "physical_observation": "UNKNOWN_NOT_OBSERVED",
+    "physical_observation_receipt": "front-physical-observation.json",
+    "historical_plus_fifty_root_cause": "UNKNOWN_NOT_REPRODUCED_THIS_CAPTURE"
+  },
+  "hardware_cleanup": {
+    "collection": "front-collection.json",
+    "cleanup": "front-cleanup.json",
+    "handle": "front-wheel-feedback-r1-hardware $114 %150 736982 1 0",
+    "owner_and_children_absent": true,
+    "children_reaped": 74,
+    "raw_files": 155,
+    "raw_bytes": 291872,
+    "all_sha256_verified": true,
+    "two_serials_four_locks_free": true,
+    "only_owned_dead_pane_removed": "%150",
+    "new_uart_after_capture": 0
+  },
+  "hardware_independent_review": {
+    "path": "front-hardware-review.json",
+    "sha256": "3860739d2d5518439026c57353cde006cb5772dbc45d07c8d26a30685bc4efb9",
+    "status": "PASS_DIAGNOSTIC_CAPTURE_ONLY"
+  },
+  "record_commit_quality": {
+    "path": "software/hardware-record-quality/result.json",
+    "sha256": "e60217576981180f6ba8327dc86905add94c2555d36b8ff7455fada208e962d0",
+    "actual_fmt_then_root_clippy": "PASS",
+    "tests_rerun": 0,
+    "source_identity_unchanged": true,
+    "cleanup": "software/hardware-record-quality/cleanup.json"
+  },
+  "next_plan": {
+    "path": "right-zero-plan.json",
+    "digest": "d3a9566fdf11b613fe0711498601160588c6fbf133baefdc2e689060cda5e0ac",
+    "argv": "right-zero-argv.json",
+    "actions_started": 0,
+    "go_issued": false,
+    "existing_path_unchanged": true,
+    "software_evidence": "同源116方法及原默认8合同比对已通过，无须重跑软件批次"
+  }
 }

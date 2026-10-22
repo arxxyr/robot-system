@@ -1,0 +1,8 @@
+{
+  "source": "call_06e3f7f60b594d44b1af85e4552c474b 用户直接答复",
+  "answer": "没有看，你要动之前告诉我",
+  "result": "UNKNOWN_NOT_OBSERVED",
+  "motion_commands": 0,
+  "next_motion_requires_notice": true,
+  "no_new_motion_authorization": true
+}
