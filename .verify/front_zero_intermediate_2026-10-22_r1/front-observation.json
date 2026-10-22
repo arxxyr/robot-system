@@ -1,0 +1,28 @@
+{
+  "observed_at_ns": 1792660493758396445,
+  "pane": [
+    "$121",
+    "%157",
+    "740265",
+    "1",
+    "1"
+  ],
+  "owner_present": false,
+  "driver_tail": "爸爸，单轮诊断停止/身份未知，请立即人工断电；禁止后续UART。\n爸爸，停止或身份后验未确认，请立即人工断电；禁止后续运动。\n",
+  "run": {
+    "path": "front-hardware/run.json",
+    "sha256": "2774d333ce5cd5b71687382db07652f42231f1cc24bc81a3f6ecbd75b315b08b",
+    "result": "NEEDS_MANUAL_POWER_CUT",
+    "error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "stop_status": "UNKNOWN",
+    "position_status": "UNKNOWN",
+    "identity_status": "PASS",
+    "manual_power_cut_required": true,
+    "zero_stop_status": "PASS",
+    "zero_stop_velocity_raw": [
+      350,
+      0,
+      0
+    ]
+  }
+}

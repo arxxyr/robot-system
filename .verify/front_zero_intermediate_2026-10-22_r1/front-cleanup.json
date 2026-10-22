@@ -1,0 +1,33 @@
+{
+  "at_ns": 1792660711956523778,
+  "precondition": "$121 %157 740265 1 1",
+  "only_pane_removed": "%157",
+  "owner_absent": true,
+  "locks_unheld": [
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "exit_code": 1,
+      "stdout_empty": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "exit_code": 1,
+      "stdout_empty": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "exit_code": 1,
+      "stdout_empty": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "exit_code": 1,
+      "stdout_empty": true
+    }
+  ],
+  "serial_holders": "原run106项身份后验确认双串口无人占用",
+  "sdk_closed": "原run connection.closed=true",
+  "manual_cut": "OFF_USER_REPORTED",
+  "watch_closed": true,
+  "uart_after_exit": 0
+}

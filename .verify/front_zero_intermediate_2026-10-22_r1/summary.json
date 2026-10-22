@@ -1,7 +1,7 @@
 {
   "stage": "front_zero_intermediate_2026-10-22_r1",
   "recorded_at_utc": "2026-10-22T08:45:44.715231+00:00",
-  "status": "SOFTWARE_PASS_HARDWARE_NOT_RUN",
+  "status": "FRONT_ZERO_STAGE_PASS_RUN_NEEDS_MANUAL_POWER_CUT",
   "baseline_commit": "33eabf311ec377bc8fe6ba141779979f19637556",
   "approval": {
     "path": "approval.json",
@@ -91,19 +91,120 @@
     "only_owned_pane_and_temporary_runner_removed": true
   },
   "hardware": {
-    "new_uart": 0,
-    "new_go": 0,
-    "new_motion": 0,
-    "prior_front_run": "../front_wheel_feedback_2026-10-22_r1/front-zero-hardware/run.json",
-    "prior_result": "NEEDS_MANUAL_POWER_CUT",
-    "manual_power_cut_receipt": "PENDING",
-    "physical_motion_observation": "UNKNOWN",
-    "left_zero_stop_test": "NOT_RUN",
-    "old_evidence_unchanged": true
+    "run": {
+      "path": "front-hardware/run.json",
+      "sha256": "2774d333ce5cd5b71687382db07652f42231f1cc24bc81a3f6ecbd75b315b08b",
+      "bytes": 1544637
+    },
+    "run_result": "NEEDS_MANUAL_POWER_CUT",
+    "field_readiness": {
+      "path": "field-readiness.json",
+      "sha256": "d7166bd8b726929c2ec0e409bf1b3b5759e64dc73e57fa5d8e7437a4d11e630e",
+      "bytes": 603
+    },
+    "front_go": {
+      "path": "front-go.json",
+      "sha256": "870e90091e83e127213c974652c8a445644b7c6256712e71d1caeb3287217aac",
+      "bytes": 1869
+    },
+    "front_go_consumed": {
+      "path": "front-go.json.consumed",
+      "sha256": "7065b5ad23cb51da040eb74d47e2b8ccbc2fe4a7290b288846387d9d872088f9",
+      "bytes": 129
+    },
+    "front_motion_seconds": 20,
+    "nonzero_sync_writes": 400,
+    "samples": 79,
+    "cumulative_position_delta_raw": 9907,
+    "zero_stop_check": {
+      "status": "PASS",
+      "velocity_raw": [
+        350,
+        0,
+        0
+      ],
+      "duration_ns": 479378477,
+      "extra_8032_branch_used": false
+    },
+    "enabled_attempt_window_ns": 20500380329,
+    "sdk_post_disable_zero": true,
+    "sdk_closed": true,
+    "stop_verification": "UNKNOWN",
+    "position_verification": "UNKNOWN",
+    "identity_verification": "PASS",
+    "identity_checks": 106,
+    "failure": {
+      "motor": "right:9",
+      "stage": "整机停止普通READ Present_Velocity",
+      "command_sequence": 290,
+      "rx_hex": "FF FF 09 04 00 32 00 C0",
+      "raw_word_hex": "0032",
+      "decoded": 50,
+      "original_reference_agrees": true,
+      "pretest": {
+        "Operating_Mode": 1,
+        "Torque_Enable": 0,
+        "Present_Position": 948,
+        "Present_Velocity": 0,
+        "Goal_Position": 0,
+        "Goal_Velocity": 0
+      },
+      "posttest_partial": {
+        "Operating_Mode": 1,
+        "Torque_Enable": 0,
+        "Present_Position": 949
+      },
+      "post_failure_uart": 0,
+      "root_cause": "UNKNOWN"
+    },
+    "manual_power_cut_receipt": "OFF_USER_REPORTED",
+    "power_and_observation": {
+      "path": "front-power-observation.json",
+      "sha256": "8174605e6fac31e04312efca394d3f905d0f0ba1930abc57951197b6e811b06f",
+      "bytes": 784
+    },
+    "physical_front_motion": "USER_REPORTED_NORMAL_MOTION",
+    "physical_front_stop_at_test_end": "NOT_EXPLICITLY_CONFIRMED",
+    "left_go": 0,
+    "left_hardware": "NOT_RUN",
+    "left_reason": "前轮整run停止门失败，按前轮通过才继续左轮的授权终止。",
+    "collection": {
+      "path": "front-collection.json",
+      "sha256": "ff27211c15104d0b38608ef401795213fc0dbeac2753e0aa1af74671f66d2d9f",
+      "bytes": 96731
+    },
+    "cleanup": {
+      "path": "front-cleanup.json",
+      "sha256": "a85961bb2868940cf6b48d9bea6a3f07db4e28e5615f9b5f04c4795aad34c37e",
+      "bytes": 861
+    },
+    "old_evidence_unchanged": true,
+    "independent_review": {
+      "path": "front-hardware-review.json",
+      "sha256": "bd76b8cbf25d78adb9582adb09f867ec6b853af1025b31ed2f17b921b30d2443",
+      "bytes": 7102
+    },
+    "record_commit_quality": {
+      "path": "software/hardware-record-quality/result.json",
+      "sha256": "8652d0eb661c7afdab5f53f10080e3db6125668b323a9ee4b2f8a2ffdc2d2472",
+      "bytes": 2722
+    },
+    "record_quality_collection": {
+      "path": "software/hardware-record-quality/collection.json",
+      "sha256": "faa3f58017c8f4680ddca7f36f2d95c0eac283ae25fecde3fcf150b2c30d3117",
+      "bytes": 1031
+    },
+    "record_quality_cleanup": {
+      "path": "software/hardware-record-quality/cleanup.json",
+      "sha256": "131459352945ba1a8496684c26375ce45f79fc1e52c8185aeae57701125bf222",
+      "bytes": 277
+    }
   },
-  "next_step": "先取得上轮实际断电回执；后续动作另需当次供电、架空、支撑与持续看护授权，动作前通知。仅复用既有前轮一次20秒零速停止路径，通过后再左轮。",
+  "next_step": "本轮已断电收尾。先对照原版和本轮right9有效+50、前后位置948/949核定最小只读诊断；不据两个离散位置点判静止，不放宽right9停止门，不自动重试前轮或追加左轮。后续硬件另需当次现场确认。",
   "limitations": [
-    "软件通过不代表实机修复或第三组将归零",
+    "前8本次零速350/0/0，没有触发8032例外，不能称该分支已实机覆盖",
+    "前轮正常转动来自用户最新更正，左轮因未执行而未动",
+    "right9单次有效+50不能证明物理运动或量化根因",
     "BASE_FIRMWARE_CONTRACT_UNVERIFIED保持",
     "D15 OPEN/DEFERRED",
     "deployable=false"

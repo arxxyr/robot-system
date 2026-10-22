@@ -1,0 +1,32 @@
+{
+  "at": "2026-10-22T09:19:57.464556+00:00",
+  "pane": "front-zero-intermediate-hardware-record-quality-r1 $122 %158 740770 1 0",
+  "owner_and_four_step_children_absent": true,
+  "downloaded": {
+    "result.json": {
+      "bytes": 2722,
+      "sha256": "8652d0eb661c7afdab5f53f10080e3db6125668b323a9ee4b2f8a2ffdc2d2472"
+    },
+    "owner.exit": {
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy.log": {
+      "bytes": 70,
+      "sha256": "3c9d5ca89c8c34ce5b2d6125a9da7f8705ab2717ea0cfafb410996f7252e7fee"
+    },
+    "rustc-before.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    },
+    "rustc-after.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    }
+  },
+  "local_597_and_frozen_python_match": true
+}

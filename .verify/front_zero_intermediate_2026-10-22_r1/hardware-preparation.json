@@ -1,0 +1,17 @@
+{
+  "at_ns": 1792660293573629910,
+  "status": "PREPARED_NO_GO",
+  "refs_verified": 74,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "script_sha256": "eada58850014ab1712151926d640c2eeb15a9d4a3e1a21c68254b2532a438e6b",
+  "front_plan_sha256": "9df7fec429d4a3b1e238d844a7432b7dc6623445479c4cc6d60a2804f8f2b024",
+  "uart": 0,
+  "go": 0,
+  "left_plan_sha256": "98059ddb699567411dafac95091b175832c733d0cd602ed0c31270ab2b054460",
+  "usb_note": "本次为断电状态下软件文件准备；供电后须核当前USB和执行入口占用门。"
+}

@@ -1,0 +1,14 @@
+{
+  "source": "call_471bb319bd6f40e79e486ee709945b11",
+  "answer": "已恢复供电，现场全部就绪，可按顺序各执行一次",
+  "confirmed_at_ns": 1792660428655616000,
+  "scope": "先前轮right8，通过并确认实际停止后再左轮right7；各一次+500原始速度20秒及500毫秒零速保持使能检查",
+  "power": "ON_USER_REPORTED",
+  "all_three_wheels_off_ground": true,
+  "base_stably_supported": true,
+  "arms_supported_unloaded": true,
+  "area_clear": true,
+  "continuous_presence_until_cleanup": true,
+  "continuous_wheel_observation": true,
+  "immediate_power_cut": true
+}

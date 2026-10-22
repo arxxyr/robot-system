@@ -1,0 +1,200 @@
+{
+  "schema": "FRONT_ZERO_INTERMEDIATE_HARDWARE_INDEPENDENT_REVIEW_V1",
+  "reviewer": "/root/xlerobot_local_check",
+  "reviewed_at_utc": "2026-10-22T09:19:53.188776+00:00",
+  "review_decision": "EVIDENCE_CONSISTENT_RUN_REMAINS_NEEDS_MANUAL_POWER_CUT",
+  "findings": [],
+  "run": {
+    "path": "front-hardware/run.json",
+    "sha256": "2774d333ce5cd5b71687382db07652f42231f1cc24bc81a3f6ecbd75b315b08b",
+    "bytes": 1544637,
+    "result": "NEEDS_MANUAL_POWER_CUT",
+    "manual_power_cut_required": true,
+    "stop": "UNKNOWN",
+    "position": "UNKNOWN",
+    "identity": "PASS",
+    "identity_checks": 106
+  },
+  "binding": {
+    "plan_sha256": "9df7fec429d4a3b1e238d844a7432b7dc6623445479c4cc6d60a2804f8f2b024",
+    "script_sha256": "eada58850014ab1712151926d640c2eeb15a9d4a3e1a21c68254b2532a438e6b",
+    "field_source": "call_471bb319bd6f40e79e486ee709945b11",
+    "field_confirmed_at_ns": 1792660428655616000,
+    "launch_at_ns": 1792660465099144168,
+    "go_consumed_at_ns": 1792660465237171366,
+    "go_expires_at_ns": 1792661028655616000,
+    "unique_handle": "$121/%157/PID740265",
+    "natural_exit": 1,
+    "left_go_or_motion": false
+  },
+  "front8_local_stages": {
+    "target": [
+      "right",
+      8,
+      "base_front_wheel"
+    ],
+    "sdk_operations": 588,
+    "nonzero_sync_writes": 400,
+    "nonzero_value": 500,
+    "motion_window_ns": 20000000000,
+    "samples": 79,
+    "cumulative_position_raw": 9907,
+    "wire_path": "front-hardware/right8-sdk-wire.jsonl",
+    "wire_sha256": "72a405812d585114da267a85a6a8debac33f6c06e91c0200a257bb0c08917493",
+    "wire_bytes": 138846,
+    "wire_events": 956,
+    "all_sdk_tx_rx_reconstructed_and_checked": true,
+    "zero_stop_status": "PASS",
+    "zero_samples": [
+      {
+        "index": 0,
+        "nominal_offset_ns": 50000000,
+        "first_read_started_from_sync_finished_ns": 54256042,
+        "pv_returned_from_sync_finished_ns": 73080824,
+        "deadline_ns": 4413739622976481,
+        "raw_unsigned": [
+          1,
+          0,
+          350
+        ],
+        "pv_rx_hex": "FF FF 08 04 00 5E 01 94"
+      },
+      {
+        "index": 1,
+        "nominal_offset_ns": 250000000,
+        "first_read_started_from_sync_finished_ns": 254221836,
+        "pv_returned_from_sync_finished_ns": 272926836,
+        "deadline_ns": 4413739822976481,
+        "raw_unsigned": [
+          1,
+          0,
+          0
+        ],
+        "pv_rx_hex": "FF FF 08 04 00 00 00 F3"
+      },
+      {
+        "index": 2,
+        "nominal_offset_ns": 450000000,
+        "first_read_started_from_sync_finished_ns": 454206798,
+        "pv_returned_from_sync_finished_ns": 472975033,
+        "deadline_ns": 4413739866581869,
+        "raw_unsigned": [
+          1,
+          0,
+          0
+        ],
+        "pv_rx_hex": "FF FF 08 04 00 00 00 F3"
+      }
+    ],
+    "zero_phase_elapsed_ns": 479378477,
+    "zero_phase_budget_ns": 500000000,
+    "enabled_attempt_window_ns": 20500380329,
+    "enabled_attempt_limit_ns": 21000000000,
+    "cleanup_write_order": [
+      {
+        "sequence": 584,
+        "kind": "sync",
+        "register": "Goal_Velocity",
+        "value": 0,
+        "status": "SENT_NO_ACK"
+      },
+      {
+        "sequence": 585,
+        "kind": "write",
+        "register": "Torque_Enable",
+        "value": 0,
+        "status": "ACK_VALID"
+      }
+    ],
+    "post_disable_raw_unsigned": [
+      0,
+      0,
+      0
+    ],
+    "sdk_closed": true,
+    "approved_8032_branch_exercised": false,
+    "qualification": "局部阶段读回通过；本次未出现0x8032，不构成该例外的实机覆盖，也不覆盖整机停止失败。"
+  },
+  "failure": {
+    "stage": "SDK关闭后的整机最终快照，right9普通READ Present_Velocity",
+    "command_sequence": 290,
+    "trace_path": "front-hardware/right9-normal-read-command_0290.strace",
+    "trace_sha256": "b84ccf78711ec72c92472300a959a7b59b34271e87b62db38c04095d127fd1c4",
+    "trace_bytes": 10040,
+    "right_bus_resolved": "/dev/ttyACM1",
+    "motor": 9,
+    "register_address": 58,
+    "width": 2,
+    "tx_hex": "FF FF 09 04 02 3A 02 B4",
+    "rx_hex": "FF FF 09 04 00 32 00 C0",
+    "handshake": "同次PING及Model_Number=777读回，均ID9/error0/长度与校验正确。",
+    "id_length_error_checksum": "PASS",
+    "raw_unsigned": 50,
+    "raw_hex": "0032",
+    "sign_magnitude_decoded": 50,
+    "stdout": "read Present_Velocity@9 = 50",
+    "interpretation": "原帧即+50，原版bit15 sign-magnitude也解为+50；不是本次0x8032被误解码、端序或符号转换出错的证据。",
+    "right9_before": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 948,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "right9_after_available": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 949
+    },
+    "snapshot_limit": "PP948到949为相隔整轮的快照，不能当固定位置稳定窗口、物理轮动或静止证明。"
+  },
+  "sticky_boundary": {
+    "normal_failed": true,
+    "uart_blocked": true,
+    "front_probe_status": "PASS",
+    "front_probe_status_limit": "该字段保留SDK局部完成；后续原停止READ错误仍写入cleanup_errors并使整轮保持失败。",
+    "post_failure_child_commands": 18,
+    "post_failure_uart_commands": 0,
+    "post_failure_sdk_operations": 0,
+    "not_read_after_failure": [
+      "right9 Goal_Position",
+      "right9 Goal_Velocity"
+    ],
+    "unknown_not_zero": [
+      "right9 Present_Velocity in final snapshot",
+      "right9 Goal_Velocity in final snapshot"
+    ],
+    "non_uart_identity_postchecks_continued": true,
+    "overall_error_note": "顶层error保留原三轮固件DEFERRED错误；真正令停止未知并要求断电的是后验right9 PV非零，不能称整轮仅因DEFERRED失败。"
+  },
+  "collection": {
+    "path": "front-collection.json",
+    "all_listed_files_independently_sha_checked": true,
+    "files": 632,
+    "bytes": 2072867,
+    "direct_children_reaped": 308,
+    "child_active": false,
+    "collector_owner_absent": true,
+    "collector_uart_after_exit": 0
+  },
+  "physical": {
+    "path": "front-power-observation.json",
+    "power_state": "OFF_USER_REPORTED",
+    "actual_cut_time": "UNKNOWN",
+    "front_motion": "USER_REPORTED_NORMAL_MOTION",
+    "front_stop_at_test_end": "NOT_EXPLICITLY_CONFIRMED",
+    "left_motion": "NONE_USER_REPORTED",
+    "left_command": "NOT_RUN",
+    "corrections_preserved": [
+      "前轮动了",
+      "前轮正常，左轮没动"
+    ],
+    "qualification": "保留先报都未动、后更正前轮正常的完整序列；左轮无动作符合未执行事实，不能据此判断左轮电机故障。"
+  },
+  "limits": [
+    "本次只读核本地已回收原件并仅写本报告；未SSH、未访问UART、未生成或消费GO、未运行测试或重试动作。",
+    "原字+50的固件/量化或物理根因仍未知，不能据此判右9实际转动或静止，也不把+50判零。",
+    "旧前轮8032失败及本次整机STOP失败均不回填；D15 OPEN/DEFERRED、deployable=false及固件合同未解除。"
+  ]
+}
