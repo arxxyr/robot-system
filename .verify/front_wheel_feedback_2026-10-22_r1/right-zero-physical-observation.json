@@ -1,0 +1,9 @@
+{
+  "source": "call_c775a107c63e45f29d20deb6066c7ff4",
+  "answer": "右轮明显持续转动，结束后完全停止",
+  "received_at_ns": 1792656779075418000,
+  "run_id": "right-zero-after-front-r1",
+  "motion": "OBSERVED_CONTINUOUS_ROTATION",
+  "final_stop": "OBSERVED_FULL_STOP",
+  "new_motion_authorization": false
+}

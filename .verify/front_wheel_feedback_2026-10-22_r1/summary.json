@@ -1,6 +1,6 @@
 {
   "schema": "FRONT_WHEEL_FEEDBACK_SUMMARY_V1",
-  "status": "HARDWARE_DIAGNOSTIC_CAPTURED_PHYSICAL_OBSERVATION_UNKNOWN",
+  "status": "FRONT_CAPTURED_RIGHT_ZERO_STOP_AND_PHYSICAL_OBSERVATION_PASS",
   "baseline_commit": "6bb4ebcec5b246f29f07bb5e22ee964cf43f07dc",
   "trigger": {
     "prior_stage": "../base_zero_stop_2026-10-21_r1/summary.json",
@@ -91,9 +91,9 @@
     "only_owned_pane_tmp_removed": true,
     "original_target_retained": true
   },
-  "physical_power_state": "本次用户已报告恢复供电，采集后未要求断电；本次看护已结束，不复用为新的动作现场事实",
+  "physical_power_state": "本次启动前用户报告已供电；本轮停止检查通过并结束看护，未要求断电，不推定当前电源OFF或复用为后续现场事实",
   "root_acceptance": "PASS_DIAGNOSTIC_CAPTURE_ONLY",
-  "next": "回到原右9一次+500/20秒及zero-stop-check验证；已准备现有入口的独立计划，需新的动作预告、全程观察确认及一次GO。原STOP51照常执行，再现前8+50仍拒绝，不把本次未复现当修复",
+  "next": "右轮零速保持使能已完成本次实证；后续仅沿同一既有入口补前轮、左轮同项，动作前通知并核当次现场状态。前轮历史±50原因仍未确定，不放宽其停止门，不追加本轮动作或扩大设计。",
   "uart_count_unit": "冻结read-raw工具调用；每次原工具另含PING/Model握手；参数写0",
   "hardware": {
     "run": "front-hardware/run.json",
@@ -169,9 +169,96 @@
     "path": "right-zero-plan.json",
     "digest": "d3a9566fdf11b613fe0711498601160588c6fbf133baefdc2e689060cda5e0ac",
     "argv": "right-zero-argv.json",
-    "actions_started": 0,
-    "go_issued": false,
+    "actions_started": 1,
+    "go_issued": true,
     "existing_path_unchanged": true,
-    "software_evidence": "同源116方法及原默认8合同比对已通过，无须重跑软件批次"
+    "software_evidence": "同源116方法及原默认8合同比对已通过，无须重跑软件批次",
+    "go_consumed": true,
+    "hardware_result": "右9诊断及现场动作/停止观察通过，原run整体FAIL仅BFC DEFERRED"
+  },
+  "right_zero_hardware": {
+    "run": {
+      "path": "right-zero-hardware/run.json",
+      "sha256": "dcf6db9eff87e1d0476d89a74ef943fae9a39967abe81b66bb2809c564e4e9dd",
+      "bytes": 1540805
+    },
+    "plan_sha256": "d3a9566fdf11b613fe0711498601160588c6fbf133baefdc2e689060cda5e0ac",
+    "scope": "仅右9一次+500/20秒，零速保持使能≤500ms，随后断扭及原STOP检查",
+    "original_run_result": "FAIL",
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "diagnostic": "PASS",
+    "nonzero_sync_writes": 400,
+    "motion_samples": 79,
+    "cumulative_position_raw": 9947,
+    "zero_stop": {
+      "status": "PASS",
+      "TE_GV_PV": [
+        [
+          1,
+          0,
+          300
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "elapsed_ns": 479519889,
+      "enabled_attempt_window_ns": 20500607833
+    },
+    "stop": "PASS",
+    "position": "PASS",
+    "identity": "PASS",
+    "identity_checks": 106,
+    "manual_power_cut_required": false,
+    "sdk_closed": true,
+    "physical_observation": {
+      "path": "right-zero-physical-observation.json",
+      "sha256": "51484607e817459698f5437d71b3c181404aa8a2cbaa792ea19a84fd6f56232f",
+      "bytes": 321
+    },
+    "physical_motion": "OBSERVED_CONTINUOUS_ROTATION",
+    "physical_final_stop": "OBSERVED_FULL_STOP",
+    "collection": {
+      "path": "right-zero-collection.json",
+      "sha256": "98fbb574e7a1ad7e95d0a479abfd89b4fe602f3e256c69aac8711762c91c255f",
+      "bytes": 102732
+    },
+    "raw_files": 637,
+    "raw_bytes": 2071757,
+    "children_reaped": 310,
+    "cleanup": {
+      "path": "right-zero-cleanup.json",
+      "sha256": "27f9c33646d66c63d51e11940ccc53318b53eb55b8e1a0b7980150886c5774e9",
+      "bytes": 263
+    },
+    "no_additional_uart": true,
+    "acceptance": "右轮本次受监督维护诊断闭环通过；原整批FAIL仅固件合同DEFERRED保留，不外推统一Velocity链或生产可用",
+    "independent_review": {
+      "path": "right-zero-hardware-review.json",
+      "sha256": "c99d128e76414419d6ea545bc2848849afa5386c5c9b92ed78648ba43b5ecf30",
+      "bytes": 3817,
+      "status": "PASS_BOUNDED_RIGHT9_ZERO_STOP_AND_FIELD_OBSERVATION"
+    }
+  },
+  "right_zero_record_commit_quality": {
+    "path": "software/right-zero-record-quality/result.json",
+    "sha256": "3dc0275f60ba348c7533426a9c3f7d73747f8648dcea9e1154601b7db1af1ba3",
+    "status": "PASS",
+    "actual_fmt_then_root_clippy": "PASS",
+    "rustc": "1a2c4797e",
+    "source_count": 597,
+    "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "same_python_inputs": true,
+    "tests_rerun": 0,
+    "uart": 0,
+    "cleanup": "software/right-zero-record-quality/cleanup.json",
+    "collection": "software/right-zero-record-quality/collection.json"
   }
 }

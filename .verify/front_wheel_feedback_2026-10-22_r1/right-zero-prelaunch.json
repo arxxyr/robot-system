@@ -1,0 +1,28 @@
+{
+  "at_ns": 1792656692088361183,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "plan_sha256": "d3a9566fdf11b613fe0711498601160588c6fbf133baefdc2e689060cda5e0ac",
+  "script_sha256": "8aea4bb769c3d248914329ad21a4bcdbe1193468bf3b77bb0f55ad2bc8ee1b0d",
+  "uart": 0
+}

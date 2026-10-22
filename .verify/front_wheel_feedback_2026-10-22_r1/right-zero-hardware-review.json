@@ -1,0 +1,103 @@
+{
+  "review_status": "PASS_BOUNDED_RIGHT9_CLOSED_LOOP_WHOLE_RUN_FAIL_PRESERVED",
+  "run_id": "right-zero-after-front-r1",
+  "run_sha256": "dcf6db9eff87e1d0476d89a74ef943fae9a39967abe81b66bb2809c564e4e9dd",
+  "plan_sha256": "d3a9566fdf11b613fe0711498601160588c6fbf133baefdc2e689060cda5e0ac",
+  "source_sha256": "8aea4bb769c3d248914329ad21a4bcdbe1193468bf3b77bb0f55ad2bc8ee1b0d",
+  "files_reverified": 637,
+  "bytes_reverified": 2071757,
+  "wire_sha256": "2a1261912a372313221a6401487ce074212b04563a74ecd6bd79f8f57e41e9fd",
+  "wire_events_verified": 956,
+  "SDK_operations_verified": 588,
+  "target": "right9/base_right_wheel",
+  "nonzero_sync_writes": 400,
+  "PV_PP_samples": 79,
+  "position_cumulative_raw": 9947,
+  "connection_count": 1,
+  "zero_groups": [
+    {
+      "planned_offset_ns": 50000000,
+      "first_read_offset_ns": 54220731,
+      "PV_finished_offset_ns": 73064958,
+      "TE_GV_PV": [
+        1,
+        0,
+        300
+      ]
+    },
+    {
+      "planned_offset_ns": 250000000,
+      "first_read_offset_ns": 254250525,
+      "PV_finished_offset_ns": 273088063,
+      "TE_GV_PV": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "planned_offset_ns": 450000000,
+      "first_read_offset_ns": 454234812,
+      "PV_finished_offset_ns": 473075710,
+      "TE_GV_PV": [
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "zero_phase_elapsed_ns": 479519889,
+  "zero_phase_budget_ns": 500000000,
+  "enable_attempt_to_TE0_ns": 20500607833,
+  "enable_attempt_budget_ns": 21000000000,
+  "cleanup_last_writes": [
+    "SYNC_GV0",
+    "TE0"
+  ],
+  "SDK_final_TE_GV_PV": [
+    0,
+    0,
+    0
+  ],
+  "classifications": {
+    "right9_diagnostic": "PASS",
+    "zero_stop_check": "PASS",
+    "STOP": "PASS",
+    "position": "PASS",
+    "identity": "PASS_106_CHECKS",
+    "manual_power_cut_required": false,
+    "whole_run": "FAIL_BASE_FIRMWARE_CONTRACT_UNVERIFIED_3_DEFERRED",
+    "firmware_contract_verified": false,
+    "deployable": false
+  },
+  "whole_stop_values": "本次17电机最终TE/PV/GV共51值均0；左7前后新稳定窗也通过，但获准例外未扩展。",
+  "physical_observation": {
+    "source": "call_c775a107c63e45f29d20deb6066c7ff4",
+    "answer": "右轮明显持续转动，结束后完全停止",
+    "received_at_ns": 1792656779075418000,
+    "run_id": "right-zero-after-front-r1",
+    "motion": "OBSERVED_CONTINUOUS_ROTATION",
+    "final_stop": "OBSERVED_FULL_STOP",
+    "new_motion_authorization": false
+  },
+  "observation_limit": "现场回执只证实明显持续转动及结束完全停止；TE0前PV归零的具体时序来自本次寄存器原帧，不能把人工回执当成500ms物理测量。",
+  "authorization": "本次独立GO绑定本次右9范围并消费一次；与前8只读及旧R1/R2分别记录，未复用为下一动作授权。",
+  "lifecycle": {
+    "handle": "$116/%152/PID737660",
+    "terminal": "dead1_exit1",
+    "children_reaped": 310,
+    "SDK_closed": true,
+    "serial_and_four_locks_empty": true,
+    "only_owned_pane_removed": "%152",
+    "new_UART_after_terminal": 0
+  },
+  "limits": [
+    "仅这次固定右9正向20秒与受监督停止闭环通过。",
+    "原前8普通READ+50、旧R1/R2失败或未观察结论不回填；本次通过不代表间歇问题修复。",
+    "前轮/左轮保持使能零速、负方向、物理单位、整车组合及统一RPC仍需各自实证，不因此解除固件合同。",
+    "D15 OPEN/DEFERRED与deployable=false保持；21秒是软件预算而非硬件断电保护。"
+  ],
+  "findings": [],
+  "audit_boundary": "仅核对本地回收原件并写本报告，无SSH/UART/自动重试/源码修改。",
+  "summary_consistency": "同一summary.json的右9字段及CLAUDE/HANDOFF当前条均与本次run核对一致；本次400条操作类型为kind=sync/value500，非sync_write枚举。"
+}
