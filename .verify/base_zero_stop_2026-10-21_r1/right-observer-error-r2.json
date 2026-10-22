@@ -1,0 +1,7 @@
+{
+  "kind": "OBSERVER_PARSE_ERROR",
+  "detail": "首终态观察脚本误取空probes[0]触发IndexError；随后只读取同一已结束run.json核对完整失败信息，无运动重启",
+  "terminal": "right-zero-stop-r2-hardware $111 %147 735623 1 1",
+  "hardware_authority_changed": false,
+  "retry": false
+}

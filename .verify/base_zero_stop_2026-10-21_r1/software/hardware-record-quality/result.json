@@ -1,0 +1,94 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-22T07:12:24.179721+00:00",
+      "pid": 736041,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T07:12:24.204375+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-22T07:12:24.204434+00:00",
+      "pid": 736047,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T07:12:27.607526+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-22T07:12:27.680172+00:00",
+      "pid": 736058,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T07:12:28.401832+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-22T07:12:28.401895+00:00",
+      "pid": 736074,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T07:12:28.424612+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "go": 0,
+  "services": 0,
+  "release_builds": 0,
+  "tests_rerun": 0,
+  "local_head": "d7996a90a8941c0b7dbfcb4db7bd3f7b6d088bce",
+  "manifest_reference": "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/expected-source.json",
+  "source_count": 597,
+  "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "started_at": "2026-10-22T07:12:24.085185+00:00",
+  "existing_compilers": [],
+  "source_before": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "python_inputs_before": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "source_after_fmt": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "source_after": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "python_inputs_after": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "finished_at": "2026-10-22T07:12:28.496842+00:00"
+}

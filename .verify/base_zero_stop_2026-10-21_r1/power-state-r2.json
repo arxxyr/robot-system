@@ -1,0 +1,9 @@
+{
+  "state": "OFF_NOT_CONFIRMED",
+  "source": "call_062b7ab19dec47e6b9fa07a7e16d7a69 用户直接答复",
+  "answer": "直接测试跑啊，为什么要停电",
+  "manual_power_cut_required": true,
+  "new_uart_after_failure": 0,
+  "no_retry_after_failure": true,
+  "physical_stop": "UNKNOWN"
+}

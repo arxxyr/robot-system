@@ -1,0 +1,126 @@
+{
+  "review_status": "PASS_AUDIT_WITH_R2_HARDWARE_FAILURE_PRESERVED",
+  "R1": {
+    "run_sha256": "2080540155da83abe4b4a8537c9e873bd345abf64e4a604dfc501992444b9344",
+    "right9_zero_register_check": "PASS",
+    "TE_GV_PV": [
+      [
+        1,
+        0,
+        300
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ]
+    ],
+    "phase_ns": 479565107,
+    "enabled_to_TE0_ns": 20500526819,
+    "whole_run": "FAIL_BFC_3DEFERRED",
+    "physical_observation": "UNKNOWN_NOT_CLEARLY_SEEN"
+  },
+  "R2": {
+    "run_sha256": "9bc7bbe804a34d9bde5e2d94b82b3ad1d0c6576035c287b2571013ef5ef105c7",
+    "files_reverified": 346,
+    "bytes_reverified": 602768,
+    "failed_command": 150,
+    "target": "right8 front_wheel rightUSB5A7C122340 ttyACM1",
+    "trace_sha256": "07317910f164706db7a76ffc77a128ddc20c1c8291ec667dfd0549c69d75168e",
+    "trace_bytes": 10040,
+    "frames": [
+      {
+        "line": 23,
+        "direction": "tx",
+        "hex": "ffff080201f4"
+      },
+      {
+        "line": 24,
+        "direction": "rx",
+        "hex": "ffff080200f5"
+      },
+      {
+        "line": 25,
+        "direction": "tx",
+        "hex": "ffff0804020302ec"
+      },
+      {
+        "line": 26,
+        "direction": "rx",
+        "hex": "ffff0804000903e7"
+      },
+      {
+        "line": 27,
+        "direction": "tx",
+        "hex": "ffff0804023a02b5"
+      },
+      {
+        "line": 28,
+        "direction": "rx",
+        "hex": "ffff0804003200c1"
+      }
+    ],
+    "three_tx_three_rx_id8_error0_checksums_valid": true,
+    "PV_register_address": 58,
+    "PV_unsigned_hex": "0032",
+    "PV_little_endian_bytes": [
+      50,
+      0
+    ],
+    "PV_value": 50,
+    "left_bus_ID8_seq88": {
+      "value": 0,
+      "distinct_target": "head2 leftUSB5A7C121427"
+    },
+    "front_mode_TE_PP_before_failure": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 3778
+    },
+    "motion_diagnostic": "NOT_RUN",
+    "SDK_opened": false,
+    "control_writes": 0,
+    "UART_tools": 108,
+    "ordinary_READ": 94,
+    "SYNC_READ": 14,
+    "last_UART_command": 150,
+    "subsequent_UART": "BLOCKED",
+    "whole_run": "NEEDS_MANUAL_POWER_CUT",
+    "STOP_position_identity": "UNKNOWN",
+    "owner_and168_children_absent": true,
+    "serial_and_four_locks": "NO_HOLDER_12CHECKS",
+    "actual_power_off": "NOT_CONFIRMED"
+  },
+  "front_PP_points": [
+    {
+      "run": "R1",
+      "sequence": 149,
+      "PP": 3779,
+      "started_ns": 4405613188538468,
+      "finished_ns": 4405613196748608
+    },
+    {
+      "run": "R1",
+      "sequence": 283,
+      "PP": 3779,
+      "started_ns": 4405636713163369,
+      "finished_ns": 4405636721354978
+    },
+    {
+      "run": "R2",
+      "sequence": 149,
+      "PP": 3778,
+      "started_ns": 4405922161803164,
+      "finished_ns": 4405922170030368
+    }
+  ],
+  "PP_limit": "Only isolated snapshots across runs; no fixed stability window, continuous immobility proof, or permission to accept frontPV50",
+  "next_minimal_candidate": "Only after actual poweroff acknowledgement and fresh separately authorized diagnostic readiness: reuse readonly path for front8 TE/GV plus fixed small PP/PV sequence with rawframes; strictfrontSTOP unchanged, no20s motion retry",
+  "findings": [],
+  "audit_limit": "Local evidence only; no SSH UART retry or status write. R1pass cannot replace R2UNKNOWN. No firmwarecontract unit Phase chassisRPC D15 or deployable clearance."
+}

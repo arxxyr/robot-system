@@ -1,0 +1,8 @@
+{
+  "source": "call_955a615b330a4aa0ac9784c28fc6f47e 直接用户答复",
+  "answer": "再来一下，没看清，持续20s",
+  "scope": "仅一次与R1相同的20秒right9零速停止测试",
+  "original_field_timestamp_ns": 1792652220000000000,
+  "field_timestamp_not_renewed": true,
+  "R1_go_not_reused": true
+}

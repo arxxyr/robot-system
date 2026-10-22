@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+### 右9零速保持使能读回通过，用户追加的一次重复被前轮非零反馈拦截（UTC2026-10-22）
+
+06:57:00UTC收到当次供电、三轮稳定架空、双臂空载支撑和持续看护确认，动作前已通知。R1只执行一次既有SDK +500/20秒及零速保持使能检查：400次非零SYNC、79组位置/速度，累计位置9949；三组TE/GV/PV分别为1/0/300、1/0/0、1/0/0，零速阶段479.565107ms，启用至TE0为20.500526819秒。原清零、独立断扭、严格停稳以及17电机STOP/位置/106身份均PASS，manual=false。原run20805401…b9344仍整体FAIL，唯一错误是原三项固件合同DEFERRED，不改写原件或解除Phase12拒绝。用户答复“再来一下，没看清，持续20s”，R1现场动作和实际停止观察仍记UNKNOWN。
+
+按此明确追加授权，仅准备并执行一次同源R2；06:57现场时戳及07:07到期不续写，使用独立PLAN ec57afc1…afcdec和新GO，没有复用R1 claim。R2在初始读取即失败：右总线前轮right8 Mode1/TE0/PP3778，seq150速度有效原帧`FF FF 08 04 00 32 00 C1`即+50；另一左总线ID8的seq88为0，不能抵消该结果。SDK未打开、probes为空、运动写0，后续UART粘性封锁。原run9bc7bbe8…105c7保持NEEDS_MANUAL_POWER_CUT及STOP/身份/位置UNKNOWN，不能用R1通过覆盖。用户收到断电提示后回复“直接测试跑啊，为什么要停电”，实际OFF尚未确认；root已说明非零停止门触发原因，没有发第三个GO或追加UART。R1前轮PP前后3779/3779、R2单点3778，只是跨run有限快照，不是获准稳定窗，不能据此把前轮+50判零。
+
+R1 $110/%146/PID735094、R2 $111/%147/PID735623均自然dead1/exit1，分别310/168直属child已回收且PID消失。636+346份原件共2663172B逐SHA回收，R1 SDK关闭、两串口四锁释放，仅所属dead pane清理；R2后无新UART。首R2观察脚本误取空probes产生IndexError，仅修正同run的观察解析，未重启硬件。提交前另一次现装nightly1a2c4797e实际fmt→根Clippy通过，597输入及两Python首尾/本机相同，未重跑108测试、未新建target或操作服务；软件%148与4个step child、临时runner已清理。见[唯一摘要](../../.verify/base_zero_stop_2026-10-21_r1/summary.json)、[R1原件](../../.verify/base_zero_stop_2026-10-21_r1/right-collection.json)、[R2原件](../../.verify/base_zero_stop_2026-10-21_r1/right-collection-r2.json)及[未确认电源状态](../../.verify/base_zero_stop_2026-10-21_r1/power-state-r2.json)。下一步先完成失败收尾，再核前轮+50的位置/速度稳定性；不随机重试、不泛化左7例外、不改现有停止门。三轮固件、单位及统一Velocity链未验收，D15 OPEN/DEFERRED、deployable=false保持。
+
 ### 仅准备零速单独停轮检查，尚未执行实机（2026-10-21本地；UTC10-22）
 
 已对照从Orin复制的实际Python项目：`bus2_base.write_stop` 在原连接只发送SYNC零速；此前三轮试验随后立即断扭，不能据此证明保持使能时零速能独立停轮。仅在既有pulse入口增加可选`--zero-stop-check`，旧默认合同和scope不变；不接通生产Velocity或放行Phase12。

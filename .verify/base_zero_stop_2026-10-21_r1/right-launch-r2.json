@@ -1,0 +1,39 @@
+{
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "-B",
+    "-I",
+    "-S",
+    "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/current-bindings.json",
+    "--output",
+    "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-hardware-r2",
+    "--run-id",
+    "right-zero-stop-r2",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/base-zero-stop-20261021-r1",
+    "--right-wheel-pulse",
+    "--zero-stop-check",
+    "--execute",
+    "--approval",
+    "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-go-r2.json"
+  ],
+  "tmux_argv": [
+    "tmux",
+    "new-session",
+    "-d",
+    "-s",
+    "right-zero-stop-r2-hardware",
+    "-n",
+    "hardware",
+    "-P",
+    "-F",
+    "#{session_name} #{session_id} #{pane_id} #{pane_pid}",
+    "/bin/sh -c 'tmux set-option -p -t \"$TMUX_PANE\" remain-on-exit on && exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 -B -I -S /home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py --bindings /home/loosqk/robot-checks/base-zero-stop-20261021-r1/current-bindings.json --output /home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-hardware-r2 --run-id right-zero-stop-r2 --artifact-root /home/loosqk/robot-checks/base-zero-stop-20261021-r1 --right-wheel-pulse --zero-stop-check --execute --approval /home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-go-r2.json > /home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-driver-r2.log 2>&1'"
+  ],
+  "exit_code": 0,
+  "stdout": "right-zero-stop-r2-hardware $111 %147 735623\n",
+  "stderr": "",
+  "started_at_ns": 1792652668768284297
+}

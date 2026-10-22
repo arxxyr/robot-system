@@ -1,0 +1,116 @@
+{
+  "at_ns": 1792652668756831603,
+  "status": "PASS_NON_UART",
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "commands": [
+    {
+      "argv": [
+        "udevadm",
+        "info",
+        "--query=property",
+        "--name",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+      ],
+      "exit_code": 0,
+      "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0\nDEVNAME=/dev/ttyACM0\nMAJOR=166\nMINOR=0\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3536208877616\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C121427\nID_SERIAL_SHORT=5A7C121427\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.3:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_3_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00 /dev/serial/by-path/platform-3610000.usb-usb-0:2.4.3:1.0\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "udevadm",
+        "info",
+        "--query=property",
+        "--name",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+      ],
+      "exit_code": 0,
+      "stdout": "DEVPATH=/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1\nDEVNAME=/dev/ttyACM1\nMAJOR=166\nMINOR=1\nSUBSYSTEM=tty\nUSEC_INITIALIZED=3359632006336\nID_VENDOR=1a86\nID_VENDOR_ENC=1a86\nID_VENDOR_ID=1a86\nID_MODEL=USB_Single_Serial\nID_MODEL_ENC=USB\\x20Single\\x20Serial\nID_MODEL_ID=55d3\nID_REVISION=0445\nID_SERIAL=1a86_USB_Single_Serial_5A7C122340\nID_SERIAL_SHORT=5A7C122340\nID_TYPE=generic\nID_BUS=usb\nID_USB_INTERFACES=:020201:0a0000:\nID_USB_INTERFACE_NUM=00\nID_USB_DRIVER=cdc_acm\nID_USB_CLASS_FROM_DATABASE=Communications\nID_VENDOR_FROM_DATABASE=QinHeng Electronics\nID_PATH=platform-3610000.usb-usb-0:2.4.4:1.0\nID_PATH_TAG=platform-3610000_usb-usb-0_2_4_4_1_0\nID_MM_CANDIDATE=1\nDEVLINKS=/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0 /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00\nTAGS=:systemd:\nCURRENT_TAGS=:systemd:\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/var/lib/robot/xlerobot_left/rx_trust.lock"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/var/lib/robot/xlerobot_left/estop_latch.lock"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/var/lib/robot/xlerobot_right/rx_trust.lock"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sudo",
+        "-n",
+        "fuser",
+        "/var/lib/robot/xlerobot_right/estop_latch.lock"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "previous_terminal": "right-zero-stop-r1-hardware $110 %146 735094 1 1",
+  "previous_pane_removed": true,
+  "previous_stop_identity_pass": true,
+  "field_timestamp_not_renewed": true
+}
