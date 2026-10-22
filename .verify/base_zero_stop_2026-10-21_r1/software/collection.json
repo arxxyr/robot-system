@@ -1,0 +1,70 @@
+{
+  "at": "2026-10-22T04:57:15.788423+00:00",
+  "pane": "base-zero-stop-quality-r1 $109 %145 734447 1 0",
+  "owner_absent": true,
+  "direct_step_children_absent": true,
+  "direct_step_children": 12,
+  "go_and_hardware_dir_absent": true,
+  "downloaded": {
+    "software/result.json": {
+      "bytes": 8750,
+      "sha256": "67a18eb40e4b853129de3017d724e8a338b15173930eeb14c002e29af34dc07e"
+    },
+    "software/owner.exit": {
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "software/rustc-before.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    },
+    "software/native-tests.log": {
+      "bytes": 17605,
+      "sha256": "affa87b4103d584d5814b8b43bd6a65c9fa51070d5f5f0c579c65b8c31e23071"
+    },
+    "software/default-plan.log": {
+      "bytes": 330,
+      "sha256": "0f4a8c8f03e1881494f8804f08cc615c6a84815d58a1388121857daae400bbb8"
+    },
+    "software/missing-go.log": {
+      "bytes": 49,
+      "sha256": "7854b468e8471cf47bbba73556989e85c4d063c5db1edfb49cb4eb50bf7e00cb"
+    },
+    "software/zero-alone.log": {
+      "bytes": 75,
+      "sha256": "89322c650e469e28db0542199cdc0108e421489c09b1b65e1b2fae9b320c9514"
+    },
+    "software/zero-mixed-position.log": {
+      "bytes": 73,
+      "sha256": "b5831c7d8847060a90bcdeaa16d7b0f2382f86dbfa60c7cf9e1476981325edee"
+    },
+    "software/zero-with-readonly.log": {
+      "bytes": 75,
+      "sha256": "89322c650e469e28db0542199cdc0108e421489c09b1b65e1b2fae9b320c9514"
+    },
+    "software/zero-mixed-readonly.log": {
+      "bytes": 73,
+      "sha256": "b5831c7d8847060a90bcdeaa16d7b0f2382f86dbfa60c7cf9e1476981325edee"
+    },
+    "software/fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "software/clippy.log": {
+      "bytes": 70,
+      "sha256": "5e1ea006c109df38da1858faaad66ab1c08789e5468d812c7d97b58706c620be"
+    },
+    "software/rustc-after.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    },
+    "plan.json": {
+      "bytes": 60968,
+      "sha256": "b49f41bee89dcf2b5012a57ab8db847a768558b93e480576d1b6598599ba88da"
+    }
+  },
+  "local_597_and_python_match": true,
+  "sdk_complete_identity_matches_fresh_bindings": true,
+  "sdk_manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044",
+  "manifest_reference": ".verify/right_wheel_reference_2026-10-20_r2/quality/expected-source.json"
+}

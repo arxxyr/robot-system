@@ -1,0 +1,115 @@
+{
+  "schema": "BASE_ZERO_STOP_SOFTWARE_SUMMARY_V1",
+  "status": "SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "baseline_commit": "fc13f1c1f29284ce5d69a22d89c18cc8d6c4b257",
+  "scope": "仅现有pulse路径可选零速单独停止检查；保持TE1/GV0，固定三组50/250/450ms读TE/GV/PV，第三组PV严格0，然后仍finally零速及独立TE0/原停止门",
+  "source_inputs": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "local_tests": {
+    "methods": 108,
+    "passed": 107,
+    "skipped": 1,
+    "skip_reason": "本机未安装Orin同版SDK，原生黄金测试待核",
+    "log": "local-tests.log",
+    "sha256": "f368758e6e2f956e8b527972102f2de079e385cfdb04083d2f6ce847f8debae1"
+  },
+  "development_failures_preserved": [
+    {
+      "kind": "LOCAL_TEST_ASSERTION_PLACEMENT",
+      "source": "实现者原工具输出及交接消息",
+      "details": "早期新增7方法时1个测试失败：默认成功用例末尾断言被误置于日志失败用例；已恢复原断言，最终108批次单独统计"
+    },
+    {
+      "kind": "MEMORY_SAMPLING_COMPRESSION",
+      "source": "独审内存反例，非硬件",
+      "details": "首组TE增加385ms后原候选将三组PV集中在441/447/456ms并误PASS；已加下一槽截止及独立负控，最终独审待核"
+    },
+    {
+      "kind": "SSH_OBSERVATION_255",
+      "path": "software/observation-failures.json",
+      "same_handle_rechecked_no_restart": true
+    }
+  ],
+  "native_validation": {
+    "result": "PASS",
+    "methods": 108,
+    "skipped": 0,
+    "sdk_golden_method": 1,
+    "sdk_golden_cases": [
+      "right9/default",
+      "right9/zero",
+      "front8/default",
+      "front8/zero",
+      "left7/default",
+      "left7/zero"
+    ],
+    "result_path": "software/result.json",
+    "result_sha256": "67a18eb40e4b853129de3017d724e8a338b15173930eeb14c002e29af34dc07e",
+    "rustc": "1a2c4797e",
+    "actual_fmt_then_root_clippy": "PASS",
+    "source_count": 597,
+    "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "sdk_identity_digest": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044",
+    "input_identity_before_after_equal": true
+  },
+  "independent_review": {
+    "result": "PASS_SOFTWARE_ONLY",
+    "path": "review.json",
+    "sha256": "4f5c3d9348e2b399965dbe02edbf80f0b68512b6fef966dc7f81f6dc5106983b",
+    "methods": 9,
+    "subset_of": 108
+  },
+  "new_uart": 0,
+  "hardware_go_issued": false,
+  "hardware_zero_stop_result": "NOT_RUN",
+  "physical_power_or_floor_state": "UNKNOWN",
+  "production_velocity_wiring": "NOT_CHANGED",
+  "firmware_contract": "STILL_UNVERIFIED",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "plan": {
+    "path": "plan.json",
+    "sha256": "e4c2913b4f449167e41a509415e27e37c14ed93eac167eed90ccf824adbe7817",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "zero_stop_check": {
+      "budget_ns": 500000000,
+      "cleanup_reserve_ns": 100000000,
+      "sample_offsets_ns": [
+        50000000,
+        250000000,
+        450000000
+      ],
+      "offset_origin": "ZERO_SYNC_FINISHED",
+      "torque_enable": 1,
+      "goal_velocity": 0,
+      "final_present_velocity": 0
+    },
+    "hardware_argv": "launch-argv.json",
+    "approval_issued": false
+  },
+  "cleanup": {
+    "path": "software/cleanup.json",
+    "terminal": "base-zero-stop-quality-r1 $109 %145 734447 1 0",
+    "owner_absent": true,
+    "direct_children_reaped": 12,
+    "raw_files": 14,
+    "raw_bytes": 88499,
+    "all_sha256_equal": true,
+    "only_owned_pane_tmp_removed": true,
+    "existing_target_retained": true,
+    "local_owned_tmp_logs_removed_after_verified_copy": true
+  },
+  "next": "动作前先通知，仅在当次供电/三轮稳定架空/双臂支撑/持续观察及立即断电条件确认后，执行一次已准备right9试验"
+}

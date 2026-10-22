@@ -1,0 +1,13 @@
+[
+  {
+    "at": "2026-10-22T04:56:05.514331+00:00",
+    "session": "base-zero-stop-quality-r1",
+    "session_id": "$109",
+    "pane": "%145",
+    "pid": 734447,
+    "exit_code": 255,
+    "stderr": "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out\r\n",
+    "terminal_state": "UNKNOWN",
+    "restart_attempted": false
+  }
+]

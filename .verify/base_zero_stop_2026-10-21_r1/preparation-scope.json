@@ -1,0 +1,29 @@
+{
+  "schema": "BASE_ZERO_STOP_PREPARATION_V1",
+  "scope": "仅现有pulse路径可选零速单独停止检查；保持TE1/GV0，固定三组50/250/450ms读TE/GV/PV，第三组PV严格0，然后仍finally零速及独立TE0/原停止门",
+  "baseline_commit": "fc13f1c1f29284ce5d69a22d89c18cc8d6c4b257",
+  "baseline_proof": "../base_wheel_sdk_targets_2026-10-21_r1/summary.json",
+  "reference_stop": "/Users/loosqk/repo/robot/dimos/src/xlerobot_dimos/adapters/bus2_base.py write_stop：同连接SYNC0，不断扭",
+  "reason": "已有三轮停止为SYNC0紧接TE0，不能证明保持使能时零速单独停轮，不能直接放行Phase12或S0 VelocityZero",
+  "fixed_budget_ns": 500000000,
+  "cleanup_reserve_ns": 100000000,
+  "enabled_budget_ns_unchanged": 21000000000,
+  "new_hardware_go": false,
+  "new_uart": 0,
+  "physical_state": "此前已建议断两电源并放地；实际OFF/落地未确认，旧架空事实不复用",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "reference_stop_verified": {
+    "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/adapters/bus2_base.py",
+    "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435",
+    "origin": "本轮已从Orin实际项目复制并逐文件SHA校验",
+    "behavior": "write_stop 在原连接仅SYNC Goal_Velocity=0；断扭属于另一入口"
+  },
+  "software_only": true,
+  "deferred_production_gates": [
+    "Phase12 bit3静态拒绝未解除",
+    "物理速度单位/方向尚未完成合同",
+    "统一RPC/S1/S0 Velocity未装配"
+  ],
+  "sample_slot_deadline": "每组min(全阶段截止, 下一组目标时刻)，末组用全阶段截止；不压缩补采"
+}

@@ -1,0 +1,274 @@
+{
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "rustc-before",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-22T04:55:14.966592+00:00",
+      "pid": 734453,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:14.992562+00:00",
+      "reaped": true
+    },
+    {
+      "name": "native-tests",
+      "argv": [
+        "/home/loosqk/.local/bin/uv",
+        "run",
+        "--no-project",
+        "--offline",
+        "--no-python-downloads",
+        "--python",
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "python",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/tests/test_hardware_maintenance.py"
+      ],
+      "started_at": "2026-10-22T04:55:14.992730+00:00",
+      "pid": 734459,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:19.015892+00:00",
+      "reaped": true
+    },
+    {
+      "name": "default-plan",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py"
+      ],
+      "started_at": "2026-10-22T04:55:19.016523+00:00",
+      "pid": 734472,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:19.128414+00:00",
+      "reaped": true
+    },
+    {
+      "name": "right-zero-plan",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-hardware",
+        "--run-id",
+        "right-zero-stop-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1",
+        "--right-wheel-pulse",
+        "--zero-stop-check"
+      ],
+      "started_at": "2026-10-22T04:55:19.128789+00:00",
+      "pid": 734473,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:19.246537+00:00",
+      "reaped": true
+    },
+    {
+      "name": "missing-go",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--bindings",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/current-bindings.json",
+        "--output",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/right-hardware",
+        "--run-id",
+        "right-zero-stop-r1",
+        "--artifact-root",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1",
+        "--right-wheel-pulse",
+        "--zero-stop-check",
+        "--execute"
+      ],
+      "started_at": "2026-10-22T04:55:19.247743+00:00",
+      "pid": 734474,
+      "exit_code": 2,
+      "finished_at": "2026-10-22T04:55:19.362380+00:00",
+      "reaped": true
+    },
+    {
+      "name": "zero-alone",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--zero-stop-check"
+      ],
+      "started_at": "2026-10-22T04:55:19.362745+00:00",
+      "pid": 734475,
+      "exit_code": 2,
+      "finished_at": "2026-10-22T04:55:19.473776+00:00",
+      "reaped": true
+    },
+    {
+      "name": "zero-mixed-position",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--right-wheel-pulse",
+        "--zero-stop-check",
+        "--position-target",
+        "head-1"
+      ],
+      "started_at": "2026-10-22T04:55:19.473839+00:00",
+      "pid": 734476,
+      "exit_code": 2,
+      "finished_at": "2026-10-22T04:55:19.585105+00:00",
+      "reaped": true
+    },
+    {
+      "name": "zero-with-readonly",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--left-wheel-feedback-only",
+        "--zero-stop-check"
+      ],
+      "started_at": "2026-10-22T04:55:19.585170+00:00",
+      "pid": 734477,
+      "exit_code": 2,
+      "finished_at": "2026-10-22T04:55:19.695669+00:00",
+      "reaped": true
+    },
+    {
+      "name": "zero-mixed-readonly",
+      "argv": [
+        "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+        "-B",
+        "-I",
+        "-S",
+        "/home/loosqk/robot-checks/base-zero-stop-20261021-r1/software/scripts/run_hardware_maintenance.py",
+        "--right-wheel-pulse",
+        "--zero-stop-check",
+        "--left-wheel-feedback-only"
+      ],
+      "started_at": "2026-10-22T04:55:19.695735+00:00",
+      "pid": 734478,
+      "exit_code": 2,
+      "finished_at": "2026-10-22T04:55:19.806731+00:00",
+      "reaped": true
+    },
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all"
+      ],
+      "started_at": "2026-10-22T04:55:19.806794+00:00",
+      "pid": 734479,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:23.203277+00:00",
+      "reaped": true
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at": "2026-10-22T04:55:23.276352+00:00",
+      "pid": 734490,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:24.031307+00:00",
+      "reaped": true
+    },
+    {
+      "name": "rustc-after",
+      "argv": [
+        "rustc",
+        "-vV"
+      ],
+      "started_at": "2026-10-22T04:55:24.031377+00:00",
+      "pid": 734506,
+      "exit_code": 0,
+      "finished_at": "2026-10-22T04:55:24.054785+00:00",
+      "reaped": true
+    }
+  ],
+  "uart": 0,
+  "go": 0,
+  "services": 0,
+  "release_builds": 0,
+  "tests": 108,
+  "local_head": "fc13f1c1f29284ce5d69a22d89c18cc8d6c4b257",
+  "manifest_reference": "/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/expected-source.json",
+  "source_count": 597,
+  "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "sdk_reference": "/home/loosqk/robot-checks/right-wheel-20s-20261021-r1/sdk-bindings.json",
+  "started_at": "2026-10-22T04:55:14.869960+00:00",
+  "existing_compilers": [],
+  "source_before": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "python_inputs_before": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "sdk_inputs_before": {
+    "count": 12,
+    "manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044"
+  },
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "skipped": 0,
+  "sdk_golden_test_executed": true,
+  "sdk_golden_cases": [
+    "right9/default",
+    "right9/zero",
+    "front8/default",
+    "front8/zero",
+    "left7/default",
+    "left7/zero"
+  ],
+  "plan_sha256": "e4c2913b4f449167e41a509415e27e37c14ed93eac167eed90ccf824adbe7817",
+  "source_after_fmt": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "source_after": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+  "python_inputs_after": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "sdk_inputs_after": {
+    "count": 12,
+    "manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044"
+  },
+  "bindings_sha256": "0c1b9d24afeac8a8ad4371f4ca11ed38f1f76f2f84bc05a01e1e3b5a4b9bf8ec",
+  "finished_at": "2026-10-22T04:55:24.128493+00:00"
+}

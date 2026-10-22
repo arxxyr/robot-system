@@ -145,12 +145,14 @@ def validate_left_feedback_plan(plan):
             '左轮只读不得解除三轮合同DEFERRED')
 
 
-def pulse_scope(wheel):
+def pulse_scope(wheel,*,zero_stop_check=False):
     require(wheel in WHEEL_PULSE_TARGETS,'仅接受固定的前轮、左轮或右轮')
-    if wheel=='right':
-        return RIGHT_PULSE_SCOPE
-    scope=RIGHT_PULSE_SCOPE.replace('仅右9','仅前8' if wheel=='front' else '仅左7',1)
-    return scope+('；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门' if wheel=='left' else '')
+    scope=RIGHT_PULSE_SCOPE if wheel=='right' else RIGHT_PULSE_SCOPE.replace(
+        '仅右9','仅前8' if wheel=='front' else '仅左7',1)
+    scope+=('；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门' if wheel=='left' else '')
+    if zero_stop_check:
+        scope+='；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，末组PV严格0，再按原路径断扭'
+    return scope
 
 
 def pulse_wheel(plan):
@@ -160,8 +162,9 @@ def pulse_wheel(plan):
     return choices[0]
 
 
-def right_pulse_contract(wheel='right'):
-    return {'scope':pulse_scope(wheel),'target':list(WHEEL_PULSE_TARGETS[wheel]),'raw_velocity':500,
+def right_pulse_contract(wheel='right',*,zero_stop_check=False):
+    contract={'scope':pulse_scope(wheel,zero_stop_check=zero_stop_check),
+            'target':list(WHEEL_PULSE_TARGETS[wheel]),'raw_velocity':500,
             'observation_ns':20_000_000_000,'write_period_ns':50_000_000,'sample_period_ns':250_000_000,
             'enable_budget_ns':500_000_000,'sample_budget_ns':250_000_000,
             'nonzero_window_fail_ns':21_000_000_000,'velocity_raw_max':1000,'position_step_raw_max':512,
@@ -177,6 +180,12 @@ def right_pulse_contract(wheel='right'):
                            '50ms为名义发送间隔，读数耗时可造成跳槽；绝对截止不续期，不补发过期槽',
                            '仅相邻模4096位置差值及累计诊断，不提供物理里程计',
                            '只诊断一次正向动作，不改变Phase/模式/保护、三轮合同或生产Velocity链']}
+    if zero_stop_check:
+        contract['zero_stop_check']={'budget_ns':500_000_000,'cleanup_reserve_ns':100_000_000,
+            'sample_offsets_ns':[50_000_000,250_000_000,450_000_000],
+            'offset_origin':'ZERO_SYNC_FINISHED','torque_enable':1,'goal_velocity':0,
+            'final_present_velocity':0}
+    return contract
 
 
 def validate_right_pulse_plan(plan):
@@ -187,8 +196,9 @@ def validate_right_pulse_plan(plan):
             and type(RIGHT_PULSE_SYNC['bytes']) is int and RIGHT_PULSE_SYNC['bytes']>0,
             '右轮SYNC工具尚未完整冻结绑定')
     wheel=pulse_wheel(plan)
-    require(plan.get('position_targets') == [] and plan.get('right_wheel_pulse') == right_pulse_contract(wheel)
-            and plan.get('scope')==pulse_scope(wheel),
+    expected=right_pulse_contract(wheel,zero_stop_check='zero_stop_check' in plan['right_wheel_pulse'])
+    require(plan.get('position_targets') == [] and plan.get('right_wheel_pulse') == expected
+            and plan.get('scope')==expected['scope'],
             '右轮诊断必须空位置目标及完整固定合同')
     bindings=plan['bindings']
     matches=lambda actual,expected: isinstance(actual,dict) and all(actual.get(key)==value for key,value in expected.items())
@@ -305,11 +315,13 @@ def position_targets_from_plan(plan):
 
 
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
-              left_wheel_feedback_only=False,wheel_pulse_target=None):
+              left_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False):
     require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
             '新单轮选择仅接受front或left')
     require(not (right_wheel_pulse and wheel_pulse_target is not None),'旧右轮入口与具名轮选择不能混用')
     pulse_requested=right_wheel_pulse or wheel_pulse_target is not None
+    require(type(zero_stop_check) is bool and (not zero_stop_check or pulse_requested),
+            '零速保持使能检查只能附加到单轮pulse')
     require(type(right_wheel_pulse) is bool and type(left_wheel_feedback_only) is bool
             and not (pulse_requested and left_wheel_feedback_only)
             and not ((pulse_requested or left_wheel_feedback_only) and position_target_names is not None),
@@ -341,7 +353,7 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             "scope": "单电机独立维护动作/停止验证；非整车运动学、S0/S1接入、H2/D15或生产验收"}
     plan['left7_stop_contract']=left_stop_contract()
     if pulse_requested:
-        plan['right_wheel_pulse']=right_pulse_contract(wheel_pulse_target or 'right')
+        plan['right_wheel_pulse']=right_pulse_contract(wheel_pulse_target or 'right',zero_stop_check=zero_stop_check)
         plan['scope']=plan['right_wheel_pulse']['scope']
         validate_right_pulse_plan(plan)
     if left_wheel_feedback_only:
@@ -1038,7 +1050,8 @@ def run_right_wheel_pulse(engine):
     wheel=pulse_wheel(engine.plan)
     side,motor,name=WHEEL_PULSE_TARGETS[wheel]
     require((row['side'],row['motor'],row['name'])==(side,motor,name),'SDK实际目标与计划不符')
-    contract=right_pulse_contract(wheel)
+    validate_right_pulse_plan(engine.plan)
+    contract=engine.plan['right_wheel_pulse']
     port=None
     wire=None
     active=None
@@ -1252,6 +1265,34 @@ def run_right_wheel_pulse(engine):
         ready()
         require(any(sample['velocity_raw']>0 for sample in row['samples'])
                 and cumulative>0,'SDK未观察到正向速度及位置变化')
+        if 'zero_stop_check' in contract:
+            check=contract['zero_stop_check']
+            zero={'status':'FAIL','started_ns':io.now(),'samples':[]}
+            row['zero_stop_check']=zero
+            zero['deadline_ns']=min(zero['started_ns']+check['budget_ns'],
+                row['enable_attempt_started_ns']+contract['nonzero_window_fail_ns']-check['cleanup_reserve_ns'])
+            operation('sync','Goal_Velocity',0,deadline=zero['deadline_ns'])
+            zero['sync_finished_ns']=io.now()
+            for index,offset in enumerate(check['sample_offsets_ns']):
+                sample_deadline=zero['deadline_ns']
+                if index+1<len(check['sample_offsets_ns']):
+                    sample_deadline=min(sample_deadline,zero['sync_finished_ns']+check['sample_offsets_ns'][index+1])
+                ready(sample_deadline)
+                io.sleep(max(0,zero['sync_finished_ns']+offset-io.now())/1_000_000_000)
+                ready(sample_deadline)
+                sample={'offset_ns':offset,'deadline_ns':sample_deadline,'raw':[]}
+                zero['samples'].append(sample)
+                for register in ('Torque_Enable','Goal_Velocity','Present_Velocity'):
+                    word=read(register,sample['raw'],deadline=sample_deadline)
+                    if register=='Present_Velocity':
+                        require(0<=word<=contract['velocity_raw_max'],'SDK保持使能零速检查的速度越界')
+                    else:
+                        expected=check['torque_enable' if register=='Torque_Enable' else 'goal_velocity']
+                        require(word==expected,'SDK保持使能零速检查的使能/目标不符:'+register)
+                sample['velocity_raw']=word
+            require(zero['samples'][-1]['velocity_raw']==check['final_present_velocity'],
+                    'SDK保持使能零速检查末组速度未严格归零')
+            zero.update(status='PASS',finished_ns=io.now())
     except BaseException as error:
         row['normal_failed']=True
         row['errors'].append(repr(error))
@@ -1823,10 +1864,13 @@ def main(argv=None):
                         help='一次仅选前8或左7，固定+500持续20秒；禁止混用位置选择')
     parser.add_argument('--left-wheel-feedback-only',action='store_true',
                         help='仅左轮right7固定14次只读候选判定；不写电机、不判整机停止')
+    parser.add_argument('--zero-stop-check',action='store_true',
+                        help='仅附加单轮pulse：零速后保持使能，500毫秒内三组检查且末组PV严格0')
     options=parser.parse_args(argv)
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
     wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None
     pulse_requested=options.right_wheel_pulse or wheel_target is not None
+    require(not options.zero_stop_check or pulse_requested,'零速保持使能检查只能附加到单轮pulse')
     require(not (pulse_requested and options.left_wheel_feedback_only)
             and not ((pulse_requested or options.left_wheel_feedback_only)
                      and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
@@ -1839,7 +1883,8 @@ def main(argv=None):
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
                    options.position_target,right_wheel_pulse=options.right_wheel_pulse,
-                   left_wheel_feedback_only=options.left_wheel_feedback_only,wheel_pulse_target=wheel_target)
+                   left_wheel_feedback_only=options.left_wheel_feedback_only,wheel_pulse_target=wheel_target,
+                   zero_stop_check=options.zero_stop_check)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

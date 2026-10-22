@@ -1,0 +1,82 @@
+{
+  "review_status": "PASS_SOFTWARE_ONLY",
+  "reviewed_sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "55b0689892c108f698e748b4d6dcd290c4b1ef23e210e5d3afdd6b7b394d56c1",
+      "bytes": 109681
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "58e9e0d784e39d6e2ec8a28cbddfb44951121aba9385ea400ae6c4d808c2952b",
+      "bytes": 138877
+    }
+  },
+  "baseline_commit": "fc13f1c1f29284ce5d69a22d89c18cc8d6c4b257",
+  "default_contract_scope_equal_targets": [
+    "right",
+    "front",
+    "left"
+  ],
+  "targeted_test_methods": [
+    "test_zero_stop_absolute_deadlines_cover_flush_return_and_remaining_enable_budget",
+    "test_zero_stop_first_group_cannot_cross_next_slot_and_compress_later_groups",
+    "test_zero_stop_go_expiry_signal_and_bad_read_never_continue_normal_uart",
+    "test_zero_stop_keeps_enable_for_all_three_fixed_samples_before_final_disable",
+    "test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7",
+    "test_zero_stop_option_is_pulse_only_and_binds_target_scope_plan_and_go",
+    "test_zero_stop_rejects_wrong_enable_or_goal_in_each_group",
+    "test_zero_stop_wire_log_failure_still_independently_clears_goal_and_disables",
+    "test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal"
+  ],
+  "methods_run": 9,
+  "passed": 9,
+  "failed": 0,
+  "skipped": 0,
+  "test_output": "test_zero_stop_absolute_deadlines_cover_flush_return_and_remaining_enable_budget (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_absolute_deadlines_cover_flush_return_and_remaining_enable_budget) ... ok\ntest_zero_stop_first_group_cannot_cross_next_slot_and_compress_later_groups (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_first_group_cannot_cross_next_slot_and_compress_later_groups) ... ok\ntest_zero_stop_go_expiry_signal_and_bad_read_never_continue_normal_uart (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_go_expiry_signal_and_bad_read_never_continue_normal_uart) ... ok\ntest_zero_stop_keeps_enable_for_all_three_fixed_samples_before_final_disable (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_keeps_enable_for_all_three_fixed_samples_before_final_disable) ... ok\ntest_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7 (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7) ... ok\ntest_zero_stop_option_is_pulse_only_and_binds_target_scope_plan_and_go (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_option_is_pulse_only_and_binds_target_scope_plan_and_go) ... ok\ntest_zero_stop_rejects_wrong_enable_or_goal_in_each_group (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_rejects_wrong_enable_or_goal_in_each_group) ... ok\ntest_zero_stop_wire_log_failure_still_independently_clears_goal_and_disables (zero_stop_independent_review_tests.RightPulseTests.test_zero_stop_wire_log_failure_still_independently_clears_goal_and_disables) ... ok\ntest_same_connection_twenty_seconds_repeats_only_right9_fixed_goal (zero_stop_independent_review_tests.RightPulseTests.test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal) ... ok\n\n----------------------------------------------------------------------\nRan 9 tests in 0.267s\n\nOK\n",
+  "pre_fix_counterexample": {
+    "environment": "pure_memory_no_hardware",
+    "injected_first_group_TE_read_extra_ns": 385000000,
+    "scheduled_offsets_ms": [
+      50,
+      250,
+      450
+    ],
+    "observed_PV_completed_offsets_ms": [
+      441,
+      447,
+      456
+    ],
+    "phase_ms": 457,
+    "incorrect_status_before_fix": "PASS"
+  },
+  "post_fix_same_385ms_counterexample": {
+    "status": "FAIL",
+    "sample_groups": 1,
+    "normal_reads_after_late_TE": 0,
+    "late_TE_finished_offset_ms": 437.0,
+    "late_TE_deadline_offset_ms": 250.0,
+    "last_actual_tx_instructions": [
+      2,
+      131,
+      3
+    ],
+    "independent_torque_off_attempts": 1,
+    "sdk_closed": true,
+    "uart_blocked": true,
+    "enabled_attempt_window_ns": 20445000000
+  },
+  "findings": [],
+  "verified_constraints": [
+    "PLAN and GO fully bind optional zero phase and fixed wheel target",
+    "default contract and scope unchanged for all three wheel targets",
+    "500ms phase budget from zero SYNC start and fixed 100ms cleanup reserve",
+    "per-group next-slot deadlines checked at operation start actual TX and return",
+    "TE strictly1 GV strictly0 every sample final PV strictly0 including left7",
+    "GO expiry signal frame communication log failures remain sticky",
+    "original finally SYNC0 then independent TE0 remains last write;21s unchanged"
+  ],
+  "limitations": [
+    "Only code review and deterministic memory tests in this review; no SSH UART hardware GO or actual installed SDK import",
+    "Native SDK golden and required Cargo quality are owned by root native validation",
+    "Phase firmware units chassis combination production Velocity D15 and deployable=false unchanged"
+  ]
+}

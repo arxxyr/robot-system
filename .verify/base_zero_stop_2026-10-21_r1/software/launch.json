@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-zero-stop-quality-r1 $109 %145 734447 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-zero-stop-quality-r1.py\", \"temporary_runner_sha256\": \"e17a4f1ea9624b3dd7fccc9ee0ee0b2048fb31d21b019a28178814c22177d105\"}\n",
+  "stderr": ""
+}

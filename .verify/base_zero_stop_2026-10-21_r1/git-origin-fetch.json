@@ -1,0 +1,12 @@
+{
+  "remote": "origin",
+  "command": [
+    "git",
+    "fetch",
+    "--prune",
+    "origin"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": ""
+}
