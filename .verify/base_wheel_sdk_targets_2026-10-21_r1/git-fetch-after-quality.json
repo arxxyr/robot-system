@@ -1,0 +1,19 @@
+{
+  "at_ns": 1792642099863498000,
+  "phase": "after native compiler cleanup",
+  "read_only": true,
+  "results": [
+    {
+      "remote": "origin",
+      "exit_code": 128,
+      "stdout": "",
+      "stderr": "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out\r\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
+    },
+    {
+      "remote": "github",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

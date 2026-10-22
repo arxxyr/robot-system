@@ -1,0 +1,8 @@
+usage: run_hardware_maintenance.py [-h] [--bindings BINDINGS]
+                                   [--output OUTPUT] [--run-id RUN_ID]
+                                   [--artifact-root ARTIFACT_ROOT] [--execute]
+                                   [--approval APPROVAL]
+                                   [--position-target {left-wrist,right-wrist,head-1,head-2}]
+                                   [--right-wheel-pulse | --wheel-pulse {front,left}]
+                                   [--left-wheel-feedback-only]
+run_hardware_maintenance.py: error: argument --right-wheel-pulse: not allowed with argument --wheel-pulse

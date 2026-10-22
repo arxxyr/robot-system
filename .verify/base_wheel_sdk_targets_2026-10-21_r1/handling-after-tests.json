@@ -1,0 +1,7 @@
+{
+  "user_question": "我可以把机器人放地上了吗",
+  "response": "先关闭两个电机电源、保持双臂有支撑，再平稳放地，USB不用拔；本轮动作结束，无后续电机操作",
+  "actual_power_cut_confirmed": false,
+  "actual_floor_placement_confirmed": false,
+  "previous_setup_not_reusable_for_new_motion": true
+}

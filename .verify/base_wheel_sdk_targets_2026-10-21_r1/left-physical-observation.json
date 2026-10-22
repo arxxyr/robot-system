@@ -1,0 +1,7 @@
+{
+  "source": "request_user_input_async call_b33f92a4354947029804f32343b9d53f 当前直接用户答复",
+  "answer": "左轮明显持续转动，结束后完全停止",
+  "motion": "CONTINUOUS_ROTATION_USER_REPORTED",
+  "stop": "COMPLETELY_STOPPED_USER_REPORTED",
+  "no_further_motion": true
+}

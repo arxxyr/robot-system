@@ -1,0 +1,44 @@
+{
+  "schema": "BASE_WHEEL_TARGETS_PREPARATION_V1",
+  "instruction": "继续按同一路径验证前轮和左轮，动作前先通知我，不要扩大设计，测完清理资源并同步两个远程。",
+  "baseline_commit": "dd9cb5cda40848b3bd038a0badc8853cf9cf83ea",
+  "known_working_trial": "../right_wheel_20s_2026-10-21_r1/summary.json",
+  "reference_original": "../right_wheel_20s_2026-10-21_r1/reference-comparison.json",
+  "scope": {
+    "front": [
+      "right",
+      8,
+      "base_front_wheel"
+    ],
+    "left": [
+      "right",
+      7,
+      "base_left_wheel"
+    ],
+    "raw_velocity": 500,
+    "duration_seconds": 20,
+    "same_connection": true,
+    "one_wheel_per_trial": true,
+    "stop_criteria_unchanged": true
+  },
+  "sdk_inputs_reference": "../right_wheel_20s_2026-10-21_r1/sdk-bindings.json",
+  "hardware_go_created": false,
+  "current_field_state": "NOT_YET_REQUESTED_WAITING_FOR_SOFTWARE_PREPARATION",
+  "notice_required_before_each_motion": true,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "metadata_reference": {
+    "known_values": {
+      "Model_Number": 777,
+      "Firmware_Major_Version": 3,
+      "Firmware_Minor_Version": 10,
+      "Operating_Mode": 1,
+      "Phase": 12
+    },
+    "model_originals": "../base_feedback_diagnostic_2026-10-13_r2_hardware/originals/right7-normal-read-command_0130.strace and right8-normal-read-command_0136.strace",
+    "firmware_phase": "../base_firmware_read_2026-10-11_r15/summary.json",
+    "recent_mode": "../right_wheel_20s_2026-10-21_r1/hardware/run.json",
+    "Lock": "历史原件未确认；本轮SDK初始化照原路径严格读取1，不能借right9旧读数充当7/8事实",
+    "requires_current_trial_readback": true
+  }
+}

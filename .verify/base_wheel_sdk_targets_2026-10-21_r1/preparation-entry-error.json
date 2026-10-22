@@ -1,0 +1,6 @@
+{
+  "failure": "root只读准备误把PLAN_ONLY外层回执当成内层plan，目标验证拒绝",
+  "correction": "使用原件wrapper.plan并核对wrapper.plan_sha256；不重写原PLAN",
+  "uart": 0,
+  "go_created": false
+}

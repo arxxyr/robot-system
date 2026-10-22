@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-wheel-sdk-quality-r1 $106 %142 727498 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-wheel-sdk-quality-r1.py\", \"temporary_runner_sha256\": \"c31ecc00bdb0ea21b15d0f10c2ffab98d4adf89b8a6f1cb54faa90e1efaa3d88\", \"python_uploaded\": {\"software/scripts/run_hardware_maintenance.py\": \"e4c538ab61509d98ddb7492ed51b5208cf575959db6e4c4f83087b0aa7b1adb9\", \"software/scripts/tests/test_hardware_maintenance.py\": \"bcd6a7c5912cf4f3a49eb5740dc539cd2545b2cc0d53b4fa8b5d61e59afaa986\"}}\n",
+  "stderr": ""
+}

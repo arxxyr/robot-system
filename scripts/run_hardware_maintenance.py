@@ -41,6 +41,7 @@ TARGETS = [("left", 5, "left_arm_wrist_roll"), ("right", 5, "right_arm_wrist_rol
            ("left", 7, "head_motor_1"), ("left", 8, "head_motor_2")]
 POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), TARGETS))
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
+WHEEL_PULSE_TARGETS = {'right':BASE_TARGETS[2],'front':BASE_TARGETS[0],'left':BASE_TARGETS[1]}
 RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（仅左7按获准稳定性判据）；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
@@ -144,8 +145,23 @@ def validate_left_feedback_plan(plan):
             '左轮只读不得解除三轮合同DEFERRED')
 
 
-def right_pulse_contract():
-    return {'scope':RIGHT_PULSE_SCOPE,'target':['right',9,'base_right_wheel'],'raw_velocity':500,
+def pulse_scope(wheel):
+    require(wheel in WHEEL_PULSE_TARGETS,'仅接受固定的前轮、左轮或右轮')
+    if wheel=='right':
+        return RIGHT_PULSE_SCOPE
+    scope=RIGHT_PULSE_SCOPE.replace('仅右9','仅前8' if wheel=='front' else '仅左7',1)
+    return scope+('；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门' if wheel=='left' else '')
+
+
+def pulse_wheel(plan):
+    target=plan.get('right_wheel_pulse',{}).get('target')
+    choices=[name for name,value in WHEEL_PULSE_TARGETS.items() if target==list(value)]
+    require(len(choices)==1,'动作目标必须是右总线具名的7、8或9，禁止任意ID/名称组合')
+    return choices[0]
+
+
+def right_pulse_contract(wheel='right'):
+    return {'scope':pulse_scope(wheel),'target':list(WHEEL_PULSE_TARGETS[wheel]),'raw_velocity':500,
             'observation_ns':20_000_000_000,'write_period_ns':50_000_000,'sample_period_ns':250_000_000,
             'enable_budget_ns':500_000_000,'sample_budget_ns':250_000_000,
             'nonzero_window_fail_ns':21_000_000_000,'velocity_raw_max':1000,'position_step_raw_max':512,
@@ -170,7 +186,9 @@ def validate_right_pulse_plan(plan):
             and re.fullmatch(r'[0-9a-f]{64}',RIGHT_PULSE_SYNC['sha256']) is not None
             and type(RIGHT_PULSE_SYNC['bytes']) is int and RIGHT_PULSE_SYNC['bytes']>0,
             '右轮SYNC工具尚未完整冻结绑定')
-    require(plan.get('position_targets') == [] and plan.get('right_wheel_pulse') == right_pulse_contract(),
+    wheel=pulse_wheel(plan)
+    require(plan.get('position_targets') == [] and plan.get('right_wheel_pulse') == right_pulse_contract(wheel)
+            and plan.get('scope')==pulse_scope(wheel),
             '右轮诊断必须空位置目标及完整固定合同')
     bindings=plan['bindings']
     matches=lambda actual,expected: isinstance(actual,dict) and all(actual.get(key)==value for key,value in expected.items())
@@ -287,12 +305,16 @@ def position_targets_from_plan(plan):
 
 
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
-              left_wheel_feedback_only=False):
+              left_wheel_feedback_only=False,wheel_pulse_target=None):
+    require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
+            '新单轮选择仅接受front或left')
+    require(not (right_wheel_pulse and wheel_pulse_target is not None),'旧右轮入口与具名轮选择不能混用')
+    pulse_requested=right_wheel_pulse or wheel_pulse_target is not None
     require(type(right_wheel_pulse) is bool and type(left_wheel_feedback_only) is bool
-            and not (right_wheel_pulse and left_wheel_feedback_only)
-            and not ((right_wheel_pulse or left_wheel_feedback_only) and position_target_names is not None),
+            and not (pulse_requested and left_wheel_feedback_only)
+            and not ((pulse_requested or left_wheel_feedback_only) and position_target_names is not None),
             '轮诊断禁止互相混用或混用位置选择')
-    position_targets = [] if right_wheel_pulse or left_wheel_feedback_only else select_position_targets(position_target_names)
+    position_targets = [] if pulse_requested or left_wheel_feedback_only else select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -318,9 +340,9 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
                             "base仅mode1/Goal0合同；Model/Phase解释门未闭合，本软件结果不授权新base动作"],
             "scope": "单电机独立维护动作/停止验证；非整车运动学、S0/S1接入、H2/D15或生产验收"}
     plan['left7_stop_contract']=left_stop_contract()
-    if right_wheel_pulse:
-        plan['right_wheel_pulse']=right_pulse_contract()
-        plan['scope']=RIGHT_PULSE_SCOPE
+    if pulse_requested:
+        plan['right_wheel_pulse']=right_pulse_contract(wheel_pulse_target or 'right')
+        plan['scope']=plan['right_wheel_pulse']['scope']
         validate_right_pulse_plan(plan)
     if left_wheel_feedback_only:
         plan['left_wheel_feedback_only']=left_feedback_contract()
@@ -355,7 +377,7 @@ def validate_go(go, plan, now_ns):
                     'continuous_wheel_observation'))
                 and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
                 and facts.get('base_confirmation_scope')==(
-                    LEFT_FEEDBACK_SCOPE if 'left_wheel_feedback_only' in plan else RIGHT_PULSE_SCOPE)
+                    LEFT_FEEDBACK_SCOPE if 'left_wheel_feedback_only' in plan else plan['right_wheel_pulse']['scope'])
                 and isinstance(facts.get('base_confirmation_answer'),str) and facts['base_confirmation_answer'].strip(),
                 '缺本轮架空支撑/持续观察及具体动作现场确认')
 
@@ -855,7 +877,10 @@ def run_left_wheel_feedback(engine, check_go):
 
 
 def capture_right_pulse_wire(io,argv,original,attempt,**kwargs):
-    """保留同次动作和右9普通TE原帧；抓帧故障不阻止独立TE0，绝不重发。"""
+    """保留固定底盘目标的同次普通TE原帧，禁止错标电机ID。"""
+    motor=next((value[1] for value in WHEEL_PULSE_TARGETS.values()
+                if argv[1:3]==[DEVICES['right'],str(value[1])]),None)
+    require(motor is not None,'TE抓帧仅接受固定底盘电机')
     reading=argv[3]=='read'
     label='read' if reading else 'write'
     def trace_error(error):
@@ -864,7 +889,7 @@ def capture_right_pulse_wire(io,argv,original,attempt,**kwargs):
 
     try:
         verify_ref(RIGHT_PULSE_TRACE,executable=True)
-        trace=io.output/f'right9-pulse-{label}-command_{io.sequence+1:04d}.strace'
+        trace=io.output/f'right{motor}-pulse-{label}-command_{io.sequence+1:04d}.strace'
         with trace.open('xb'):
             pass
     except BaseException as error:
@@ -893,7 +918,7 @@ def capture_right_pulse_wire(io,argv,original,attempt,**kwargs):
             evidence={'path':str(trace),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
                       'original_argv':list(argv),'requested_register_address':46 if velocity else 40,
                       'width':2 if velocity else 1,'instruction':0x83 if sync else (0x02 if reading else 0x03),
-                      'motor_ids':[9],
+                      'motor_ids':[motor],
                       'ack':'NONE_SYNC_WRITE' if sync else ('READ_STATUS_REQUIRED' if reading else 'ORDINARY_WRITE_ACK_REQUIRED'),
                       'capture_status':'NATURAL_SUCCESS_TERMINAL' if succeeded else 'ORIGINAL_COMMAND_FAILED',
                       'wire_frame_review':'PENDING_ROOT_REVIEW_OF_ACTUAL_WIRE_STRACE'}
@@ -937,7 +962,9 @@ def install_right_pulse_guard(engine,helper):
     holder=SimpleNamespace(command=lambda _io,argv,**kwargs:original(argv,**kwargs))
     helper.install_stop_wire_capture(SimpleNamespace(RealExecutor=holder,verify_ref=verify_ref))
     traced=lambda argv,**kwargs:holder.command(io,argv,**kwargs)
-    row={'side':'right','motor':9,'name':'base_right_wheel','kind':'raw_velocity_diagnostic',
+    wheel=pulse_wheel(engine.plan) if 'right_wheel_pulse' in engine.plan else 'right'
+    side,motor,name=WHEEL_PULSE_TARGETS[wheel]
+    row={'side':side,'motor':motor,'name':name,'kind':'raw_velocity_diagnostic',
          'status':'NOT_RUN','before_raw':[],'samples':[],'cleanup_raw':[],'writes':[],
          'sdk_operations':[],'errors':[],'cleanup_errors':[],'uart_blocked':False,'normal_failed':False,
          'metadata_verified':False,'goal_verified':False,'stopped_confirmed':False,
@@ -952,7 +979,7 @@ def install_right_pulse_guard(engine,helper):
         row['uart_blocked']=True
         engine.manual_cut=True
         row['cleanup_errors'].append(repr(error))
-        print('爸爸，右轮诊断停止/身份未知，请立即人工断电；禁止后续UART。',flush=True)
+        print('爸爸，单轮诊断停止/身份未知，请立即人工断电；禁止后续UART。',flush=True)
     engine.right_pulse_block=block
     tool_paths=(RIGHT_PULSE_WRITE['path'],RIGHT_PULSE_RAW['path'],RIGHT_PULSE_SYNC['path'],RIGHT_PULSE_TRACE['path'])
 
@@ -981,7 +1008,7 @@ def install_right_pulse_guard(engine,helper):
                     and argv[4] in REGS and any(argv[1:3]==[DEVICES[side],str(motor)]
                     for side in SERIALS for motor in range(1,9 if side=='left' else 10)),
                     'SDK候选禁止CLI动作及其他原帧读取')
-            if argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','read','Torque_Enable']:
+            if argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],str(motor),'read','Torque_Enable']:
                 text=capture_right_pulse_wire(io,argv,original,{},**kwargs)
             else:
                 text=traced(argv,**kwargs)
@@ -1003,12 +1030,15 @@ def install_right_pulse_guard(engine,helper):
 
 
 def run_right_wheel_pulse(engine):
-    """仅右9、同一SDK连接持续发送；不创建child或更改既有子进程预算。"""
+    """一次仅选一个固定轮，同一SDK连接持续发送；不创建child或更改子进程预算。"""
     row=engine.right_pulse
     io=engine.io
     engine.rows.append(row)
     row['status']='FAIL'
-    contract=right_pulse_contract()
+    wheel=pulse_wheel(engine.plan)
+    side,motor,name=WHEEL_PULSE_TARGETS[wheel]
+    require((row['side'],row['motor'],row['name'])==(side,motor,name),'SDK实际目标与计划不符')
+    contract=right_pulse_contract(wheel)
     port=None
     wire=None
     active=None
@@ -1051,9 +1081,9 @@ def run_right_wheel_pulse(engine):
                 or (register=='Goal_Velocity' and kind=='sync' and value in (0,500)),
                 'SDK写入不在固定右9名单')
         parameters=([address,width] if kind=='read' else [address,value] if kind=='write'
-                    else [address,width,9,value&255,value>>8])
-        expected=frame(254 if kind=='sync' else 9,0x83 if kind=='sync' else 2 if kind=='read' else 3,parameters)
-        entry={'sequence':len(row['sdk_operations'])+1,'kind':kind,'motor':9,'register':register,
+                    else [address,width,motor,value&255,value>>8])
+        expected=frame(254 if kind=='sync' else motor,0x83 if kind=='sync' else 2 if kind=='read' else 3,parameters)
+        entry={'sequence':len(row['sdk_operations'])+1,'kind':kind,'motor':motor,'register':register,
                'address':address,'width':width,'value':value,'started_ns':io.now(),
                'cleanup':cleanup,'status':'UNKNOWN','expected_tx':expected,'tx_attempts':0,
                'deadline_ns':deadline,'rx_bytes':[],'wire_first_sequence':wire_count+1}
@@ -1063,20 +1093,20 @@ def run_right_wheel_pulse(engine):
         active=entry
         try:
             if kind=='read':
-                data,comm,error=packet.readTxRx(port,9,address,width)
+                data,comm,error=packet.readTxRx(port,motor,address,width)
                 entry.update(data=list(data),comm=comm,error_code=error)
                 require(comm==sdk.COMM_SUCCESS and error==0 and len(data)==width
                         and all(type(v) is int and 0<=v<=255 for v in data),'SDK读取通信/状态/长度未知:'+register)
                 result=int.from_bytes(bytes(data),'little')
                 entry['raw_unsigned']=result
             elif kind=='write':
-                comm,error=packet.write1ByteTxRx(port,9,address,value)
+                comm,error=packet.write1ByteTxRx(port,motor,address,value)
                 entry.update(comm=comm,error_code=error)
                 require(comm==sdk.COMM_SUCCESS and error==0,'SDK使能写ACK未知')
                 result=None
             else:
                 writer.clearParam()
-                require(writer.addParam(9,bytearray((value&255,value>>8))),'SDK单轮SYNC参数拒绝')
+                require(writer.addParam(motor,bytearray((value&255,value>>8))),'SDK单轮SYNC参数拒绝')
                 comm=writer.txPacket()
                 entry.update(comm=comm,ack='NONE_SYNC_WRITE')
                 require(comm==sdk.COMM_SUCCESS,'SDK SYNC发送未知')
@@ -1086,7 +1116,7 @@ def run_right_wheel_pulse(engine):
                 require(not entry['rx_bytes'],'SDK SYNC不应读取或宣称目标ACK')
             else:
                 payload=entry['data'] if kind=='read' else []
-                response=[255,255,9,len(payload)+2,0,*payload]
+                response=[255,255,motor,len(payload)+2,0,*payload]
                 response.append((~sum(response[2:]))&255)
                 require(entry['rx_bytes']==response,'SDK实际返回帧身份/长度/ACK不符')
             entry['status']='READ_VALID' if kind=='read' else 'SENT_NO_ACK' if kind=='sync' else 'ACK_VALID'
@@ -1118,7 +1148,7 @@ def run_right_wheel_pulse(engine):
     try:
         engine.check_gate()
         sdk=load_right_pulse_sdk()
-        wire_path=io.output/'right9-sdk-wire.jsonl'
+        wire_path=io.output/f'right{motor}-sdk-wire.jsonl'
         wire=wire_path.open('x')
         row['wire_path']=str(wire_path)
         port=sdk.PortHandler(DEVICES['right'])
@@ -1786,15 +1816,21 @@ def main(argv=None):
     parser.add_argument('--approval',type=Path)
     parser.add_argument('--position-target', action='append', choices=tuple(POSITION_TARGETS),
                         help='可重复指定腕部/头部目标，按指定顺序执行；缺省为原四项')
-    parser.add_argument('--right-wheel-pulse',action='store_true',
-                        help='仅右9同一SDK连接固定+500持续20秒；禁止混用位置选择')
+    wheels=parser.add_mutually_exclusive_group()
+    wheels.add_argument('--right-wheel-pulse',action='store_true',
+                        help='兼容原右9入口：同一SDK连接固定+500持续20秒')
+    wheels.add_argument('--wheel-pulse',choices=('front','left'),action='append',
+                        help='一次仅选前8或左7，固定+500持续20秒；禁止混用位置选择')
     parser.add_argument('--left-wheel-feedback-only',action='store_true',
                         help='仅左轮right7固定14次只读候选判定；不写电机、不判整机停止')
     options=parser.parse_args(argv)
-    require(not (options.right_wheel_pulse and options.left_wheel_feedback_only)
-            and not ((options.right_wheel_pulse or options.left_wheel_feedback_only)
+    require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
+    wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None
+    pulse_requested=options.right_wheel_pulse or wheel_target is not None
+    require(not (pulse_requested and options.left_wheel_feedback_only)
+            and not ((pulse_requested or options.left_wheel_feedback_only)
                      and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
-    selected_targets = [] if options.right_wheel_pulse or options.left_wheel_feedback_only else select_position_targets(options.position_target)
+    selected_targets = [] if pulse_requested or options.left_wheel_feedback_only else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
@@ -1803,7 +1839,7 @@ def main(argv=None):
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
                    options.position_target,right_wheel_pulse=options.right_wheel_pulse,
-                   left_wheel_feedback_only=options.left_wheel_feedback_only)
+                   left_wheel_feedback_only=options.left_wheel_feedback_only,wheel_pulse_target=wheel_target)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

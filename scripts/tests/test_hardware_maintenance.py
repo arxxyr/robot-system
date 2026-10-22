@@ -928,7 +928,7 @@ class SdkMotorSerial:
         instruction=packet[4]
         address=packet[5]
         if sync:
-            assert packet[4:8]==[131,46,2,9]
+            assert packet[4:8]==[131,46,2,self.io.sdk_target]
             register='Goal_Velocity';value=packet[8]|(packet[9]<<8)
             self.io.goal=value
             if value:self.io.sdk_nonzero_count+=1
@@ -936,13 +936,13 @@ class SdkMotorSerial:
             if self.io.goal_write_enables:self.io.torque=1
             result=None
         elif instruction==3:
-            assert packet[2]==9 and address==40
+            assert packet[2]==self.io.sdk_target and address==40
             register='Torque_Enable';value=packet[6]
             self.io.torque=value
             if value and self.io.signal_on_enable:self.io.interrupted=signal.SIGTERM
             result=[]
         else:
-            assert instruction==2 and packet[2]==9
+            assert instruction==2 and packet[2]==self.io.sdk_target
             register=next(name for name,meta in m.RIGHT_SDK_REGS.items() if meta==(address,packet[6]))
             self.io.sdk_read_counts[register]=self.io.sdk_read_counts.get(register,0)+1
             if register=='Present_Velocity' and self.io.zero_count>=2 and self.io.sdk_coast:
@@ -962,7 +962,7 @@ class SdkMotorSerial:
         if fault=='ack_long' and instruction==3:result=[0]
         if result is not None:
             error=4 if fault=='status' else 0
-            response=[255,255,9,len(result)+2,error,*result]
+            response=[255,255,getattr(self.io,'sdk_reply_id',self.io.sdk_target),len(result)+2,error,*result]
             response.append((~sum(response[2:]))&255)
             if fault=='checksum':response[-1]^=1
             if fault=='length':response=response[:-1]
@@ -1018,8 +1018,8 @@ def fake_sdk(executor):
             if motor in self.values:return False
             self.values[motor]=list(data);return True
         def txPacket(self):
-            assert list(self.values)==[9]
-            return self.packet.syncWriteTxOnly(self.port,46,2,[9,*self.values[9]],3)
+            assert list(self.values)==[executor.sdk_target]
+            return self.packet.syncWriteTxOnly(self.port,46,2,[executor.sdk_target,*self.values[executor.sdk_target]],3)
     return SimpleNamespace(PortHandler=Port,PacketHandler=lambda protocol:Packet(),GroupSyncWrite=Writer,COMM_SUCCESS=0)
 
 
@@ -1036,11 +1036,12 @@ class RightPulseTests(unittest.TestCase):
                 'host':{'boot_id':'pulse-fixture'},'refs':references,
                 'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_TRACE)]}
 
-    def plan(self):
+    def plan(self,wheel='right'):
         root='/home/loosqk/robot-checks/pulse-fixture'
-        return m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,right_wheel_pulse=True)
+        return m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,right_wheel_pulse=wheel=='right',
+                           wheel_pulse_target=wheel if wheel!='right' else None)
 
-    def engine(self):
+    def engine(self,wheel='right'):
         executor=RightPulseIO()
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         executor.output=Path(directory.name)
@@ -1048,8 +1049,9 @@ class RightPulseTests(unittest.TestCase):
         executor.sdk_fault=lambda key:None;executor.sdk_coast=[];executor.sdk_after_off={}
         executor.sdk_nonzero_count=0;executor.sdk_close_calls=0;executor.sdk_open_calls=0
         executor.sdk_close_fails=False
+        executor.sdk_target=m.WHEEL_PULSE_TARGETS[wheel][1]
         helper=SimpleNamespace(install_stop_wire_capture=lambda module:None)
-        engine=m.ProbeEngine(executor,self.plan())
+        engine=m.ProbeEngine(executor,self.plan(wheel))
         m.install_right_pulse_guard(engine,helper)
         return executor,engine
 
@@ -1078,6 +1080,92 @@ class RightPulseTests(unittest.TestCase):
                          [('Goal_Velocity',0),('Torque_Enable',0)])
         self.assertTrue(all(w['motor']==9 for w in row['writes']))
         self.assertTrue(row['stopped_confirmed']);self.assertEqual((executor.goal,executor.torque),(0,0))
+
+    def test_front_and_left_select_only_one_fixed_motor_in_all_sdk_packets(self):
+        for wheel,motor in (('front',8),('left',7)):
+            executor,engine=self.engine(wheel)
+            row=self.perform(executor,engine)
+            self.assertEqual((row['side'],row['motor'],row['name']),m.WHEEL_PULSE_TARGETS[wheel])
+            self.assertTrue(all(op['motor']==motor for op in row['sdk_operations']))
+            self.assertTrue(all(packet[7]==motor if packet[2]==254 else packet[2]==motor
+                                for packet in executor.sdk_packets))
+            self.assertEqual((executor.sdk_open_calls,executor.sdk_close_calls),(1,1))
+            self.assertEqual(len(row['samples']),79)
+            self.assertGreater(executor.sdk_nonzero_count,300)
+            self.assertTrue(Path(row['wire_path']).name.startswith(f'right{motor}-'))
+            self.assertTrue(row['stopped_confirmed']);self.assertEqual((executor.goal,executor.torque),(0,0))
+            before=idle_rows();after=copy.deepcopy(before)
+            after[f'right:{motor}']['Present_Position']+=200
+            self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
+            other=9 if motor!=9 else 8
+            after[f'right:{other}']['Present_Position']+=5
+            self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
+
+    def test_left_snapshot_exception_never_relaxes_sdk_initial_or_final_zero(self):
+        self.assertEqual(m.left_stop_contract()['present_velocity_raw_unsigned'],[0,50,0x8032])
+        self.assertEqual(m.left_stop_contract()['reads'],14)
+        for phase in ('initial','final'):
+            executor,engine=self.engine('left')
+            if phase=='initial':executor.stop_velocity=50
+            else:executor.sdk_coast=[50]*5
+            row=self.perform(executor,engine,False)
+            self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
+            if phase=='initial':
+                self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
+            else:
+                self.assertEqual([sample['velocity_raw'] for sample in row['settle_samples']],[50]*5)
+            self.assertTrue(row['connection']['closed'])
+
+    def test_named_target_cli_and_plan_reject_arbitrary_ids_mixed_or_multiple_selections(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('拒绝前置不得child')) as child:
+            for args in (['--wheel-pulse','7'],['--wheel-pulse','right'],
+                         ['--wheel-pulse','front','--right-wheel-pulse'],
+                         ['--wheel-pulse','front','--wheel-pulse','left'],
+                         ['--wheel-pulse','front','--position-target','head-1'],
+                         ['--wheel-pulse','left','--left-wheel-feedback-only']):
+                with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):m.main(args)
+            child.assert_not_called()
+        root='/home/loosqk/robot-checks/pulse-fixture'
+        for target in (7,8,9,'right','head-1',True):
+            with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','fixture',root,wheel_pulse_target=target)
+        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','fixture',root,
+                                                     right_wheel_pulse=True,wheel_pulse_target='front')
+        for wheel in ('right','front','left'):
+            plan=self.plan(wheel)
+            self.assertEqual(m.position_targets_from_plan(json.loads(json.dumps(plan))),[])
+            for target in (['right',6,'right_arm_gripper'],['left',7,'head_motor_1'],
+                           ['right',8,'base_left_wheel'],['right',7,'base_front_wheel']):
+                bad=copy.deepcopy(plan);bad['right_wheel_pulse']['target']=target
+                with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
+
+    def test_target_scope_and_digest_prevent_cross_wheel_go_reuse(self):
+        plans={wheel:self.plan(wheel) for wheel in ('right','front','left')}
+        self.assertEqual(len({m.digest(plan) for plan in plans.values()}),3)
+        facts={**{key:True for key in m.FACTS},'confirmed_at_ns':100}
+        for wheel,plan in plans.items():
+            go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
+                'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],
+                'source':'仅目标绑定夹具','physical':{side:dict(facts) for side in m.SERIALS}}
+            go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
+                continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
+                base_confirmation_scope=m.pulse_scope(wheel),base_confirmation_answer='夹具就绪')
+            m.validate_go(go,plan,200)
+            for other in plans:
+                if other==wheel:continue
+                with self.assertRaises(ValueError):m.validate_go(go,plans[other],200)
+                bad=copy.deepcopy(go);bad['plan_sha256']=m.digest(plans[other])
+                with self.assertRaises(ValueError):m.validate_go(bad,plans[other],200)
+
+    def test_selected_torque_read_trace_and_sdk_status_cannot_be_mislabeled_as_right9(self):
+        for wheel,motor in (('front',8),('left',7)):
+            executor,engine=self.engine(wheel)
+            self.assertEqual(executor.poke('right',motor,'read','Torque_Enable'),0)
+            trace=executor.commands[-1]['ordinary_read_trace']
+            self.assertEqual(trace['motor_ids'],[motor])
+            self.assertTrue(Path(trace['path']).name.startswith(f'right{motor}-pulse-read-'))
+            executor,engine=self.engine(wheel);executor.sdk_reply_id=9
+            row=self.perform(executor,engine,False)
+            self.assertEqual(row['writes'],[]);self.assertTrue(engine.manual_cut)
 
     def test_wire_chunks_are_actual_sdk_frames_and_comm_results_not_fake_child(self):
         executor,engine=self.engine();row=self.perform(executor,engine)
@@ -1393,16 +1481,21 @@ class RightPulseTests(unittest.TestCase):
         try:
             sdk=m.importlib.import_module('scservo_sdk');serial=m.importlib.import_module('serial')
             self.assertEqual(serial.VERSION,'3.5')
-            executor,engine=self.engine();original=sdk.PortHandler
-            def port(device):
-                instance=original(device)
-                instance.getCurrentTime=lambda:executor.now()/1_000_000
-                return instance
-            with patch.object(serial,'Serial',side_effect=lambda **kwargs:SdkMotorSerial(executor)),patch.object(sdk,'PortHandler',side_effect=port):
-                row=self.perform(executor,engine,sdk=sdk)
-            self.assertEqual(row['status'],'PASS');self.assertEqual(executor.sdk_close_calls,1)
-            self.assertGreater(executor.sdk_nonzero_count,300)
-            self.assertIn([255,255,254,7,131,46,2,9,244,1,73],executor.sdk_packets)
+            original=sdk.PortHandler
+            for wheel,motor in (('right',9),('front',8),('left',7)):
+                executor,engine=self.engine(wheel)
+                def port(device):
+                    instance=original(device)
+                    instance.getCurrentTime=lambda:executor.now()/1_000_000
+                    return instance
+                with patch.object(serial,'Serial',side_effect=lambda **kwargs:SdkMotorSerial(executor)),patch.object(sdk,'PortHandler',side_effect=port):
+                    row=self.perform(executor,engine,sdk=sdk)
+                self.assertEqual(row['status'],'PASS');self.assertEqual(executor.sdk_close_calls,1)
+                self.assertGreater(executor.sdk_nonzero_count,300)
+                expected=[255,255,254,7,131,46,2,motor,244,1]
+                expected.append((~sum(expected[2:]))&255)
+                self.assertIn(expected,executor.sdk_packets)
+                self.assertTrue(all(op['motor']==motor for op in row['sdk_operations']))
         finally:
             sys.path.remove(str(source))
             for name in tuple(sys.modules):

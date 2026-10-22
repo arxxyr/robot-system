@@ -1,0 +1,12 @@
+{
+  "local_dns": [
+    [
+      "116.234.29.162",
+      20080
+    ]
+  ],
+  "remote_exit": 0,
+  "remote_stdout": "[{\"address\": [\"116.234.29.162\", 20080], \"family\": 2, \"error\": \"timed out\"}, {\"address\": [\"10.0.1.80\", 20080], \"error\": \"[Errno 111] Connection refused\"}]\n",
+  "remote_stderr": "",
+  "uart": 0
+}

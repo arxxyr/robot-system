@@ -1,0 +1,7 @@
+{
+  "at_ns": 1792641697815617000,
+  "route": "existing Orin SSH jump to unchanged git.yang.cafe:20080",
+  "exit_code": 0,
+  "stdout": "dd9cb5cda40848b3bd038a0badc8853cf9cf83ea\trefs/heads/dev\ndd9cb5cda40848b3bd038a0badc8853cf9cf83ea\trefs/heads/master\n",
+  "stderr": ""
+}

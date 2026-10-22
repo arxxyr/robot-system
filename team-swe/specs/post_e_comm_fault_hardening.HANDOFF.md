@@ -2,6 +2,16 @@
 
 ## 当前步骤
 
+### 前轮、左轮单轮闭环通过，清场完成（2026-10-21本地；UTC10-22）
+
+04:19:13UTC首次记录本次就绪答复，明确授权先前轮right8、通过后左轮right7，各一次原始+500/20秒，逐轮零速/断扭及停止检查。动作前分别通知，front467160d2…fa1eb、leftf7bf4c10…7e956两个独立GO各仅消费一次，第二轮没有续写现场时戳；未自动重试。每轮同一SDK连接实际400次非零SYNC、79组PV/PP，累计模位置前9921/左9929；启用尝试至TE0完成前20.019802554秒、左20.019716978秒。SDK初始及最终PV严格0；断扭后原PV前200→0、左300→0，均约276ms完成归零，原值保留。
+
+两轮诊断、17电机停止、位置分类及106项身份均PASS，manual_power_cut_required=false。left7获准稳定性判据仅用于原前后snapshot新14读，没有移入活动阶段或推广给前8。用户分别明确报告前轮、左轮“明显持续转动，结束后完全停止”，与先前右9合起来，三只轮子在各自独立受监督试验中均完成“指令→实际动作→反馈→停止”。两份原run仍整体FAIL，唯一错误为原三项`BASE_FIRMWARE_CONTRACT_UNVERIFIED`/DEFERRED；不改写原件，不宣称整车三轮组合运动、固件/单位合同或统一`robotctl→RPC→S1→S0`链通过。
+
+前$107/%143/PID732748、左$108/%144/PID733244均自然dead1/exit1；每轮310直属child和620原流真实回收、SDK连接关闭，两串口四锁无人占用，仅所属dead pane已清理。每轮638原件（共享一份现场确认）均逐SHA回收；run前d181da87…17c594a92、左6c9ec7e0…37ecb250fc。没有终态后UART、正式安装或服务操作。用户随后问能否放地，root已答复先关闭两电机电源、保持双臂支撑再平稳放地，USB不用拔；实际OFF和落地状态尚未收到，不推定完成，旧架空事实不能用于新动作。看护已结束，剩余仅记录及Git收尾。见[唯一摘要](../../.verify/base_wheel_sdk_targets_2026-10-21_r1/summary.json)、[前轮观察](../../.verify/base_wheel_sdk_targets_2026-10-21_r1/front-physical-observation.json)与[左轮观察](../../.verify/base_wheel_sdk_targets_2026-10-21_r1/left-physical-observation.json)。D15 OPEN/DEFERRED、deployable=false保持。
+
+本阶段仅两Python固定目标选择：`--wheel-pulse front|left`，旧right9兼容；目标贯穿PLAN/GO/TX/RX/ACK/抓帧/位移豁免，不加自由速度、时长或ID。两脚本e4c538ab…adb9/bcd6a7c5…a986；本机100方法99PASS+1SDKskip，Orin100/0skip含现场SDK三目标黄金；独审6为100子集。实际nightly1a2c4797e的fmt→根Clippy通过（原target因工具链更新重编），597输入/两Python/SDK12首尾一致，未另建target；软件pane和临时runner已清理。root最初只读准备误读PLAN_ONLY外层拒绝，已仅修正解析，原失败保留，无UART/GO。仓库外网直连超时后，使用Orin到文档所示Gitea10.0.1.16:20080转发，保留原域名host key验证，双远程fetch恢复，remote URL未改；最终提交后按现行规则同步并回收fix分支。
+
 ### 右9受监督单轮动作/反馈/停止闭环通过，三轮和统一链仍未验收（2026-10-21本地；UTC10-22）
 
 03:27:00UTC首次记录本次直接就绪答复，动作前明确通知仅right9、原始+500、20秒；随后核当前USB、服务/进程、两串口四锁及74引用，通过后新GO仅一次消费。同SDK连接实际发送400次+500、79组PV/PP，PV450/500/550，累计位置9950计数含多圈回绕；启用尝试至独立TE0完成20.019634902秒。零速/TE0后首PV250保留，下一组PV0，约275ms内停稳；TE/GV均0。此次支持“250可能出现在短暂停稳阶段”，不能抹掉原500ms停止失败或据此给右9放宽最终零速门。
