@@ -1,0 +1,12 @@
+{
+  "confirmed_at_ns": 1792680160951003000,
+  "source": "request_user_input_async call_124fe6e4b332463683445fe55f8a43ab",
+  "answer": "全部仍就绪，可继续左轮和右轮各一次",
+  "order": [
+    "left",
+    "right"
+  ],
+  "each_raw_velocity": 500,
+  "each_duration_seconds": 20,
+  "conditions": "已供电；三轮稳定架空；双臂空载有支撑；轮旁空旷；持续看清三轮并看护、可立即断电"
+}

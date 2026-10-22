@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "uart": 0,
+  "at_ns": 1792680469877970195,
+  "go_sha256": "e981eeddec223cb7214568ced47e23af9a339c1480deb77273f45e5c8b161023",
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "non_uart_commands": 15,
+  "all_children_reaped": true,
+  "services_checked_by_execute_entry": true
+}

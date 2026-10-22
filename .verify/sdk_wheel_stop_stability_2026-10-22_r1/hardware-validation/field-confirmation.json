@@ -1,0 +1,14 @@
+{
+  "confirmed_at_ns": 1792679168000000000,
+  "source": "request_user_input_async call_3153215f8b944577b0612490a3ef696f",
+  "answer": "全部就绪，可按顺序各执行一次",
+  "order": [
+    "front",
+    "left",
+    "right"
+  ],
+  "each_raw_velocity": 500,
+  "each_duration_seconds": 20,
+  "conditions": "已供电；三轮稳定架空；双臂空载有支撑；轮旁空旷；现场全程看清三轮并持续看护、可立即断电",
+  "uart": 0
+}

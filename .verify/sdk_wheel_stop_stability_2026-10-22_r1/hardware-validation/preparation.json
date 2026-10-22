@@ -1,0 +1,114 @@
+{
+  "status": "PREPARED_NO_UART",
+  "at_ns": 1792678170027311968,
+  "uart": 0,
+  "go": 0,
+  "actions_started": 0,
+  "execute_started": false,
+  "source_inputs_before": {
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/software/scripts/run_hardware_maintenance.py": {
+      "sha256": "928b1412af420b2bc0261905b1f80362507fe24f18950d42c771147dc8ee5bd1",
+      "bytes": 128885
+    },
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/software/scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "60ade6a355b954e577771bda4f6ecd6ab7d006c724c497b6f9e6aed5993c74e2",
+      "bytes": 196736
+    }
+  },
+  "bindings_path": "/home/loosqk/robot-checks/front-wheel-feedback-20261022-r1/current-bindings.json",
+  "plans": {
+    "front": {
+      "path": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-plan.json",
+      "plan_sha256": "87fdfaac6cdc6863889f41e7ee12ca52d61f58bab1ae2593553fc2ce6c3f0c87",
+      "file_sha256": "8584ff2735dd73100ff144221beaf89cc077f1c094c3bb6778e5912c517033b3",
+      "bytes": 60868,
+      "launch_spec": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-launch-spec.json",
+      "launch_sha256": "bc78a6c3ea396c7a5d8a8d92f0e83df05a64ade692a84b9e08ed205eb6b5ea19",
+      "target": [
+        "right",
+        8,
+        "base_front_wheel"
+      ],
+      "output": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-hardware",
+      "run_id": "front-sdk-stop-r1",
+      "scope": "仅前8复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，三轮前两组允许正向0..1000及原字0x8032，末组原字限0/50/0x8032并保留原值，再按原路径断扭"
+    },
+    "left": {
+      "path": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/left-plan.json",
+      "plan_sha256": "9e479f90e6a59d6f1993ca7c745f873cac9ab2110b6724a1283f802b536deeba",
+      "file_sha256": "274639870cf646247578cc6edd29ae47e590e31982a05c621a4e871fb6e1365c",
+      "bytes": 60864,
+      "launch_spec": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/left-launch-spec.json",
+      "launch_sha256": "b0258d19c44de5e50dcc42fc7de28be38409b883a42b74a5cb61f3db211d691a",
+      "target": [
+        "right",
+        7,
+        "base_left_wheel"
+      ],
+      "output": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/left-hardware",
+      "run_id": "left-sdk-stop-r1",
+      "scope": "仅左7复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，三轮前两组允许正向0..1000及原字0x8032，末组原字限0/50/0x8032并保留原值，再按原路径断扭"
+    },
+    "right": {
+      "path": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/right-plan.json",
+      "plan_sha256": "322cf6aef0c55e691dfdd379605a5f2cf60506e3624c1a54655d291e56117a1e",
+      "file_sha256": "8ec3690951b65c3d8fa62f3cb2d0180ca08856f3240caed513ec831710485629",
+      "bytes": 60868,
+      "launch_spec": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/right-launch-spec.json",
+      "launch_sha256": "95852e66889a50d8703f8c78d706300c261c8585bac69fb3c6eae5e95168263b",
+      "target": [
+        "right",
+        9,
+        "base_right_wheel"
+      ],
+      "output": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/right-hardware",
+      "run_id": "right-sdk-stop-r1",
+      "scope": "仅右9复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，三轮前两组允许正向0..1000及原字0x8032，末组原字限0/50/0x8032并保留原值，再按原路径断扭"
+    }
+  },
+  "field_state": "NOT_CONFIRMED_THIS_ROUND",
+  "natural_coverage_rule": "SDK初始/断扭后±50稳定性分支仅按本轮原帧及receipt判断；未自然触发记NOT_TRIGGERED，不为覆盖追加动作。",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "refs_verified": 74,
+  "refs_full_identity_verified": true,
+  "bindings_sha256": "636e54a9ed890d9eb9e53e12316ec16b5e2ed9ecdb5015e039cc6bc951f895ea",
+  "non_uart_commands": 26,
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "usb_recheck_required_after_new_field_reply": true,
+  "process_snapshot_clean": true,
+  "four_locks_unoccupied": true,
+  "both_serials_unoccupied": true,
+  "source_inputs_after": {
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/software/scripts/run_hardware_maintenance.py": {
+      "sha256": "928b1412af420b2bc0261905b1f80362507fe24f18950d42c771147dc8ee5bd1",
+      "bytes": 128885
+    },
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/software/scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "60ade6a355b954e577771bda4f6ecd6ab7d006c724c497b6f9e6aed5993c74e2",
+      "bytes": 196736
+    }
+  },
+  "direct_children_reaped": 26,
+  "commands_recorded": 26,
+  "finished_at_ns": 1792678170881054313
+}

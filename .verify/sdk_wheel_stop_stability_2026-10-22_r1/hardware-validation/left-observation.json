@@ -1,0 +1,7 @@
+{
+  "source": "request_user_input_async call_5ac96386611a4af98485ef135ae0085c",
+  "answer": "左轮明显持续转动，结束后完全停止",
+  "received_at_ns": 1792680351339564000,
+  "wheel": "left",
+  "new_action": false
+}

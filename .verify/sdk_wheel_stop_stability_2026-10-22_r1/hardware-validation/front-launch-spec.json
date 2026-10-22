@@ -1,0 +1,35 @@
+{
+  "schema": "MAINTENANCE_LAUNCH_PREPARATION_V1",
+  "wheel": "front",
+  "motor": 8,
+  "run_id": "front-sdk-stop-r1",
+  "plan_path": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-plan.json",
+  "plan_sha256": "87fdfaac6cdc6863889f41e7ee12ca52d61f58bab1ae2593553fc2ce6c3f0c87",
+  "base_argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "-B",
+    "-I",
+    "-S",
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/software/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/front-wheel-feedback-20261022-r1/current-bindings.json",
+    "--output",
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-hardware",
+    "--run-id",
+    "front-sdk-stop-r1",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation",
+    "--wheel-pulse",
+    "front",
+    "--zero-stop-check"
+  ],
+  "execute_and_approval_not_attached": true,
+  "root_must_supply_current_field_and_go": true,
+  "tmux": {
+    "session": "front-sdk-stop-r1-hardware",
+    "window": "hardware",
+    "remain_on_exit": true,
+    "driver_log": "/home/loosqk/robot-checks/sdk-wheel-stop-stability-20261022-r1/hardware-validation/front-driver.log"
+  },
+  "started": false
+}
