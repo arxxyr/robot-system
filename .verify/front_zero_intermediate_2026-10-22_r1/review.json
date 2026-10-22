@@ -1,0 +1,91 @@
+{
+  "schema": "FRONT_ZERO_INTERMEDIATE_INDEPENDENT_REVIEW_V1",
+  "reviewer": "/root/xlerobot_local_check",
+  "reviewed_at_utc": "2026-10-22T08:44:44.937290+00:00",
+  "decision": "PASS_SOFTWARE_ONLY",
+  "findings": [],
+  "approval": {
+    "path": "/Users/loosqk/repo/rust/robot-system/.verify/front_zero_intermediate_2026-10-22_r1/approval.json",
+    "source": "call_2447047166e24c258c360a34200fa4e4",
+    "scope": "仅前轮right8保持使能零速阶段前两组允许额外原字0x8032；末组/初始/断扭后及其他电机合同不变",
+    "authorization": "SOFTWARE_IMPLEMENTATION_AND_VALIDATION_ONLY",
+    "hardware_go": false,
+    "off_receipt_in_approval_snapshot": "PENDING"
+  },
+  "sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "eada58850014ab1712151926d640c2eeb15a9d4a3e1a21c68254b2532a438e6b",
+      "bytes": 119063,
+      "before_after_identical": true
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "518265d603a6503f62748d4ef5cb5c87831d06e9cf0ebe14bb38ba478a7a1988",
+      "bytes": 160522,
+      "before_after_identical": true
+    }
+  },
+  "static_review": [
+    {
+      "lines": "scripts/run_hardware_maintenance.py:172,191,220",
+      "result": "前轮+zero的scope与固定合同显式追加index[0,1]/raw[32818]；validate_right_pulse_plan重建完整合同并比较，旧计划及旧GO不能复用。"
+    },
+    {
+      "lines": "scripts/run_hardware_maintenance.py:1405",
+      "result": "例外条件精确限制wheel=front、index=0或1、word=0x8032；不取绝对值、不清符号或写零，data/rx_bytes/raw_unsigned/velocity_raw均保留原字。"
+    },
+    {
+      "lines": "scripts/run_hardware_maintenance.py:1332,1378,1418,1454",
+      "result": "初始SDK、正向运动阶段、TE/GV、零速末组及断扭后最终SDK值保持原要求；整机STOP未改，左7既有稳定性例外不外溢。"
+    },
+    {
+      "lines": "scripts/run_hardware_maintenance.py:1393,1402,1426",
+      "result": "20秒运动、零速SYNC起500ms、SYNC完成后50/250/450ms固定槽及下一槽截止、100ms收尾预留、启用至TE0<=21s均未改；失败仍独立SYNC0后尝试TE0、关闭SDK、粘性封锁后续UART。"
+    }
+  ],
+  "targeted_verification": {
+    "method": "uv run --no-project python -B，导入现有确定性假SDK测试并按名执行，未运行全套",
+    "methods": [
+      "test_front_zero_first_two_minus_fifty_samples_preserve_words_and_reach_strict_zero",
+      "test_front_zero_exception_rejects_last_minus_fifty_other_negative_words_and_other_wheels",
+      "test_front_zero_exception_does_not_relax_initial_motion_goal_post_disable_or_whole_stop",
+      "test_front_zero_exception_is_fixed_in_plan_scope_and_cannot_reuse_old_go",
+      "test_front_intermediate_minus_fifty_does_not_bypass_time_go_signal_or_bad_frame",
+      "test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal",
+      "test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7",
+      "test_left_snapshot_exception_never_relaxes_sdk_initial_or_final_zero",
+      "test_zero_stop_absolute_deadlines_cover_flush_return_and_remaining_enable_budget",
+      "test_zero_stop_first_group_cannot_cross_next_slot_and_compress_later_groups",
+      "test_zero_stop_wire_log_failure_still_independently_clears_goal_and_disables"
+    ],
+    "count": 11,
+    "passed": 11,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "elapsed_seconds": 0.25,
+    "counting": "11为最终121方法的子集，不与121或平台重复结果累计；每方法内参数分支不另算方法。",
+    "coverage": "包括新增5方法的原帧保留、末组和其他目标严格性、计划篡改/旧GO拒绝、GO/信号/超时/坏帧失败，以及原默认右轮、左7、下一槽截止、500ms/21s和日志失败独立TE0。",
+    "diff_check_exit": 0
+  },
+  "baseline_plan_comparison": {
+    "baseline_commit": "33eabf311ec377bc8fe6ba141779979f19637556",
+    "method": "只读git show后在内存执行基线模块；以同一完整身份夹具分别调用make_plan，排除源码SHA/大小后比较完整JSON，不写基线源码副本。",
+    "unchanged": [
+      "default",
+      "left_readonly",
+      "front_readonly",
+      "right_zero_False",
+      "right_zero_True",
+      "front_zero_False",
+      "left_zero_False",
+      "left_zero_True"
+    ],
+    "intentional_change": "front_zero_True仅scope及zero_stop_check的intermediate_sample_indices=[0,1]/intermediate_extra_raw_unsigned=[32818]；剔除这项预期差分后完整JSON一致。"
+  },
+  "limits": [
+    "本次为独立源码与纯内存软件验证；未SSH、未访问UART、未执行硬件、未生成或消费GO。",
+    "本机实际SDK黄金方法未由本独审运行；由root负责原生验证，不把假SDK通过当实机或固件合同通过。",
+    "原前轮实机FAIL、第三组未采、实际OFF回执及物理状态按各自原件保留；该例外不把-50当停止，也不证明下一次末组将归零。",
+    "BASE_FIRMWARE_CONTRACT_UNVERIFIED、D15 OPEN/DEFERRED及deployable=false未解除。"
+  ]
+}

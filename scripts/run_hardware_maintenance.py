@@ -176,6 +176,8 @@ def pulse_scope(wheel,*,zero_stop_check=False):
     scope+=('；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门' if wheel=='left' else '')
     if zero_stop_check:
         scope+='；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，末组PV严格0，再按原路径断扭'
+        if wheel=='front':
+            scope+='；仅前轮前两组另允许原字0x8032并保留原值，末组及初始/断扭后停止门不变'
     return scope
 
 
@@ -209,6 +211,9 @@ def right_pulse_contract(wheel='right',*,zero_stop_check=False):
             'sample_offsets_ns':[50_000_000,250_000_000,450_000_000],
             'offset_origin':'ZERO_SYNC_FINISHED','torque_enable':1,'goal_velocity':0,
             'final_present_velocity':0}
+        if wheel=='front':
+            contract['zero_stop_check'].update(intermediate_sample_indices=[0,1],
+                                               intermediate_extra_raw_unsigned=[0x8032])
     return contract
 
 
@@ -1405,7 +1410,9 @@ def run_right_wheel_pulse(engine):
                 for register in ('Torque_Enable','Goal_Velocity','Present_Velocity'):
                     word=read(register,sample['raw'],deadline=sample_deadline)
                     if register=='Present_Velocity':
-                        require(0<=word<=contract['velocity_raw_max'],'SDK保持使能零速检查的速度越界')
+                        intermediate=(wheel=='front' and index in check.get('intermediate_sample_indices',[])
+                                      and word in check.get('intermediate_extra_raw_unsigned',[]))
+                        require(0<=word<=contract['velocity_raw_max'] or intermediate,'SDK保持使能零速检查的速度越界')
                     else:
                         expected=check['torque_enable' if register=='Torque_Enable' else 'goal_velocity']
                         require(word==expected,'SDK保持使能零速检查的使能/目标不符:'+register)

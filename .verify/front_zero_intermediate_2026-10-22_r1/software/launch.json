@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"front-zero-intermediate-quality-r1 $120 %156 739555 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/front-zero-intermediate-quality-r1.py\", \"temporary_runner_sha256\": \"c44f1685f67c70fd8e5cfa117d3546b3314cac6977f3d8b2406549d6d8215fc8\"}\n",
+  "stderr": ""
+}

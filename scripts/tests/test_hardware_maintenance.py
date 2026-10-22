@@ -1160,6 +1160,134 @@ class RightPulseTests(unittest.TestCase):
                 self.assertTrue(row['stopped_confirmed']);self.assertFalse(engine.manual_cut)
                 self.assertFalse(row['firmware_contract_verified'])
 
+    def test_front_zero_first_two_minus_fifty_samples_preserve_words_and_reach_strict_zero(self):
+        for speeds in ([-50,0,0],[0,-50,0],[-50,-50,0],[400,-50,0]):
+            executor,engine=self.engine('front',zero_stop_check=True);executor.sdk_zero_coast=list(speeds)
+            row=self.perform(executor,engine)
+            zero=row['zero_stop_check']
+            self.assertEqual(zero['status'],'PASS');self.assertEqual(len(zero['samples']),3)
+            expected=[0x8032 if value==-50 else value for value in speeds]
+            self.assertEqual([sample['velocity_raw'] for sample in zero['samples']],expected)
+            wire=[json.loads(line) for line in Path(row['wire_path']).read_text().splitlines()]
+            for sample,word in zip(zero['samples'],expected):
+                entry=sample['raw'][-1]
+                self.assertEqual(entry['raw_unsigned'],word);self.assertEqual(entry['status'],'READ_VALID')
+                self.assertEqual(entry['data'],[word&255,word>>8])
+                self.assertEqual(entry['rx_bytes'][5:7],[word&255,word>>8])
+                self.assertTrue(any(event['operation']==entry['sequence'] and event['direction']=='rx'
+                                    and event['bytes']==entry['rx_bytes'] for event in wire))
+            self.assertEqual(zero['samples'][-1]['velocity_raw'],0)
+            self.assertTrue(row['stopped_confirmed']);self.assertFalse(engine.manual_cut)
+            self.assertEqual(executor.sdk_nonzero_count,400)
+            self.assertEqual(row['observation_deadline_ns']-row['first_velocity_attempt_started_ns'],20_000_000_000)
+            self.assertLessEqual(zero['finished_ns']-zero['started_ns'],500_000_000)
+            self.assertLessEqual(row['enabled_attempt_window_ns'],21_000_000_000)
+
+    def test_front_zero_exception_rejects_last_minus_fifty_other_negative_words_and_other_wheels(self):
+        cases=[('front',2,0x8032),('front',2,50)]
+        cases += [('front',index,word) for index in (0,1) for word in (0x8000,0x8001,0x8031,0x8033,0xffff)]
+        cases += [(wheel,index,0x8032) for wheel in ('right','left') for index in (0,1,2)]
+        for wheel,index,word in cases:
+            executor,engine=self.engine(wheel,zero_stop_check=True)
+            speeds=[0,0,0];speeds[index]=word;executor.sdk_zero_coast=speeds
+            row=self.perform(executor,engine,False)
+            zero=row['zero_stop_check']
+            self.assertEqual(zero['status'],'FAIL');self.assertEqual(len(zero['samples']),index+1)
+            entry=zero['samples'][-1]['raw'][-1]
+            self.assertEqual(entry['raw_unsigned'],word);self.assertEqual(entry['status'],'READ_VALID')
+            self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
+            self.assertEqual([(entry['register'],entry['value']) for entry in row['writes'][-2:]],
+                             [('Goal_Velocity',0),('Torque_Enable',0)])
+            self.assertTrue(row['connection']['closed']);self.assertEqual((executor.torque,executor.goal),(0,0))
+
+    def test_front_zero_exception_does_not_relax_initial_motion_goal_post_disable_or_whole_stop(self):
+        for phase in ('initial','motion','goal','post_disable','whole_stop'):
+            executor,engine=self.engine('front',zero_stop_check=True);executor.sdk_zero_coast=[-50,-50,0]
+            if phase=='initial':executor.stop_velocity=-50
+            elif phase=='motion':executor.velocity=-50
+            elif phase=='goal':
+                original=executor.value
+                executor.value=lambda register:0x8032 if register=='Goal_Velocity' and executor.torque and executor.zero_count==2 else original(register)
+            elif phase=='post_disable':executor.sdk_after_off={'Present_Velocity':-50}
+            row=self.perform(executor,engine,phase=='whole_stop')
+            if phase=='initial':
+                self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
+                self.assertEqual(row['before_raw'][-1]['raw_unsigned'],0x8032)
+            elif phase=='motion':
+                self.assertNotIn('zero_stop_check',row)
+                self.assertEqual(row['samples'][0]['raw'][-1]['raw_unsigned'],0x8032)
+            elif phase=='goal':
+                self.assertEqual(row['zero_stop_check']['samples'][0]['raw'][-1]['register'],'Goal_Velocity')
+                self.assertEqual(row['zero_stop_check']['status'],'FAIL')
+            elif phase=='post_disable':
+                self.assertEqual(row['zero_stop_check']['status'],'PASS');self.assertFalse(row['stopped_confirmed'])
+                self.assertEqual(row['cleanup_raw'][-1]['raw_unsigned'],0x8032)
+            else:
+                executor.stop_velocity=-50
+                with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
+                    executor.poke('right',8,'read','Present_Velocity',cleanup=True)
+                values=idle_rows();values['right:8']['Present_Velocity']=-50
+                self.assertEqual(m.classify_stop_snapshot(values)['status'],'FAIL')
+            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
+            self.assertTrue(row['connection']['closed'])
+
+    def test_front_zero_exception_is_fixed_in_plan_scope_and_cannot_reuse_old_go(self):
+        plan=self.plan('front',zero_stop_check=True);check=plan['right_wheel_pulse']['zero_stop_check']
+        self.assertEqual(check['intermediate_sample_indices'],[0,1])
+        self.assertEqual(check['intermediate_extra_raw_unsigned'],[0x8032]);self.assertIn('0x8032',plan['scope'])
+        for wheel,zero in (('front',False),('right',False),('right',True),('left',False),('left',True)):
+            contract=m.right_pulse_contract(wheel,zero_stop_check=zero)
+            self.assertNotIn('intermediate_sample_indices',contract.get('zero_stop_check',{}))
+            self.assertNotIn('intermediate_extra_raw_unsigned',contract.get('zero_stop_check',{}))
+        for field,value in (('intermediate_sample_indices',[0,1,2]),('intermediate_sample_indices',[0]),
+                            ('intermediate_extra_raw_unsigned',[0x8032,0x8000]),('intermediate_extra_raw_unsigned',[0])):
+            bad=copy.deepcopy(plan);bad['right_wheel_pulse']['zero_stop_check'][field]=value
+            with self.assertRaises(ValueError):m.validate_right_pulse_plan(bad)
+        old=copy.deepcopy(plan)
+        for key in ('intermediate_sample_indices','intermediate_extra_raw_unsigned'):
+            del old['right_wheel_pulse']['zero_stop_check'][key]
+        old['scope']=m.pulse_scope('right',zero_stop_check=True).replace('仅右9','仅前8',1)
+        old['right_wheel_pulse']['scope']=old['scope']
+        with self.assertRaises(ValueError):m.validate_right_pulse_plan(old)
+        facts={**{key:True for key in m.FACTS},'confirmed_at_ns':100}
+        go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
+            'plan_sha256':m.digest(old),'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],
+            'source':'仅软件测试，无硬件授权','physical':{side:dict(facts) for side in m.SERIALS}}
+        go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
+            continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
+            base_confirmation_scope=old['scope'],base_confirmation_answer='夹具就绪')
+        with self.assertRaises(ValueError):m.validate_go(go,plan,200)
+        with self.assertRaises(ValueError):m.validate_go(go,old,200)
+        for wheel in ('right','left'):
+            bad=self.plan(wheel,zero_stop_check=True)
+            bad['right_wheel_pulse']['zero_stop_check'].update(intermediate_sample_indices=[0,1],
+                                                              intermediate_extra_raw_unsigned=[0x8032])
+            with self.assertRaises(ValueError):m.validate_right_pulse_plan(bad)
+
+    def test_front_intermediate_minus_fifty_does_not_bypass_time_go_signal_or_bad_frame(self):
+        for fault in ('deadline','go','signal','checksum'):
+            executor,engine=self.engine('front',zero_stop_check=True);executor.sdk_zero_coast=[-50,-50,0]
+            expired=False
+            def check_go():m.require(not expired,'中途GO到期')
+            engine.right_pulse_go_check=check_go
+            def effect(key):
+                nonlocal expired
+                zero=engine.right_pulse.get('zero_stop_check')
+                if zero and len(zero['samples'])==2 and key[:2]==(2,'Present_Velocity'):
+                    if fault=='deadline':executor.t=zero['deadline_ns']+1
+                    elif fault=='go':expired=True
+                    else:return fault
+                return None
+            executor.sdk_fault=effect
+            row=self.perform(executor,engine,False)
+            self.assertEqual(row['zero_stop_check']['samples'][0]['velocity_raw'],0x8032)
+            self.assertEqual(len(row['zero_stop_check']['samples']),2)
+            self.assertEqual(row['zero_stop_check']['status'],'FAIL')
+            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
+            self.assertEqual([(entry['register'],entry['value']) for entry in row['writes'][-2:]],
+                             [('Goal_Velocity',0),('Torque_Enable',0)])
+            self.assertEqual((executor.torque,executor.goal),(0,0));self.assertTrue(row['connection']['closed'])
+
     def test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7(self):
         for speeds in ([0,0,50],[0,0,1000],[250,50,-50],[250,50,0x8000],[1001,0,0]):
             executor,engine=self.engine('left',zero_stop_check=True);executor.sdk_zero_coast=list(speeds)
@@ -1707,7 +1835,7 @@ class RightPulseTests(unittest.TestCase):
             for wheel,motor in (('right',9),('front',8),('left',7)):
                 for zero_stop in (False,True):
                     executor,engine=self.engine(wheel,zero_stop_check=zero_stop)
-                    executor.sdk_zero_coast=[250,50,0]
+                    executor.sdk_zero_coast=[400,-50,0] if wheel=='front' and zero_stop else [250,50,0]
                     def port(device):
                         instance=original(device)
                         instance.getCurrentTime=lambda:executor.now()/1_000_000
@@ -1722,7 +1850,12 @@ class RightPulseTests(unittest.TestCase):
                     self.assertTrue(all(op['motor']==motor for op in row['sdk_operations']))
                     if zero_stop:
                         zero=row['zero_stop_check']
-                        self.assertEqual([s['velocity_raw'] for s in zero['samples']],[250,50,0])
+                        self.assertEqual([s['velocity_raw'] for s in zero['samples']],
+                                         [400,0x8032,0] if wheel=='front' else [250,50,0])
+                        if wheel=='front':
+                            entry=zero['samples'][1]['raw'][-1]
+                            self.assertEqual(entry['data'],[0x32,0x80])
+                            self.assertEqual(entry['rx_bytes'][5:7],[0x32,0x80])
                         self.assertTrue(all([e['raw_unsigned'] for e in s['raw'][:2]]==[1,0] for s in zero['samples']))
                         self.assertEqual(zero['status'],'PASS');self.assertTrue(row['stopped_confirmed'])
         finally:
