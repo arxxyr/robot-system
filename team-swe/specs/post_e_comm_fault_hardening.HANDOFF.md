@@ -2,6 +2,24 @@
 
 ## 当前步骤
 
+### 右9同连接SDK20秒候选软件准备完成，未执行实机（2026-10-21本地；UTC10-22）
+
+按真正官方常驻连接及循环发速路径，只在既有维护入口复用Orin已装`feetech-servo-sdk 1.0.0`/`pyserial 3.5`，基础Python `-B -I -S`隔离导入固定12项源码/元数据。仅right9同一串口连接、固定+500原始速度、名义50ms循环发送20秒；跳过错失周期，不延长绝对截止时间。未调用官方整机configure，未写模式、Phase、PID或EEPROM。原17电机前置、维护独占、GO及失败粘性保持；SDK活动时不允许CLI碰串口，finally独立零速/TE0，随后最多1秒只读停稳，最终TE/GV/PV必须严格0才继续原整机停止/身份检查。原左7获准稳定性判据保留，右9不接受±50豁免；20/21秒为软件预算，不是硬件断电保证。
+
+最终主脚本72e42872…3217a67、测试d2209129…18cc8；本机和Orin相同95项、0skip，含实际已装SDK内存串口黄金测试。独审额外核对真实SDK对畸形ACK误报成功的负控、实际TX处截止时间复查等，3方法为95子集不累加。Orin实际fmt→根Clippy通过，597项Rust输入976cbae7…80a0e2、两Python及SDK12完整身份c61efd2c…eb3044首尾一致，实际nightly07e526db9。唯一native批次$103/%139/PID725474自然exit0、step child已回收；14必要原件逐SHA回收，仅所属pane和临时runner已清理。最初SSH255及启动前引用/长度拒绝保留，不能称所有准备一次通过。
+
+74引用、当前USB/服务/进程/串口四锁、基础隔离SDK导入及固定PLAN 5e5d167f…15edb5已通过非UART准备。无新GO、UART、实机20秒或正式安装；旧逐命令20秒草稿保留stash 7a34b74d…199a33，不合入未验证代码。下一次启用前先通知用户目标轮、原始速度和20秒时长，准备完成后确认当次供电/架空/支撑/持续观察及可立即断电；旧现场确认和消费GO不复用。上一轮NEEDS_MANUAL_POWER_CUT、未获断电确认及用户“轮子没有动”均保持。见[唯一摘要](../../.verify/right_wheel_20s_2026-10-21_r1/summary.json)、[原生结果](../../.verify/right_wheel_20s_2026-10-21_r1/software/result.json)及[独审](../../.verify/right_wheel_20s_2026-10-21_r1/review.json)。D15 OPEN/DEFERRED、deployable=false保持。
+
+### 左轮新判据实机通过，右9停止失败且现场报告轮子未动（2026-10-21本地；UTC10-22）
+
+02:34:49UTC记录新的现场供电、三轮稳定架空、双臂空载支撑和持续看护确认，授权先左14读、通过后一次右9。左14读TE/GV均0，PP1211/1212/1211/1211/1212，PV50/50/0/50/0，1073.233167ms；候选和93项身份PASS，整机STOP仍NOT_EVALUATED。仅使用当次新GO，没有续写旧确认时刻。
+
+随后新右GO执行一次原500ms候选：5条原帧严格SYNC0→TE1→SYNC500→SYNC0→TE0；右9 PP从3329到3333/3482，PV50/500。独立TE0后60.357593ms开始读取PV，原字250，后续UART已粘性封锁；原NEEDS_MANUAL_POWER_CUT、STOP UNKNOWN、模式身份UNKNOWN不回填。收到断电请求后用户明确“不断电，再跑一下轮子，20s”，其后又确认“轮子没有动”；记录未断电及现场未见轮动，不能以编码器变化宣布实机成功。用户要求“下次动之前通知我”，后续动作前必须先告知目标轮、速度和持续时间。
+
+两个原run SHA分别1c58a2a2…2e75f360和4f6ac3f4…62b3aef7；608份原件1020371B逐SHA回收，292直属child和584原流核对通过。同$101/%137/PID724165自然exit0、$102/%138/PID724339自然exit1；仅所属dead pane已清理、PID消失、两串口四锁无人占用，无后续UART。见[唯一摘要](../../.verify/left_wheel_stop_stability_2026-10-20_r1/summary.json)、[原件独审](../../.verify/left_wheel_stop_stability_2026-10-20_r1/hardware-review.json)及[现场观察](../../.verify/left_wheel_stop_stability_2026-10-20_r1/physical-observation.json)。
+
+对真正[官方键盘入口](https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/examples/4_xlerobot_teleop_keyboard.py)核对后，必须更正“与官方相同”的表述：官方一次connect并循环向三轮发速度，configure还配置电机并全总线使能；此前SYNC0→50ms→Enable来自dimos，不能说完全复现官方。此前500ms候选为逐命令新连接、右9一次写入；官方stop_base只写零，没有实际PV停止门。差异尚不能证明未动根因。20秒逐命令候选已完成本机95项、未Orin/未GO/未硬件，现暂停该草稿，先核安装SDK和官方初始化，选“同一连接、持续发送”的最小单轮对照。D15 OPEN/DEFERRED、deployable=false保持。
+
 ### 用户批准左轮right7稳定性判据，最小实现及软件验证通过（2026-10-20）
 
 用户直接同意仅right7实施并验证：TE/GV严格0，PV仅0/±50，固定1秒五组PP/PV且位置跨度≤1计数；缺失、超时或超界仍失败。[授权原文](../../.verify/left_wheel_stop_stability_2026-10-20_r1/approval.json)记录原问题与答复来源。只调整既有普通读取即时门、前置快照及最终停止分类，原PV保留；前后快照必须各自产生新窗口证据，不借旧run或status布尔值放行。复用b2、维护四锁和GO，不新增CLI/驱动/生产链。现有左轮只读选择升级为14读，补齐窗口前后GV0；独立采集仅判左轮候选，整机STOP仍单独验证。

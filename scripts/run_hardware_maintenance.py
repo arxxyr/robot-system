@@ -5,6 +5,7 @@ import contextlib
 import fcntl
 import hashlib
 import importlib.util
+import importlib
 import json
 import os
 from pathlib import Path
@@ -40,7 +41,7 @@ TARGETS = [("left", 5, "left_arm_wrist_roll"), ("right", 5, "right_arm_wrist_rol
            ("left", 7, "head_motor_1"), ("left", 8, "head_motor_2")]
 POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), TARGETS))
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
-RIGHT_PULSE_SCOPE = '仅右9先SYNC零速确认→Enable确认→SYNC+500原始值，Enable起500ms两次速度/位置观察→SYNC零速→独立Disable及整机停止检查（仅左7按获准稳定性判据）；三轮已架空稳定支撑并持续观察'
+RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（仅左7按获准稳定性判据）；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
 RIGHT_PULSE_HELPER = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py',
@@ -54,6 +55,50 @@ RIGHT_PULSE_SYNC = {'path':'/home/loosqk/robot-checks/right-wheel-reference-2026
                     'sha256':'22693d15bbf926a9a99b8f295c8fffbff92341b8151e9da1620b7d94701820b0','bytes':1517688}
 RIGHT_PULSE_METADATA = {'Model_Number':777,'Firmware_Major_Version':3,'Firmware_Minor_Version':10,
                         'Operating_Mode':1,'Phase':12,'Lock':1}
+# 仅导入现场已核对的SDK源码，不执行旧venv的site/.pth或机器人包。
+RIGHT_PULSE_SDK = {'site': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages',
+ 'sdk_version': '1.0.0',
+ 'serial_version': '3.5',
+ 'refs': [{'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/__init__.py',
+           'sha256': 'c3047515bd2992e6fc209386f11fd4c80722c519b21be2a3a7a91f2d96222941',
+           'bytes': 148},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/group_sync_read.py',
+           'sha256': 'ccbbb3a864c047bf3a7808a0b455676b198645ee1caffa58dac562339a86ad76',
+           'bytes': 3563},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/group_sync_write.py',
+           'sha256': '70d2a9e2157692932dd6e25515e53d600da9ca87ffab656c4660fb0de4d03476',
+           'bytes': 2023},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/packet_handler.py',
+           'sha256': '96bb801133436122d39e868bc6492a226222a737c04560ea7a02d0c5eacef2fd',
+           'bytes': 273},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/port_handler.py',
+           'sha256': 'c8dbb189ca98705bd71066d5a9a691b4c80b484c77ebe8a9ccc2d6c46321e999',
+           'bytes': 3168},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/protocol_packet_handler.py',
+           'sha256': '9932c85b9e2ac671a7e33f39e8e80b05d6592280d9f2bcebd85103845e36e655',
+           'bytes': 16331},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/scservo_def.py',
+           'sha256': '068f7ad5c453ad6e338543c706047253495fcd6bf9a632465501ace12fee0627',
+           'bytes': 1710},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/__init__.py',
+           'sha256': '5dec897fdef45a0eaf63eacda1e01d62e1e75490302584ae0238f75376592344',
+           'bytes': 3212},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/serialposix.py',
+           'sha256': '5d56f98513391e1766a1847a04e2e1202ced4172a152803ba1c823a149a9b6f9',
+           'bytes': 35127},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/serialutil.py',
+           'sha256': '3c84f8c7c319f161a85d6f8db5bedc4f65255714589bdcbeee6f2daf65a17c0a',
+           'bytes': 21797},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/feetech_servo_sdk-1.0.0.dist-info/METADATA',
+           'sha256': '2a313b217816c9abbb1dd62f1fb75c2655e00da7c86cd52e005fec595b196af8',
+           'bytes': 3412},
+          {'path': '/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/pyserial-3.5.dist-info/METADATA',
+           'sha256': '42a8ab7e94ef0b7baa7e94cdac65d6b9254c608476f630120c990007bf472943',
+           'bytes': 1650}]}
+RIGHT_SDK_REGS = {'Firmware_Major_Version':(0,1),'Firmware_Minor_Version':(1,1),
+                  'Model_Number':(3,2),'Phase':(18,1),'Operating_Mode':(33,1),
+                  'Torque_Enable':(40,1),'Goal_Velocity':(46,2),'Lock':(55,1),
+                  'Present_Position':(56,2),'Present_Velocity':(58,2)}
 LEFT_FEEDBACK_SCOPE = '仅左轮right7先读TE0/GV0，0/250/500/750/1000ms各读PP再PV，末读GV0/TE0，共14次只读；PV限0/±50且PP跨度≤1，仅判左轮候选，不判整机停止、不写电机'
 LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
                       'Present_Position':(56,2),'Present_Velocity':(58,2)}
@@ -101,17 +146,26 @@ def validate_left_feedback_plan(plan):
 
 def right_pulse_contract():
     return {'scope':RIGHT_PULSE_SCOPE,'target':['right',9,'base_right_wheel'],'raw_velocity':500,
-            'observation_ns':500_000_000,'sample_offsets_ns':[100_000_000,400_000_000],
-            'nonzero_window_fail_ns':1_000_000_000,'velocity_raw_max':1000,'position_delta_raw_max':512,
+            'observation_ns':20_000_000_000,'write_period_ns':50_000_000,'sample_period_ns':250_000_000,
+            'enable_budget_ns':500_000_000,'sample_budget_ns':250_000_000,
+            'nonzero_window_fail_ns':21_000_000_000,'velocity_raw_max':1000,'position_step_raw_max':512,
+            'settle_budget_ns':1_000_000_000,'settle_offsets_ns':[50_000_000,250_000_000,500_000_000,750_000_000,950_000_000],
+            'sdk':{**RIGHT_PULSE_SDK,'refs':[dict(ref) for ref in RIGHT_PULSE_SDK['refs']]},
+            'sdk_read_registers':{name:list(value) for name,value in RIGHT_SDK_REGS.items()},
+            'register_writes':{'40':[0,1],'46':[0,500]},
             'metadata':dict(RIGHT_PULSE_METADATA),'raw_tool':dict(RIGHT_PULSE_RAW),
             'raw_helper':dict(RIGHT_PULSE_HELPER),'strace':dict(RIGHT_PULSE_TRACE),
             'write_tool':dict(RIGHT_PULSE_WRITE),'sync_tool':dict(RIGHT_PULSE_SYNC),
             'firmware_contract_verified':False,
-            'limitations':['原始值尚未标定物理单位；500ms/1s是软件观察/失败门，不是硬件自动截止',
+            'limitations':['原始值尚未标定物理单位；20秒/21秒及停稳1秒是软件预算，不是硬件自动截止',
+                           '50ms为名义发送间隔，读数耗时可造成跳槽；绝对截止不续期，不补发过期槽',
+                           '仅相邻模4096位置差值及累计诊断，不提供物理里程计',
                            '只诊断一次正向动作，不改变Phase/模式/保护、三轮合同或生产Velocity链']}
 
 
 def validate_right_pulse_plan(plan):
+    require(RIGHT_PULSE_SDK.get('sdk_version')=='1.0.0' and RIGHT_PULSE_SDK.get('serial_version')=='3.5'
+            and len(RIGHT_PULSE_SDK.get('refs',[]))==12,'右轮SDK闭包尚未完整冻结')
     require(isinstance(RIGHT_PULSE_SYNC['sha256'],str)
             and re.fullmatch(r'[0-9a-f]{64}',RIGHT_PULSE_SYNC['sha256']) is not None
             and type(RIGHT_PULSE_SYNC['bytes']) is int and RIGHT_PULSE_SYNC['bytes']>0,
@@ -121,7 +175,8 @@ def validate_right_pulse_plan(plan):
     bindings=plan['bindings']
     matches=lambda actual,expected: isinstance(actual,dict) and all(actual.get(key)==value for key,value in expected.items())
     require(matches(bindings.get('tool'),RIGHT_PULSE_WRITE), '右轮诊断必须原冻结f201完整引用')
-    refs=(RIGHT_PULSE_WRITE,RIGHT_PULSE_RAW,RIGHT_PULSE_SYNC,RIGHT_PULSE_HELPER,RIGHT_PULSE_TRACE)
+    refs=(RIGHT_PULSE_WRITE,RIGHT_PULSE_RAW,RIGHT_PULSE_SYNC,RIGHT_PULSE_HELPER,RIGHT_PULSE_TRACE,
+          *RIGHT_PULSE_SDK['refs'])
     require(all(any(matches(actual,reference) for actual in bindings.get('refs',[])) for reference in refs),
             '右轮工具/helper/strace引用缺失')
     require(all(reference['path'] in bindings.get('binary_paths',[])
@@ -850,8 +905,33 @@ def capture_right_pulse_wire(io,argv,original,attempt,**kwargs):
                 raise
 
 
+def load_right_pulse_sdk():
+    """基础Python由固定启动参数-I -S隔离；只使用已核对的SDK/serial包。"""
+    require(sys.flags.isolated and sys.flags.no_site,'SDK执行必须基础Python -I -S隔离启动')
+    for reference in RIGHT_PULSE_SDK['refs']:
+        verify_ref(reference)
+    require(not any(name=='serial' or name.startswith('serial.') or name=='scservo_sdk'
+                    or name.startswith('scservo_sdk.') for name in sys.modules),
+            'SDK导入前已有同名模块，禁止混用外部包')
+    site=RIGHT_PULSE_SDK['site']
+    sys.path.insert(0,site)
+    try:
+        serial=importlib.import_module('serial')
+        sdk=importlib.import_module('scservo_sdk')
+    finally:
+        sys.path.remove(site)
+    expected={reference['path'] for reference in RIGHT_PULSE_SDK['refs']}
+    for name,module in tuple(sys.modules.items()):
+        if name=='serial' or name.startswith('serial.') or name=='scservo_sdk' or name.startswith('scservo_sdk.'):
+            require(getattr(module,'__file__',None) in expected,'SDK实际模块不在固定闭包:'+name)
+    require(serial.VERSION==RIGHT_PULSE_SDK['serial_version'],'pyserial版本变化')
+    for reference in RIGHT_PULSE_SDK['refs']:
+        verify_ref(reference)
+    return sdk
+
+
 def install_right_pulse_guard(engine,helper):
-    """只包本轮执行器；初始/最终停止未知立即封锁，动作错误仅保留一次固定收尾。"""
+    """快照沿用原READ；SDK连接活动期间禁止CLI抢用串口，失败后不再UART。"""
     io=engine.io
     original=io.command
     holder=SimpleNamespace(command=lambda _io,argv,**kwargs:original(argv,**kwargs))
@@ -859,31 +939,22 @@ def install_right_pulse_guard(engine,helper):
     traced=lambda argv,**kwargs:holder.command(io,argv,**kwargs)
     row={'side':'right','motor':9,'name':'base_right_wheel','kind':'raw_velocity_diagnostic',
          'status':'NOT_RUN','before_raw':[],'samples':[],'cleanup_raw':[],'writes':[],
-         'errors':[],'cleanup_errors':[],'uart_blocked':False,'normal_failed':False,
+         'sdk_operations':[],'errors':[],'cleanup_errors':[],'uart_blocked':False,'normal_failed':False,
          'metadata_verified':False,'goal_verified':False,'stopped_confirmed':False,
          'initial_zero_attempted':False,'initial_zero_verified':False,
          'enable_attempted':False,'enable_verified':False,'velocity_attempted':False,
          'off_attempted':False,'zero_attempted':False,'firmware_contract_verified':False}
     engine.right_pulse=row
     engine.right_pulse_helper=helper
+    engine.right_sdk_active=False
 
     def block(error):
         row['uart_blocked']=True
         engine.manual_cut=True
         row['cleanup_errors'].append(repr(error))
         print('爸爸，右轮诊断停止/身份未知，请立即人工断电；禁止后续UART。',flush=True)
-
     engine.right_pulse_block=block
     tool_paths=(RIGHT_PULSE_WRITE['path'],RIGHT_PULSE_RAW['path'],RIGHT_PULSE_SYNC['path'],RIGHT_PULSE_TRACE['path'])
-
-    def returned(text,cleanup):
-        if not cleanup:
-            check_go=getattr(engine,'right_pulse_go_check',None)
-            if check_go is not None:
-                check_go()
-            if 'observation_deadline_ns' in row:
-                require(io.now()<=row['observation_deadline_ns'],'右轮命令返回超过观察窗口')
-        return text
 
     def command(argv,**kwargs):
         path=str(argv[0]) if argv else ''
@@ -892,72 +963,24 @@ def install_right_pulse_guard(engine,helper):
             require(not any(str(arg) in tool_paths for arg in argv[1:]),'禁止其他前缀绕过右轮工具名单')
             return original(argv,**kwargs)
         require(not row['uart_blocked'],'右轮诊断UART已粘性封锁')
-        cleanup_zero=False
+        require(not engine.right_sdk_active,'SDK连接未关闭，禁止CLI访问串口')
         try:
             window=getattr(engine,'left_stop_window_active',None)
             if window is not None:
-                # 只在本次固定窗口内允许左轮原帧读；不沿用右9运动的500ms门。
                 require(path==RIGHT_PULSE_RAW['path'] and len(argv)==5
                         and argv[1:4]==[DEVICES['right'],'7','read-raw']
                         and argv[4] in LEFT_FEEDBACK_META,'左轮停止窗口禁止写入或其他目标读取')
                 window()
-                # 返回门由采集器在保存原帧后检查，超期也不丢失这次原件。
                 return original(argv,**kwargs)
-            require(path!=RIGHT_PULSE_TRACE['path'],'不得直接调用strace绕过命令名单')
             require(cleanup or not row['normal_failed'],'动作错误后禁止新常规UART')
             if not cleanup:
                 check_go=getattr(engine,'right_pulse_go_check',None)
                 if check_go is not None:
                     check_go()
-                if 'observation_deadline_ns' in row:
-                    require(io.now()<row['observation_deadline_ns'],'右轮命令开始前观察窗口已耗尽')
-            zero=argv==[RIGHT_PULSE_RAW['path'],DEVICES['right'],'9','sync-zero']
-            velocity=argv==[RIGHT_PULSE_SYNC['path'],DEVICES['right'],'9','sync-velocity','500']
-            sync=zero or velocity
-            writing=sync or (path==RIGHT_PULSE_WRITE['path'] and len(argv)>3 and argv[3]=='write')
-            if writing:
-                if zero:
-                    if cleanup:
-                        require(row['velocity_attempted'] and not row['zero_attempted'] and not row['off_attempted'],
-                                '仅非零尝试后、独立断扭前一次收尾SYNC零目标')
-                        row['zero_attempted']=True
-                        cleanup_zero=True
-                    else:
-                        require(row['metadata_verified'] and not row['writes'],'仅初始一次SYNC零目标')
-                        row['initial_zero_attempted']=True
-                elif argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write','Torque_Enable','1']:
-                    require(not cleanup and row['initial_zero_verified'] and not row['enable_attempted'],
-                            '仅初始零速读回后一次Enable')
-                    row['enable_attempted']=True
-                elif velocity:
-                    require(not cleanup and row['enable_verified'] and not row['velocity_attempted']
-                            and not row['off_attempted'],'仅Enable确认后一次SYNC+500')
-                    row['velocity_attempted']=True
-                elif argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write','Torque_Enable','0']:
-                    require(cleanup and row['writes'] and not row['off_attempted'],'仅一次独立Disable')
-                    row['off_attempted']=True
-                else:
-                    raise ValueError('右轮诊断写目标/寄存器/数值越界')
-                reference=RIGHT_PULSE_RAW if zero else RIGHT_PULSE_SYNC if velocity else RIGHT_PULSE_WRITE
-                attempt={'argv':list(argv),'started_ns':io.now(),'cleanup':cleanup,'status':'UNKNOWN'}
-                row['writes'].append(attempt)
-                verify_ref(reference,executable=True)
-                text=capture_right_pulse_wire(io,argv,original,attempt,**kwargs)
-                expected=(f'{argv[3]} Goal_Velocity@9 <- {500 if velocity else 0}: SYNC_WRITE已发送，无ACK；未确认电机接收或实际速度\n'
-                          if sync else f'write {argv[4]}@9 <- {argv[5]} ok\n')
-                require(text==expected,'右轮写入回执未知')
-                attempt.update(finished_ns=io.now(),status='SENT_NO_ACK' if sync else 'ACK_STDOUT_VALID')
-                return returned(text,cleanup)
-            if path==RIGHT_PULSE_RAW['path']:
-                require(len(argv)==5 and argv[1:4]==[DEVICES['right'],'9','read-raw']
-                        and argv[4] in helper.META
-                        and (not cleanup or argv[4] in ('Torque_Enable','Present_Velocity','Goal_Velocity')),
-                        '右轮原帧读取越界')
-                return traced(argv,**kwargs)
             require(path==RIGHT_PULSE_WRITE['path'] and len(argv)==5 and argv[3]=='read'
                     and argv[4] in REGS and any(argv[1:3]==[DEVICES[side],str(motor)]
                     for side in SERIALS for motor in range(1,9 if side=='left' else 10)),
-                    '普通READ不在原17电机名单')
+                    'SDK候选禁止CLI动作及其他原帧读取')
             if argv==[RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','read','Torque_Enable']:
                 text=capture_right_pulse_wire(io,argv,original,{},**kwargs)
             else:
@@ -969,123 +992,312 @@ def install_right_pulse_guard(engine,helper):
                             and int(match[1]) in (0,50,-50))
             require(argv[4] not in STOP_REGS or int(match[1])==0 or left_candidate,
                     '原停止READ非零:'+argv[4])
-            return returned(text,cleanup)
+            if not cleanup and check_go is not None:
+                check_go()
+            return text
         except BaseException as error:
             row['normal_failed']=True
-            # 动作中失败保留独立TE0；初始/最终普通READ未知立即阻止后续UART。
-            ordinary_read=path==RIGHT_PULSE_WRITE['path'] and len(argv)>3 and argv[3]=='read'
-            if ordinary_read or getattr(engine,'left_stop_window_active',None) is not None or (cleanup and not cleanup_zero):
-                block(error)
+            block(error)
             raise
-
     io.command=command
 
 
 def run_right_wheel_pulse(engine):
+    """仅右9、同一SDK连接持续发送；不创建child或更改既有子进程预算。"""
     row=engine.right_pulse
     io=engine.io
     engine.rows.append(row)
     row['status']='FAIL'
-    helper=engine.right_pulse_helper
-    module=SimpleNamespace(verify_ref=verify_ref,DEVICES=DEVICES,strict_json=strict_json)
+    contract=right_pulse_contract()
+    port=None
+    wire=None
+    active=None
+    wire_count=0
+    wire_errors=[]
 
-    def read(register,destination,*,cleanup=False):
-        sample={'register':register,'started_ns':io.now(),'status':'UNKNOWN'}
-        destination.append(sample)
+    def wire_log(direction,data,**extra):
+        nonlocal wire_count
+        wire_count+=1
+        event={'sequence':wire_count,'operation':active['sequence'] if active else None,
+               'direction':direction,'at_ns':io.now(),'bytes':list(data),**extra}
         try:
-            raw=helper.raw_read(module,engine,register,cleanup=cleanup)
-            sample.update(raw=raw,finished_ns=io.now(),status='READ_VALID')
-            # 先保留本次已完整校验原帧，再检查返回时GO；过期仍进入独立TE0收尾。
-            check_go=getattr(engine,'right_pulse_go_check',None)
-            if not cleanup and check_go is not None:
-                check_go()
-            if not cleanup and 'observation_deadline_ns' in row:
-                require(io.now()<=row['observation_deadline_ns'],'右轮原帧读取完成超窗')
-            return raw['raw_unsigned']
-        except BaseException:
-            row['normal_failed']=True
-            raise
+            wire.write(json.dumps(event,ensure_ascii=False)+'\n')
+            wire.flush()
+        except BaseException as error:
+            wire_errors.append(repr(error))
+            io.evidence_errors.append('sdk_wire:'+repr(error))
 
-    def write(register,value,*,cleanup=False):
-        return io.command([RIGHT_PULSE_WRITE['path'],DEVICES['right'],'9','write',register,str(value)],cleanup=cleanup)
+    def ready(deadline=None,*,cleanup=False):
+        if not cleanup:
+            io.check()
+        check_go=getattr(engine,'right_pulse_go_check',None)
+        if check_go is not None:
+            check_go()
+        require(not wire_errors,'SDK原帧记录失败')
+        if deadline is not None:
+            require(io.now()<deadline,'SDK操作开始前绝对期限已耗尽')
+
+    def frame(motor,instruction,parameters):
+        data=[255,255,motor,len(parameters)+2,instruction,*parameters]
+        return data+[(~sum(data[2:]))&255]
+
+    def operation(kind,register,value=None,*,cleanup=False,deadline=None):
+        nonlocal active
+        if not cleanup or kind=='read':
+            ready(deadline,cleanup=cleanup)
+        require(not row['uart_blocked'] and engine.right_sdk_active,'SDK串口非本轮活动连接')
+        address,width=RIGHT_SDK_REGS[register]
+        require(kind=='read' or (register=='Torque_Enable' and kind=='write' and value in (0,1))
+                or (register=='Goal_Velocity' and kind=='sync' and value in (0,500)),
+                'SDK写入不在固定右9名单')
+        parameters=([address,width] if kind=='read' else [address,value] if kind=='write'
+                    else [address,width,9,value&255,value>>8])
+        expected=frame(254 if kind=='sync' else 9,0x83 if kind=='sync' else 2 if kind=='read' else 3,parameters)
+        entry={'sequence':len(row['sdk_operations'])+1,'kind':kind,'motor':9,'register':register,
+               'address':address,'width':width,'value':value,'started_ns':io.now(),
+               'cleanup':cleanup,'status':'UNKNOWN','expected_tx':expected,'tx_attempts':0,
+               'deadline_ns':deadline,'rx_bytes':[],'wire_first_sequence':wire_count+1}
+        row['sdk_operations'].append(entry)
+        if kind!='read':
+            row['writes'].append(entry)
+        active=entry
+        try:
+            if kind=='read':
+                data,comm,error=packet.readTxRx(port,9,address,width)
+                entry.update(data=list(data),comm=comm,error_code=error)
+                require(comm==sdk.COMM_SUCCESS and error==0 and len(data)==width
+                        and all(type(v) is int and 0<=v<=255 for v in data),'SDK读取通信/状态/长度未知:'+register)
+                result=int.from_bytes(bytes(data),'little')
+                entry['raw_unsigned']=result
+            elif kind=='write':
+                comm,error=packet.write1ByteTxRx(port,9,address,value)
+                entry.update(comm=comm,error_code=error)
+                require(comm==sdk.COMM_SUCCESS and error==0,'SDK使能写ACK未知')
+                result=None
+            else:
+                writer.clearParam()
+                require(writer.addParam(9,bytearray((value&255,value>>8))),'SDK单轮SYNC参数拒绝')
+                comm=writer.txPacket()
+                entry.update(comm=comm,ack='NONE_SYNC_WRITE')
+                require(comm==sdk.COMM_SUCCESS,'SDK SYNC发送未知')
+                result=None
+            require(entry['tx_attempts']==1,'SDK命令没有恰好发送一次')
+            if kind=='sync':
+                require(not entry['rx_bytes'],'SDK SYNC不应读取或宣称目标ACK')
+            else:
+                payload=entry['data'] if kind=='read' else []
+                response=[255,255,9,len(payload)+2,0,*payload]
+                response.append((~sum(response[2:]))&255)
+                require(entry['rx_bytes']==response,'SDK实际返回帧身份/长度/ACK不符')
+            entry['status']='READ_VALID' if kind=='read' else 'SENT_NO_ACK' if kind=='sync' else 'ACK_VALID'
+            if not cleanup:
+                ready()
+                require(deadline is None or io.now()<=deadline,'SDK操作返回超过绝对期限')
+            return result
+        except BaseException as error:
+            entry['error']=repr(error)
+            raise
+        finally:
+            entry.update(finished_ns=io.now(),wire_last_sequence=wire_count)
+            # 同一线程调用已返回；异常可能留下SDK纯软件busy位，不能阻止独立TE0尝试。
+            if getattr(port,'is_using',False):
+                entry['sdk_busy_reset']=True
+                port.is_using=False
+            active=None
+
+    def read(register,destination,*,cleanup=False,deadline=None):
+        before=len(row['sdk_operations'])
+        try:
+            return operation('read',register,cleanup=cleanup,deadline=deadline)
+        finally:
+            if len(row['sdk_operations'])>before:
+                entry=row['sdk_operations'][-1]
+                if entry['kind']=='read' and entry['register']==register:
+                    destination.append(entry)
 
     try:
         engine.check_gate()
+        sdk=load_right_pulse_sdk()
+        wire_path=io.output/'right9-sdk-wire.jsonl'
+        wire=wire_path.open('x')
+        row['wire_path']=str(wire_path)
+        port=sdk.PortHandler(DEVICES['right'])
+        packet=sdk.PacketHandler(0)
+        writer=sdk.GroupSyncWrite(port,packet,46,2)
+        raw_write,raw_read=port.writePort,port.readPort
+        def write_port(data):
+            require(active is not None and list(data)==active['expected_tx'] and active['tx_attempts']==0,
+                    'SDK实际发送不是本轮唯一获准指令')
+            if not active['cleanup'] or active['kind']=='read':
+                # SDK可能先在clearPort/flush中耗时；真实写前再核绝对期限及GO。
+                ready(active['deadline_ns'],cleanup=active['cleanup'])
+            active['tx_attempts']+=1
+            try:
+                count=raw_write(data)
+            except BaseException as error:
+                wire_log('tx',data,error=repr(error),written_count=None)
+                raise
+            wire_log('tx',data,written_count=count)
+            return count
+        def read_port(length):
+            require(active is not None,'SDK读取不属于本轮操作')
+            try:
+                data=raw_read(length)
+            except BaseException as error:
+                wire_log('rx',(),requested_length=length,error=repr(error))
+                raise
+            if data:
+                active['rx_bytes'].extend(data)
+                wire_log('rx',data,requested_length=length)
+            return data
+        port.writePort,port.readPort=write_port,read_port
+        def timeout(packet_length):
+            port.packet_start_time=port.getCurrentTime()
+            port.packet_timeout=port.tx_time_per_byte*packet_length+port.tx_time_per_byte*3.0+50
+        port.setPacketTimeout=timeout
+        ready()
+        engine.right_sdk_active=True
+        row['connection']={'owner_pid':os.getpid(),'device':DEVICES['right'],'baudrate':1_000_000,
+                           'open_attempted':True,'close_attempted':False,'closed':False}
+        require(port.setBaudRate(1_000_000) and port.is_open,'SDK串口打开失败')
+        ready()
         for register,expected in {**RIGHT_PULSE_METADATA,'Torque_Enable':0,'Present_Velocity':0,'Goal_Velocity':0}.items():
-            require(read(register,row['before_raw'])==expected,'右轮元数据/初始静止不符:'+register)
+            require(read(register,row['before_raw'])==expected,'SDK元数据/初始静止不符:'+register)
         anchor=read('Present_Position',row['before_raw'])
-        require(0<=anchor<=4095,'右轮初始位置超单圈范围')
+        require(0<=anchor<=4095,'SDK初始位置超单圈范围')
         row['anchor_raw']=anchor
         row['metadata_verified']=True
-        io.command([RIGHT_PULSE_RAW['path'],DEVICES['right'],'9','sync-zero'])
+        row['initial_zero_attempted']=True
+        operation('sync','Goal_Velocity',0)
         row['initial_zero_finished_ns']=io.now()
         io.sleep(0.05)
         require(read('Goal_Velocity',row['before_raw'])==0,'初始SYNC零目标读回不符')
         row['initial_zero_verified']=True
-        started=io.now()
-        row['enable_attempt_started_ns']=started
-        deadline=started+500_000_000
-        row['observation_deadline_ns']=deadline
-        write('Torque_Enable',1)
-        require(read('Torque_Enable',row['before_raw'])==1,'Enable读回未确认')
+        row['enable_attempted']=True
+        row['enable_attempt_started_ns']=io.now()
+        enable_deadline=io.now()+contract['enable_budget_ns']
+        operation('write','Torque_Enable',1,deadline=enable_deadline)
+        require(read('Torque_Enable',row['before_raw'],deadline=enable_deadline)==1,'SDK Enable读回未确认')
         row['enable_verified']=True
-        io.command([RIGHT_PULSE_SYNC['path'],DEVICES['right'],'9','sync-velocity','500'])
-        require(read('Goal_Velocity',row['before_raw'])==500,'右轮SYNC+500读回不符')
+        ready(enable_deadline)
+        started=io.now()
+        deadline=started+contract['observation_ns']
+        row.update(first_velocity_attempt_started_ns=started,observation_deadline_ns=deadline,
+                   velocity_attempted=True,skipped_write_slots=0)
+        operation('sync','Goal_Velocity',500,deadline=deadline)
+        require(read('Goal_Velocity',row['before_raw'],deadline=deadline)==500,'SDK +500目标读回不符')
         row['goal_verified']=True
-        for offset in (100_000_000,400_000_000):
-            require(io.now()<deadline,'右轮观察窗口已耗尽')
-            io.sleep(max(0,started+offset-io.now())/1_000_000_000)
-            sample={'offset_ns':offset,'raw':[]}
-            row['samples'].append(sample)
-            require(io.now()<deadline,'右轮速度读取前已超窗')
-            word=read('Present_Velocity',sample['raw'])
-            velocity=-(word&0x7fff) if word&0x8000 else word
-            require(io.now()<=deadline,'右轮速度读取完成超窗')
-            require(0<=velocity<=1000,'右轮速度反向或超过固定raw上限')
-            position=read('Present_Position',sample['raw'])
-            require(io.now()<=deadline,'右轮位置读取完成超窗')
-            require(0<=position<=4095,'右轮观察位置超单圈范围')
-            delta=(position-anchor+2048)%4096-2048
-            sample.update(velocity_raw=velocity,position_raw=position,delta_raw=delta)
-            require(0<=delta<=512,'右轮位移反向或超过固定单圈差值上限')
-        require(any(s['velocity_raw']>0 for s in row['samples'])
-                and any(s['delta_raw']>0 for s in row['samples']),'右轮未观察到正向速度及位置变化')
+        next_write=started+contract['write_period_ns']
+        next_sample=started+contract['sample_period_ns']
+        previous=anchor
+        cumulative=0
+        while io.now()<deadline:
+            ready()
+            io.sleep(max(0,min(next_write,next_sample,deadline)-io.now())/1_000_000_000)
+            ready()
+            if io.now()>=deadline:
+                break
+            if io.now()>=next_write:
+                skipped=(io.now()-next_write)//contract['write_period_ns']
+                row['skipped_write_slots']+=skipped
+                operation('sync','Goal_Velocity',500,deadline=deadline)
+                next_write+=int(skipped+1)*contract['write_period_ns']
+            if io.now()>=next_sample:
+                require(io.now()<next_sample+contract['sample_budget_ns'],'SDK相邻采样未及时开始')
+                sample={'offset_ns':next_sample-started,'raw':[]}
+                row['samples'].append(sample)
+                sample_deadline=min(deadline,next_sample+contract['sample_budget_ns'])
+                word=read('Present_Velocity',sample['raw'],deadline=sample_deadline)
+                require(0<=word<=contract['velocity_raw_max'],'SDK运动速度反向/负零或超过raw上限')
+                position=read('Present_Position',sample['raw'],deadline=sample_deadline)
+                require(0<=position<=4095,'SDK观察位置超单圈范围')
+                delta=(position-previous+2048)%4096-2048
+                sample.update(velocity_raw=word,position_raw=position,previous_position_raw=previous,delta_raw=delta)
+                require(0<=delta<=contract['position_step_raw_max'],'SDK相邻位移反向或超过固定步长上限')
+                cumulative+=delta
+                sample['cumulative_delta_raw']=cumulative
+                previous=position
+                next_sample+=contract['sample_period_ns']
+        row.update(observation_finished_ns=io.now(),cumulative_delta_raw=cumulative)
+        ready()
+        require(any(sample['velocity_raw']>0 for sample in row['samples'])
+                and cumulative>0,'SDK未观察到正向速度及位置变化')
     except BaseException as error:
         row['normal_failed']=True
         row['errors'].append(repr(error))
     finally:
         if row['writes']:
-            zero_error=None
             if row['velocity_attempted']:
+                row['zero_attempted']=True
                 try:
-                    io.command([RIGHT_PULSE_RAW['path'],DEVICES['right'],'9','sync-zero'],cleanup=True)
+                    operation('sync','Goal_Velocity',0,cleanup=True)
                 except BaseException as error:
-                    # 清零错误不封住独立TE0；TE0后保持未知且不继续UART。
-                    zero_error=error
                     row['cleanup_errors'].append(repr(error))
+            row['off_attempted']=True
             try:
-                # 与既有Python顺序一致：清零在前，独立断扭必须是最后一次动作写。
-                write('Torque_Enable',0,cleanup=True)
+                operation('write','Torque_Enable',0,cleanup=True)
                 row['disable_finished_ns']=io.now()
                 if 'enable_attempt_started_ns' in row:
-                    elapsed=io.now()-row['enable_attempt_started_ns']
-                    row['enabled_attempt_window_ns']=elapsed
-                    if elapsed>1_000_000_000:
-                        row['errors'].append('启用尝试到Disable完成超过1秒；非硬件自动截止保证')
-                if zero_error is not None:
-                    raise ValueError('收尾SYNC零目标未知，独立断扭后封锁UART') from zero_error
-                io.sleep(0.05,cleanup=True)
-                for register in ('Torque_Enable','Present_Velocity','Goal_Velocity'):
-                    require(read(register,row['cleanup_raw'],cleanup=True)==0,'独立断扭停止未确认:'+register)
-                row['stopped_confirmed']=True
+                    row['enabled_attempt_window_ns']=io.now()-row['enable_attempt_started_ns']
+                    require(row['enabled_attempt_window_ns']<=contract['nonzero_window_fail_ns'],
+                            'SDK启用尝试至断扭完成超过21秒；非硬件自动截止')
             except BaseException as error:
-                if not row['uart_blocked']:
-                    engine.right_pulse_block(error)
-        elif row['errors']:
-            # 无写入仍保留未知/不符事实；不追加一轮UART尝试恢复结论。
-            engine.right_pulse_block(ValueError(row['errors'][-1]))
+                row['cleanup_errors'].append(repr(error))
+            if not row['errors'] and not row['cleanup_errors']:
+                try:
+                    row['settle_deadline_ns']=io.now()+contract['settle_budget_ns']
+                    settle_start=io.now()
+                    row['settle_samples']=[]
+                    for offset in contract['settle_offsets_ns']:
+                        ready(row['settle_deadline_ns'],cleanup=True)
+                        io.sleep(max(0,settle_start+offset-io.now())/1_000_000_000,cleanup=True)
+                        sample={'offset_ns':offset,'raw':[]}
+                        row['settle_samples'].append(sample)
+                        for register in ('Torque_Enable','Goal_Velocity','Present_Velocity'):
+                            ready(row['settle_deadline_ns'],cleanup=True)
+                            word=read(register,sample['raw'],cleanup=True,deadline=row['settle_deadline_ns'])
+                            row['cleanup_raw'].append(sample['raw'][-1])
+                            ready(cleanup=True)
+                            require(io.now()<=row['settle_deadline_ns'],'SDK停稳读回超过1秒')
+                            require(word==0 if register!='Present_Velocity' else 0<=word<=contract['velocity_raw_max'],
+                                    'SDK断扭后使能/目标非零或速度越界:'+register)
+                        sample['velocity_raw']=word
+                        if word==0:
+                            row['stopped_confirmed']=True
+                            break
+                    require(row['stopped_confirmed'],'SDK断扭后1秒内速度未严格归零')
+                    row['settle_finished_ns']=io.now()
+                except BaseException as error:
+                    row['cleanup_errors'].append(repr(error))
+        if port is not None:
+            connection=row.setdefault('connection',{'closed':False,'close_attempted':False})
+            connection['close_attempted']=True
+            try:
+                port.closePort()
+                require(not port.is_open and not getattr(getattr(port,'ser',None),'is_open',False),
+                        'SDK串口关闭后仍活动')
+                connection.update(closed=True,closed_ns=io.now())
+                engine.right_sdk_active=False
+            except BaseException as error:
+                row['cleanup_errors'].append(repr(error))
+        if wire is not None:
+            try:
+                wire.close()
+                raw=Path(row['wire_path']).read_bytes()
+                row['wire_evidence']={'path':row['wire_path'],'sha256':hashlib.sha256(raw).hexdigest(),
+                                      'bytes':len(raw),'events':wire_count}
+            except BaseException as error:
+                row['cleanup_errors'].append(repr(error))
+                io.evidence_errors.append('sdk_wire_close:'+repr(error))
+        try:
+            for reference in RIGHT_PULSE_SDK['refs']:
+                verify_ref(reference)
+        except BaseException as error:
+            row['cleanup_errors'].append(repr(error))
+        if row['errors'] or row['cleanup_errors'] or wire_errors:
+            engine.right_pulse_block(ValueError('SDK本轮失败，关闭连接后禁止后续UART'))
     row['status']='PASS' if not row['errors'] and not row['cleanup_errors'] else 'FAIL'
-    require(row['status']=='PASS','右轮单次非零诊断失败，禁止重试')
+    require(row['status']=='PASS','右轮SDK单次20秒诊断失败，禁止重试')
 
 
 def inspect_unit(io,unit,*,cleanup=False):
@@ -1575,7 +1787,7 @@ def main(argv=None):
     parser.add_argument('--position-target', action='append', choices=tuple(POSITION_TARGETS),
                         help='可重复指定腕部/头部目标，按指定顺序执行；缺省为原四项')
     parser.add_argument('--right-wheel-pulse',action='store_true',
-                        help='仅右9固定+500原始速度单次500ms诊断；禁止混用位置选择')
+                        help='仅右9同一SDK连接固定+500持续20秒；禁止混用位置选择')
     parser.add_argument('--left-wheel-feedback-only',action='store_true',
                         help='仅左轮right7固定14次只读候选判定；不写电机、不判整机停止')
     options=parser.parse_args(argv)

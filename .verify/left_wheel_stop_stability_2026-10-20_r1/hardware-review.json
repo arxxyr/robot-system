@@ -1,0 +1,191 @@
+{
+  "schema": "BOUNDED_HARDWARE_REVIEW_V1",
+  "review_status": "ACCEPTED_WITH_HARDWARE_FAILURE",
+  "scope": "仅现有左轮14读及条件右9单次试验原件独审；无SSH、UART、工具启动或源码修改",
+  "sources": {
+    "main_sha256_at_launch": "4b822e7e4467eff318dd2e25fc75685d6181e98119e3d647983c1fc81276f624",
+    "hardware_run_sha256": "1c58a2a20548dd7e8df5951a6c3ca4324355a78d94e4787cd1bda3b52e75f360",
+    "right_run_sha256": "4f6ac3f46181859b252f2a88c2efa32208a1d3f3cf581e0e4ba92a2062b3aef7"
+  },
+  "evidence_integrity": {
+    "files": 608,
+    "bytes": 1020371,
+    "all_file_sha256_verified": true,
+    "direct_children_reaped": 292,
+    "raw_streams_verified": 584,
+    "journal_original_fields_match": true,
+    "right_journal_post_attached_trace_metadata_verified": 9
+  },
+  "left": {
+    "reads": 14,
+    "TE_GV": 0,
+    "PP": [
+      1211,
+      1212,
+      1211,
+      1211,
+      1212
+    ],
+    "PV_raw": [
+      50,
+      50,
+      0,
+      50,
+      0
+    ],
+    "anchor_raw": null,
+    "position_span_including_anchor": 1,
+    "duration_ns": 1073233167,
+    "raw_frames_and_stdout_match": true,
+    "identity_checks_passed": 93,
+    "candidate": "PASS",
+    "whole_stop": "NOT_EVALUATED_DIAGNOSTIC_ONLY"
+  },
+  "right": {
+    "initial_left_window": {
+      "reads": 14,
+      "TE_GV": 0,
+      "PP": [
+        1211,
+        1212,
+        1211,
+        1212,
+        1211
+      ],
+      "PV_raw": [
+        50,
+        0,
+        0,
+        0,
+        0
+      ],
+      "anchor_raw": 1212,
+      "position_span_including_anchor": 1,
+      "duration_ns": 1091129019,
+      "raw_frames_and_stdout_match": true
+    },
+    "writes_in_wire_order": [
+      "SYNC_GV0",
+      "TE1",
+      "SYNC_GV500",
+      "SYNC_GV0",
+      "TE0"
+    ],
+    "action_frames": [
+      [
+        255,
+        255,
+        254,
+        7,
+        131,
+        46,
+        2,
+        9,
+        0,
+        0,
+        62
+      ],
+      [
+        255,
+        255,
+        9,
+        4,
+        3,
+        40,
+        1,
+        198
+      ],
+      [
+        255,
+        255,
+        254,
+        7,
+        131,
+        46,
+        2,
+        9,
+        244,
+        1,
+        73
+      ],
+      [
+        255,
+        255,
+        254,
+        7,
+        131,
+        46,
+        2,
+        9,
+        0,
+        0,
+        62
+      ],
+      [
+        255,
+        255,
+        9,
+        4,
+        3,
+        40,
+        0,
+        199
+      ]
+    ],
+    "all_action_checksums_valid": true,
+    "minimum_zero_wait_ns": 50060159,
+    "enable_attempt_to_disable_ns": 465541984,
+    "motion_samples": [
+      {
+        "PV": 50,
+        "PP": 3333,
+        "delta": 4
+      },
+      {
+        "PV": 500,
+        "PP": 3482,
+        "delta": 153
+      }
+    ],
+    "encoder_motion_observed": true,
+    "physical_wheel_observation": "UNKNOWN",
+    "cleanup_TE": 0,
+    "cleanup_PV": 250,
+    "cleanup_PV_read_start_after_disable_ns": 60357593,
+    "last_UART_command_sequence": 200,
+    "following_commands_non_UART": 18,
+    "whole_result": "NEEDS_MANUAL_POWER_CUT",
+    "stop": "UNKNOWN",
+    "identity_passed_checks": 93,
+    "identity_unknown_checks": [
+      "modes"
+    ],
+    "no_final_left_window": true,
+    "raw_reads_bound_to_same_command_and_stdout": 19
+  },
+  "cleanup_evidence": {
+    "both_owned_drivers_terminal_and_absent": true,
+    "only_owned_dead_panes_removed": true,
+    "serials_and_four_locks_no_holders": true,
+    "UART_after_terminal": 0
+  },
+  "limitations": [
+    "右轮编码器变化不能代替现场轮动观察，原现场观察UNKNOWN。",
+    "TE0后约60ms的PV250不能证明长时间无法停止，也不能判定已经静止；本轮原停止门失败保留。",
+    "用户未确认实际断电；power-cut-response和physical-observation保留，不把资源释放当实际断电或物理停止。",
+    "不覆盖历史FAIL、D15 OPEN/DEFERRED或deployable=false。"
+  ],
+  "subsequent_human_observation": {
+    "source_file": "physical-observation.json",
+    "source_sha256": "72e5d6cc753e33034c38ce596ac4305975b7b7ac4c7a290eca0871f9e4cf8f69",
+    "source": "用户后续直接消息",
+    "answers": [
+      "没有运行，你和官方的测试脚本一样吗",
+      "轮子没有动"
+    ],
+    "observed_wheel_motion": "NO_VISIBLE_WHEEL_MOTION_USER_REPORTED",
+    "claim": "只将编码器位置变化记作反馈，不宣称实际轮动成功",
+    "before_next_motion_notice_required": true,
+    "preserved": "原始run及本次原件查验时UNKNOWN原文保持；追加后续人工观察，不将编码器变化宣称为实际轮动成功。"
+  }
+}

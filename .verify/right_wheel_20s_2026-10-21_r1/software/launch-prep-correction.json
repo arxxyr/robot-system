@@ -1,0 +1,7 @@
+{
+  "previous_launch_prep_exit": 1,
+  "previous_remote_tmux_starts": 0,
+  "exit_code": 1,
+  "stdout": "{\"exit_code\": 1, \"stdout\": \"\", \"stderr\": \"command too long\\n\", \"verification_driver\": {\"path\": \"/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/quality.py\", \"sha256\": \"8c6a609c0003792989abcc9b5b148a1c1d83487aee8c7964e36f08aa3b10b809\", \"adaptations\": [\"\\u672c\\u8f6estage/95\\u9879/SDK+12refs\", \"-B -I -S\", \"597\\u6e05\\u5355\\u4ec5\\u6838\\u5bf9\\u4e0d\\u91cd\\u590d\\u4fdd\\u5b58\", \"\\u5b9e\\u9645nightly/SDK\\u9996\\u5c3e\\u8eab\\u4efd\"]}}\n",
+  "stderr": ""
+}

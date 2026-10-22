@@ -4,6 +4,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -900,27 +901,139 @@ class RightPulseIO:
                            'raw_unsigned':raw,'tx':tx,'rx':rx})+'\n'
 
 
-class RightPulseTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        # 复用已入库的冻结校验器，不另写一份协议解析。
-        path=Path(m.__file__).parents[1]/'.verify/base_zero_sync_diagnostic_2026-10-13_r2_hardware/originals/helpers/raw_right9_from_r14_r2.py'
-        spec=m.importlib.util.spec_from_file_location('right_pulse_test_raw',path)
-        cls.raw=m.importlib.util.module_from_spec(spec);spec.loader.exec_module(cls.raw)
-        cls.raw.RAW_TOOL=dict(m.RIGHT_PULSE_RAW)
-        cls.raw.META={**cls.raw.META,'Present_Position':(56,2)}
+class SdkMotorSerial:
+    """内存中的单轮电机端点；SDK仍自行组包、收发并解码。"""
+    def __init__(self,executor):
+        self.io=executor
+        self.is_open=True
+        self.pending=bytearray()
+        executor.sdk_serials.append(self)
 
+    @property
+    def in_waiting(self):return len(self.pending)
+    def flush(self):
+        callback=getattr(self.io,'sdk_flush_hook',None)
+        if callback is not None:callback()
+    def reset_input_buffer(self):self.pending.clear()
+    def close(self):
+        self.io.sdk_close_calls+=1
+        if self.io.sdk_close_fails:raise OSError('串口关闭失败')
+        self.is_open=False
+    def write(self,data):
+        packet=list(data)
+        assert packet[:2]==[255,255] and sum(packet[2:])&255==255
+        self.io.t+=1_000_000
+        self.io.sdk_packets.append(packet)
+        sync=packet[2]==254
+        instruction=packet[4]
+        address=packet[5]
+        if sync:
+            assert packet[4:8]==[131,46,2,9]
+            register='Goal_Velocity';value=packet[8]|(packet[9]<<8)
+            self.io.goal=value
+            if value:self.io.sdk_nonzero_count+=1
+            else:self.io.zero_count+=1
+            if self.io.goal_write_enables:self.io.torque=1
+            result=None
+        elif instruction==3:
+            assert packet[2]==9 and address==40
+            register='Torque_Enable';value=packet[6]
+            self.io.torque=value
+            if value and self.io.signal_on_enable:self.io.interrupted=signal.SIGTERM
+            result=[]
+        else:
+            assert instruction==2 and packet[2]==9
+            register=next(name for name,meta in m.RIGHT_SDK_REGS.items() if meta==(address,packet[6]))
+            self.io.sdk_read_counts[register]=self.io.sdk_read_counts.get(register,0)+1
+            if register=='Present_Velocity' and self.io.zero_count>=2 and self.io.sdk_coast:
+                value=self.io.sdk_coast.pop(0)
+            elif self.io.sdk_after_off and register in self.io.sdk_after_off and self.io.torque==0 and self.io.zero_count>=2:
+                value=self.io.sdk_after_off[register]
+            else:value=self.io.value(register)
+            word=abs(value)|(0x8000 if value<0 else 0)
+            result=list(word.to_bytes(packet[6],'little'))
+        key=(instruction,register,value)
+        self.io.sdk_actions.append(key)
+        fault=self.io.sdk_fault(key)
+        if fault=='signal':self.io.interrupted=signal.SIGTERM
+        if fault=='late':self.io.t+=22_000_000_000
+        if fault=='io':raise OSError('已收发但状态未知')
+        if fault=='short':return len(packet)-1
+        if fault=='ack_long' and instruction==3:result=[0]
+        if result is not None:
+            error=4 if fault=='status' else 0
+            response=[255,255,9,len(result)+2,error,*result]
+            response.append((~sum(response[2:]))&255)
+            if fault=='checksum':response[-1]^=1
+            if fault=='length':response=response[:-1]
+            self.pending.extend(response)
+        return len(packet)
+    def read(self,length):
+        self.io.t+=1_000_000
+        raw=self.pending[:length]
+        del self.pending[:length]
+        return bytes(raw)
+
+
+def fake_sdk(executor):
+    class Port:
+        def __init__(self,device):
+            assert device==m.DEVICES['right']
+            self.is_open=False;self.is_using=False;self.ser=None;self.tx_time_per_byte=0.01
+        def setBaudRate(self,baud):
+            assert baud==1_000_000
+            executor.sdk_open_calls+=1
+            self.ser=SdkMotorSerial(executor);self.is_open=True
+            return True
+        def closePort(self):
+            if self.ser:self.ser.close()
+            self.is_open=False
+        def clearPort(self):self.ser.flush()
+        def writePort(self,data):return self.ser.write(data)
+        def readPort(self,length):return self.ser.read(length)
+        def getCurrentTime(self):return executor.now()/1_000_000
+    class Packet:
+        def exchange(self,port,motor,instruction,parameters,width=0):
+            data=[255,255,motor,len(parameters)+2,instruction,*parameters]
+            data.append((~sum(data[2:]))&255)
+            port.clearPort()
+            if port.writePort(data)!=len(data):return [],-1001,0
+            if motor==254:return [],0,0
+            raw=list(port.readPort(width+6))
+            if len(raw)!=width+6 or sum(raw[2:])&255!=255:return [],-3002,0
+            return raw[5:-1],0,raw[4]
+        def readTxRx(self,port,motor,address,width):return self.exchange(port,motor,2,[address,width],width)
+        def write1ByteTxRx(self,port,motor,address,value):
+            _,comm,error=self.exchange(port,motor,3,[address,value])
+            return comm,error
+        def syncWriteTxOnly(self,port,address,width,parameters,length):
+            _,comm,_=self.exchange(port,254,131,[address,width,*parameters[:length]])
+            return comm
+    class Writer:
+        def __init__(self,port,packet,address,width):
+            assert (address,width)==(46,2)
+            self.port=port;self.packet=packet;self.values={}
+        def clearParam(self):self.values.clear()
+        def addParam(self,motor,data):
+            if motor in self.values:return False
+            self.values[motor]=list(data);return True
+        def txPacket(self):
+            assert list(self.values)==[9]
+            return self.packet.syncWriteTxOnly(self.port,46,2,[9,*self.values[9]],3)
+    return SimpleNamespace(PortHandler=Port,PacketHandler=lambda protocol:Packet(),GroupSyncWrite=Writer,COMM_SUCCESS=0)
+
+
+class RightPulseTests(unittest.TestCase):
     def setUp(self):
         self.verify=patch.object(m,'verify_ref')
         self.verify.start();self.addCleanup(self.verify.stop)
-        self.sync_binding=patch.dict(m.RIGHT_PULSE_SYNC,sha256='a'*64,bytes=123456)
-        self.sync_binding.start();self.addCleanup(self.sync_binding.stop)
 
     def bindings(self):
+        references=[dict(r) for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,
+                                      m.RIGHT_PULSE_HELPER,m.RIGHT_PULSE_TRACE,*m.RIGHT_PULSE_SDK['refs'])]
         return {'schema':'MAINTENANCE_BINDINGS_V1','tool':dict(m.RIGHT_PULSE_WRITE),
                 'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
-                'host':{'boot_id':'pulse-fixture'},
-                'refs':[dict(r) for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_HELPER,m.RIGHT_PULSE_TRACE)],
+                'host':{'boot_id':'pulse-fixture'},'refs':references,
                 'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_TRACE)]}
 
     def plan(self):
@@ -928,296 +1041,319 @@ class RightPulseTests(unittest.TestCase):
         return m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,right_wheel_pulse=True)
 
     def engine(self):
-        executor=RightPulseIO();executor.meta=self.raw.META
+        executor=RightPulseIO()
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         executor.output=Path(directory.name)
-        helper=SimpleNamespace(META=self.raw.META,raw_read=self.raw.raw_read,
-                               install_stop_wire_capture=lambda module:None)
+        executor.sdk_packets=[];executor.sdk_actions=[];executor.sdk_serials=[];executor.sdk_read_counts={}
+        executor.sdk_fault=lambda key:None;executor.sdk_coast=[];executor.sdk_after_off={}
+        executor.sdk_nonzero_count=0;executor.sdk_close_calls=0;executor.sdk_open_calls=0
+        executor.sdk_close_fails=False
+        helper=SimpleNamespace(install_stop_wire_capture=lambda module:None)
         engine=m.ProbeEngine(executor,self.plan())
         m.install_right_pulse_guard(engine,helper)
         return executor,engine
 
-    def perform(self,executor,engine,success=True):
-        with contextlib.redirect_stdout(io.StringIO()):
+    def perform(self,executor,engine,success=True,sdk=None):
+        sdk=sdk or fake_sdk(executor)
+        with patch.object(m,'load_right_pulse_sdk',return_value=sdk),contextlib.redirect_stdout(io.StringIO()):
             if success:m.run_right_wheel_pulse(engine)
             else:
                 with self.assertRaises(ValueError):m.run_right_wheel_pulse(engine)
         return engine.right_pulse
 
-    def writes(self,executor):
-        return [argv[3:] for argv,cleanup in executor.calls if argv[3] in ('write','sync-zero','sync-velocity')]
+    def test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal(self):
+        executor,engine=self.engine()
+        row=self.perform(executor,engine)
+        self.assertEqual(row['status'],'PASS');self.assertFalse(engine.manual_cut)
+        self.assertEqual((executor.sdk_open_calls,executor.sdk_close_calls),(1,1))
+        self.assertTrue(row['connection']['closed']);self.assertFalse(engine.right_sdk_active)
+        self.assertEqual(executor.calls,[]);self.assertIsNone(executor.child)
+        self.assertEqual(len(row['samples']),79)
+        self.assertGreater(executor.sdk_nonzero_count,300)
+        self.assertEqual(row['observation_deadline_ns']-row['first_velocity_attempt_started_ns'],20_000_000_000)
+        self.assertGreaterEqual(row['observation_finished_ns'],row['observation_deadline_ns'])
+        self.assertLessEqual(row['enabled_attempt_window_ns'],21_000_000_000)
+        self.assertEqual([w['value'] for w in row['writes'][:3]],[0,1,500])
+        self.assertEqual([(w['register'],w['value']) for w in row['writes'][-2:]],
+                         [('Goal_Velocity',0),('Torque_Enable',0)])
+        self.assertTrue(all(w['motor']==9 for w in row['writes']))
+        self.assertTrue(row['stopped_confirmed']);self.assertEqual((executor.goal,executor.torque),(0,0))
 
-    def test_normal_order_and_quantized_fifty_are_motion_not_stop_errors(self):
-        for velocity in (50,500,1000):
-            executor,engine=self.engine();executor.velocity=velocity
-            row=self.perform(executor,engine)
-            self.assertEqual(row['status'],'PASS')
-            self.assertEqual(self.writes(executor),[['sync-zero'],['write','Torque_Enable','1'],
-                                                   ['sync-velocity','500'],['sync-zero'],['write','Torque_Enable','0']])
-            self.assertEqual(len(row['samples']),2)
-            self.assertTrue(all(s['raw'][-1]['finished_ns']<=row['observation_deadline_ns'] for s in row['samples']))
-            self.assertLessEqual(row['enabled_attempt_window_ns'],500_000_000)
-            self.assertFalse(engine.manual_cut)
-            self.assertEqual((executor.torque,executor.goal),(0,0))
-            self.assertTrue(all(argv[1:3]==[m.DEVICES['right'],'9'] for argv,_ in executor.calls))
-            self.assertEqual(len(executor.trace_calls),5)
-            self.assertEqual([attempt['wire_trace']['instruction'] for attempt in row['writes']],[131,3,131,131,3])
-            self.assertEqual([attempt['wire_trace']['requested_register_address'] for attempt in row['writes']],[46,40,46,46,40])
-            initial_goal=row['before_raw'][10]
-            self.assertEqual(initial_goal['register'],'Goal_Velocity')
-            self.assertGreaterEqual(initial_goal['started_ns']-row['initial_zero_finished_ns'],50_000_000)
-            self.assertEqual([sample['register'] for sample in row['cleanup_raw']],
-                             ['Torque_Enable','Present_Velocity','Goal_Velocity'])
-            for attempt in row['writes']:
-                trace=attempt['wire_trace'];raw=Path(trace['path']).read_bytes()
-                self.assertEqual(hashlib.sha256(raw).hexdigest(),trace['sha256'])
+    def test_wire_chunks_are_actual_sdk_frames_and_comm_results_not_fake_child(self):
+        executor,engine=self.engine();row=self.perform(executor,engine)
+        path=Path(row['wire_evidence']['path']);raw=path.read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),row['wire_evidence']['sha256'])
+        events=[json.loads(line) for line in raw.splitlines()]
+        actual=[event['bytes'] for event in events if event['direction']=='tx']
+        self.assertEqual(actual,executor.sdk_packets)
+        self.assertIn([255,255,254,7,131,46,2,9,244,1,73],actual)
+        self.assertTrue(all(entry['comm']==0 and entry['tx_attempts']==1 for entry in row['sdk_operations']))
+        self.assertFalse(any('argv' in entry or 'pid' in entry for entry in row['sdk_operations']))
+        self.assertTrue(any(event['direction']=='rx' for event in events))
+        self.assertTrue(all(entry['ack']=='NONE_SYNC_WRITE' for entry in row['writes'] if entry['kind']=='sync'))
 
-    def test_motion_direction_magnitude_and_no_motion_fail_but_disable(self):
-        for velocity,delta in ((-50,80),(1001,80),(0,0),(500,-1),(500,513)):
+    def test_adjacent_modular_position_steps_support_multiple_revolutions(self):
+        executor,engine=self.engine();executor.position=4000;executor.delta=120
+        row=self.perform(executor,engine)
+        self.assertEqual(row['samples'][0]['position_raw'],24)
+        self.assertEqual([s['delta_raw'] for s in row['samples']],[120]*79)
+        self.assertEqual(row['cumulative_delta_raw'],9480)
+        self.assertEqual(row['samples'][-1]['position_raw'],(4000+9480)%4096)
+
+    def test_motion_reverse_excessive_velocity_bad_step_or_no_motion_always_cleans_once(self):
+        for velocity,delta in ((-50,80),(1001,80),(0,0),(500,-1),(500,513),(0x8000,80)):
             executor,engine=self.engine();executor.velocity=velocity;executor.delta=delta
             row=self.perform(executor,engine,False)
-            self.assertEqual(row['status'],'FAIL');self.assertFalse(engine.manual_cut)
-            self.assertIn(['write','Torque_Enable','0'],self.writes(executor))
-            self.assertEqual((executor.torque,executor.goal),(0,0))
+            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
+            self.assertTrue(row['connection']['closed'])
+            self.assertEqual([(w['register'],w['value']) for w in row['writes'][-2:]],
+                             [('Goal_Velocity',0),('Torque_Enable',0)])
+            self.assertEqual(sum(w['register']=='Torque_Enable' and w['value']==0 for w in row['writes']),1)
 
-    def test_bad_raw_signal_and_late_read_preserve_failure_and_attempt_disable(self):
-        for fault in ('frame','signal','late','over_one_second'):
+    def test_sdk_all_actual_metadata_and_initial_stop_values_are_required_before_any_write(self):
+        for register in (*m.RIGHT_PULSE_METADATA,'Torque_Enable','Goal_Velocity','Present_Velocity'):
+            executor,engine=self.engine();original=executor.value
+            executor.value=lambda name,r=register:original(name)+1 if name==r else original(name)
+            row=self.perform(executor,engine,False)
+            self.assertEqual(row['writes'],[]);self.assertTrue(engine.manual_cut)
+            self.assertTrue(row['connection']['closed'])
+
+    def test_initial_zero_unknown_never_enables_or_retries_zero_but_attempts_disable(self):
+        executor,engine=self.engine()
+        executor.sdk_fault=lambda key:'io' if key==(131,'Goal_Velocity',0) else None
+        row=self.perform(executor,engine,False)
+        self.assertEqual([(w['register'],w['value']) for w in row['writes']],
+                         [('Goal_Velocity',0),('Torque_Enable',0)])
+        self.assertFalse(row['enable_attempted']);self.assertTrue(row['off_attempted'])
+
+    def test_enable_and_nonzero_uncertain_writes_keep_unique_independent_disable(self):
+        for kind,register,value in ((3,'Torque_Enable',1),(131,'Goal_Velocity',500)):
+            for fault in ('io','short','status'):
+                if kind==131 and fault=='status':continue
+                executor,engine=self.engine()
+                executor.sdk_fault=lambda key,k=(kind,register,value),f=fault:f if key==k else None
+                row=self.perform(executor,engine,False)
+                self.assertEqual(sum(w['register']=='Torque_Enable' and w['value']==0 for w in row['writes']),1)
+                self.assertTrue(engine.manual_cut);self.assertTrue(row['connection']['closed'])
+                self.assertEqual(executor.torque,0)
+
+    def test_repeated_nonzero_failure_does_not_retry_loop_and_disables_once(self):
+        executor,engine=self.engine()
+        executor.sdk_fault=lambda key:'io' if key==(131,'Goal_Velocity',500) and executor.sdk_nonzero_count==4 else None
+        row=self.perform(executor,engine,False)
+        self.assertEqual(executor.sdk_nonzero_count,4)
+        self.assertEqual([w['value'] for w in row['writes'][-2:]],[0,0])
+        self.assertTrue(engine.manual_cut);self.assertEqual(row['cleanup_raw'],[])
+
+    def test_cleanup_zero_failure_still_attempts_torque_off_and_then_closes(self):
+        executor,engine=self.engine()
+        executor.sdk_fault=lambda key:'io' if key==(131,'Goal_Velocity',0) and executor.zero_count==2 else None
+        row=self.perform(executor,engine,False)
+        self.assertTrue(row['zero_attempted']);self.assertTrue(row['off_attempted'])
+        self.assertEqual(executor.torque,0);self.assertEqual(row['cleanup_raw'],[])
+        self.assertEqual(executor.sdk_close_calls,1);self.assertTrue(row['uart_blocked'])
+
+    def test_torque_off_unknown_never_retries_or_reads_after_the_uncertain_ack(self):
+        executor,engine=self.engine()
+        executor.sdk_fault=lambda key:'status' if key==(3,'Torque_Enable',0) else None
+        row=self.perform(executor,engine,False)
+        self.assertEqual(row['sdk_operations'][-1]['register'],'Torque_Enable')
+        self.assertEqual(row['sdk_operations'][-1]['kind'],'write')
+        self.assertEqual(executor.sdk_close_calls,1);self.assertTrue(engine.manual_cut)
+
+    def test_signal_go_expiry_and_overrun_do_not_reset_fixed_deadline_or_repeat_motion(self):
+        for fault in ('signal','go','late'):
             executor,engine=self.engine()
-            if fault=='frame':executor.bad_raw='Present_Velocity'
-            if fault=='signal':executor.signal_on_enable=True
-            if fault=='late':executor.slow_active_ns=450_000_000
-            if fault=='over_one_second':executor.slow_active_ns=1_100_000_000
+            if fault=='go':engine.right_pulse_go_check=lambda:m.require(executor.now()<1_000_000_000,'GO到期')
+            else:executor.sdk_fault=lambda key,f=fault:f if key==(131,'Goal_Velocity',500) and executor.sdk_nonzero_count==4 else None
             row=self.perform(executor,engine,False)
-            self.assertIn(['write','Torque_Enable','0'],self.writes(executor))
-            self.assertEqual((executor.torque,executor.goal),(0,0));self.assertFalse(engine.manual_cut)
-            self.assertTrue(row['errors'])
-            if fault=='over_one_second':self.assertGreater(row['enabled_attempt_window_ns'],1_000_000_000)
+            self.assertTrue(row['off_attempted']);self.assertTrue(engine.manual_cut)
+            self.assertEqual(row['observation_deadline_ns']-row['first_velocity_attempt_started_ns'],20_000_000_000)
+            self.assertTrue(row['connection']['closed'])
+            if fault=='late':self.assertGreater(row['enabled_attempt_window_ns'],21_000_000_000)
 
-    def test_each_uncertain_motion_write_still_disables_once_without_retry(self):
-        for failed in (('Goal_Velocity',500),('Torque_Enable',1)):
-            executor,engine=self.engine();executor.fail_write=failed
+    def test_sdk_flush_crossing_deadline_or_go_cannot_send_the_next_nonzero_packet(self):
+        for fault in ('deadline','go'):
+            executor,engine=self.engine()
+            if fault=='go':engine.right_pulse_go_check=lambda:m.require(executor.now()<1_000_000_000,'flush后GO到期')
+            def flush():
+                row=engine.right_pulse
+                if row['sdk_operations'] and row['sdk_operations'][-1]['kind']=='sync' and (
+                        row['sdk_operations'][-1]['value']==500 and executor.sdk_nonzero_count==1):
+                    executor.t=row['observation_deadline_ns']+1 if fault=='deadline' else 1_000_000_001
+            executor.sdk_flush_hook=flush
             row=self.perform(executor,engine,False)
-            writes=self.writes(executor)
-            attempted=['sync-velocity','500'] if failed[0]=='Goal_Velocity' else ['write',failed[0],str(failed[1])]
-            self.assertEqual(writes.count(attempted),1)
-            self.assertEqual(writes.count(['write','Torque_Enable','0']),1)
-            self.assertEqual(row['status'],'FAIL');self.assertFalse(engine.manual_cut)
+            self.assertEqual(executor.sdk_nonzero_count,1)
+            denied=[w for w in row['writes'] if w['value']==500 and w['status']=='UNKNOWN']
+            self.assertEqual(len(denied),1);self.assertEqual(denied[0]['tx_attempts'],0)
+            self.assertEqual((executor.torque,executor.goal),(0,0));self.assertTrue(row['off_attempted'])
 
-    def test_velocity_write_torque_side_effect_cannot_reenable_after_final_disable(self):
-        executor,engine=self.engine();executor.goal_write_enables=True
-        row=self.perform(executor,engine)
-        self.assertTrue(row['enable_verified'])
-        self.assertEqual((executor.torque,executor.goal),(0,0))
-        self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
+    def test_sdk_success_tuple_cannot_hide_an_overlong_write_ack(self):
+        executor,engine=self.engine();sdk=fake_sdk(executor);original=sdk.PacketHandler
+        executor.sdk_fault=lambda key:'ack_long' if key==(3,'Torque_Enable',1) else None
+        def packet(protocol):
+            value=original(protocol);write=value.write1ByteTxRx
+            def accepting(port,motor,address,word):
+                comm,error=write(port,motor,address,word)
+                if word==1:
+                    port.readPort(1)
+                    return 0,0
+                return comm,error
+            value.write1ByteTxRx=accepting
+            return value
+        sdk.PacketHandler=packet
+        row=self.perform(executor,engine,False,sdk=sdk)
+        attempt=next(w for w in row['writes'] if w['register']=='Torque_Enable' and w['value']==1)
+        self.assertEqual((attempt['comm'],attempt['error_code']),(0,0))
+        self.assertEqual(len(attempt['rx_bytes']),7)
+        self.assertEqual(attempt['status'],'UNKNOWN');self.assertEqual(executor.sdk_nonzero_count,0)
+        self.assertTrue(row['off_attempted']);self.assertTrue(engine.manual_cut)
 
-    def test_initial_zero_failure_has_no_zero_retry_and_only_independent_disable(self):
-        executor,engine=self.engine();executor.fail_zero_number=1
-        row=self.perform(executor,engine,False)
-        self.assertEqual(self.writes(executor),[['sync-zero'],['write','Torque_Enable','0']])
-        self.assertTrue(row['errors']);self.assertFalse(row['enable_attempted'])
-
-    def test_cleanup_zero_failure_still_disables_once_then_blocks_uart(self):
-        executor,engine=self.engine();executor.fail_zero_number=2
-        row=self.perform(executor,engine,False)
-        self.assertEqual(self.writes(executor)[-2:],[['sync-zero'],['write','Torque_Enable','0']])
-        self.assertEqual(self.writes(executor).count(['sync-zero']),2)
-        self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
-        self.assertEqual(row['cleanup_raw'],[])
-        self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
-        count=len(executor.calls)
-        with self.assertRaises(ValueError):executor.poke('right',9,'read','Torque_Enable',cleanup=True)
-        self.assertEqual(len(executor.calls),count)
-
-    def test_preparation_and_sample_read_failures_keep_single_disable(self):
-        for register,number,nonzero_sent in (('Goal_Velocity',2,False),('Torque_Enable',2,False),
-                ('Goal_Velocity',3,True),('Present_Velocity',2,True),('Present_Position',2,True)):
-            executor,engine=self.engine();executor.fail_read=(register,number)
-            row=self.perform(executor,engine,False)
-            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
-            self.assertEqual(row['velocity_attempted'],nonzero_sent)
-            self.assertEqual(self.writes(executor).count(['sync-zero']),2 if nonzero_sent else 1)
-            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
-            self.assertTrue(row['errors'])
-
-    def test_enable_must_read_one_before_nonzero_and_expiry_does_not_move_start(self):
-        for fault in ('readback','deadline'):
+    def test_enable_readback_and_budget_fail_before_first_nonzero(self):
+        for fault in ('readback','late'):
             executor,engine=self.engine()
             if fault=='readback':
                 original=executor.value
                 executor.value=lambda register:0 if register=='Torque_Enable' else original(register)
-            else:executor.slow_active_ns=500_000_000
+            else:executor.sdk_fault=lambda key:'late' if key==(3,'Torque_Enable',1) else None
             row=self.perform(executor,engine,False)
-            self.assertFalse(row['velocity_attempted'])
-            self.assertEqual(row['observation_deadline_ns']-row['enable_attempt_started_ns'],500_000_000)
-            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
+            self.assertEqual(executor.sdk_nonzero_count,0);self.assertTrue(row['off_attempted'])
 
-    def test_right9_ordinary_torque_captures_same_command_even_if_stop_nonzero(self):
-        for nonzero in (False,True):
-            executor,engine=self.engine();executor.torque=int(nonzero)
-            if nonzero:
-                with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
-                    executor.poke('right',9,'read','Torque_Enable',cleanup=True)
-            else:self.assertEqual(executor.poke('right',9,'read','Torque_Enable'),0)
-            self.assertEqual(len(executor.calls),1)
-            trace=executor.commands[-1]['ordinary_read_trace']
-            self.assertEqual(trace['instruction'],2)
-            self.assertEqual(trace['requested_register_address'],40)
-            self.assertEqual(trace['width'],1)
-            self.assertEqual(hashlib.sha256(Path(trace['path']).read_bytes()).hexdigest(),trace['sha256'])
-            self.assertEqual(engine.manual_cut,nonzero)
-
-    def test_unfrozen_sync_tool_and_wrong_sync_command_reject_before_child(self):
-        for key,value in (('sha256',None),('bytes',None),('sha256','bad'),('bytes',0)):
-            with patch.dict(m.RIGHT_PULSE_SYNC,{key:value}),self.assertRaises(ValueError):
-                self.plan()
-        for tool,action in ((m.RIGHT_PULSE_RAW,['sync-velocity','500']),
-                            (m.RIGHT_PULSE_SYNC,['sync-velocity','501']),
-                            (m.RIGHT_PULSE_SYNC,['sync-zero'])):
+    def test_missing_status_corrupt_frame_and_communication_failure_never_become_zero(self):
+        for fault in ('status','checksum','length','io'):
             executor,engine=self.engine()
-            with self.assertRaises(ValueError):
-                executor.command([tool['path'],m.DEVICES['right'],'9',*action])
-            self.assertEqual(executor.calls,[])
+            executor.sdk_fault=lambda key,f=fault:f if key[0:2]==(2,'Present_Velocity') else None
+            row=self.perform(executor,engine,False)
+            self.assertEqual(row['writes'],[]);self.assertTrue(engine.manual_cut)
+            self.assertEqual(row['before_raw'][-1]['status'],'UNKNOWN')
 
-    def test_last_position_read_crossing_go_keeps_frame_fails_and_disables(self):
-        executor,engine=self.engine()
-        expiry=lambda:engine.right_pulse.get('enable_attempt_started_ns',10**12)+415_000_000
-        engine.right_pulse_go_check=lambda:m.require(executor.now()<expiry(),'夹具GO到期')
+    def test_settle_records_two_nonzero_values_then_strict_zero_within_one_second(self):
+        executor,engine=self.engine();executor.sdk_coast=[250,50,0]
+        row=self.perform(executor,engine)
+        self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[250,50,0])
+        self.assertTrue(row['stopped_confirmed']);self.assertFalse(engine.manual_cut)
+        self.assertLessEqual(row['settle_finished_ns']-row['disable_finished_ns'],1_000_000_000)
+        self.assertTrue(all(s['raw_unsigned']==0 for s in row['cleanup_raw'] if s['register']!='Present_Velocity'))
+
+    def test_settle_never_accepts_fifty_as_zero_and_closes_before_sticky_no_uart(self):
+        executor,engine=self.engine();executor.sdk_coast=[50]*5
         row=self.perform(executor,engine,False)
-        self.assertIn('GO到期',row['errors'][-1])
-        self.assertEqual(row['samples'][-1]['raw'][-1]['status'],'READ_VALID')
-        self.assertGreaterEqual(row['samples'][-1]['raw'][-1]['finished_ns'],expiry())
-        self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
-        self.assertFalse(engine.manual_cut)
+        self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
+        self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[50]*5)
+        self.assertTrue(row['connection']['closed'])
+        count=len(executor.calls)
+        with self.assertRaises(ValueError):executor.poke('right',9,'read','Present_Velocity',cleanup=True)
+        self.assertEqual(len(executor.calls),count)
 
-    def test_write_and_ordinary_read_return_recheck_go(self):
-        for kind in ('write','ordinary'):
-            executor,engine=self.engine()
-            engine.right_pulse_go_check=lambda:m.require(executor.now()<5_000_000,'返回时GO到期')
-            if kind=='write':
-                engine.right_pulse['metadata_verified']=True
-                argv=[m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],'9','sync-zero']
-            else:argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES['right'],'9','read','Torque_Enable']
-            with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'GO到期'):
-                executor.command(argv)
-            self.assertEqual(len(executor.calls),1)
-            if kind=='write':
-                self.assertEqual(engine.right_pulse['writes'][0]['status'],'SENT_NO_ACK')
-                self.assertIn('wire_trace',engine.right_pulse['writes'][0])
-
-    def test_trace_prepare_failure_never_prevents_single_disable(self):
-        for when in ('enable','zero','disable'):
-            executor,engine=self.engine()
-            def verify(reference,**kwargs):
-                if reference==m.RIGHT_PULSE_TRACE and (
-                        engine.right_pulse['off_attempted'] if when=='disable'
-                        else len(engine.right_pulse['writes'])==(4 if when=='zero' else 2)):
-                    raise OSError('夹具strace准备失败')
-            with patch.object(m,'verify_ref',side_effect=verify):
-                row=self.perform(executor,engine,False)
-            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
-            self.assertEqual(executor.torque,0)
-            self.assertTrue(executor.evidence_errors)
-            if when in ('zero','disable'):
-                self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
-                self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
-            else:self.assertFalse(engine.manual_cut)
-
-    def test_trace_save_failure_after_write_still_attempts_disable_and_preserves_failure(self):
-        original=Path.read_bytes
-        for when in ('enable','zero','disable'):
-            executor,engine=self.engine()
-            def read_bytes(path):
-                target=(engine.right_pulse['off_attempted'] if when=='disable'
-                        else len(engine.right_pulse['writes'])==(4 if when=='zero' else 2))
-                if path.name.startswith('right9-pulse-write-') and target:
-                    raise OSError('夹具trace落盘读取失败')
-                return original(path)
-            with patch.object(Path,'read_bytes',read_bytes):
-                row=self.perform(executor,engine,False)
-            self.assertEqual(self.writes(executor).count(['write','Torque_Enable','0']),1)
-            self.assertEqual(executor.torque,0)
-            self.assertEqual(row['status'],'FAIL');self.assertTrue(executor.evidence_errors)
-            self.assertEqual(engine.manual_cut,when in ('zero','disable'))
-
-    def test_disable_failure_or_nonzero_stop_blocks_all_subsequent_uart(self):
-        for fault in ('ack','speed'):
-            executor,engine=self.engine()
-            if fault=='ack':executor.fail_write=('Torque_Enable',0)
-            else:executor.stop_velocity=50
-            # 停止异常只在实际断扭后注入，不污染初始静止门。
-            if fault=='speed':
-                executor.stop_velocity=0
-                original=executor.value
-                executor.value=lambda register:50 if register=='Present_Velocity' and engine.right_pulse['off_attempted'] else original(register)
+    def test_settle_torque_goal_reverse_and_out_of_range_fail_immediately(self):
+        for register,value in (('Torque_Enable',1),('Goal_Velocity',500),('Present_Velocity',-50),
+                               ('Present_Velocity',1001),('Present_Velocity',0x8000)):
+            executor,engine=self.engine();executor.sdk_after_off={register:value}
             row=self.perform(executor,engine,False)
-            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
-            self.assertEqual(self.writes(executor)[-1],['write','Torque_Enable','0'])
-            count=len(executor.calls)
-            with self.assertRaises(ValueError):executor.poke('right',9,'read','Present_Velocity',cleanup=True)
-            self.assertEqual(len(executor.calls),count)
+            self.assertTrue(engine.manual_cut);self.assertFalse(row['stopped_confirmed'])
+            self.assertEqual(len(row['settle_samples']),1)
 
-    def test_initial_and_final_ordinary_stop_failure_is_sticky(self):
-        for after_motion in (False,True):
+    def test_settle_timeout_or_go_crossing_keeps_last_returned_frame_and_fails(self):
+        for fault in ('timeout','go'):
             executor,engine=self.engine()
-            if after_motion:self.perform(executor,engine)
+            if fault=='timeout':
+                executor.sdk_fault=lambda key:'late' if key[0:2]==(2,'Goal_Velocity') and executor.zero_count==2 else None
+            else:
+                engine.right_pulse_go_check=lambda:m.require(executor.now()<
+                    engine.right_pulse.get('disable_finished_ns',10**12)+51_000_000,'停稳GO到期')
+            row=self.perform(executor,engine,False)
+            self.assertTrue(engine.manual_cut);self.assertFalse(row['stopped_confirmed'])
+            self.assertTrue(row['cleanup_raw'])
+            self.assertEqual(row['cleanup_raw'][-1]['status'],'READ_VALID')
+
+    def test_close_failure_keeps_cli_blocked_even_after_a_zero_stop_readback(self):
+        executor,engine=self.engine();executor.sdk_close_fails=True
+        row=self.perform(executor,engine,False)
+        self.assertTrue(row['stopped_confirmed']);self.assertTrue(engine.right_sdk_active)
+        self.assertTrue(engine.manual_cut)
+        with self.assertRaises(ValueError):executor.poke('right',8,'read','Torque_Enable',cleanup=True)
+        self.assertEqual(executor.calls,[])
+
+    def test_fixed_wire_whitelist_rejects_hidden_other_motor_or_register_writes(self):
+        executor,engine=self.engine();sdk=fake_sdk(executor);original=sdk.GroupSyncWrite
+        class BadWriter:
+            def __init__(self,*args):self.inner=original(*args);self.port=args[0]
+            def clearParam(self):self.inner.clearParam()
+            def addParam(self,*args):return self.inner.addParam(*args)
+            def txPacket(self):return self.port.writePort([255,255,9,4,3,33,1,205])
+        sdk.GroupSyncWrite=BadWriter
+        row=self.perform(executor,engine,False,sdk)
+        self.assertFalse(any(p[5]==33 and p[4]==3 for p in executor.sdk_packets))
+        self.assertTrue(row['off_attempted']);self.assertTrue(engine.manual_cut)
+
+    def test_cli_cannot_access_any_motor_while_the_sdk_connection_is_active(self):
+        executor,engine=self.engine();engine.right_sdk_active=True
+        with self.assertRaises(ValueError):executor.poke('left',1,'read','Torque_Enable')
+        self.assertEqual(executor.calls,[])
+
+    def test_initial_and_final_other_motor_stop_values_remain_strict_and_sticky(self):
+        for after in (False,True):
+            executor,engine=self.engine()
+            if after:self.perform(executor,engine)
             executor.stop_velocity=50
             with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
-                executor.poke('right',8,'read','Present_Velocity',cleanup=after_motion)
+                executor.poke('right',8,'read','Present_Velocity',cleanup=after)
             count=len(executor.calls)
             with self.assertRaises(ValueError):executor.poke('left',1,'read','Torque_Enable',cleanup=True)
             self.assertEqual(len(executor.calls),count);self.assertTrue(engine.manual_cut)
 
-    def test_illegal_writes_are_refused_before_executor(self):
-        for side,motor,register,value in (('left',1,'Torque_Enable',1),('right',8,'Torque_Enable',1),
-                ('right',9,'Goal_Velocity',501),('right',9,'Goal_Position',1234),('right',9,'Phase',4)):
-            executor,engine=self.engine()
-            argv=[m.RIGHT_PULSE_WRITE['path'],m.DEVICES[side],str(motor),'write',register,str(value)]
-            with self.assertRaises(ValueError):executor.command(argv)
-            self.assertEqual(executor.calls,[])
-
-    def test_bad_actual_metadata_never_writes_or_continues_uart(self):
-        executor,engine=self.engine();original=executor.value
-        executor.value=lambda register:11 if register=='Firmware_Minor_Version' else original(register)
-        self.perform(executor,engine,False)
-        self.assertEqual(self.writes(executor),[]);self.assertTrue(engine.right_pulse['uart_blocked'])
-
-    def test_plan_flags_binding_and_missing_go_reject_without_child(self):
-        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不许启动child')) as child:
-            for args in (['--right-wheel-pulse','--position-target','head-1'],
-                         ['--right-wheel-pulse','--execute'],['--right-wheel-pulse','500']):
-                with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):
-                    m.main(args)
-            for mutate in ('metadata','tool','refs','targets','sync_sha','sync_path','sync_bytes','sync_binary'):
-                plan=self.plan()
-                if mutate=='metadata':plan['right_wheel_pulse']['metadata']['Phase']=4
-                if mutate=='tool':plan['bindings']['tool']['sha256']='0'*64
-                if mutate=='refs':plan['bindings']['refs'].pop()
-                if mutate=='targets':plan['position_targets']=m.TARGETS
-                if mutate.startswith('sync_'):
-                    reference=next(ref for ref in plan['bindings']['refs'] if ref['path']==m.RIGHT_PULSE_SYNC['path'])
-                    if mutate=='sync_sha':reference['sha256']='b'*64
-                    if mutate=='sync_path':reference['path']='/tmp/wrong-tool'
-                    if mutate=='sync_bytes':reference['bytes']+=1
-                    if mutate=='sync_binary':plan['bindings']['binary_paths'].remove(reference['path'])
-                with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
-            with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),200)
+    def test_plan_contract_sdk_refs_old_timing_and_missing_go_are_rejected(self):
+        self.assertEqual(m.position_targets_from_plan(json.loads(json.dumps(self.plan()))),[])
+        for fault in ('sdk','timing','velocity','targets','scope'):
+            plan=self.plan()
+            if fault=='sdk':plan['bindings']['refs'].pop()
+            if fault=='timing':plan['right_wheel_pulse']['observation_ns']=500_000_000
+            if fault=='velocity':plan['right_wheel_pulse']['raw_velocity']=501
+            if fault=='targets':plan['position_targets']=m.TARGETS
+            if fault=='scope':plan['scope']='旧500ms'
+            with self.assertRaises((ValueError,KeyError)):
+                if fault=='scope':m.validate_go({},plan,0)
+                else:m.position_targets_from_plan(plan)
+        with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),200)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不得child')) as child:
+            for args in (['--right-wheel-pulse','--position-target','head-1'],['--right-wheel-pulse','--execute']):
+                with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):m.main(args)
             child.assert_not_called()
 
-    def test_existing_r4_extended_identity_metadata_is_preserved(self):
-        path=Path(m.__file__).parents[1]/'.verify/base_zero_sync_diagnostic_2026-10-20_r4/plan.json'
-        document=json.loads(path.read_text())
-        bindings=document.get('plan',document)['bindings']
-        bindings['refs'].append(dict(m.RIGHT_PULSE_SYNC))
-        bindings['binary_paths'].append(m.RIGHT_PULSE_SYNC['path'])
-        original=copy.deepcopy(bindings)
-        root='/home/loosqk/robot-checks/pulse-fixture'
-        plan=m.make_plan(bindings,root+'/run','pulse-fixture',root,right_wheel_pulse=True)
-        self.assertEqual(plan['bindings'],original)
-        self.assertIn('inode',plan['bindings']['tool'])
+    def test_sdk_loader_rejects_ordinary_startup_or_preexisting_package_before_import(self):
+        for flags,modules in ((SimpleNamespace(isolated=False,no_site=False),{}),
+                              (SimpleNamespace(isolated=True,no_site=True),{'serial':SimpleNamespace()})):
+            with patch.object(m.sys,'flags',flags),patch.dict(m.sys.modules,modules),patch.object(
+                    m.importlib,'import_module',side_effect=AssertionError('不得导入')) as imported:
+                with self.assertRaises(ValueError):m.load_right_pulse_sdk()
+                imported.assert_not_called()
 
-    def test_go_binds_current_scope_and_600_seconds(self):
-        plan=self.plan()
-        facts={**{key:True for key in m.FACTS},'confirmed_at_ns':100}
+    def test_wire_journal_failure_after_nonzero_still_sends_final_zero_and_disable(self):
+        executor,engine=self.engine();original=Path.open
+        def opening(path,*args,**kwargs):
+            stream=original(path,*args,**kwargs)
+            if path.name!='right9-sdk-wire.jsonl' or not args or args[0]!='x':return stream
+            def write(value):
+                if engine.right_pulse['velocity_attempted']:raise OSError('原帧日志写失败')
+                return stream.write(value)
+            return SimpleNamespace(write=write,flush=stream.flush,close=stream.close)
+        with patch.object(Path,'open',opening):row=self.perform(executor,engine,False)
+        self.assertTrue(executor.evidence_errors);self.assertTrue(engine.manual_cut)
+        self.assertEqual(executor.torque,0);self.assertTrue(row['connection']['closed'])
+        self.assertEqual([(w['register'],w['value']) for w in row['writes'][-2:]],
+                         [('Goal_Velocity',0),('Torque_Enable',0)])
+
+    def test_settle_communication_error_does_not_get_a_second_sampling_attempt(self):
+        executor,engine=self.engine()
+        executor.sdk_fault=lambda key:'status' if key[0:2]==(2,'Present_Velocity') and executor.zero_count==2 else None
+        row=self.perform(executor,engine,False)
+        self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
+        self.assertEqual(len(row['settle_samples']),1)
+        self.assertEqual(row['sdk_operations'][-1]['error_code'],4)
+        self.assertTrue(row['connection']['closed'])
+
+    def test_go_binds_the_new_scope_and_current_ten_minute_field_state(self):
+        plan=self.plan();facts={**{key:True for key in m.FACTS},'confirmed_at_ns':100}
         go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
             'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],
             'source':'仅测试夹具','physical':{side:dict(facts) for side in m.SERIALS}}
@@ -1225,28 +1361,53 @@ class RightPulseTests(unittest.TestCase):
             continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
             base_confirmation_scope=m.RIGHT_PULSE_SCOPE,base_confirmation_answer='夹具就绪')
         m.validate_go(go,plan,200)
-        for fault in ('scope','observation','ttl','stale'):
-            bad=copy.deepcopy(go)
-            if fault=='scope':bad['physical']['right']['base_confirmation_scope']='旧零速'
-            if fault=='observation':bad['physical']['right']['continuous_wheel_observation']=False
-            if fault=='ttl':bad['expires_at_ns']=601_000_000_101
-            if fault=='stale':
-                bad['issued_at_ns']=601_000_000_100;bad['expires_at_ns']=601_000_000_900
-            with self.assertRaises(ValueError):m.validate_go(bad,plan,601_000_000_200 if fault=='stale' else 200)
+        for field,value in (('base_confirmation_scope','旧500ms'),('continuous_wheel_observation',False)):
+            bad=copy.deepcopy(go);bad['physical']['right'][field]=value
+            with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
 
-    def test_diagnostic_pass_keeps_firmware_deferred_and_other_wheels_untouched(self):
+    def test_diagnostic_success_does_not_clear_firmware_deferred_or_other_wheel_position(self):
         executor,engine=self.engine()
-        with self.assertRaisesRegex(ValueError,'BASE_FIRMWARE_CONTRACT_UNVERIFIED'):
+        with patch.object(m,'load_right_pulse_sdk',return_value=fake_sdk(executor)),self.assertRaisesRegex(
+                ValueError,'BASE_FIRMWARE_CONTRACT_UNVERIFIED'):
             m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
         self.assertEqual(engine.rows[0]['status'],'PASS')
-        self.assertTrue(all(row['decision']=='DEFERRED' for row in engine.rows[1:]))
         before=idle_rows();after=copy.deepcopy(before);after['right:9']['Present_Position']=executor.position
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
         after['right:8']['Present_Position']+=5
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
-        self.assertEqual(m.classify_stop_snapshot(after)['status'],'PASS')
+        self.assertTrue(all(row['decision']=='DEFERRED' for row in engine.rows[1:]))
 
-
+    def test_actual_sdk_golden_when_explicit_same_version_source_is_available(self):
+        site=os.environ.get('SDK_GOLDEN_SITE')
+        if not site:
+            self.skipTest('未提供离线SDK源码目录；内存端点验证独立执行')
+        source=Path(site)
+        for reference in m.RIGHT_PULSE_SDK['refs']:
+            relative=Path(reference['path']).relative_to(m.RIGHT_PULSE_SDK['site'])
+            if relative.suffix=='.py':
+                self.assertEqual(hashlib.sha256((source/relative).read_bytes()).hexdigest(),reference['sha256'])
+        prefix=lambda name:name=='serial' or name.startswith('serial.') or name=='scservo_sdk' or name.startswith('scservo_sdk.')
+        saved={name:module for name,module in sys.modules.items() if prefix(name)}
+        for name in saved:del sys.modules[name]
+        sys.path.insert(0,str(source))
+        try:
+            sdk=m.importlib.import_module('scservo_sdk');serial=m.importlib.import_module('serial')
+            self.assertEqual(serial.VERSION,'3.5')
+            executor,engine=self.engine();original=sdk.PortHandler
+            def port(device):
+                instance=original(device)
+                instance.getCurrentTime=lambda:executor.now()/1_000_000
+                return instance
+            with patch.object(serial,'Serial',side_effect=lambda **kwargs:SdkMotorSerial(executor)),patch.object(sdk,'PortHandler',side_effect=port):
+                row=self.perform(executor,engine,sdk=sdk)
+            self.assertEqual(row['status'],'PASS');self.assertEqual(executor.sdk_close_calls,1)
+            self.assertGreater(executor.sdk_nonzero_count,300)
+            self.assertIn([255,255,254,7,131,46,2,9,244,1,73],executor.sdk_packets)
+        finally:
+            sys.path.remove(str(source))
+            for name in tuple(sys.modules):
+                if prefix(name):del sys.modules[name]
+            sys.modules.update(saved)
 
 
 class LeftFeedbackTests(unittest.TestCase):

@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"right-wheel-20s-software-r1-20261021 $103 %139 725474 0\\n\", \"stderr\": \"\", \"verification_driver\": {\"path\": \"/home/loosqk/robot-checks/left-wheel-stop-stability-20261020-r1/software/final-validation/quality.py\", \"sha256\": \"8c6a609c0003792989abcc9b5b148a1c1d83487aee8c7964e36f08aa3b10b809\", \"adaptations\": [\"\\u672c\\u8f6estage/95\\u9879/SDK+12refs\", \"-B -I -S\", \"597\\u6e05\\u5355\\u4ec5\\u6838\\u5bf9\\u4e0d\\u91cd\\u590d\\u4fdd\\u5b58\", \"\\u5b9e\\u9645nightly/SDK\\u5b8c\\u6574\\u8eab\\u4efd\\u9996\\u5c3e\"]}, \"temporary_runner\": \"/tmp/robot-system-right20-native-quality-20261021-r1.py\", \"temporary_runner_sha256\": \"36ca5c41f75a94a2368507f35d85ed1196a14f0f0a28e6a56bf57b1a6aca1f19\"}\n",
+  "stderr": ""
+}

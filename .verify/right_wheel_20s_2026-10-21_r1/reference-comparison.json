@@ -1,0 +1,27 @@
+{
+  "official_commit": "b017b5e6354bd9f61f4247a920c72622ca0aade0",
+  "official_keyboard": "https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/examples/4_xlerobot_teleop_keyboard.py",
+  "official_robot": "https://github.com/Vector-Wangel/XLeRobot/blob/b017b5e6354bd9f61f4247a920c72622ca0aade0/software/src/robots/xlerobot/xlerobot.py",
+  "installed_sdk": "sdk-bindings.json",
+  "verified_differences": [
+    "官方一次连接并循环调用send_action向三轮发速度；此前是逐命令新工具连接、右9仅一次非零",
+    "官方高层输入车体速度，换算原始Goal_Velocity；500不是百分比，正值地址46/2B的SYNC编码相同",
+    "官方configure还涉及加速度等参数及全机使能；dimos的SYNC0/50ms/TE1不等于完全复现官方configure",
+    "官方stop_base发送零目标，disconnect断扭，没有当前实际速度停止门；不可据此删除本项目停止检查",
+    "官方插件未锁定LeRobot版本；现场实际SDK1.0.0/pyserial3.5已按文件读取和隔离导入确认，不将参考LeRobot0.6.1当作现场已装"
+  ],
+  "cause_of_no_visible_motion": "UNKNOWN",
+  "user_observation": "轮子没有动",
+  "do_not_claim_motion_success_from_encoder_only": true,
+  "selected_next_change": "仅复用已安装SDK同一串口连接，固定右9原始+500循环20秒；不执行官方整机configure",
+  "old_20s_once_draft": {
+    "status": "PAUSED_SAVED_IN_LOCAL_GIT_STASH",
+    "stash": "7a34b74d267b1b87fc8d91381554d0d3b5199a33",
+    "local_tests": 95,
+    "native_tests": "NOT_RUN",
+    "hardware": "NOT_RUN"
+  },
+  "next_motion_requires_prior_notice": true,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

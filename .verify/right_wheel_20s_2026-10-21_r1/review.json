@@ -1,0 +1,86 @@
+{
+  "schema": "RIGHT9_SDK_NARROW_REVIEW_V1",
+  "status": "PASS_SOFTWARE_ONLY",
+  "source_sha256_before_after": {
+    "scripts/run_hardware_maintenance.py": "72e42872b824651c771dac8a453e8f0d99474f52699ff0cfd73151f133217a67",
+    "scripts/tests/test_hardware_maintenance.py": "d2209129d0a42cd89610997bc273e5bfa85822931fc1bcae94754edd3bd18cc8"
+  },
+  "source_unchanged_during_checks": true,
+  "scope": "load_right_pulse_sdk/install_right_pulse_guard/run_right_wheel_pulse及两项发现的定向修复；未重复95项全套。",
+  "findings": [
+    {
+      "issue": "SDK clearPort/flush可在操作前检查后耗过20秒绝对期限或GO，旧真实write hook仍可能发送+500。",
+      "resolution": "真实PortHandler.writePort前重核entry deadline/GO/信号；非cleanup和停稳READ均受限，cleanup零速/TE0仍各独立尝试。",
+      "verification": "test_sdk_flush_crossing_deadline_or_go_cannot_send_the_next_nonzero_packet：虚拟flush分别耗过deadline/GO，只保留此前一次+500，拒发tx_attempts=0，finally目标/TE0。",
+      "status": "FIXED"
+    },
+    {
+      "issue": "真实SDK1.0.0对FF FF09 03 00 00 F3异常7字节写ACK仍返回(0,0)，仅comm/error不足。",
+      "resolution": "同entry累计真实RX，以当前ID9、READ宽度/数据或TE写ACK核精确完整帧、error0及校验；SYNC须无RX，真实TX仍受固定名单限制。",
+      "verification": "test_sdk_success_tuple_cannot_hide_an_overlong_write_ack及独立真实SDK+内存Serial异常ACK均拒绝；非零发送0、保留独立TE0、连接关闭、manual_cut=true。",
+      "status": "FIXED"
+    },
+    {
+      "issue": "read入口前置失败时finally可能把上一条同寄存器entry重复放进当前destination。",
+      "resolution": "只在本次sdk_operations长度增加后附当次entry。",
+      "status": "FIXED_BY_SOURCE_REVIEW"
+    },
+    {
+      "issue": "wire日志落盘失败不能宣称完成或阻止独立TE0，SDK关闭失败不得解封CLI。",
+      "resolution": "wire_errors/evidence_errors粘性保留；finally零/TE0不依赖失败日志或旧GO，close失败保留right_sdk_active及UART封锁。",
+      "status": "CONFIRMED_BY_SOURCE_REVIEW"
+    }
+  ],
+  "checks": {
+    "affected_test_methods_passed": [
+      "RightPulseTests.test_sdk_flush_crossing_deadline_or_go_cannot_send_the_next_nonzero_packet",
+      "RightPulseTests.test_sdk_success_tuple_cannot_hide_an_overlong_write_ack",
+      "RightPulseTests.test_actual_sdk_golden_when_explicit_same_version_source_is_available"
+    ],
+    "affected_methods": 3,
+    "failed": 0,
+    "skipped": 0,
+    "independent_real_sdk_negative": {
+      "SDK": "scservo_sdk1.0.0固定源码+pyserial3.5 API，Serial替换纯内存电机端点",
+      "injected_response": [
+        255,
+        255,
+        9,
+        3,
+        0,
+        0,
+        243
+      ],
+      "sdk_comm_error": [
+        0,
+        0
+      ],
+      "candidate_status": "UNKNOWN",
+      "nonzero_transmissions": 0,
+      "torque_after_cleanup": 0,
+      "connection_closed": true,
+      "manual_cut": true
+    },
+    "main_and_tests_SHA_before_after_equal": true
+  },
+  "confirmed_boundaries": [
+    "基础Python -I -S执行及固定SDK源码闭包，禁止复用预导入serial/scservo模块。",
+    "同一right9连接、固定+500名义50ms发送、20秒绝对窗口不续期，异常不补发；20/21秒明确为软件预算。",
+    "初始TE/GV/PV严格0方可启用；动作失败后独立零速及TE0，末次动作写为TE0。",
+    "最多1秒停稳READ允许观察有界正向余速，但只有TE/GV/PV实际严格0才标stopped_confirmed。",
+    "SDK连接仍活动或关闭失败时禁止CLI；关闭成功后仍需原整机停止与身份检查，其他电机严格门不变。",
+    "原硬件失败、用户报告未见轮动及下次动作前通知要求保持；软件候选不构成新现场GO。"
+  ],
+  "not_performed": [
+    "SSH",
+    "UART或真实串口创建",
+    "硬件动作/停稳验收",
+    "旧95草稿验收",
+    "全仓或重复95项软件测试"
+  ],
+  "limitations": [
+    "所运行三方法是候选95方法的子集，不累计为额外软件覆盖数。",
+    "独立真实SDK异常ACK是单一负控场景，不等于真实电机或物理停止通过。",
+    "D15 OPEN/DEFERRED、deployable=false及三轮固件合同保持。"
+  ]
+}

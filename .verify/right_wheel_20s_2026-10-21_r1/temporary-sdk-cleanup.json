@@ -1,0 +1,9 @@
+{
+  "path": "/tmp/robot-system-sdk-golden-20261021",
+  "source_files": 10,
+  "source_bytes": 87352,
+  "source_hashes_verified_before_remove": true,
+  "removed": true,
+  "used_for": "本机实际SDK1.0.0假串口golden及独审",
+  "native_uses_existing_installed_sdk": true
+}

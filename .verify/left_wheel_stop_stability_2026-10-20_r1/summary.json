@@ -1,5 +1,5 @@
 {
-  "status": "SOFTWARE_PASS_HARDWARE_PENDING",
+  "status": "LEFT7_CANDIDATE_PASS_RIGHT9_STOP_FAILED_NO_VISIBLE_MOTION",
   "scope": "仅左轮right7新增获用户批准的停止稳定性判据，复用现有维护和只读入口",
   "approval": "approval.json",
   "contract": {
@@ -78,15 +78,98 @@
   "current_software_resources_cleaned": true,
   "target_directory_reused": true,
   "new_target_or_release_build": false,
-  "hardware_executed": false,
-  "uart": 0,
-  "go_created": false,
-  "field_readiness": "需要新的当前供电、架空、支撑和持续看护确认；本次判据批准不代替现场事实",
-  "next_step": "现场确认后先仅左轮14读验证；通过后才可按另一个当次有界GO复用原右9单次非零诊断。失败或未知不追加UART。",
+  "hardware_executed": true,
+  "uart": "左14读；右轮初始快照及5条动作写已执行，失败后无后续UART",
+  "go_created": true,
+  "field_readiness": "本次现场确认覆盖两个一次性GO，现已消费；未续写02:34:49UTC确认时刻",
+  "next_step": "先核对官方测试链路；20秒逐命令草稿暂停，选定同一连接持续写速的最小对照；任何下一次动作前先通知用户，另有当次现场事实和GO。",
   "original_hardware_failures_unchanged": true,
   "production_install_changed": false,
   "services_changed": false,
   "D15": "OPEN/DEFERRED",
   "deployable": false,
-  "recorded_at_utc": "2026-10-20T14:18:12.813716+00:00"
+  "recorded_at_utc": "2026-10-20T14:18:12.813716+00:00",
+  "go_consumed": true,
+  "hardware_collection": "hardware-collection.json",
+  "hardware_review": "hardware-review.json",
+  "power": "未断电：用户明确要求不断电并改20秒；不回填原人工断电要求",
+  "physical_observation": "physical-observation.json",
+  "hardware": {
+    "left": {
+      "run": "hardware/run.json",
+      "run_sha256": "1c58a2a20548dd7e8df5951a6c3ca4324355a78d94e4787cd1bda3b52e75f360",
+      "result": "DIAGNOSTIC_CAPTURED",
+      "candidate": "PASS",
+      "position_samples": [
+        1211,
+        1212,
+        1211,
+        1211,
+        1212
+      ],
+      "present_velocity_signed_raw": [
+        50,
+        50,
+        0,
+        50,
+        0
+      ],
+      "TE_GV_all_zero": true,
+      "capture_ms": 1073.233167,
+      "identity": "PASS",
+      "whole_robot_stop": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+      "children_reaped": 74
+    },
+    "right": {
+      "run": "right-hardware/run.json",
+      "run_sha256": "4f6ac3f46181859b252f2a88c2efa32208a1d3f3cf581e0e4ba92a2062b3aef7",
+      "result": "NEEDS_MANUAL_POWER_CUT",
+      "written_sequence": [
+        "SYNC GV0",
+        "TE1",
+        "SYNC GV500",
+        "SYNC GV0",
+        "TE0"
+      ],
+      "anchor_raw": 3329,
+      "samples": [
+        {
+          "velocity_raw": 50,
+          "position_raw": 3333,
+          "delta_raw": 4
+        },
+        {
+          "velocity_raw": 500,
+          "position_raw": 3482,
+          "delta_raw": 153
+        }
+      ],
+      "disable_elapsed_ms": 465.541984,
+      "disable_to_PV_read_start_ms": 60.357593,
+      "final_TE_raw": 0,
+      "final_PV_raw": 250,
+      "whole_robot_stop": "UNKNOWN",
+      "identity": "UNKNOWN",
+      "children_reaped": 218,
+      "user_reported": "轮子没有动",
+      "motion_success": false
+    },
+    "cleanup": {
+      "files": 608,
+      "bytes": 1020371,
+      "SHA_verified": true,
+      "children_reaped_total": 292,
+      "only_owned_dead_panes_removed": [
+        "%137",
+        "%138"
+      ],
+      "driver_pids_absent": [
+        724165,
+        724339
+      ],
+      "both_serials_and_four_locks_free": true,
+      "uart_after_terminal": 0
+    },
+    "manual_power_cut_confirmation": "NOT_CONFIRMED_USER_DECLINED"
+  }
 }

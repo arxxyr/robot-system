@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"python_inputs\": {\"scripts/run_hardware_maintenance.py\": {\"sha256\": \"72e42872b824651c771dac8a453e8f0d99474f52699ff0cfd73151f133217a67\", \"bytes\": 104052}, \"scripts/tests/test_hardware_maintenance.py\": {\"sha256\": \"d2209129d0a42cd89610997bc273e5bfa85822931fc1bcae94754edd3bd18cc8\", \"bytes\": 115452}}, \"uart\": 0, \"main_uploaded\": true}\n",
+  "stderr": "",
+  "prior_both_files_missing": true
+}

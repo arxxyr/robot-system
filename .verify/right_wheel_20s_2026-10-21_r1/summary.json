@@ -1,0 +1,70 @@
+{
+  "schema": "RIGHT9_SDK_20S_SUMMARY_V1",
+  "status": "SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "client_date": "2026-10-21",
+  "source": {
+    "scripts/run_hardware_maintenance.py": {
+      "path": "scripts/run_hardware_maintenance.py",
+      "sha256": "72e42872b824651c771dac8a453e8f0d99474f52699ff0cfd73151f133217a67",
+      "bytes": 104052
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "path": "scripts/tests/test_hardware_maintenance.py",
+      "sha256": "d2209129d0a42cd89610997bc273e5bfa85822931fc1bcae94754edd3bd18cc8",
+      "bytes": 115452
+    }
+  },
+  "scope": "仅复用已装SDK同一右总线连接，对right9循环发送+500原始值20秒；末次零速、断扭、有界停稳读回及既有整机检查",
+  "reference_comparison": "reference-comparison.json",
+  "software": {
+    "local_methods": 95,
+    "native_methods": 95,
+    "skipped": 0,
+    "same_methods_not_added": true,
+    "actual_sdk_golden": true,
+    "native_result": {
+      "path": ".verify/right_wheel_20s_2026-10-21_r1/software/result.json",
+      "sha256": "a8498f09ed386d587cbe0b2d129b47bbbe46496397b9aae0a2ec81eefaf47a70",
+      "bytes": 12231
+    },
+    "rust_fmt_then_root_clippy": "PASS",
+    "rust_inputs": 597,
+    "rust_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "actual_rustc": "rustc 1.101.0-nightly (07e526db9 2026-10-19)\nbinary: rustc\ncommit-hash: 07e526db9df34143c99ec8064acc8ad543f69b30\ncommit-date: 2026-10-19\nhost: aarch64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4\n",
+    "sdk_inputs": {
+      "count": 12,
+      "manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044"
+    },
+    "review": "review.json"
+  },
+  "preparation": "preparation.json",
+  "plan_sha256": "5e5d167f10dacb19a713bfc4aa2ff44f32eab63fa5fa71492da428a7de15edb5",
+  "prior_hardware": {
+    "summary": "../left_wheel_stop_stability_2026-10-20_r1/summary.json",
+    "original_right_stop": "NEEDS_MANUAL_POWER_CUT / UNKNOWN",
+    "power_cut_confirmed": false,
+    "user_observation": "轮子没有动",
+    "encoder_change_does_not_prove_visible_motion": true
+  },
+  "next_hardware": {
+    "uart": 0,
+    "go_created": false,
+    "user_instruction": "下次动之前通知我",
+    "notify_before_enable": true,
+    "fresh_field_state": "REQUIRED_AFTER_PREPARATION",
+    "old_go_reusable": false
+  },
+  "cleanup": {
+    "native_software": "software/cleanup.json",
+    "temporary_local_sdk": "temporary-sdk-cleanup.json",
+    "old_draft": "旧逐命令20秒草稿保留于stash 7a34b74d267b1b87fc8d91381554d0d3b5199a33，未合入候选"
+  },
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "physical_motion_verified": false,
+  "limitations": [
+    "20秒和21秒为软件有界预算，不是独立硬件断电保护",
+    "仍需实际轮动观察和原停止检查；不能宣称三轮底盘或统一RPC闭环通过",
+    "保留最初SSH255与启动前拒绝；实际native测试仅一次启动，未触UART"
+  ]
+}
