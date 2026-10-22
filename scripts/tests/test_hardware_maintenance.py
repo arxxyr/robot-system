@@ -1092,6 +1092,25 @@ class RightPulseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):m.run_right_wheel_pulse(engine)
         return engine.right_pulse
 
+    def stability_engine(self,wheel,phase,trigger=50,*,positions=None,velocities=None):
+        executor,engine=self.engine(wheel)
+        original=executor.value
+        positions=[1000,1001,1000,1001,1000] if positions is None else positions
+        velocities=[0,50,-50,0,50] if velocities is None else velocities
+        def value(register):
+            window=next((engine.right_pulse.get(p+'_stability') for p in
+                (('initial','post_disable') if phase=='both' else (phase,))
+                if engine.right_pulse.get(p+'_stability',{}).get('status')=='FAIL'),None)
+            if window and window['status']=='FAIL' and register in ('Present_Position','Present_Velocity'):
+                index=sum(s['register']==register for s in window['samples'])-1
+                return (positions if register=='Present_Position' else velocities)[index]
+            if register=='Present_Velocity' and ((phase in ('initial','both') and executor.zero_count==0) or (
+                    phase in ('post_disable','both') and executor.torque==0 and executor.zero_count>=2)):
+                return trigger
+            return original(register)
+        executor.value=value
+        return executor,engine
+
     def test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal(self):
         executor,engine=self.engine()
         row=self.perform(executor,engine)
@@ -1243,16 +1262,16 @@ class RightPulseTests(unittest.TestCase):
     def test_front_zero_exception_does_not_relax_initial_motion_goal_post_disable_or_whole_stop(self):
         for phase in ('initial','motion','goal','post_disable','whole_stop'):
             executor,engine=self.engine('front',zero_stop_check=True);executor.sdk_zero_coast=[-50,-50,0]
-            if phase=='initial':executor.stop_velocity=-50
+            if phase=='initial':executor.stop_velocity=-51
             elif phase=='motion':executor.velocity=-50
             elif phase=='goal':
                 original=executor.value
                 executor.value=lambda register:0x8032 if register=='Goal_Velocity' and executor.torque and executor.zero_count==2 else original(register)
-            elif phase=='post_disable':executor.sdk_after_off={'Present_Velocity':-50}
+            elif phase=='post_disable':executor.sdk_after_off={'Present_Velocity':-51}
             row=self.perform(executor,engine,phase=='whole_stop')
             if phase=='initial':
                 self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
-                self.assertEqual(row['before_raw'][-1]['raw_unsigned'],0x8032)
+                self.assertEqual(row['before_raw'][-1]['raw_unsigned'],0x8033)
             elif phase=='motion':
                 self.assertNotIn('zero_stop_check',row)
                 self.assertEqual(row['samples'][0]['raw'][-1]['raw_unsigned'],0x8032)
@@ -1261,7 +1280,7 @@ class RightPulseTests(unittest.TestCase):
                 self.assertEqual(row['zero_stop_check']['status'],'FAIL')
             elif phase=='post_disable':
                 self.assertEqual(row['zero_stop_check']['status'],'PASS');self.assertFalse(row['stopped_confirmed'])
-                self.assertEqual(row['cleanup_raw'][-1]['raw_unsigned'],0x8032)
+                self.assertEqual(row['cleanup_raw'][-1]['raw_unsigned'],0x8033)
             else:
                 executor.stop_velocity=-50
                 with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(ValueError):
@@ -1497,21 +1516,146 @@ class RightPulseTests(unittest.TestCase):
             after[f'right:{other}']['Present_Position']+=5
             self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
 
-    def test_left_snapshot_exception_never_relaxes_sdk_initial_or_final_zero(self):
-        self.assertEqual(m.left_stop_contract()['present_velocity_raw_unsigned'],[0,50,0x8032])
-        self.assertEqual(m.left_stop_contract()['reads'],14)
-        for wheel in ('left','front','right'):
-            for phase in ('initial','final'):
-                executor,engine=self.engine(wheel)
-                if phase=='initial':executor.stop_velocity=50
-                else:executor.sdk_coast=[50]*5
-                row=self.perform(executor,engine,False)
-                self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
-                if phase=='initial':
-                    self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
-                else:
-                    self.assertEqual([sample['velocity_raw'] for sample in row['settle_samples']],[50]*5)
-                self.assertTrue(row['connection']['closed'])
+    def test_sdk_initial_and_post_disable_signed_fifties_need_independent_fresh_windows(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            for phase in ('initial','post_disable'):
+                for trigger in (50,-50):
+                    executor,engine=self.stability_engine(wheel,phase,trigger)
+                    row=self.perform(executor,engine);window=row[phase+'_stability']
+                    self.assertEqual(window['status'],'PASS');self.assertEqual(len(window['samples']),14)
+                    self.assertEqual(window['position_span_raw'],1)
+                    self.assertEqual(window['transport'],'SDK_ORDINARY_READ')
+                    self.assertEqual(window['anchor_raw'],1000 if phase=='initial' else None)
+                    self.assertEqual([s['raw']['raw_unsigned'] for s in window['samples'] if s['register']=='Present_Velocity'],
+                                     [0,50,0x8032,0,50])
+                    self.assertTrue(all(s['raw']['kind']=='read' and s['raw']['motor']==executor.sdk_target for s in window['samples']))
+                    self.assertTrue(all('operation' not in s['raw'] and 'expected_tx' in s['raw'] and 'rx_bytes' in s['raw']
+                                        for s in window['samples']))
+                    self.assertTrue(all(not s['raw']['cleanup'] for s in window['samples']))
+                    self.assertTrue(row['stopped_confirmed']);self.assertFalse(row['uart_blocked'])
+                    self.assertTrue(row['connection']['closed']);self.assertEqual(executor.calls,[])
+                    self.assertLessEqual(row['enabled_attempt_window_ns'],21_000_000_000)
+                    if phase=='initial':
+                        self.assertLessEqual(window['finished_ns'],row['writes'][0]['started_ns'])
+                        self.assertEqual(next(e['raw_unsigned'] for e in row['before_raw'] if e['register']=='Present_Velocity'),
+                                         50 if trigger==50 else 0x8032)
+                        self.assertNotIn('post_disable_stability',row)
+                    else:
+                        self.assertGreater(window['started_ns'],row['disable_finished_ns'])
+                        self.assertEqual(row['settle_finished_ns'],window['started_ns'])
+                        self.assertEqual(row['cleanup_raw'][-1]['raw_unsigned'],50 if trigger==50 else 0x8032)
+                        self.assertNotIn('initial_stability',row)
+
+    def test_sdk_zero_fast_path_and_both_fifty_windows_do_not_reuse_samples(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            executor,engine=self.engine(wheel);row=self.perform(executor,engine)
+            self.assertNotIn('initial_stability',row);self.assertNotIn('post_disable_stability',row)
+            executor,engine=self.stability_engine(wheel,'both',-50);row=self.perform(executor,engine)
+            first,last=row['initial_stability'],row['post_disable_stability']
+            self.assertEqual((first['status'],last['status']),('PASS','PASS'))
+            self.assertIsNot(first,last);self.assertIsNot(first['samples'],last['samples'])
+            self.assertLess(first['samples'][-1]['command_sequence'],last['samples'][0]['command_sequence'])
+            self.assertEqual((executor.sdk_open_calls,executor.sdk_close_calls),(1,1))
+            self.assertEqual(first['anchor_raw'],1000);self.assertIsNone(last['anchor_raw'])
+
+    def test_sdk_stability_span_anchor_and_raw_values_fail_without_retry_or_later_uart(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            for phase in ('initial','post_disable'):
+                for fault in ('span','wrap','anchor','velocity51','velocity_minus51','negative_zero','torque','goal'):
+                    positions=[1000,1001,1002,1001,1000] if fault=='span' else [4095,0,0,0,0] if fault=='wrap' else [1000]*5
+                    if fault=='anchor' and phase=='post_disable':positions=[1000,1000,1000,1000,1002]
+                    executor,engine=self.stability_engine(wheel,phase,positions=positions,
+                        velocities=[51]*5 if fault=='velocity51' else [-51]*5 if fault=='velocity_minus51'
+                                   else [0x8000]*5 if fault=='negative_zero' else [50,-50,50,-50,0])
+                    if fault=='anchor' and phase=='initial':
+                        original=executor.value
+                        executor.value=lambda r:1002 if r=='Present_Position' and phase+'_stability' not in engine.right_pulse else original(r)
+                    if fault in ('torque','goal'):
+                        original=executor.value;register='Torque_Enable' if fault=='torque' else 'Goal_Velocity'
+                        executor.value=lambda r:1 if r==register and phase+'_stability' in engine.right_pulse else original(r)
+                    row=self.perform(executor,engine,False);window=row[phase+'_stability']
+                    self.assertEqual(window['status'],'FAIL');self.assertTrue(window['errors'])
+                    self.assertLess(len(window['samples']),14);self.assertTrue(row['uart_blocked'])
+                    self.assertTrue(row['connection']['closed']);self.assertTrue(engine.manual_cut)
+                    if phase=='initial':self.assertEqual(row['writes'],[])
+                    else:
+                        self.assertEqual(sum(w['register']=='Torque_Enable' and w['value']==0 for w in row['writes']),1)
+                    last=window['samples'][-1]['raw']
+                    self.assertIs(last,row['sdk_operations'][-1])
+                    count=len(executor.sdk_packets)
+                    with self.assertRaises(ValueError):executor.poke('right',executor.sdk_target,'read','Torque_Enable',cleanup=True)
+                    self.assertEqual(len(executor.sdk_packets),count)
+
+    def test_sdk_stability_bad_ordinary_read_frames_never_become_sync_or_zero(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            for phase in ('initial','post_disable'):
+                for fault in ('checksum','length','status','io','wrong_id'):
+                    executor,engine=self.stability_engine(wheel,phase)
+                    def effect(key):
+                        if phase+'_stability' not in engine.right_pulse:return None
+                        if fault=='wrong_id':executor.sdk_reply_id=8 if executor.sdk_target!=8 else 9;return None
+                        return fault
+                    executor.sdk_fault=effect
+                    row=self.perform(executor,engine,False);window=row[phase+'_stability']
+                    self.assertEqual(window['status'],'FAIL');self.assertEqual(len(window['samples']),1)
+                    entry=window['samples'][0]['raw']
+                    self.assertEqual(entry['kind'],'read');self.assertEqual(entry['status'],'UNKNOWN')
+                    self.assertNotIn('operation',entry);self.assertIn('rx_bytes',entry)
+                    self.assertIs(entry,row['sdk_operations'][-1]);self.assertTrue(row['connection']['closed'])
+                    if phase=='initial':self.assertEqual(row['writes'],[])
+
+    def test_sdk_stability_deadline_go_and_signal_cover_actual_tx_and_preserve_late_frame(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            for phase in ('initial','post_disable'):
+                for fault in ('flush_deadline','return_deadline','go','signal'):
+                    executor,engine=self.stability_engine(wheel,phase)
+                    expired=False
+                    engine.right_pulse_go_check=lambda:m.require(not expired,'稳定性GO过期')
+                    def flush():
+                        window=engine.right_pulse.get(phase+'_stability')
+                        if window and fault=='flush_deadline':executor.t=window['deadline_ns']
+                    executor.sdk_flush_hook=flush
+                    def effect(key):
+                        nonlocal expired
+                        window=engine.right_pulse.get(phase+'_stability')
+                        if not window:return None
+                        if fault=='return_deadline':executor.t=window['deadline_ns']+1
+                        if fault=='go':expired=True
+                        if fault=='signal':return 'signal'
+                        return None
+                    executor.sdk_fault=effect
+                    row=self.perform(executor,engine,False);window=row[phase+'_stability']
+                    self.assertEqual(window['status'],'FAIL');self.assertEqual(len(window['samples']),1)
+                    entry=window['samples'][0]['raw']
+                    self.assertEqual(entry['tx_attempts'],0 if fault=='flush_deadline' else 1)
+                    if fault!='flush_deadline':self.assertEqual(entry['status'],'READ_VALID');self.assertIn('raw_unsigned',entry)
+                    self.assertIs(entry,row['sdk_operations'][-1]);self.assertTrue(row['uart_blocked'])
+                    self.assertTrue(row['connection']['closed'])
+                    if phase=='initial':self.assertEqual(row['writes'],[])
+
+    def test_sdk_stability_contract_and_old_plan_go_cannot_release_new_path(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            plan=self.plan(wheel);check=plan['right_wheel_pulse']['sdk_stop_stability']
+            self.assertEqual(check['contract'],m.left_stop_contract(motor=m.WHEEL_PULSE_TARGETS[wheel][1]))
+            self.assertEqual(check['trigger_raw_unsigned'],[50,0x8032])
+            self.assertIn('独立追加最多1.5秒',plan['scope'])
+            for fault in ('missing','trigger','span','budget','target'):
+                bad=copy.deepcopy(plan)
+                if fault=='missing':del bad['right_wheel_pulse']['sdk_stop_stability']
+                if fault=='trigger':bad['right_wheel_pulse']['sdk_stop_stability']['trigger_raw_unsigned'].append(51)
+                if fault=='span':bad['right_wheel_pulse']['sdk_stop_stability']['contract']['position_span_max']=2
+                if fault=='budget':bad['right_wheel_pulse']['sdk_stop_stability']['contract']['capture_budget_ns']+=1
+                if fault=='target':bad['right_wheel_pulse']['sdk_stop_stability']['contract']['target'][1]=6
+                with self.assertRaises(ValueError):m.validate_right_pulse_plan(bad)
+                facts={**{k:True for k in m.FACTS},'confirmed_at_ns':100}
+                go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':plan['artifact_root'],
+                    'plan_sha256':m.digest(bad),'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],
+                    'source':'纯软件夹具','physical':{side:dict(facts) for side in m.SERIALS}}
+                go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
+                    continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
+                    base_confirmation_scope=plan['scope'],base_confirmation_answer='软件')
+                with self.assertRaises(ValueError):m.validate_go(go,bad,200)
+                with self.assertRaises(ValueError):m.validate_go(go,plan,200)
 
     def test_named_target_cli_and_plan_reject_arbitrary_ids_mixed_or_multiple_selections(self):
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('拒绝前置不得child')) as child:
@@ -1712,26 +1856,33 @@ class RightPulseTests(unittest.TestCase):
             self.assertEqual(row['writes'],[]);self.assertTrue(engine.manual_cut)
             self.assertEqual(row['before_raw'][-1]['status'],'UNKNOWN')
 
-    def test_settle_records_two_nonzero_values_then_strict_zero_within_one_second(self):
-        executor,engine=self.engine();executor.sdk_coast=[250,50,0]
-        row=self.perform(executor,engine)
-        self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[250,50,0])
-        self.assertTrue(row['stopped_confirmed']);self.assertFalse(engine.manual_cut)
-        self.assertLessEqual(row['settle_finished_ns']-row['disable_finished_ns'],1_000_000_000)
-        self.assertTrue(all(s['raw_unsigned']==0 for s in row['cleanup_raw'] if s['register']!='Present_Velocity'))
+    def test_settle_positive_deceleration_then_fifty_starts_one_separate_window(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            executor,engine=self.stability_engine(wheel,'post_disable')
+            executor.sdk_coast=[250,250,250,250,50]
+            row=self.perform(executor,engine);window=row['post_disable_stability']
+            self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[250]*4+[50])
+            self.assertGreaterEqual(window['started_ns']-row['disable_finished_ns'],950_000_000)
+            self.assertLessEqual(window['started_ns'],row['settle_deadline_ns'])
+            self.assertEqual(window['deadline_ns']-window['started_ns'],1_500_000_000)
+            self.assertGreater(window['finished_ns'],row['settle_deadline_ns'])
+            self.assertEqual(row['settle_finished_ns'],window['started_ns'])
+            self.assertTrue(row['stopped_confirmed']);self.assertFalse(engine.manual_cut)
+            self.assertEqual(window['status'],'PASS');self.assertEqual(len(window['samples']),14)
+            self.assertTrue(all(s['raw_unsigned']==0 for s in row['cleanup_raw'] if s['register']!='Present_Velocity'))
 
-    def test_settle_never_accepts_fifty_as_zero_and_closes_before_sticky_no_uart(self):
-        executor,engine=self.engine();executor.sdk_coast=[50]*5
+    def test_settle_never_accepts_persistent_positive_above_fifty_or_retries_failed_window(self):
+        executor,engine=self.engine();executor.sdk_coast=[250]*5
         row=self.perform(executor,engine,False)
         self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
-        self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[50]*5)
-        self.assertTrue(row['connection']['closed'])
+        self.assertEqual([s['velocity_raw'] for s in row['settle_samples']],[250]*5)
+        self.assertNotIn('post_disable_stability',row);self.assertTrue(row['connection']['closed'])
         count=len(executor.calls)
         with self.assertRaises(ValueError):executor.poke('right',9,'read','Present_Velocity',cleanup=True)
         self.assertEqual(len(executor.calls),count)
 
     def test_settle_torque_goal_reverse_and_out_of_range_fail_immediately(self):
-        for register,value in (('Torque_Enable',1),('Goal_Velocity',500),('Present_Velocity',-50),
+        for register,value in (('Torque_Enable',1),('Goal_Velocity',500),('Present_Velocity',-51),
                                ('Present_Velocity',1001),('Present_Velocity',0x8000)):
             executor,engine=self.engine();executor.sdk_after_off={register:value}
             row=self.perform(executor,engine,False)
@@ -1880,8 +2031,11 @@ class RightPulseTests(unittest.TestCase):
             self.assertEqual(serial.VERSION,'3.5')
             original=sdk.PortHandler
             for wheel,motor in (('right',9),('front',8),('left',7)):
-                for zero_stop,speeds in ((False,[250,50,0]),(True,[250,-50,-50]),(True,[300,0,50])):
-                    executor,engine=self.engine(wheel,zero_stop_check=zero_stop)
+                cases=[(False,[250,50,0],None,0),(True,[250,-50,-50],None,0),(True,[300,0,50],None,0)]
+                cases += [(False,[250,50,0],phase,trigger) for phase in ('initial','post_disable') for trigger in (50,-50)]
+                for zero_stop,speeds,phase,trigger in cases:
+                    executor,engine=(self.stability_engine(wheel,phase,trigger) if phase else
+                                     self.engine(wheel,zero_stop_check=zero_stop))
                     executor.sdk_zero_coast=list(speeds)
                     def port(device):
                         instance=original(device)
@@ -1895,6 +2049,13 @@ class RightPulseTests(unittest.TestCase):
                     expected.append((~sum(expected[2:]))&255)
                     self.assertIn(expected,executor.sdk_packets)
                     self.assertTrue(all(op['motor']==motor for op in row['sdk_operations']))
+                    if phase:
+                        window=row[phase+'_stability']
+                        self.assertEqual(window['status'],'PASS');self.assertEqual(window['position_span_raw'],1)
+                        self.assertEqual(len(window['samples']),14)
+                        self.assertTrue(all(s['raw']['rx_bytes'][2]==motor for s in window['samples']))
+                        self.assertIn(0x8032,[s['raw']['raw_unsigned'] for s in window['samples']
+                                            if s['register']=='Present_Velocity'])
                     if zero_stop:
                         zero=row['zero_stop_check']
                         self.assertEqual([s['velocity_raw'] for s in zero['samples']],

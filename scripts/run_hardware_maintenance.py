@@ -43,7 +43,7 @@ POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), T
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
 WHEEL_PULSE_TARGETS = {'right':BASE_TARGETS[2],'front':BASE_TARGETS[0],'left':BASE_TARGETS[1]}
 WHEEL_STOP_TARGETS = {7:'left',8:'front',9:'right'}
-RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（三轮各按同一获准稳定性判据）；三轮稳定架空并持续观察'
+RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
 RIGHT_PULSE_HELPER = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py',
@@ -183,9 +183,8 @@ def pulse_scope(wheel,*,zero_stop_check=False):
     require(wheel in WHEEL_PULSE_TARGETS,'仅接受固定的前轮、左轮或右轮')
     scope=RIGHT_PULSE_SCOPE if wheel=='right' else RIGHT_PULSE_SCOPE.replace(
         '仅右9','仅前8' if wheel=='front' else '仅左7',1)
-    scope+=('；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门' if wheel=='left' else '')
     if zero_stop_check:
-        scope+='；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，三轮前两组允许正向0..1000及原字0x8032，末组原字限0/50/0x8032并保留原值，再按原路径断扭；SDK初始及断扭后PV仍严格零'
+        scope+='；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，三轮前两组允许正向0..1000及原字0x8032，末组原字限0/50/0x8032并保留原值，再按原路径断扭'
     return scope
 
 
@@ -207,6 +206,8 @@ def right_pulse_contract(wheel='right',*,zero_stop_check=False):
             'sdk_read_registers':{name:list(value) for name,value in RIGHT_SDK_REGS.items()},
             'register_writes':{'40':[0,1],'46':[0,500]},
             'metadata':dict(RIGHT_PULSE_METADATA),'raw_tool':dict(RIGHT_PULSE_RAW),
+            'sdk_stop_stability':{'trigger_raw_unsigned':[50,0x8032],
+                                  'contract':left_stop_contract(motor=WHEEL_PULSE_TARGETS[wheel][1])},
             'raw_helper':dict(RIGHT_PULSE_HELPER),'strace':dict(RIGHT_PULSE_TRACE),
             'write_tool':dict(RIGHT_PULSE_WRITE),'sync_tool':dict(RIGHT_PULSE_SYNC),
             'firmware_contract_verified':False,
@@ -829,6 +830,25 @@ def validate_left_stop_window(row,plan,anchor,*,motor=7):
     require((row.get('side'),row.get('motor'),row.get('name'))==tuple(contract['target'])
             and row.get('kind')==f'{prefix}{motor}_stop_stability'
             and row.get('same_frame') is False,'停止窗口目标或种类变化')
+    validate_stop_stability_samples(row,contract,anchor,
+        lambda sample,register:validate_left_feedback_raw(sample.get('raw'),register,motor=motor))
+
+
+def validate_stop_stability_value(register,value,contract,positions):
+    """只验证原始值和位置跨度，SYNC与SDK普通READ分别保留各自原帧。"""
+    require(type(value) is int,'底盘稳定性原值缺失')
+    if register in ('Torque_Enable','Goal_Velocity'):
+        require(value==0,'底盘稳定性TE/GV非零')
+    elif register=='Present_Velocity':
+        require(value in contract['present_velocity_raw_unsigned'],'底盘PV超出稳定性集合')
+    else:
+        require(register=='Present_Position' and 0<=value<=4095,'底盘稳定性PP范围未知')
+        positions.append(value)
+        require(max(positions)-min(positions)<=contract['position_span_max'],'底盘PP跨度超过1')
+
+
+def validate_stop_stability_samples(row,contract,anchor,read_value):
+    """共用14读的值与时刻验证；原帧验证由真实传输类型提供。"""
     require(row.get('anchor_raw')==anchor and (anchor is None or type(anchor) is int and 0<=anchor<=4095),
             '左轮快照锚点不符')
     start,observation,finish,deadline=(row.get(k) for k in
@@ -854,18 +874,11 @@ def validate_left_stop_window(row,plan,anchor,*,motor=7):
                 '左轮读取时刻/命令序号不符')
         if offset is not None:
             require(begin>=observation+offset,'左轮采样早于固定时刻')
-        value=validate_left_feedback_raw(sample.get('raw'),register,motor=motor)
-        if register in ('Torque_Enable','Goal_Velocity'):
-            require(value==0,'左轮TE/GV非零')
-        elif register=='Present_Velocity':
-            require(value in contract['present_velocity_raw_unsigned'],'左轮PV超出候选集合')
-        else:
-            require(0<=value<=4095,'左轮PP范围未知')
-            positions.append(value)
+        validate_stop_stability_value(register,read_value(sample,register),contract,positions)
         previous_finish,previous_sequence=end,command
     require(samples[1]['finished_ns']<=observation<=samples[2]['started_ns'],
             '左轮观察起点不在前置与首组之间')
-    require(max(positions)-min(positions)<=contract['position_span_max'],'左轮PP跨度超过1')
+    return max(positions)-min(positions)
 
 
 def validate_front_feedback_window(row,plan,*,motor=8):
@@ -959,14 +972,12 @@ def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7,stop_rechec
             sample['command_sequence']=io.sequence
             ready(after=True)
             value=raw['raw_unsigned']
-            if register in ('Torque_Enable','Goal_Velocity'):
+            if not front:
+                validate_stop_stability_value(register,value,contract,positions)
+            elif register in ('Torque_Enable','Goal_Velocity'):
                 require(value==0,'左轮TE/GV非零，停止后续只读')
-            elif register=='Present_Velocity':
-                if not front:require(value in contract['present_velocity_raw_unsigned'],'左轮PV超出候选集合')
-            else:
-                if not front:require(0<=value<=4095,'左轮PP范围未知')
+            elif register=='Present_Position':
                 positions.append(value)
-                if not front:require(max(positions)-min(positions)<=contract['position_span_max'],'左轮PP跨度超过1')
         except BaseException as error:
             sample.update(finished_ns=io.now(),error=repr(error))
             raise
@@ -1318,6 +1329,64 @@ def run_right_wheel_pulse(engine):
                 if entry['kind']=='read' and entry['register']==register:
                     destination.append(entry)
 
+    def stability_value(sample,register):
+        entry=sample.get('raw',{});address,width=RIGHT_SDK_REGS[register]
+        data=entry.get('data',[])
+        require(entry.get('kind')=='read' and entry.get('status')=='READ_VALID'
+                and (entry.get('motor'),entry.get('register'),entry.get('address'),entry.get('width'))==(motor,register,address,width)
+                and entry.get('comm')==sdk.COMM_SUCCESS and entry.get('error_code')==0 and entry.get('tx_attempts')==1
+                and len(data)==width and all(type(v) is int and 0<=v<=255 for v in data)
+                and entry.get('expected_tx')==frame(motor,2,[address,width])
+                and entry.get('rx_bytes')==frame(motor,0,data)
+                and entry.get('raw_unsigned')==int.from_bytes(bytes(data),'little'),'SDK稳定性普通READ原帧不符')
+        return entry['raw_unsigned']
+
+    def stable_window(phase,anchor=None):
+        key=phase+'_stability'
+        require(phase in ('initial','post_disable') and key not in row,'SDK稳定性窗口不得复用或重试')
+        check=contract['sdk_stop_stability']['contract']
+        window={'side':side,'motor':motor,'name':name,'kind':'sdk_stop_stability','transport':'SDK_ORDINARY_READ',
+                'phase':phase,'status':'FAIL','started_ns':io.now(),'samples':[],'errors':[],
+                'register_writes':0,'anchor_raw':anchor,'plan_sha256':digest(engine.plan)}
+        row[key]=window
+        window['deadline_ns']=window['started_ns']+check['capture_budget_ns']
+        positions=[] if anchor is None else [anchor]
+
+        def sample(register,offset=None):
+            ready(window['deadline_ns'])
+            current={'register':register,'scheduled_offset_ns':offset,'started_ns':io.now(),'status':'UNKNOWN'}
+            window['samples'].append(current)
+            entries=[]
+            try:
+                try:
+                    value=read(register,entries,deadline=window['deadline_ns'])
+                finally:
+                    # SDK返回后先留真实普通READ entry，即使返回超时也不能丢原帧或补读。
+                    current['finished_ns']=io.now()
+                    if entries:
+                        current.update(raw=entries[-1],command_sequence=entries[-1]['sequence'],status=entries[-1]['status'])
+                ready()
+                require(io.now()<=window['deadline_ns'],'SDK稳定性窗口读取返回超时')
+                validate_stop_stability_value(register,value,check,positions)
+            except BaseException as error:
+                current.update(finished_ns=io.now(),error=repr(error))
+                raise
+
+        try:
+            sample('Torque_Enable');sample('Goal_Velocity')
+            window['observation_started_ns']=io.now()
+            for offset in check['sample_offsets_ns']:
+                ready(window['deadline_ns'])
+                io.sleep(max(0,window['observation_started_ns']+offset-io.now())/1_000_000_000)
+                sample('Present_Position',offset);sample('Present_Velocity',offset)
+            sample('Goal_Velocity');sample('Torque_Enable')
+            window['finished_ns']=io.now()
+            window['position_span_raw']=validate_stop_stability_samples(window,check,anchor,stability_value)
+            window['status']='PASS'
+        except BaseException as error:
+            window.update(finished_ns=io.now());window['errors'].append(repr(error))
+            raise
+
     try:
         engine.check_gate()
         sdk=load_right_pulse_sdk()
@@ -1365,10 +1434,15 @@ def run_right_wheel_pulse(engine):
         require(port.setBaudRate(1_000_000) and port.is_open,'SDK串口打开失败')
         ready()
         for register,expected in {**RIGHT_PULSE_METADATA,'Torque_Enable':0,'Present_Velocity':0,'Goal_Velocity':0}.items():
-            require(read(register,row['before_raw'])==expected,'SDK元数据/初始静止不符:'+register)
+            word=read(register,row['before_raw'])
+            require(word==expected or register=='Present_Velocity' and word in contract['sdk_stop_stability']['trigger_raw_unsigned'],
+                    'SDK元数据/初始静止不符:'+register)
+            if register=='Present_Velocity':initial_velocity=word
         anchor=read('Present_Position',row['before_raw'])
         require(0<=anchor<=4095,'SDK初始位置超单圈范围')
         row['anchor_raw']=anchor
+        if initial_velocity in contract['sdk_stop_stability']['trigger_raw_unsigned']:
+            stable_window('initial',anchor)
         row['metadata_verified']=True
         row['initial_zero_attempted']=True
         operation('sync','Goal_Velocity',0)
@@ -1492,14 +1566,20 @@ def run_right_wheel_pulse(engine):
                             row['cleanup_raw'].append(sample['raw'][-1])
                             ready(cleanup=True)
                             require(io.now()<=row['settle_deadline_ns'],'SDK停稳读回超过1秒')
-                            require(word==0 if register!='Present_Velocity' else 0<=word<=contract['velocity_raw_max'],
+                            require(word==0 if register!='Present_Velocity' else
+                                    0<=word<=contract['velocity_raw_max'] or word in contract['sdk_stop_stability']['trigger_raw_unsigned'],
                                     'SDK断扭后使能/目标非零或速度越界:'+register)
                         sample['velocity_raw']=word
                         if word==0:
                             row['stopped_confirmed']=True
                             break
-                    require(row['stopped_confirmed'],'SDK断扭后1秒内速度未严格归零')
-                    row['settle_finished_ns']=io.now()
+                        if word in contract['sdk_stop_stability']['trigger_raw_unsigned']:
+                            row['settle_finished_ns']=io.now()
+                            stable_window('post_disable')
+                            row['stopped_confirmed']=True
+                            break
+                    require(row['stopped_confirmed'],'SDK断扭后减速或稳定性未确认')
+                    row.setdefault('settle_finished_ns',io.now())
                 except BaseException as error:
                     row['cleanup_errors'].append(repr(error))
         if port is not None:

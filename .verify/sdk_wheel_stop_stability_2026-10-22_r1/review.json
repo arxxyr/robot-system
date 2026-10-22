@@ -1,0 +1,65 @@
+{
+  "reviewed_at_utc": "2026-10-22T13:46:55.618923+00:00",
+  "result": "PASS_SOFTWARE_REVIEW",
+  "baseline_commit": "2493262c232f98628cdcb436a034935f2cf26e75",
+  "approval": "approval.json",
+  "scope": "仅三轮SDK初始与断扭后±50条件复核；本地只读代码评审及内存定向测试，无SSH/UART/GO/硬件动作。",
+  "sources": [
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "sha256": "928b1412af420b2bc0261905b1f80362507fe24f18950d42c771147dc8ee5bd1",
+      "bytes": 128885
+    },
+    {
+      "path": "scripts/tests/test_hardware_maintenance.py",
+      "sha256": "60ade6a355b954e577771bda4f6ecd6ab7d006c724c497b6f9e6aed5993c74e2",
+      "bytes": 196736
+    }
+  ],
+  "findings": [],
+  "checks": [
+    "三轮PV=0保留原快速路径；仅原字50/0x8032触发各阶段一次独立14读窗口，PV不被转换或覆写为0。",
+    "初始先只读确认元数据、TE/GV0及PP锚点；触发窗口要求含锚点的PP跨度≤1。任一初始失败均无SYNC/TE写，连接关闭并粘性封锁。",
+    "SDK窗口复用left_stop_contract及纯原值/时刻验证；真实ordinary READ的expected_tx/rx_bytes、目标ID、长度、状态、校验和及raw_unsigned独立核验，不伪造SYNC_READ证据，不开第二串口或CLI。",
+    "每窗首末TE/GV严格0；五组PP/PV在名义0/250/500/750/1000ms后读取，总预算1.5秒，PV仅0/50/0x8032，PP单圈0..4095且跨度≤1；不使用均值抵消、回绕归一化或旧窗口凭据。",
+    "旧断扭后1秒coast及正向0..1000衰减读取保留；首次±50可追加一次独立1.5秒窗，950ms触发不会受旧coast截止误拒。settle_finished_ns保留触发时刻，不续期coast/GO，失败不回到coast、不补读或重试。",
+    "新增窗口普通读取cleanup=False，真实TX前及返回均检查信号、原GO、记录失败和本窗期限；迟到有效原帧保留但该窗失败。SDK初始失败写0，post窗不再写；独立清零/TE0清理顺序仍保留。",
+    "启用至TE0的21秒门、运动采样及保持TE1零速500ms阶段未改；post稳定窗发生在已ACK断扭之后，不能反向延长21秒界限。",
+    "PLAN/GO绑定新增固定目标与稳定性合同；缺失、篡改或旧GO不能释放新路径。原维护STOP三轮14读及诊断只记录范围未扩大。"
+  ],
+  "targeted_tests": {
+    "command_prefix": "uv run --no-project python -B scripts/tests/test_hardware_maintenance.py",
+    "methods": [
+      "RightPulseTests.test_sdk_initial_and_post_disable_signed_fifties_need_independent_fresh_windows",
+      "RightPulseTests.test_sdk_zero_fast_path_and_both_fifty_windows_do_not_reuse_samples",
+      "RightPulseTests.test_sdk_stability_span_anchor_and_raw_values_fail_without_retry_or_later_uart",
+      "RightPulseTests.test_sdk_stability_bad_ordinary_read_frames_never_become_sync_or_zero",
+      "RightPulseTests.test_sdk_stability_deadline_go_and_signal_cover_actual_tx_and_preserve_late_frame",
+      "RightPulseTests.test_sdk_stability_contract_and_old_plan_go_cannot_release_new_path",
+      "RightPulseTests.test_settle_positive_deceleration_then_fifty_starts_one_separate_window",
+      "RightPulseTests.test_cleanup_zero_failure_still_attempts_torque_off_and_then_closes",
+      "LeftFeedbackTests.test_wheel_stop_fresh_windows_preserve_zero_and_signed_fifties",
+      "LeftFeedbackTests.test_wheel_stop_rejects_span_anchor_wrap_bad_raw_and_nonzero_te_gv"
+    ],
+    "methods_run": 10,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "unittest_reported_seconds": 0.573,
+    "counting": "本次10方法是138方法集合的子集，不累计为额外测试；未在独审重跑全套或实际SDK。",
+    "source_sha_before_and_after": "与上述冻结SHA逐项一致"
+  },
+  "reference_original": {
+    "root": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos",
+    "paths": [
+      "common/feetech_io/encoding.py",
+      "common/feetech_io/bus.py",
+      "adapters/bus2_base.py"
+    ],
+    "conclusion": "参考实现按符号位与幅值解码速度；write_stop仅发送零目标，write_enable为零速后启用，没有±50过滤或实际停止验收。不能用原版发送成功证明本候选已硬件通过。"
+  },
+  "limits": [
+    "沿用原14读语义：采样不得早于名义时刻且受总1.5秒限制；没有新增每槽上界或另一套调度。root已明确同意保留此既有边界。",
+    "仅软件候选审核通过，不证明物理静止、固件单位或根因；没有新现场就绪事实或实机GO。历史FAIL、BFC/D15 DEFERRED及deployable=false不因此改变。"
+  ]
+}
