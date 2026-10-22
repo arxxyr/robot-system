@@ -1,0 +1,423 @@
+{
+  "schema": "BASE_WHEEL_STOP_HARDWARE_INDEPENDENT_REVIEW_V1",
+  "reviewer": "/root/xlerobot_local_check",
+  "reviewed_at_utc": "2026-10-22T12:21:52.438723+00:00",
+  "decision": "EVIDENCE_CONSISTENT_FRONT_FAIL_LEFT_LOCAL_PASS",
+  "findings": [],
+  "collection": {
+    "path": "hardware-collection.json",
+    "files_sha_verified": 1207,
+    "bytes": 4324871
+  },
+  "runs": [
+    {
+      "wheel": "front",
+      "target": 8,
+      "run_path": "front-hardware/run.json",
+      "run_sha256": "136f0a1b267a150dffac8759b2e9a461581b5590dc1785fa1a654228ef318fbe",
+      "run_bytes": 1500804,
+      "source_sha256": "304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221",
+      "result": "NEEDS_MANUAL_POWER_CUT",
+      "manual_power_cut_required": true,
+      "stop": "UNKNOWN",
+      "position": "UNKNOWN",
+      "identity": "UNKNOWN",
+      "identity_checks": 106,
+      "identity_nonpass": [
+        [
+          "modes",
+          "UNKNOWN"
+        ]
+      ],
+      "terminal": "front-zero-stability-r1-hardware $129 %165 743494 1 1",
+      "children_reaped": 222,
+      "nonzero_sync_writes": 400,
+      "motion_ns": 20000000000,
+      "motion_samples": 79,
+      "cumulative_position_raw": 9921,
+      "wire_sha256": "0eb845ad4ddf83c284c667f959f948a230e93ab9117d8775e22b39e49f93d481",
+      "wire_events": 947,
+      "all_sdk_tx_rx_verified": true,
+      "zero_status": "FAIL",
+      "zero_samples": [
+        {
+          "index": 0,
+          "raw_unsigned": 250,
+          "decoded_diagnostic_only": 250,
+          "pv_sequence": 577,
+          "pv_rx_hex": "FF FF 08 04 00 FA 00 F9",
+          "pv_returned_from_sync_finished_ns": 73195621
+        },
+        {
+          "index": 1,
+          "raw_unsigned": 32818,
+          "decoded_diagnostic_only": -50,
+          "pv_sequence": 580,
+          "pv_rx_hex": "FF FF 08 04 00 32 80 41",
+          "pv_returned_from_sync_finished_ns": 273119890
+        },
+        {
+          "index": 2,
+          "raw_unsigned": 32818,
+          "decoded_diagnostic_only": -50,
+          "pv_sequence": 583,
+          "pv_rx_hex": "FF FF 08 04 00 32 80 41",
+          "pv_returned_from_sync_finished_ns": 473250956
+        }
+      ],
+      "zero_to_last_pv_ns": 479691333,
+      "final_write": {
+        "sequence": 585,
+        "register": "Torque_Enable",
+        "value": 0,
+        "status": "ACK_VALID"
+      },
+      "enable_attempt_to_te0_ns": 20500813143,
+      "sdk_post_disable_raw": [],
+      "sdk_closed": true,
+      "post_close_uart_child_commands": 0,
+      "windows": [
+        {
+          "phase": "before",
+          "motor": 7,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 2664,
+          "pp_raw": [
+            2664,
+            2664,
+            2664,
+            2664,
+            2664
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114432011
+        },
+        {
+          "phase": "before",
+          "motor": 8,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 3424,
+          "pp_raw": [
+            3424,
+            3424,
+            3424,
+            3424,
+            3424
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114993918
+        },
+        {
+          "phase": "before",
+          "motor": 9,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 950,
+          "pp_raw": [
+            950,
+            950,
+            949,
+            950,
+            950
+          ],
+          "pp_span_including_anchor": 1,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1115158274
+        },
+        {
+          "phase": "after",
+          "motor": 7,
+          "status": "NOT_CAPTURED_AFTER_STICKY_FAILURE"
+        },
+        {
+          "phase": "after",
+          "motor": 8,
+          "status": "NOT_CAPTURED_AFTER_STICKY_FAILURE"
+        },
+        {
+          "phase": "after",
+          "motor": 9,
+          "status": "NOT_CAPTURED_AFTER_STICKY_FAILURE"
+        }
+      ],
+      "plan_sha256": "c35fa82d9d566174115dcd7f7c8f7a70c27a15e2d15c537f3209a5cebb722523",
+      "go_source": "call_9a8b2d1ce4364be091376574d2f7eec4 当前现场答复；用户已授权前8通过后左7各一次20秒",
+      "field_confirmed_at_ns": 1792670800404639000,
+      "go_issued_at_ns": 1792670819997599152,
+      "go_consumed_at_ns": 1792670820143889436,
+      "go_expires_at_ns": 1792671400404639000,
+      "captured_trace_epoch_range_ns": [
+        1792670822782200000,
+        1792670825233832000
+      ]
+    },
+    {
+      "wheel": "left",
+      "target": 7,
+      "run_path": "left-hardware/run.json",
+      "run_sha256": "0f75248fc7505c1e117d431b9f739122c602dec87b705e32b06668990054cb7c",
+      "run_bytes": 1667448,
+      "source_sha256": "304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221",
+      "result": "FAIL",
+      "manual_power_cut_required": false,
+      "stop": "PASS",
+      "position": "PASS",
+      "identity": "PASS",
+      "identity_checks": 106,
+      "identity_nonpass": [],
+      "terminal": "left-zero-stability-r1-hardware $131 %167 744102 1 1",
+      "children_reaped": 366,
+      "nonzero_sync_writes": 400,
+      "motion_ns": 20000000000,
+      "motion_samples": 79,
+      "cumulative_position_raw": 9925,
+      "wire_sha256": "d7542d38320f6304d0c1e1869e84d1ccfcb6d6f1d8af9190190a891477452fbf",
+      "wire_events": 956,
+      "all_sdk_tx_rx_verified": true,
+      "zero_status": "PASS",
+      "zero_samples": [
+        {
+          "index": 0,
+          "raw_unsigned": 300,
+          "decoded_diagnostic_only": 300,
+          "pv_sequence": 577,
+          "pv_rx_hex": "FF FF 07 04 00 2C 01 C7",
+          "pv_returned_from_sync_finished_ns": 73225832
+        },
+        {
+          "index": 1,
+          "raw_unsigned": 0,
+          "decoded_diagnostic_only": 0,
+          "pv_sequence": 580,
+          "pv_rx_hex": "FF FF 07 04 00 00 00 F4",
+          "pv_returned_from_sync_finished_ns": 273362265
+        },
+        {
+          "index": 2,
+          "raw_unsigned": 0,
+          "decoded_diagnostic_only": 0,
+          "pv_sequence": 583,
+          "pv_rx_hex": "FF FF 07 04 00 00 00 F4",
+          "pv_returned_from_sync_finished_ns": 473097019
+        }
+      ],
+      "zero_to_last_pv_ns": 479510821,
+      "final_write": {
+        "sequence": 585,
+        "register": "Torque_Enable",
+        "value": 0,
+        "status": "ACK_VALID"
+      },
+      "enable_attempt_to_te0_ns": 20500488144,
+      "sdk_post_disable_raw": [
+        0,
+        0,
+        0
+      ],
+      "sdk_closed": true,
+      "post_close_uart_child_commands": 144,
+      "windows": [
+        {
+          "phase": "before",
+          "motor": 7,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 2664,
+          "pp_raw": [
+            2664,
+            2664,
+            2664,
+            2664,
+            2664
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114027342
+        },
+        {
+          "phase": "before",
+          "motor": 8,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 1206,
+          "pp_raw": [
+            1206,
+            1206,
+            1206,
+            1206,
+            1206
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1113775771
+        },
+        {
+          "phase": "before",
+          "motor": 9,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 950,
+          "pp_raw": [
+            950,
+            950,
+            950,
+            950,
+            949
+          ],
+          "pp_span_including_anchor": 1,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114792376
+        },
+        {
+          "phase": "after",
+          "motor": 7,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 451,
+          "pp_raw": [
+            451,
+            451,
+            451,
+            451,
+            451
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114589667
+        },
+        {
+          "phase": "after",
+          "motor": 8,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 1206,
+          "pp_raw": [
+            1206,
+            1206,
+            1206,
+            1206,
+            1206
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114369428
+        },
+        {
+          "phase": "after",
+          "motor": 9,
+          "status": "PASS",
+          "snapshot_pv_raw": 0,
+          "anchor_raw": 950,
+          "pp_raw": [
+            950,
+            950,
+            950,
+            950,
+            950
+          ],
+          "pp_span_including_anchor": 0,
+          "pv_raw_unsigned": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "elapsed_ns": 1114185447
+        }
+      ],
+      "plan_sha256": "b7de4ac5830d067f43c9f1f037c5605ce0c527a472e260c4cc39d6f1dd95e9cd",
+      "go_source": "call_9a8b2d1ce4364be091376574d2f7eec4原现场条件；call_de00691d97f2449683037db1aadbdb12报告实际已停止且不切电；随后明确要求测下一个先跑完。前轮原FAIL保留，左轮新单次GO。",
+      "field_confirmed_at_ns": 1792670800404639000,
+      "go_issued_at_ns": 1792671284397034314,
+      "go_consumed_at_ns": 1792671284541753553,
+      "go_expires_at_ns": 1792671400404639000,
+      "captured_trace_epoch_range_ns": [
+        1792671287125725000,
+        1792671315318570000
+      ]
+    }
+  ],
+  "phase_conclusion": [
+    "本轮±50仅在前8 TE1/GV0保持使能零速阶段出现，第二组8032被原有限例外接受，第三组8032超出原允许范围且不满足末组严格0，原FAIL保留。",
+    "本轮所有实际采到的三轮TE0稳定性窗口PV均为0：前轮before三窗、左轮before/after六窗；右9仅有部分窗口PP在949/950变化，不能把此轮写成三轮TE0复现±50。",
+    "前轮第三组后只有独立SYNC0→TE0 ACK，SDK关闭后18项均非UART；没有断扭后SDK速度复核和三轮after窗口，因此不把TE0 ACK或用户已停止报告回填原STOP/identity。",
+    "左轮一次20秒完成、三轮前后新窗口及最终SDK严格0通过；用户明确确认左轮持续转动且结束完全停止，整体FAIL仅固件三项DEFERRED。"
+  ],
+  "authorization": {
+    "field_source": "call_9a8b2d1ce4364be091376574d2f7eec4",
+    "same_original_field_and_expiry": true,
+    "field_timestamp_not_renewed": true,
+    "independent_front_left_plan_and_go": true,
+    "power_cut_disposition": "DECLINED",
+    "front_stop_report": "USER_REPORTED",
+    "continued_left_authorization": "测下一个，先都跑完一遍",
+    "source_path": "user-disposition.json",
+    "qualification": "前轮原来要求通过后左轮的条件未达成；随后用户明确不切电、报告已停止并要求测下一个，左轮按该新单次指令发独立GO；不声称断电复位，也不把它记成自动通过或重试。"
+  },
+  "physical_observation": {
+    "front": "USER_REPORTED_STOPPED_AFTER_FAILURE，未记录本轮完整运动/停止的独立仪器证明",
+    "left": {
+      "path": "left-physical-observation.json",
+      "source": "call_a947deda5fa34704bf1a61ca91b30150",
+      "answer": "左轮明显持续转动，结束后完全停止"
+    }
+  },
+  "limits": [
+    "只读本地已回收原件并写本报告；未SSH/UART/新GO/测试或动作。",
+    "本报告仅绑定本轮冻结304a源码，正在修改的新候选两Python不纳入硬件结论。",
+    "继承历史三轮TE0±50证据不等于本轮复现；前轮本次失败不回填，D15 OPEN/DEFERRED、固件合同DEFERRED及deployable=false保持。"
+  ]
+}

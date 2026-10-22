@@ -1,0 +1,13 @@
+{
+  "source": [
+    "call_de00691d97f2449683037db1aadbdb12",
+    "user_direct_message"
+  ],
+  "answer": "不断电，实际已经停止。说明这恶个标准要改为+-50",
+  "continuation": "测下一个，先都跑完一遍",
+  "followup": "得留意下只有前轮+-50还是三个轮子都有",
+  "power_cut": "DECLINED",
+  "physical_stop": "USER_REPORTED",
+  "front_original_result": "NEEDS_MANUAL_POWER_CUT_UNCHANGED",
+  "scope": "仅新的左轮一次20秒；先保留现有源码和门槛，完成后依据分阶段证据调整；原现场时间不续期"
+}

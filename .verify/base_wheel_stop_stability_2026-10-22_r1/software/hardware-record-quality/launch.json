@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-wheel-stop-record-quality-r1 $130 %166 743850 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-wheel-stop-record-quality-r1.py\", \"temporary_runner_sha256\": \"a0c17940a94f5d39f080e05f410f50502066f9bbee78047c831f58310200404d\"}\n",
+  "stderr": ""
+}

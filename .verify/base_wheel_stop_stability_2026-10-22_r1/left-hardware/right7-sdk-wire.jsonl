@@ -1,0 +1,956 @@
+{"sequence": 1, "operation": 1, "direction": "tx", "at_ns": 4424540737166344, "bytes": [255, 255, 7, 4, 2, 3, 2, 237], "written_count": 8}
+{"sequence": 2, "operation": 1, "direction": "rx", "at_ns": 4424540737729021, "bytes": [255, 255, 7, 4, 0, 9], "requested_length": 6}
+{"sequence": 3, "operation": 1, "direction": "rx", "at_ns": 4424540737788191, "bytes": [3, 232], "requested_length": 2}
+{"sequence": 4, "operation": 2, "direction": "tx", "at_ns": 4424540744587834, "bytes": [255, 255, 7, 4, 2, 0, 1, 241], "written_count": 8}
+{"sequence": 5, "operation": 2, "direction": "rx", "at_ns": 4424540745083853, "bytes": [255, 255, 7, 3, 0, 3], "requested_length": 6}
+{"sequence": 6, "operation": 2, "direction": "rx", "at_ns": 4424540745132719, "bytes": [242], "requested_length": 1}
+{"sequence": 7, "operation": 3, "direction": "tx", "at_ns": 4424540751610782, "bytes": [255, 255, 7, 4, 2, 1, 1, 240], "written_count": 8}
+{"sequence": 8, "operation": 3, "direction": "rx", "at_ns": 4424540752110225, "bytes": [255, 255, 7, 3, 0, 10], "requested_length": 6}
+{"sequence": 9, "operation": 3, "direction": "rx", "at_ns": 4424540752160594, "bytes": [235], "requested_length": 1}
+{"sequence": 10, "operation": 4, "direction": "tx", "at_ns": 4424540758593632, "bytes": [255, 255, 7, 4, 2, 33, 1, 208], "written_count": 8}
+{"sequence": 11, "operation": 4, "direction": "rx", "at_ns": 4424540759090931, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 12, "operation": 4, "direction": "rx", "at_ns": 4424540759138260, "bytes": [244], "requested_length": 1}
+{"sequence": 13, "operation": 5, "direction": "tx", "at_ns": 4424540765578691, "bytes": [255, 255, 7, 4, 2, 18, 1, 223], "written_count": 8}
+{"sequence": 14, "operation": 5, "direction": "rx", "at_ns": 4424540766082805, "bytes": [255, 255, 7, 3, 0, 12], "requested_length": 6}
+{"sequence": 15, "operation": 5, "direction": "rx", "at_ns": 4424540766129047, "bytes": [233], "requested_length": 1}
+{"sequence": 16, "operation": 6, "direction": "tx", "at_ns": 4424540772562405, "bytes": [255, 255, 7, 4, 2, 55, 1, 186], "written_count": 8}
+{"sequence": 17, "operation": 6, "direction": "rx", "at_ns": 4424540773055927, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 18, "operation": 6, "direction": "rx", "at_ns": 4424540773103321, "bytes": [244], "requested_length": 1}
+{"sequence": 19, "operation": 7, "direction": "tx", "at_ns": 4424540779559688, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 20, "operation": 7, "direction": "rx", "at_ns": 4424540780056506, "bytes": [255, 255, 7, 3, 0, 0], "requested_length": 6}
+{"sequence": 21, "operation": 7, "direction": "rx", "at_ns": 4424540780106428, "bytes": [245], "requested_length": 1}
+{"sequence": 22, "operation": 8, "direction": "tx", "at_ns": 4424540786517321, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 23, "operation": 8, "direction": "rx", "at_ns": 4424540787029148, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 24, "operation": 8, "direction": "rx", "at_ns": 4424540787075038, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 25, "operation": 9, "direction": "tx", "at_ns": 4424540793506571, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 26, "operation": 9, "direction": "rx", "at_ns": 4424540794014590, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 27, "operation": 9, "direction": "rx", "at_ns": 4424540794061088, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 28, "operation": 10, "direction": "tx", "at_ns": 4424540800507982, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 29, "operation": 10, "direction": "rx", "at_ns": 4424540801012161, "bytes": [255, 255, 7, 4, 0, 104], "requested_length": 6}
+{"sequence": 30, "operation": 10, "direction": "rx", "at_ns": 4424540801057987, "bytes": [10, 130], "requested_length": 2}
+{"sequence": 31, "operation": 11, "direction": "tx", "at_ns": 4424540807475728, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 0, 0, 64], "written_count": 11}
+{"sequence": 32, "operation": 12, "direction": "tx", "at_ns": 4424540863976314, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 33, "operation": 12, "direction": "rx", "at_ns": 4424540864484780, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 34, "operation": 12, "direction": "rx", "at_ns": 4424540864533166, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 35, "operation": 13, "direction": "tx", "at_ns": 4424540870965244, "bytes": [255, 255, 7, 4, 3, 40, 1, 200], "written_count": 8}
+{"sequence": 36, "operation": 13, "direction": "rx", "at_ns": 4424540871466351, "bytes": [255, 255, 7, 2, 0, 246], "requested_length": 6}
+{"sequence": 37, "operation": 14, "direction": "tx", "at_ns": 4424540877862459, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 38, "operation": 14, "direction": "rx", "at_ns": 4424540878362862, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 39, "operation": 14, "direction": "rx", "at_ns": 4424540878408943, "bytes": [244], "requested_length": 1}
+{"sequence": 40, "operation": 15, "direction": "tx", "at_ns": 4424540886901257, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 41, "operation": 16, "direction": "tx", "at_ns": 4424540893294038, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 42, "operation": 16, "direction": "rx", "at_ns": 4424540893807305, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 43, "operation": 16, "direction": "rx", "at_ns": 4424540893853547, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 44, "operation": 17, "direction": "tx", "at_ns": 4424540939044562, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 45, "operation": 18, "direction": "tx", "at_ns": 4424540989055723, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 46, "operation": 19, "direction": "tx", "at_ns": 4424541039028707, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 47, "operation": 20, "direction": "tx", "at_ns": 4424541089029436, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 48, "operation": 21, "direction": "tx", "at_ns": 4424541139033110, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 49, "operation": 22, "direction": "tx", "at_ns": 4424541145422434, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 50, "operation": 22, "direction": "rx", "at_ns": 4424541145930965, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 51, "operation": 22, "direction": "rx", "at_ns": 4424541145976022, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 52, "operation": 23, "direction": "tx", "at_ns": 4424541152459910, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 53, "operation": 23, "direction": "rx", "at_ns": 4424541152977209, "bytes": [255, 255, 7, 4, 0, 205], "requested_length": 6}
+{"sequence": 54, "operation": 23, "direction": "rx", "at_ns": 4424541153021307, "bytes": [10, 29], "requested_length": 2}
+{"sequence": 55, "operation": 24, "direction": "tx", "at_ns": 4424541189069360, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 56, "operation": 25, "direction": "tx", "at_ns": 4424541239041416, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 57, "operation": 26, "direction": "tx", "at_ns": 4424541289050146, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 58, "operation": 27, "direction": "tx", "at_ns": 4424541339032250, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 59, "operation": 28, "direction": "tx", "at_ns": 4424541389044436, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 60, "operation": 29, "direction": "tx", "at_ns": 4424541395432576, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 61, "operation": 29, "direction": "rx", "at_ns": 4424541395943347, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 62, "operation": 29, "direction": "rx", "at_ns": 4424541395990581, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 63, "operation": 30, "direction": "tx", "at_ns": 4424541402398369, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 64, "operation": 30, "direction": "rx", "at_ns": 4424541402902196, "bytes": [255, 255, 7, 4, 0, 75], "requested_length": 6}
+{"sequence": 65, "operation": 30, "direction": "rx", "at_ns": 4424541402946390, "bytes": [11, 158], "requested_length": 2}
+{"sequence": 66, "operation": 31, "direction": "tx", "at_ns": 4424541439036620, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 67, "operation": 32, "direction": "tx", "at_ns": 4424541489055238, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 68, "operation": 33, "direction": "tx", "at_ns": 4424541539047325, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 69, "operation": 34, "direction": "tx", "at_ns": 4424541589299806, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 70, "operation": 35, "direction": "tx", "at_ns": 4424541639045164, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 71, "operation": 36, "direction": "tx", "at_ns": 4424541645476986, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 72, "operation": 36, "direction": "rx", "at_ns": 4424541645993837, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 73, "operation": 36, "direction": "rx", "at_ns": 4424541646041230, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 74, "operation": 37, "direction": "tx", "at_ns": 4424541652451451, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 75, "operation": 37, "direction": "rx", "at_ns": 4424541652964622, "bytes": [255, 255, 7, 4, 0, 200], "requested_length": 6}
+{"sequence": 76, "operation": 37, "direction": "rx", "at_ns": 4424541653011920, "bytes": [11, 33], "requested_length": 2}
+{"sequence": 77, "operation": 38, "direction": "tx", "at_ns": 4424541689046019, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 78, "operation": 39, "direction": "tx", "at_ns": 4424541739047323, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 79, "operation": 40, "direction": "tx", "at_ns": 4424541789055507, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 80, "operation": 41, "direction": "tx", "at_ns": 4424541839032138, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 81, "operation": 42, "direction": "tx", "at_ns": 4424541889030817, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 82, "operation": 43, "direction": "tx", "at_ns": 4424541895424269, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 83, "operation": 43, "direction": "rx", "at_ns": 4424541895935520, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 84, "operation": 43, "direction": "rx", "at_ns": 4424541895982946, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 85, "operation": 44, "direction": "tx", "at_ns": 4424541902397327, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 86, "operation": 44, "direction": "rx", "at_ns": 4424541902907074, "bytes": [255, 255, 7, 4, 0, 70], "requested_length": 6}
+{"sequence": 87, "operation": 44, "direction": "rx", "at_ns": 4424541902952836, "bytes": [12, 162], "requested_length": 2}
+{"sequence": 88, "operation": 45, "direction": "tx", "at_ns": 4424541939033465, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 89, "operation": 46, "direction": "tx", "at_ns": 4424541989027536, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 90, "operation": 47, "direction": "tx", "at_ns": 4424542039011271, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 91, "operation": 48, "direction": "tx", "at_ns": 4424542089020991, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 92, "operation": 49, "direction": "tx", "at_ns": 4424542139017751, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 93, "operation": 50, "direction": "tx", "at_ns": 4424542145414083, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 94, "operation": 50, "direction": "rx", "at_ns": 4424542145925174, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 95, "operation": 50, "direction": "rx", "at_ns": 4424542145970871, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 96, "operation": 51, "direction": "tx", "at_ns": 4424542152388901, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 97, "operation": 51, "direction": "rx", "at_ns": 4424542152897847, "bytes": [255, 255, 7, 4, 0, 197], "requested_length": 6}
+{"sequence": 98, "operation": 51, "direction": "rx", "at_ns": 4424542152943609, "bytes": [12, 35], "requested_length": 2}
+{"sequence": 99, "operation": 52, "direction": "tx", "at_ns": 4424542189027598, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 100, "operation": 53, "direction": "tx", "at_ns": 4424542239024806, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 101, "operation": 54, "direction": "tx", "at_ns": 4424542289044414, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 102, "operation": 55, "direction": "tx", "at_ns": 4424542339259262, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 103, "operation": 56, "direction": "tx", "at_ns": 4424542389044333, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 104, "operation": 57, "direction": "tx", "at_ns": 4424542395416953, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 105, "operation": 57, "direction": "rx", "at_ns": 4424542395935884, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 106, "operation": 57, "direction": "rx", "at_ns": 4424542395983406, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 107, "operation": 58, "direction": "tx", "at_ns": 4424542402371322, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 108, "operation": 58, "direction": "rx", "at_ns": 4424542402880973, "bytes": [255, 255, 7, 4, 0, 65], "requested_length": 6}
+{"sequence": 109, "operation": 58, "direction": "rx", "at_ns": 4424542402926478, "bytes": [13, 166], "requested_length": 2}
+{"sequence": 110, "operation": 59, "direction": "tx", "at_ns": 4424542439036933, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 111, "operation": 60, "direction": "tx", "at_ns": 4424542489040252, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 112, "operation": 61, "direction": "tx", "at_ns": 4424542539002224, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 113, "operation": 62, "direction": "tx", "at_ns": 4424542589040040, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 114, "operation": 63, "direction": "tx", "at_ns": 4424542639062399, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 115, "operation": 64, "direction": "tx", "at_ns": 4424542645451019, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 116, "operation": 64, "direction": "rx", "at_ns": 4424542645964573, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 117, "operation": 64, "direction": "rx", "at_ns": 4424542646011967, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 118, "operation": 65, "direction": "tx", "at_ns": 4424542652432780, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 119, "operation": 65, "direction": "rx", "at_ns": 4424542652943295, "bytes": [255, 255, 7, 4, 0, 193], "requested_length": 6}
+{"sequence": 120, "operation": 65, "direction": "rx", "at_ns": 4424542652988833, "bytes": [13, 38], "requested_length": 2}
+{"sequence": 121, "operation": 66, "direction": "tx", "at_ns": 4424542689047316, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 122, "operation": 67, "direction": "tx", "at_ns": 4424542739029737, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 123, "operation": 68, "direction": "tx", "at_ns": 4424542789038912, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 124, "operation": 69, "direction": "tx", "at_ns": 4424542839016885, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 125, "operation": 70, "direction": "tx", "at_ns": 4424542889042028, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 126, "operation": 71, "direction": "tx", "at_ns": 4424542895416023, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 127, "operation": 71, "direction": "rx", "at_ns": 4424542895922218, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 128, "operation": 71, "direction": "rx", "at_ns": 4424542895968428, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 129, "operation": 72, "direction": "tx", "at_ns": 4424542902360440, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 130, "operation": 72, "direction": "rx", "at_ns": 4424542902873451, "bytes": [255, 255, 7, 4, 0, 63], "requested_length": 6}
+{"sequence": 131, "operation": 72, "direction": "rx", "at_ns": 4424542902918476, "bytes": [14, 167], "requested_length": 2}
+{"sequence": 132, "operation": 73, "direction": "tx", "at_ns": 4424542939021345, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 133, "operation": 74, "direction": "tx", "at_ns": 4424542989036056, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 134, "operation": 75, "direction": "tx", "at_ns": 4424543038997933, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 135, "operation": 76, "direction": "tx", "at_ns": 4424543088999747, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 136, "operation": 77, "direction": "tx", "at_ns": 4424543138995417, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 137, "operation": 78, "direction": "tx", "at_ns": 4424543145351779, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 138, "operation": 78, "direction": "rx", "at_ns": 4424543145865430, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 139, "operation": 78, "direction": "rx", "at_ns": 4424543145910392, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 140, "operation": 79, "direction": "tx", "at_ns": 4424543152288835, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 141, "operation": 79, "direction": "rx", "at_ns": 4424543152803574, "bytes": [255, 255, 7, 4, 0, 189], "requested_length": 6}
+{"sequence": 142, "operation": 79, "direction": "rx", "at_ns": 4424543152848792, "bytes": [14, 41], "requested_length": 2}
+{"sequence": 143, "operation": 80, "direction": "tx", "at_ns": 4424543189038832, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 144, "operation": 81, "direction": "tx", "at_ns": 4424543239019494, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 145, "operation": 82, "direction": "tx", "at_ns": 4424543289020348, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 146, "operation": 83, "direction": "tx", "at_ns": 4424543339002065, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 147, "operation": 84, "direction": "tx", "at_ns": 4424543389020264, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 148, "operation": 85, "direction": "tx", "at_ns": 4424543395361746, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 149, "operation": 85, "direction": "rx", "at_ns": 4424543395877861, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 150, "operation": 85, "direction": "rx", "at_ns": 4424543395923751, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 151, "operation": 86, "direction": "tx", "at_ns": 4424543402326515, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 152, "operation": 86, "direction": "rx", "at_ns": 4424543402832806, "bytes": [255, 255, 7, 4, 0, 58], "requested_length": 6}
+{"sequence": 153, "operation": 86, "direction": "rx", "at_ns": 4424543402878183, "bytes": [15, 171], "requested_length": 2}
+{"sequence": 154, "operation": 87, "direction": "tx", "at_ns": 4424543439037246, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 155, "operation": 88, "direction": "tx", "at_ns": 4424543489022995, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 156, "operation": 89, "direction": "tx", "at_ns": 4424543539005735, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 157, "operation": 90, "direction": "tx", "at_ns": 4424543589019388, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 158, "operation": 91, "direction": "tx", "at_ns": 4424543639067346, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 159, "operation": 92, "direction": "tx", "at_ns": 4424543645459934, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 160, "operation": 92, "direction": "rx", "at_ns": 4424543645970097, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 161, "operation": 92, "direction": "rx", "at_ns": 4424543646017299, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 162, "operation": 93, "direction": "tx", "at_ns": 4424543652477121, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 163, "operation": 93, "direction": "rx", "at_ns": 4424543652983988, "bytes": [255, 255, 7, 4, 0, 186], "requested_length": 6}
+{"sequence": 164, "operation": 93, "direction": "rx", "at_ns": 4424543653032822, "bytes": [15, 43], "requested_length": 2}
+{"sequence": 165, "operation": 94, "direction": "tx", "at_ns": 4424543689078407, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 166, "operation": 95, "direction": "tx", "at_ns": 4424543739017626, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 167, "operation": 96, "direction": "tx", "at_ns": 4424543789026638, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 168, "operation": 97, "direction": "tx", "at_ns": 4424543839008290, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 169, "operation": 98, "direction": "tx", "at_ns": 4424543889031288, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 170, "operation": 99, "direction": "tx", "at_ns": 4424543895418499, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 171, "operation": 99, "direction": "rx", "at_ns": 4424543895939190, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 172, "operation": 99, "direction": "rx", "at_ns": 4424543895986456, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 173, "operation": 100, "direction": "tx", "at_ns": 4424543902390404, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 174, "operation": 100, "direction": "rx", "at_ns": 4424543902907864, "bytes": [255, 255, 7, 4, 0, 55], "requested_length": 6}
+{"sequence": 175, "operation": 100, "direction": "rx", "at_ns": 4424543902954073, "bytes": [0, 189], "requested_length": 2}
+{"sequence": 176, "operation": 101, "direction": "tx", "at_ns": 4424543939020332, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 177, "operation": 102, "direction": "tx", "at_ns": 4424543989033313, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 178, "operation": 103, "direction": "tx", "at_ns": 4424544039024213, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 179, "operation": 104, "direction": "tx", "at_ns": 4424544089029386, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 180, "operation": 105, "direction": "tx", "at_ns": 4424544139008861, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 181, "operation": 106, "direction": "tx", "at_ns": 4424544145391465, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 182, "operation": 106, "direction": "rx", "at_ns": 4424544145904700, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 183, "operation": 106, "direction": "rx", "at_ns": 4424544145951677, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 184, "operation": 107, "direction": "tx", "at_ns": 4424544152390891, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 185, "operation": 107, "direction": "rx", "at_ns": 4424544152907454, "bytes": [255, 255, 7, 4, 0, 181], "requested_length": 6}
+{"sequence": 186, "operation": 107, "direction": "rx", "at_ns": 4424544152953984, "bytes": [0, 63], "requested_length": 2}
+{"sequence": 187, "operation": 108, "direction": "tx", "at_ns": 4424544189055284, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 188, "operation": 109, "direction": "tx", "at_ns": 4424544239036423, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 189, "operation": 110, "direction": "tx", "at_ns": 4424544289113695, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 190, "operation": 111, "direction": "tx", "at_ns": 4424544339047729, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 191, "operation": 112, "direction": "tx", "at_ns": 4424544389049061, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 192, "operation": 113, "direction": "tx", "at_ns": 4424544395444561, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 193, "operation": 113, "direction": "rx", "at_ns": 4424544395960228, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 194, "operation": 113, "direction": "rx", "at_ns": 4424544396018310, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 195, "operation": 114, "direction": "tx", "at_ns": 4424544402446228, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 196, "operation": 114, "direction": "rx", "at_ns": 4424544402959207, "bytes": [255, 255, 7, 4, 0, 50], "requested_length": 6}
+{"sequence": 197, "operation": 114, "direction": "rx", "at_ns": 4424544403005928, "bytes": [1, 193], "requested_length": 2}
+{"sequence": 198, "operation": 115, "direction": "tx", "at_ns": 4424544439041690, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 199, "operation": 116, "direction": "tx", "at_ns": 4424544489084431, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 200, "operation": 117, "direction": "tx", "at_ns": 4424544539028992, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 201, "operation": 118, "direction": "tx", "at_ns": 4424544589038099, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 202, "operation": 119, "direction": "tx", "at_ns": 4424544639048519, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 203, "operation": 120, "direction": "tx", "at_ns": 4424544645476276, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 204, "operation": 120, "direction": "rx", "at_ns": 4424544645985894, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 205, "operation": 120, "direction": "rx", "at_ns": 4424544646034184, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 206, "operation": 121, "direction": "tx", "at_ns": 4424544652495286, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 207, "operation": 121, "direction": "rx", "at_ns": 4424544652998377, "bytes": [255, 255, 7, 4, 0, 177], "requested_length": 6}
+{"sequence": 208, "operation": 121, "direction": "rx", "at_ns": 4424544653041994, "bytes": [1, 66], "requested_length": 2}
+{"sequence": 209, "operation": 122, "direction": "tx", "at_ns": 4424544689059738, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 210, "operation": 123, "direction": "tx", "at_ns": 4424544739043820, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 211, "operation": 124, "direction": "tx", "at_ns": 4424544789062688, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 212, "operation": 125, "direction": "tx", "at_ns": 4424544839032018, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 213, "operation": 126, "direction": "tx", "at_ns": 4424544889041861, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 214, "operation": 127, "direction": "tx", "at_ns": 4424544895417200, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 215, "operation": 127, "direction": "rx", "at_ns": 4424544895935619, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 216, "operation": 127, "direction": "rx", "at_ns": 4424544895982693, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 217, "operation": 128, "direction": "tx", "at_ns": 4424544902393169, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 218, "operation": 128, "direction": "rx", "at_ns": 4424544902899876, "bytes": [255, 255, 7, 4, 0, 46], "requested_length": 6}
+{"sequence": 219, "operation": 128, "direction": "rx", "at_ns": 4424544902944134, "bytes": [2, 196], "requested_length": 2}
+{"sequence": 220, "operation": 129, "direction": "tx", "at_ns": 4424544939076922, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 221, "operation": 130, "direction": "tx", "at_ns": 4424544989155023, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 222, "operation": 131, "direction": "tx", "at_ns": 4424545039065279, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 223, "operation": 132, "direction": "tx", "at_ns": 4424545089057810, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 224, "operation": 133, "direction": "tx", "at_ns": 4424545139029732, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 225, "operation": 134, "direction": "tx", "at_ns": 4424545145427856, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 226, "operation": 134, "direction": "rx", "at_ns": 4424545145944931, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 227, "operation": 134, "direction": "rx", "at_ns": 4424545145992164, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 228, "operation": 135, "direction": "tx", "at_ns": 4424545152399569, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 229, "operation": 135, "direction": "rx", "at_ns": 4424545152907843, "bytes": [255, 255, 7, 4, 0, 173], "requested_length": 6}
+{"sequence": 230, "operation": 135, "direction": "rx", "at_ns": 4424545152971206, "bytes": [2, 69], "requested_length": 2}
+{"sequence": 231, "operation": 136, "direction": "tx", "at_ns": 4424545189107418, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 232, "operation": 137, "direction": "tx", "at_ns": 4424545239054379, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 233, "operation": 138, "direction": "tx", "at_ns": 4424545289041853, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 234, "operation": 139, "direction": "tx", "at_ns": 4424545339757899, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 235, "operation": 140, "direction": "tx", "at_ns": 4424545389906179, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 236, "operation": 141, "direction": "tx", "at_ns": 4424545396539832, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 237, "operation": 141, "direction": "rx", "at_ns": 4424545397057515, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 238, "operation": 141, "direction": "rx", "at_ns": 4424545397114285, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 239, "operation": 142, "direction": "tx", "at_ns": 4424545403646622, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 240, "operation": 142, "direction": "rx", "at_ns": 4424545404151600, "bytes": [255, 255, 7, 4, 0, 42], "requested_length": 6}
+{"sequence": 241, "operation": 142, "direction": "rx", "at_ns": 4424545404207122, "bytes": [3, 199], "requested_length": 2}
+{"sequence": 242, "operation": 143, "direction": "tx", "at_ns": 4424545439367778, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 243, "operation": 144, "direction": "tx", "at_ns": 4424545489433079, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 244, "operation": 145, "direction": "tx", "at_ns": 4424545539398407, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 245, "operation": 146, "direction": "tx", "at_ns": 4424545589072877, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 246, "operation": 147, "direction": "tx", "at_ns": 4424545639023644, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 247, "operation": 148, "direction": "tx", "at_ns": 4424545645436360, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 248, "operation": 148, "direction": "rx", "at_ns": 4424545645962524, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 249, "operation": 148, "direction": "rx", "at_ns": 4424545646013246, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 250, "operation": 149, "direction": "tx", "at_ns": 4424545652409225, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 251, "operation": 149, "direction": "rx", "at_ns": 4424545652921468, "bytes": [255, 255, 7, 4, 0, 169], "requested_length": 6}
+{"sequence": 252, "operation": 149, "direction": "rx", "at_ns": 4424545652966462, "bytes": [3, 72], "requested_length": 2}
+{"sequence": 253, "operation": 150, "direction": "tx", "at_ns": 4424545689168691, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 254, "operation": 151, "direction": "tx", "at_ns": 4424545739240455, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 255, "operation": 152, "direction": "tx", "at_ns": 4424545789042481, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 256, "operation": 153, "direction": "tx", "at_ns": 4424545839045347, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 257, "operation": 154, "direction": "tx", "at_ns": 4424545889271933, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 258, "operation": 155, "direction": "tx", "at_ns": 4424545895710826, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 259, "operation": 155, "direction": "rx", "at_ns": 4424545896223069, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 260, "operation": 155, "direction": "rx", "at_ns": 4424545896274079, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 261, "operation": 156, "direction": "tx", "at_ns": 4424545902689419, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 262, "operation": 156, "direction": "rx", "at_ns": 4424545903193885, "bytes": [255, 255, 7, 4, 0, 37], "requested_length": 6}
+{"sequence": 263, "operation": 156, "direction": "rx", "at_ns": 4424545903239967, "bytes": [4, 203], "requested_length": 2}
+{"sequence": 264, "operation": 157, "direction": "tx", "at_ns": 4424545939024485, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 265, "operation": 158, "direction": "tx", "at_ns": 4424545989034807, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 266, "operation": 159, "direction": "tx", "at_ns": 4424546039030312, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 267, "operation": 160, "direction": "tx", "at_ns": 4424546089051386, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 268, "operation": 161, "direction": "tx", "at_ns": 4424546139016875, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 269, "operation": 162, "direction": "tx", "at_ns": 4424546145419863, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 270, "operation": 162, "direction": "rx", "at_ns": 4424546145932777, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 271, "operation": 162, "direction": "rx", "at_ns": 4424546145979051, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 272, "operation": 163, "direction": "tx", "at_ns": 4424546152393239, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 273, "operation": 163, "direction": "rx", "at_ns": 4424546152917419, "bytes": [255, 255, 7, 4, 0, 164], "requested_length": 6}
+{"sequence": 274, "operation": 163, "direction": "rx", "at_ns": 4424546152963212, "bytes": [4, 76], "requested_length": 2}
+{"sequence": 275, "operation": 164, "direction": "tx", "at_ns": 4424546189049437, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 276, "operation": 165, "direction": "tx", "at_ns": 4424546239040302, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 277, "operation": 166, "direction": "tx", "at_ns": 4424546289040416, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 278, "operation": 167, "direction": "tx", "at_ns": 4424546339026929, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 279, "operation": 168, "direction": "tx", "at_ns": 4424546389041507, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 280, "operation": 169, "direction": "tx", "at_ns": 4424546395420302, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 281, "operation": 169, "direction": "rx", "at_ns": 4424546395935553, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 282, "operation": 169, "direction": "rx", "at_ns": 4424546395982083, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 283, "operation": 170, "direction": "tx", "at_ns": 4424546402376110, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 284, "operation": 170, "direction": "rx", "at_ns": 4424546402924258, "bytes": [255, 255, 7, 4, 0, 35], "requested_length": 6}
+{"sequence": 285, "operation": 170, "direction": "rx", "at_ns": 4424546402970052, "bytes": [5, 204], "requested_length": 2}
+{"sequence": 286, "operation": 171, "direction": "tx", "at_ns": 4424546439142040, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 287, "operation": 172, "direction": "tx", "at_ns": 4424546489044709, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 288, "operation": 173, "direction": "tx", "at_ns": 4424546539057878, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 289, "operation": 174, "direction": "tx", "at_ns": 4424546589046341, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 290, "operation": 175, "direction": "tx", "at_ns": 4424546639015636, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 291, "operation": 176, "direction": "tx", "at_ns": 4424546645416256, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 292, "operation": 176, "direction": "rx", "at_ns": 4424546645933619, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 293, "operation": 176, "direction": "rx", "at_ns": 4424546645981172, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 294, "operation": 177, "direction": "tx", "at_ns": 4424546652383392, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 295, "operation": 177, "direction": "rx", "at_ns": 4424546652928340, "bytes": [255, 255, 7, 4, 0, 160], "requested_length": 6}
+{"sequence": 296, "operation": 177, "direction": "rx", "at_ns": 4424546652973046, "bytes": [5, 79], "requested_length": 2}
+{"sequence": 297, "operation": 178, "direction": "tx", "at_ns": 4424546689069382, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 298, "operation": 179, "direction": "tx", "at_ns": 4424546739058390, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 299, "operation": 180, "direction": "tx", "at_ns": 4424546789056357, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 300, "operation": 181, "direction": "tx", "at_ns": 4424546839025076, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 301, "operation": 182, "direction": "tx", "at_ns": 4424546889140008, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 302, "operation": 183, "direction": "tx", "at_ns": 4424546895574581, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 303, "operation": 183, "direction": "rx", "at_ns": 4424546896088264, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 304, "operation": 183, "direction": "rx", "at_ns": 4424546896139114, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 305, "operation": 184, "direction": "tx", "at_ns": 4424546902704956, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 306, "operation": 184, "direction": "rx", "at_ns": 4424546903213134, "bytes": [255, 255, 7, 4, 0, 29], "requested_length": 6}
+{"sequence": 307, "operation": 184, "direction": "rx", "at_ns": 4424546903259472, "bytes": [6, 209], "requested_length": 2}
+{"sequence": 308, "operation": 185, "direction": "tx", "at_ns": 4424546939045557, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 309, "operation": 186, "direction": "tx", "at_ns": 4424546989044549, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 310, "operation": 187, "direction": "tx", "at_ns": 4424547039022324, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 311, "operation": 188, "direction": "tx", "at_ns": 4424547089024420, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 312, "operation": 189, "direction": "tx", "at_ns": 4424547139018388, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 313, "operation": 190, "direction": "tx", "at_ns": 4424547145404863, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 314, "operation": 190, "direction": "rx", "at_ns": 4424547145949491, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 315, "operation": 190, "direction": "rx", "at_ns": 4424547145995925, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 316, "operation": 191, "direction": "tx", "at_ns": 4424547152402784, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 317, "operation": 191, "direction": "rx", "at_ns": 4424547152949684, "bytes": [255, 255, 7, 4, 0, 156], "requested_length": 6}
+{"sequence": 318, "operation": 191, "direction": "rx", "at_ns": 4424547152995478, "bytes": [6, 82], "requested_length": 2}
+{"sequence": 319, "operation": 192, "direction": "tx", "at_ns": 4424547189043557, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 320, "operation": 193, "direction": "tx", "at_ns": 4424547239078358, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 321, "operation": 194, "direction": "tx", "at_ns": 4424547289042372, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 322, "operation": 195, "direction": "tx", "at_ns": 4424547339018036, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 323, "operation": 196, "direction": "tx", "at_ns": 4424547389028484, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 324, "operation": 197, "direction": "tx", "at_ns": 4424547395431696, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 325, "operation": 197, "direction": "rx", "at_ns": 4424547395964547, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 326, "operation": 197, "direction": "rx", "at_ns": 4424547396021701, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 327, "operation": 198, "direction": "tx", "at_ns": 4424547402458610, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 328, "operation": 198, "direction": "rx", "at_ns": 4424547402971237, "bytes": [255, 255, 7, 4, 0, 26], "requested_length": 6}
+{"sequence": 329, "operation": 198, "direction": "rx", "at_ns": 4424547403017543, "bytes": [7, 211], "requested_length": 2}
+{"sequence": 330, "operation": 199, "direction": "tx", "at_ns": 4424547439047285, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 331, "operation": 200, "direction": "tx", "at_ns": 4424547489062756, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 332, "operation": 201, "direction": "tx", "at_ns": 4424547539006161, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 333, "operation": 202, "direction": "tx", "at_ns": 4424547589024640, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 334, "operation": 203, "direction": "tx", "at_ns": 4424547639025646, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 335, "operation": 204, "direction": "tx", "at_ns": 4424547645492092, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 336, "operation": 204, "direction": "rx", "at_ns": 4424547646010383, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 337, "operation": 204, "direction": "rx", "at_ns": 4424547646058129, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 338, "operation": 205, "direction": "tx", "at_ns": 4424547652492797, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 339, "operation": 205, "direction": "rx", "at_ns": 4424547653004048, "bytes": [255, 255, 7, 4, 0, 151], "requested_length": 6}
+{"sequence": 340, "operation": 205, "direction": "rx", "at_ns": 4424547653049906, "bytes": [7, 86], "requested_length": 2}
+{"sequence": 341, "operation": 206, "direction": "tx", "at_ns": 4424547689041149, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 342, "operation": 207, "direction": "tx", "at_ns": 4424547739082317, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 343, "operation": 208, "direction": "tx", "at_ns": 4424547789056475, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 344, "operation": 209, "direction": "tx", "at_ns": 4424547839035240, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 345, "operation": 210, "direction": "tx", "at_ns": 4424547889124890, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 346, "operation": 211, "direction": "tx", "at_ns": 4424547895521157, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 347, "operation": 211, "direction": "rx", "at_ns": 4424547896045785, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 348, "operation": 211, "direction": "rx", "at_ns": 4424547896096314, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 349, "operation": 212, "direction": "tx", "at_ns": 4424547902540231, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 350, "operation": 212, "direction": "rx", "at_ns": 4424547903046298, "bytes": [255, 255, 7, 4, 0, 22], "requested_length": 6}
+{"sequence": 351, "operation": 212, "direction": "rx", "at_ns": 4424547903090844, "bytes": [8, 214], "requested_length": 2}
+{"sequence": 352, "operation": 213, "direction": "tx", "at_ns": 4424547939065318, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 353, "operation": 214, "direction": "tx", "at_ns": 4424547989059445, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 354, "operation": 215, "direction": "tx", "at_ns": 4424548039003457, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 355, "operation": 216, "direction": "tx", "at_ns": 4424548089018576, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 356, "operation": 217, "direction": "tx", "at_ns": 4424548139000702, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 357, "operation": 218, "direction": "tx", "at_ns": 4424548145376040, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 358, "operation": 218, "direction": "rx", "at_ns": 4424548145886075, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 359, "operation": 218, "direction": "rx", "at_ns": 4424548145931869, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 360, "operation": 219, "direction": "tx", "at_ns": 4424548152335720, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 361, "operation": 219, "direction": "rx", "at_ns": 4424548152846811, "bytes": [255, 255, 7, 4, 0, 149], "requested_length": 6}
+{"sequence": 362, "operation": 219, "direction": "rx", "at_ns": 4424548152893085, "bytes": [8, 87], "requested_length": 2}
+{"sequence": 363, "operation": 220, "direction": "tx", "at_ns": 4424548189052398, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 364, "operation": 221, "direction": "tx", "at_ns": 4424548239018907, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 365, "operation": 222, "direction": "tx", "at_ns": 4424548289026538, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 366, "operation": 223, "direction": "tx", "at_ns": 4424548339017176, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 367, "operation": 224, "direction": "tx", "at_ns": 4424548389037319, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 368, "operation": 225, "direction": "tx", "at_ns": 4424548395395377, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 369, "operation": 225, "direction": "rx", "at_ns": 4424548395911460, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 370, "operation": 225, "direction": "rx", "at_ns": 4424548395975878, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 371, "operation": 226, "direction": "tx", "at_ns": 4424548402379218, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 372, "operation": 226, "direction": "rx", "at_ns": 4424548402901317, "bytes": [255, 255, 7, 4, 0, 17], "requested_length": 6}
+{"sequence": 373, "operation": 226, "direction": "rx", "at_ns": 4424548402948199, "bytes": [9, 218], "requested_length": 2}
+{"sequence": 374, "operation": 227, "direction": "tx", "at_ns": 4424548439017781, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 375, "operation": 228, "direction": "tx", "at_ns": 4424548489023907, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 376, "operation": 229, "direction": "tx", "at_ns": 4424548539007695, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 377, "operation": 230, "direction": "tx", "at_ns": 4424548589010364, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 378, "operation": 231, "direction": "tx", "at_ns": 4424548639008745, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 379, "operation": 232, "direction": "tx", "at_ns": 4424548645387668, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 380, "operation": 232, "direction": "rx", "at_ns": 4424548645899238, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 381, "operation": 232, "direction": "rx", "at_ns": 4424548645945704, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 382, "operation": 233, "direction": "tx", "at_ns": 4424548652366932, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 383, "operation": 233, "direction": "rx", "at_ns": 4424548652879047, "bytes": [255, 255, 7, 4, 0, 144], "requested_length": 6}
+{"sequence": 384, "operation": 233, "direction": "rx", "at_ns": 4424548652924745, "bytes": [9, 91], "requested_length": 2}
+{"sequence": 385, "operation": 234, "direction": "tx", "at_ns": 4424548689040951, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 386, "operation": 235, "direction": "tx", "at_ns": 4424548739049605, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 387, "operation": 236, "direction": "tx", "at_ns": 4424548789037041, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 388, "operation": 237, "direction": "tx", "at_ns": 4424548839019357, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 389, "operation": 238, "direction": "tx", "at_ns": 4424548889120174, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 390, "operation": 239, "direction": "tx", "at_ns": 4424548895504857, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 391, "operation": 239, "direction": "rx", "at_ns": 4424548896021644, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 392, "operation": 239, "direction": "rx", "at_ns": 4424548896070061, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 393, "operation": 240, "direction": "tx", "at_ns": 4424548902461048, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 394, "operation": 240, "direction": "rx", "at_ns": 4424548903013996, "bytes": [255, 255, 7, 4, 0, 14], "requested_length": 6}
+{"sequence": 395, "operation": 240, "direction": "rx", "at_ns": 4424548903057774, "bytes": [10, 220], "requested_length": 2}
+{"sequence": 396, "operation": 241, "direction": "tx", "at_ns": 4424548939038008, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 397, "operation": 242, "direction": "tx", "at_ns": 4424548989025668, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 398, "operation": 243, "direction": "tx", "at_ns": 4424549039041746, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 399, "operation": 244, "direction": "tx", "at_ns": 4424549089031423, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 400, "operation": 245, "direction": "tx", "at_ns": 4424549139030923, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 401, "operation": 246, "direction": "tx", "at_ns": 4424549145403830, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 402, "operation": 246, "direction": "rx", "at_ns": 4424549145915976, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 403, "operation": 246, "direction": "rx", "at_ns": 4424549145963370, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 404, "operation": 247, "direction": "tx", "at_ns": 4424549152349845, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 405, "operation": 247, "direction": "rx", "at_ns": 4424549152858279, "bytes": [255, 255, 7, 4, 0, 139], "requested_length": 6}
+{"sequence": 406, "operation": 247, "direction": "rx", "at_ns": 4424549152901929, "bytes": [10, 95], "requested_length": 2}
+{"sequence": 407, "operation": 248, "direction": "tx", "at_ns": 4424549189085338, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 408, "operation": 249, "direction": "tx", "at_ns": 4424549239041478, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 409, "operation": 250, "direction": "tx", "at_ns": 4424549289038322, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 410, "operation": 251, "direction": "tx", "at_ns": 4424549339035039, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 411, "operation": 252, "direction": "tx", "at_ns": 4424549389041452, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 412, "operation": 253, "direction": "tx", "at_ns": 4424549395430999, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 413, "operation": 253, "direction": "rx", "at_ns": 4424549395951882, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 414, "operation": 253, "direction": "rx", "at_ns": 4424549395998700, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 415, "operation": 254, "direction": "tx", "at_ns": 4424549402385527, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 416, "operation": 254, "direction": "rx", "at_ns": 4424549402902474, "bytes": [255, 255, 7, 4, 0, 9], "requested_length": 6}
+{"sequence": 417, "operation": 254, "direction": "rx", "at_ns": 4424549402948171, "bytes": [11, 224], "requested_length": 2}
+{"sequence": 418, "operation": 255, "direction": "tx", "at_ns": 4424549439042873, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 419, "operation": 256, "direction": "tx", "at_ns": 4424549489104712, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 420, "operation": 257, "direction": "tx", "at_ns": 4424549539042545, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 421, "operation": 258, "direction": "tx", "at_ns": 4424549589044253, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 422, "operation": 259, "direction": "tx", "at_ns": 4424549639049608, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 423, "operation": 260, "direction": "tx", "at_ns": 4424549645430418, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 424, "operation": 260, "direction": "rx", "at_ns": 4424549645937541, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 425, "operation": 260, "direction": "rx", "at_ns": 4424549645984167, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 426, "operation": 261, "direction": "tx", "at_ns": 4424549652424147, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 427, "operation": 261, "direction": "rx", "at_ns": 4424549652941798, "bytes": [255, 255, 7, 4, 0, 135], "requested_length": 6}
+{"sequence": 428, "operation": 261, "direction": "rx", "at_ns": 4424549652987560, "bytes": [11, 98], "requested_length": 2}
+{"sequence": 429, "operation": 262, "direction": "tx", "at_ns": 4424549689058900, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 430, "operation": 263, "direction": "tx", "at_ns": 4424549739049823, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 431, "operation": 264, "direction": "tx", "at_ns": 4424549789173295, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 432, "operation": 265, "direction": "tx", "at_ns": 4424549839054390, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 433, "operation": 266, "direction": "tx", "at_ns": 4424549889137573, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 434, "operation": 267, "direction": "tx", "at_ns": 4424549895541808, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 435, "operation": 267, "direction": "rx", "at_ns": 4424549896056034, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 436, "operation": 267, "direction": "rx", "at_ns": 4424549896105508, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 437, "operation": 268, "direction": "tx", "at_ns": 4424549902527600, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 438, "operation": 268, "direction": "rx", "at_ns": 4424549903056099, "bytes": [255, 255, 7, 4, 0, 6], "requested_length": 6}
+{"sequence": 439, "operation": 268, "direction": "rx", "at_ns": 4424549903102789, "bytes": [12, 226], "requested_length": 2}
+{"sequence": 440, "operation": 269, "direction": "tx", "at_ns": 4424549939058797, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 441, "operation": 270, "direction": "tx", "at_ns": 4424549989060729, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 442, "operation": 271, "direction": "tx", "at_ns": 4424550039063268, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 443, "operation": 272, "direction": "tx", "at_ns": 4424550089063824, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 444, "operation": 273, "direction": "tx", "at_ns": 4424550139068507, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 445, "operation": 274, "direction": "tx", "at_ns": 4424550145470054, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 446, "operation": 274, "direction": "rx", "at_ns": 4424550145978457, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 447, "operation": 274, "direction": "rx", "at_ns": 4424550146025179, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 448, "operation": 275, "direction": "tx", "at_ns": 4424550152429638, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 449, "operation": 275, "direction": "rx", "at_ns": 4424550152946265, "bytes": [255, 255, 7, 4, 0, 130], "requested_length": 6}
+{"sequence": 450, "operation": 275, "direction": "rx", "at_ns": 4424550152991322, "bytes": [12, 102], "requested_length": 2}
+{"sequence": 451, "operation": 276, "direction": "tx", "at_ns": 4424550189074535, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 452, "operation": 277, "direction": "tx", "at_ns": 4424550239074066, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 453, "operation": 278, "direction": "tx", "at_ns": 4424550289073598, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 454, "operation": 279, "direction": "tx", "at_ns": 4424550339072969, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 455, "operation": 280, "direction": "tx", "at_ns": 4424550389072020, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 456, "operation": 281, "direction": "tx", "at_ns": 4424550395467775, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 457, "operation": 281, "direction": "rx", "at_ns": 4424550395980818, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 458, "operation": 281, "direction": "rx", "at_ns": 4424550396039156, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 459, "operation": 282, "direction": "tx", "at_ns": 4424550402452224, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 460, "operation": 282, "direction": "rx", "at_ns": 4424550402955250, "bytes": [255, 255, 7, 4, 0, 2], "requested_length": 6}
+{"sequence": 461, "operation": 282, "direction": "rx", "at_ns": 4424550403000820, "bytes": [13, 229], "requested_length": 2}
+{"sequence": 462, "operation": 283, "direction": "tx", "at_ns": 4424550439076384, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 463, "operation": 284, "direction": "tx", "at_ns": 4424550489079851, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 464, "operation": 285, "direction": "tx", "at_ns": 4424550539079925, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 465, "operation": 286, "direction": "tx", "at_ns": 4424550589080479, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 466, "operation": 287, "direction": "tx", "at_ns": 4424550639084265, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 467, "operation": 288, "direction": "tx", "at_ns": 4424550645486388, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 468, "operation": 288, "direction": "rx", "at_ns": 4424550645992230, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 469, "operation": 288, "direction": "rx", "at_ns": 4424550646038600, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 470, "operation": 289, "direction": "tx", "at_ns": 4424550652448499, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 471, "operation": 289, "direction": "rx", "at_ns": 4424550652961286, "bytes": [255, 255, 7, 4, 0, 127], "requested_length": 6}
+{"sequence": 472, "operation": 289, "direction": "rx", "at_ns": 4424550653007303, "bytes": [13, 104], "requested_length": 2}
+{"sequence": 473, "operation": 290, "direction": "tx", "at_ns": 4424550689087827, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 474, "operation": 291, "direction": "tx", "at_ns": 4424550739085821, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 475, "operation": 292, "direction": "tx", "at_ns": 4424550789105159, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 476, "operation": 293, "direction": "tx", "at_ns": 4424550839093969, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 477, "operation": 294, "direction": "tx", "at_ns": 4424550889119740, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 478, "operation": 295, "direction": "tx", "at_ns": 4424550895532839, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 479, "operation": 295, "direction": "rx", "at_ns": 4424550896095708, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 480, "operation": 295, "direction": "rx", "at_ns": 4424550896145661, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 481, "operation": 296, "direction": "tx", "at_ns": 4424550902582185, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 482, "operation": 296, "direction": "rx", "at_ns": 4424550903085276, "bytes": [255, 255, 7, 4, 0, 253], "requested_length": 6}
+{"sequence": 483, "operation": 296, "direction": "rx", "at_ns": 4424550903131742, "bytes": [13, 234], "requested_length": 2}
+{"sequence": 484, "operation": 297, "direction": "tx", "at_ns": 4424550939097669, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 485, "operation": 298, "direction": "tx", "at_ns": 4424550989096687, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 486, "operation": 299, "direction": "tx", "at_ns": 4424551039097529, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 487, "operation": 300, "direction": "tx", "at_ns": 4424551089101603, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 488, "operation": 301, "direction": "tx", "at_ns": 4424551139105421, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 489, "operation": 302, "direction": "tx", "at_ns": 4424551145511960, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 490, "operation": 302, "direction": "rx", "at_ns": 4424551146021482, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 491, "operation": 302, "direction": "rx", "at_ns": 4424551146067980, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 492, "operation": 303, "direction": "tx", "at_ns": 4424551152483639, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 493, "operation": 303, "direction": "rx", "at_ns": 4424551152994314, "bytes": [255, 255, 7, 4, 0, 123], "requested_length": 6}
+{"sequence": 494, "operation": 303, "direction": "rx", "at_ns": 4424551153040172, "bytes": [14, 107], "requested_length": 2}
+{"sequence": 495, "operation": 304, "direction": "tx", "at_ns": 4424551189117175, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 496, "operation": 305, "direction": "tx", "at_ns": 4424551239101888, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 497, "operation": 306, "direction": "tx", "at_ns": 4424551289107915, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 498, "operation": 307, "direction": "tx", "at_ns": 4424551339027826, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 499, "operation": 308, "direction": "tx", "at_ns": 4424551389102878, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 500, "operation": 309, "direction": "tx", "at_ns": 4424551395494569, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 501, "operation": 309, "direction": "rx", "at_ns": 4424551396018620, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 502, "operation": 309, "direction": "rx", "at_ns": 4424551396067262, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 503, "operation": 310, "direction": "tx", "at_ns": 4424551402466280, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 504, "operation": 310, "direction": "rx", "at_ns": 4424551402976763, "bytes": [255, 255, 7, 4, 0, 251], "requested_length": 6}
+{"sequence": 505, "operation": 310, "direction": "rx", "at_ns": 4424551403021565, "bytes": [14, 235], "requested_length": 2}
+{"sequence": 506, "operation": 311, "direction": "tx", "at_ns": 4424551439025029, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 507, "operation": 312, "direction": "tx", "at_ns": 4424551489108370, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 508, "operation": 313, "direction": "tx", "at_ns": 4424551539180061, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 509, "operation": 314, "direction": "tx", "at_ns": 4424551589122403, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 510, "operation": 315, "direction": "tx", "at_ns": 4424551639123723, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 511, "operation": 316, "direction": "tx", "at_ns": 4424551645550263, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 512, "operation": 316, "direction": "rx", "at_ns": 4424551646124364, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 513, "operation": 316, "direction": "rx", "at_ns": 4424551646172078, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 514, "operation": 317, "direction": "tx", "at_ns": 4424551652611994, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 515, "operation": 317, "direction": "rx", "at_ns": 4424551653124108, "bytes": [255, 255, 7, 4, 0, 120], "requested_length": 6}
+{"sequence": 516, "operation": 317, "direction": "rx", "at_ns": 4424551653167726, "bytes": [15, 109], "requested_length": 2}
+{"sequence": 517, "operation": 318, "direction": "tx", "at_ns": 4424551689114227, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 518, "operation": 319, "direction": "tx", "at_ns": 4424551739032249, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 519, "operation": 320, "direction": "tx", "at_ns": 4424551789041058, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 520, "operation": 321, "direction": "tx", "at_ns": 4424551839137422, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 521, "operation": 322, "direction": "tx", "at_ns": 4424551889140182, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 522, "operation": 323, "direction": "tx", "at_ns": 4424551895581506, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 523, "operation": 323, "direction": "rx", "at_ns": 4424551896129718, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 524, "operation": 323, "direction": "rx", "at_ns": 4424551896177720, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 525, "operation": 324, "direction": "tx", "at_ns": 4424551902579267, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 526, "operation": 324, "direction": "rx", "at_ns": 4424551903128503, "bytes": [255, 255, 7, 4, 0, 245], "requested_length": 6}
+{"sequence": 527, "operation": 324, "direction": "rx", "at_ns": 4424551903173400, "bytes": [15, 240], "requested_length": 2}
+{"sequence": 528, "operation": 325, "direction": "tx", "at_ns": 4424551939040763, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 529, "operation": 326, "direction": "tx", "at_ns": 4424551989125798, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 530, "operation": 327, "direction": "tx", "at_ns": 4424552039033771, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 531, "operation": 328, "direction": "tx", "at_ns": 4424552089128279, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 532, "operation": 329, "direction": "tx", "at_ns": 4424552139038716, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 533, "operation": 330, "direction": "tx", "at_ns": 4424552145445095, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 534, "operation": 330, "direction": "rx", "at_ns": 4424552145953946, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 535, "operation": 330, "direction": "rx", "at_ns": 4424552146000060, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 536, "operation": 331, "direction": "tx", "at_ns": 4424552152441640, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 537, "operation": 331, "direction": "rx", "at_ns": 4424552152958363, "bytes": [255, 255, 7, 4, 0, 115], "requested_length": 6}
+{"sequence": 538, "operation": 331, "direction": "rx", "at_ns": 4424552153021341, "bytes": [0, 129], "requested_length": 2}
+{"sequence": 539, "operation": 332, "direction": "tx", "at_ns": 4424552189038117, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 540, "operation": 333, "direction": "tx", "at_ns": 4424552239030797, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 541, "operation": 334, "direction": "tx", "at_ns": 4424552289036982, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 542, "operation": 335, "direction": "tx", "at_ns": 4424552339007741, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 543, "operation": 336, "direction": "tx", "at_ns": 4424552389028230, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 544, "operation": 337, "direction": "tx", "at_ns": 4424552395417232, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 545, "operation": 337, "direction": "rx", "at_ns": 4424552395925603, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 546, "operation": 337, "direction": "rx", "at_ns": 4424552395971365, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 547, "operation": 338, "direction": "tx", "at_ns": 4424552402379792, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 548, "operation": 338, "direction": "rx", "at_ns": 4424552402888834, "bytes": [255, 255, 7, 4, 0, 241], "requested_length": 6}
+{"sequence": 549, "operation": 338, "direction": "rx", "at_ns": 4424552402933828, "bytes": [0, 3], "requested_length": 2}
+{"sequence": 550, "operation": 339, "direction": "tx", "at_ns": 4424552439046831, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 551, "operation": 340, "direction": "tx", "at_ns": 4424552489047223, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 552, "operation": 341, "direction": "tx", "at_ns": 4424552539026397, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 553, "operation": 342, "direction": "tx", "at_ns": 4424552589027556, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 554, "operation": 343, "direction": "tx", "at_ns": 4424552639024843, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 555, "operation": 344, "direction": "tx", "at_ns": 4424552645407445, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 556, "operation": 344, "direction": "rx", "at_ns": 4424552645921319, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 557, "operation": 344, "direction": "rx", "at_ns": 4424552650571986, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 558, "operation": 345, "direction": "tx", "at_ns": 4424552657271239, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 559, "operation": 345, "direction": "rx", "at_ns": 4424552657783162, "bytes": [255, 255, 7, 4, 0, 114], "requested_length": 6}
+{"sequence": 560, "operation": 345, "direction": "rx", "at_ns": 4424552657829180, "bytes": [1, 129], "requested_length": 2}
+{"sequence": 561, "operation": 346, "direction": "tx", "at_ns": 4424552689153079, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 562, "operation": 347, "direction": "tx", "at_ns": 4424552739051450, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 563, "operation": 348, "direction": "tx", "at_ns": 4424552789052225, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 564, "operation": 349, "direction": "tx", "at_ns": 4424552839195917, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 565, "operation": 350, "direction": "tx", "at_ns": 4424552889074799, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 566, "operation": 351, "direction": "tx", "at_ns": 4424552895557341, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 567, "operation": 351, "direction": "rx", "at_ns": 4424552896064815, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 568, "operation": 351, "direction": "rx", "at_ns": 4424552896116177, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 569, "operation": 352, "direction": "tx", "at_ns": 4424552902547389, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 570, "operation": 352, "direction": "rx", "at_ns": 4424552903057743, "bytes": [255, 255, 7, 4, 0, 237], "requested_length": 6}
+{"sequence": 571, "operation": 352, "direction": "rx", "at_ns": 4424552903102609, "bytes": [1, 6], "requested_length": 2}
+{"sequence": 572, "operation": 353, "direction": "tx", "at_ns": 4424552939077526, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 573, "operation": 354, "direction": "tx", "at_ns": 4424552989061149, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 574, "operation": 355, "direction": "tx", "at_ns": 4424553039043587, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 575, "operation": 356, "direction": "tx", "at_ns": 4424553089075243, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 576, "operation": 357, "direction": "tx", "at_ns": 4424553139038545, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 577, "operation": 358, "direction": "tx", "at_ns": 4424553145429179, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 578, "operation": 358, "direction": "rx", "at_ns": 4424553145945966, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 579, "operation": 358, "direction": "rx", "at_ns": 4424553145992271, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 580, "operation": 359, "direction": "tx", "at_ns": 4424553152413370, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 581, "operation": 359, "direction": "rx", "at_ns": 4424553152916813, "bytes": [255, 255, 7, 4, 0, 107], "requested_length": 6}
+{"sequence": 582, "operation": 359, "direction": "rx", "at_ns": 4424553152962127, "bytes": [2, 135], "requested_length": 2}
+{"sequence": 583, "operation": 360, "direction": "tx", "at_ns": 4424553189079801, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 584, "operation": 361, "direction": "tx", "at_ns": 4424553239043391, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 585, "operation": 362, "direction": "tx", "at_ns": 4424553289064614, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 586, "operation": 363, "direction": "tx", "at_ns": 4424553339047693, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 587, "operation": 364, "direction": "tx", "at_ns": 4424553389049236, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 588, "operation": 365, "direction": "tx", "at_ns": 4424553395438878, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 589, "operation": 365, "direction": "rx", "at_ns": 4424553395951760, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 590, "operation": 365, "direction": "rx", "at_ns": 4424553395999570, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 591, "operation": 366, "direction": "tx", "at_ns": 4424553404508650, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 592, "operation": 366, "direction": "rx", "at_ns": 4424553405007708, "bytes": [255, 255, 7, 4, 0, 235], "requested_length": 6}
+{"sequence": 593, "operation": 366, "direction": "rx", "at_ns": 4424553405055518, "bytes": [2, 7], "requested_length": 2}
+{"sequence": 594, "operation": 367, "direction": "tx", "at_ns": 4424553439192416, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 595, "operation": 368, "direction": "tx", "at_ns": 4424553489191462, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 596, "operation": 369, "direction": "tx", "at_ns": 4424553539073351, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 597, "operation": 370, "direction": "tx", "at_ns": 4424553589092237, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 598, "operation": 371, "direction": "tx", "at_ns": 4424553639058929, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 599, "operation": 372, "direction": "tx", "at_ns": 4424553645484573, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 600, "operation": 372, "direction": "rx", "at_ns": 4424553645988239, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 601, "operation": 372, "direction": "rx", "at_ns": 4424553646036657, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 602, "operation": 373, "direction": "tx", "at_ns": 4424553652512990, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 603, "operation": 373, "direction": "rx", "at_ns": 4424553653024752, "bytes": [255, 255, 7, 4, 0, 102], "requested_length": 6}
+{"sequence": 604, "operation": 373, "direction": "rx", "at_ns": 4424553653069522, "bytes": [3, 139], "requested_length": 2}
+{"sequence": 605, "operation": 374, "direction": "tx", "at_ns": 4424553689071223, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 606, "operation": 375, "direction": "tx", "at_ns": 4424553739069661, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 607, "operation": 376, "direction": "tx", "at_ns": 4424553789064642, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 608, "operation": 377, "direction": "tx", "at_ns": 4424553839071592, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 609, "operation": 378, "direction": "tx", "at_ns": 4424553889219154, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 610, "operation": 379, "direction": "tx", "at_ns": 4424553895705056, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 611, "operation": 379, "direction": "rx", "at_ns": 4424553896211378, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 612, "operation": 379, "direction": "rx", "at_ns": 4424553896264276, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 613, "operation": 380, "direction": "tx", "at_ns": 4424553902709056, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 614, "operation": 380, "direction": "rx", "at_ns": 4424553903218131, "bytes": [255, 255, 7, 4, 0, 228], "requested_length": 6}
+{"sequence": 615, "operation": 380, "direction": "rx", "at_ns": 4424553903264116, "bytes": [3, 13], "requested_length": 2}
+{"sequence": 616, "operation": 381, "direction": "tx", "at_ns": 4424553939069842, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 617, "operation": 382, "direction": "tx", "at_ns": 4424553989071320, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 618, "operation": 383, "direction": "tx", "at_ns": 4424554039054045, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 619, "operation": 384, "direction": "tx", "at_ns": 4424554089212072, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 620, "operation": 385, "direction": "tx", "at_ns": 4424554139042279, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 621, "operation": 386, "direction": "tx", "at_ns": 4424554145435857, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 622, "operation": 386, "direction": "rx", "at_ns": 4424554145941828, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 623, "operation": 386, "direction": "rx", "at_ns": 4424554145988453, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 624, "operation": 387, "direction": "tx", "at_ns": 4424554152398992, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 625, "operation": 387, "direction": "rx", "at_ns": 4424554152904194, "bytes": [255, 255, 7, 4, 0, 99], "requested_length": 6}
+{"sequence": 626, "operation": 387, "direction": "rx", "at_ns": 4424554152948964, "bytes": [4, 141], "requested_length": 2}
+{"sequence": 627, "operation": 388, "direction": "tx", "at_ns": 4424554189062349, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 628, "operation": 389, "direction": "tx", "at_ns": 4424554239024785, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 629, "operation": 390, "direction": "tx", "at_ns": 4424554289026327, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 630, "operation": 391, "direction": "tx", "at_ns": 4424554339028348, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 631, "operation": 392, "direction": "tx", "at_ns": 4424554389011233, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 632, "operation": 393, "direction": "tx", "at_ns": 4424554395465773, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 633, "operation": 393, "direction": "rx", "at_ns": 4424554395967616, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 634, "operation": 393, "direction": "rx", "at_ns": 4424554396023938, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 635, "operation": 394, "direction": "tx", "at_ns": 4424554402413547, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 636, "operation": 394, "direction": "rx", "at_ns": 4424554402916606, "bytes": [255, 255, 7, 4, 0, 224], "requested_length": 6}
+{"sequence": 637, "operation": 394, "direction": "rx", "at_ns": 4424554402961664, "bytes": [4, 16], "requested_length": 2}
+{"sequence": 638, "operation": 395, "direction": "tx", "at_ns": 4424554439023175, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 639, "operation": 396, "direction": "tx", "at_ns": 4424554489044620, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 640, "operation": 397, "direction": "tx", "at_ns": 4424554539027696, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 641, "operation": 398, "direction": "tx", "at_ns": 4424554589073301, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 642, "operation": 399, "direction": "tx", "at_ns": 4424554639029432, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 643, "operation": 400, "direction": "tx", "at_ns": 4424554645415393, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 644, "operation": 400, "direction": "rx", "at_ns": 4424554645925876, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 645, "operation": 400, "direction": "rx", "at_ns": 4424554645971445, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 646, "operation": 401, "direction": "tx", "at_ns": 4424554652363135, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 647, "operation": 401, "direction": "rx", "at_ns": 4424554652870162, "bytes": [255, 255, 7, 4, 0, 94], "requested_length": 6}
+{"sequence": 648, "operation": 401, "direction": "rx", "at_ns": 4424554652917139, "bytes": [5, 145], "requested_length": 2}
+{"sequence": 649, "operation": 402, "direction": "tx", "at_ns": 4424554689033436, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 650, "operation": 403, "direction": "tx", "at_ns": 4424554739036096, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 651, "operation": 404, "direction": "tx", "at_ns": 4424554789034724, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 652, "operation": 405, "direction": "tx", "at_ns": 4424554839026247, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 653, "operation": 406, "direction": "tx", "at_ns": 4424554889242867, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 654, "operation": 407, "direction": "tx", "at_ns": 4424554895661214, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 655, "operation": 407, "direction": "rx", "at_ns": 4424554896237587, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 656, "operation": 407, "direction": "rx", "at_ns": 4424554896291413, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 657, "operation": 408, "direction": "tx", "at_ns": 4424554902749665, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 658, "operation": 408, "direction": "rx", "at_ns": 4424554903264148, "bytes": [255, 255, 7, 4, 0, 220], "requested_length": 6}
+{"sequence": 659, "operation": 408, "direction": "rx", "at_ns": 4424554903313174, "bytes": [5, 19], "requested_length": 2}
+{"sequence": 660, "operation": 409, "direction": "tx", "at_ns": 4424554939061040, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 661, "operation": 410, "direction": "tx", "at_ns": 4424554989051092, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 662, "operation": 411, "direction": "tx", "at_ns": 4424555039036311, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 663, "operation": 412, "direction": "tx", "at_ns": 4424555089037819, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 664, "operation": 413, "direction": "tx", "at_ns": 4424555139040191, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 665, "operation": 414, "direction": "tx", "at_ns": 4424555145443018, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 666, "operation": 414, "direction": "rx", "at_ns": 4424555145957404, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 667, "operation": 414, "direction": "rx", "at_ns": 4424555146003102, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 668, "operation": 415, "direction": "tx", "at_ns": 4424555152442505, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 669, "operation": 415, "direction": "rx", "at_ns": 4424555152945564, "bytes": [255, 255, 7, 4, 0, 90], "requested_length": 6}
+{"sequence": 670, "operation": 415, "direction": "rx", "at_ns": 4424555152990397, "bytes": [6, 148], "requested_length": 2}
+{"sequence": 671, "operation": 416, "direction": "tx", "at_ns": 4424555189096357, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 672, "operation": 417, "direction": "tx", "at_ns": 4424555239060680, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 673, "operation": 418, "direction": "tx", "at_ns": 4424555289052684, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 674, "operation": 419, "direction": "tx", "at_ns": 4424555339266359, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 675, "operation": 420, "direction": "tx", "at_ns": 4424555389066356, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 676, "operation": 421, "direction": "tx", "at_ns": 4424555395468286, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 677, "operation": 421, "direction": "rx", "at_ns": 4424555395979377, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 678, "operation": 421, "direction": "rx", "at_ns": 4424555396064852, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 679, "operation": 422, "direction": "tx", "at_ns": 4424555402502303, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 680, "operation": 422, "direction": "rx", "at_ns": 4424555403013490, "bytes": [255, 255, 7, 4, 0, 215], "requested_length": 6}
+{"sequence": 681, "operation": 422, "direction": "rx", "at_ns": 4424555403058452, "bytes": [6, 23], "requested_length": 2}
+{"sequence": 682, "operation": 423, "direction": "tx", "at_ns": 4424555439034039, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 683, "operation": 424, "direction": "tx", "at_ns": 4424555489035354, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 684, "operation": 425, "direction": "tx", "at_ns": 4424555539027996, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 685, "operation": 426, "direction": "tx", "at_ns": 4424555589030303, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 686, "operation": 427, "direction": "tx", "at_ns": 4424555639033089, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 687, "operation": 428, "direction": "tx", "at_ns": 4424555645434379, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 688, "operation": 428, "direction": "rx", "at_ns": 4424555645945758, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 689, "operation": 428, "direction": "rx", "at_ns": 4424555645991936, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 690, "operation": 429, "direction": "tx", "at_ns": 4424555652426379, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 691, "operation": 429, "direction": "rx", "at_ns": 4424555652934557, "bytes": [255, 255, 7, 4, 0, 86], "requested_length": 6}
+{"sequence": 692, "operation": 429, "direction": "rx", "at_ns": 4424555652979263, "bytes": [7, 151], "requested_length": 2}
+{"sequence": 693, "operation": 430, "direction": "tx", "at_ns": 4424555689031236, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 694, "operation": 431, "direction": "tx", "at_ns": 4424555739034182, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 695, "operation": 432, "direction": "tx", "at_ns": 4424555789027848, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 696, "operation": 433, "direction": "tx", "at_ns": 4424555839054540, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 697, "operation": 434, "direction": "tx", "at_ns": 4424555889032206, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 698, "operation": 435, "direction": "tx", "at_ns": 4424555895405398, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 699, "operation": 435, "direction": "rx", "at_ns": 4424555895909225, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 700, "operation": 435, "direction": "rx", "at_ns": 4424555895955242, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 701, "operation": 436, "direction": "tx", "at_ns": 4424555902442647, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 702, "operation": 436, "direction": "rx", "at_ns": 4424555902966059, "bytes": [255, 255, 7, 4, 0, 213], "requested_length": 6}
+{"sequence": 703, "operation": 436, "direction": "rx", "at_ns": 4424555903015852, "bytes": [7, 24], "requested_length": 2}
+{"sequence": 704, "operation": 437, "direction": "tx", "at_ns": 4424555939063793, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 705, "operation": 438, "direction": "tx", "at_ns": 4424555989035571, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 706, "operation": 439, "direction": "tx", "at_ns": 4424556039029429, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 707, "operation": 440, "direction": "tx", "at_ns": 4424556089023831, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 708, "operation": 441, "direction": "tx", "at_ns": 4424556139130781, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 709, "operation": 442, "direction": "tx", "at_ns": 4424556145520935, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 710, "operation": 442, "direction": "rx", "at_ns": 4424556146037530, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 711, "operation": 442, "direction": "rx", "at_ns": 4424556146083931, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 712, "operation": 443, "direction": "tx", "at_ns": 4424556152497958, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 713, "operation": 443, "direction": "rx", "at_ns": 4424556153010456, "bytes": [255, 255, 7, 4, 0, 82], "requested_length": 6}
+{"sequence": 714, "operation": 443, "direction": "rx", "at_ns": 4424556153055866, "bytes": [8, 154], "requested_length": 2}
+{"sequence": 715, "operation": 444, "direction": "tx", "at_ns": 4424556189050141, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 716, "operation": 445, "direction": "tx", "at_ns": 4424556239205893, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 717, "operation": 446, "direction": "tx", "at_ns": 4424556289028001, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 718, "operation": 447, "direction": "tx", "at_ns": 4424556339016067, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 719, "operation": 448, "direction": "tx", "at_ns": 4424556389033830, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 720, "operation": 449, "direction": "tx", "at_ns": 4424556395389902, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 721, "operation": 449, "direction": "rx", "at_ns": 4424556395892609, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 722, "operation": 449, "direction": "rx", "at_ns": 4424556395939586, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 723, "operation": 450, "direction": "tx", "at_ns": 4424556402329356, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 724, "operation": 450, "direction": "rx", "at_ns": 4424556402838014, "bytes": [255, 255, 7, 4, 0, 208], "requested_length": 6}
+{"sequence": 725, "operation": 450, "direction": "rx", "at_ns": 4424556402882304, "bytes": [8, 28], "requested_length": 2}
+{"sequence": 726, "operation": 451, "direction": "tx", "at_ns": 4424556439009960, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 727, "operation": 452, "direction": "tx", "at_ns": 4424556489035050, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 728, "operation": 453, "direction": "tx", "at_ns": 4424556539017259, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 729, "operation": 454, "direction": "tx", "at_ns": 4424556589037004, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 730, "operation": 455, "direction": "tx", "at_ns": 4424556639017356, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 731, "operation": 456, "direction": "tx", "at_ns": 4424556645398389, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 732, "operation": 456, "direction": "rx", "at_ns": 4424556645898536, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 733, "operation": 456, "direction": "rx", "at_ns": 4424556645944297, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 734, "operation": 457, "direction": "tx", "at_ns": 4424556652433718, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 735, "operation": 457, "direction": "rx", "at_ns": 4424556652937737, "bytes": [255, 255, 7, 4, 0, 79], "requested_length": 6}
+{"sequence": 736, "operation": 457, "direction": "rx", "at_ns": 4424556652982410, "bytes": [9, 156], "requested_length": 2}
+{"sequence": 737, "operation": 458, "direction": "tx", "at_ns": 4424556689027662, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 738, "operation": 459, "direction": "tx", "at_ns": 4424556739011982, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 739, "operation": 460, "direction": "tx", "at_ns": 4424556789037872, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 740, "operation": 461, "direction": "tx", "at_ns": 4424556839058258, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 741, "operation": 462, "direction": "tx", "at_ns": 4424556889039826, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 742, "operation": 463, "direction": "tx", "at_ns": 4424556895434396, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 743, "operation": 463, "direction": "rx", "at_ns": 4424556895933646, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 744, "operation": 463, "direction": "rx", "at_ns": 4424556895980111, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 745, "operation": 464, "direction": "tx", "at_ns": 4424556902433179, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 746, "operation": 464, "direction": "rx", "at_ns": 4424556902939821, "bytes": [255, 255, 7, 4, 0, 204], "requested_length": 6}
+{"sequence": 747, "operation": 464, "direction": "rx", "at_ns": 4424556902986383, "bytes": [9, 31], "requested_length": 2}
+{"sequence": 748, "operation": 465, "direction": "tx", "at_ns": 4424556939112278, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 749, "operation": 466, "direction": "tx", "at_ns": 4424556989053621, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 750, "operation": 467, "direction": "tx", "at_ns": 4424557039032021, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 751, "operation": 468, "direction": "tx", "at_ns": 4424557089048950, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 752, "operation": 469, "direction": "tx", "at_ns": 4424557139030103, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 753, "operation": 470, "direction": "tx", "at_ns": 4424557145435264, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 754, "operation": 470, "direction": "rx", "at_ns": 4424557145935763, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 755, "operation": 470, "direction": "rx", "at_ns": 4424557145982836, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 756, "operation": 471, "direction": "tx", "at_ns": 4424557152420415, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 757, "operation": 471, "direction": "rx", "at_ns": 4424557152928146, "bytes": [255, 255, 7, 4, 0, 74], "requested_length": 6}
+{"sequence": 758, "operation": 471, "direction": "rx", "at_ns": 4424557152973299, "bytes": [10, 160], "requested_length": 2}
+{"sequence": 759, "operation": 472, "direction": "tx", "at_ns": 4424557189097242, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 760, "operation": 473, "direction": "tx", "at_ns": 4424557239033913, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 761, "operation": 474, "direction": "tx", "at_ns": 4424557289047930, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 762, "operation": 475, "direction": "tx", "at_ns": 4424557339022714, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 763, "operation": 476, "direction": "tx", "at_ns": 4424557389034716, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 764, "operation": 477, "direction": "tx", "at_ns": 4424557395425637, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 765, "operation": 477, "direction": "rx", "at_ns": 4424557395926871, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 766, "operation": 477, "direction": "rx", "at_ns": 4424557395973209, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 767, "operation": 478, "direction": "tx", "at_ns": 4424557402382819, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 768, "operation": 478, "direction": "rx", "at_ns": 4424557402893525, "bytes": [255, 255, 7, 4, 0, 200], "requested_length": 6}
+{"sequence": 769, "operation": 478, "direction": "rx", "at_ns": 4424557402938359, "bytes": [10, 34], "requested_length": 2}
+{"sequence": 770, "operation": 479, "direction": "tx", "at_ns": 4424557439047581, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 771, "operation": 480, "direction": "tx", "at_ns": 4424557489053629, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 772, "operation": 481, "direction": "tx", "at_ns": 4424557539030396, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 773, "operation": 482, "direction": "tx", "at_ns": 4424557589053308, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 774, "operation": 483, "direction": "tx", "at_ns": 4424557639034075, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 775, "operation": 484, "direction": "tx", "at_ns": 4424557645435301, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 776, "operation": 484, "direction": "rx", "at_ns": 4424557645943415, "bytes": [255, 255, 7, 4, 0, 38], "requested_length": 6}
+{"sequence": 777, "operation": 484, "direction": "rx", "at_ns": 4424557650585952, "bytes": [2, 204], "requested_length": 2}
+{"sequence": 778, "operation": 485, "direction": "tx", "at_ns": 4424557657133583, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 779, "operation": 485, "direction": "rx", "at_ns": 4424557657638786, "bytes": [255, 255, 7, 4, 0, 73], "requested_length": 6}
+{"sequence": 780, "operation": 485, "direction": "rx", "at_ns": 4424557657686627, "bytes": [11, 160], "requested_length": 2}
+{"sequence": 781, "operation": 486, "direction": "tx", "at_ns": 4424557689070268, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 782, "operation": 487, "direction": "tx", "at_ns": 4424557739063163, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 783, "operation": 488, "direction": "tx", "at_ns": 4424557789063483, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 784, "operation": 489, "direction": "tx", "at_ns": 4424557839038073, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 785, "operation": 490, "direction": "tx", "at_ns": 4424557889047033, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 786, "operation": 491, "direction": "tx", "at_ns": 4424557895426082, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 787, "operation": 491, "direction": "rx", "at_ns": 4424557895938804, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 788, "operation": 491, "direction": "rx", "at_ns": 4424557895986102, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 789, "operation": 492, "direction": "tx", "at_ns": 4424557902398016, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 790, "operation": 492, "direction": "rx", "at_ns": 4424557902912115, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 791, "operation": 492, "direction": "rx", "at_ns": 4424557902958356, "bytes": [11, 39], "requested_length": 2}
+{"sequence": 792, "operation": 493, "direction": "tx", "at_ns": 4424557939165373, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 793, "operation": 494, "direction": "tx", "at_ns": 4424557989227038, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 794, "operation": 495, "direction": "tx", "at_ns": 4424558039078233, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 795, "operation": 496, "direction": "tx", "at_ns": 4424558089061911, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 796, "operation": 497, "direction": "tx", "at_ns": 4424558139080248, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 797, "operation": 498, "direction": "tx", "at_ns": 4424558145497698, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 798, "operation": 498, "direction": "rx", "at_ns": 4424558146011700, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 799, "operation": 498, "direction": "rx", "at_ns": 4424558146058422, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 800, "operation": 499, "direction": "tx", "at_ns": 4424558152499425, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 801, "operation": 499, "direction": "rx", "at_ns": 4424558153010548, "bytes": [255, 255, 7, 4, 0, 66], "requested_length": 6}
+{"sequence": 802, "operation": 499, "direction": "rx", "at_ns": 4424558153056149, "bytes": [12, 166], "requested_length": 2}
+{"sequence": 803, "operation": 500, "direction": "tx", "at_ns": 4424558189408931, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 804, "operation": 501, "direction": "tx", "at_ns": 4424558239038133, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 805, "operation": 502, "direction": "tx", "at_ns": 4424558289121399, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 806, "operation": 503, "direction": "tx", "at_ns": 4424558339034260, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 807, "operation": 504, "direction": "tx", "at_ns": 4424558389114486, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 808, "operation": 505, "direction": "tx", "at_ns": 4424558395495807, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 809, "operation": 505, "direction": "rx", "at_ns": 4424558396009810, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 810, "operation": 505, "direction": "rx", "at_ns": 4424558396059667, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 811, "operation": 506, "direction": "tx", "at_ns": 4424558402465757, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 812, "operation": 506, "direction": "rx", "at_ns": 4424558402970288, "bytes": [255, 255, 7, 4, 0, 192], "requested_length": 6}
+{"sequence": 813, "operation": 506, "direction": "rx", "at_ns": 4424558403015249, "bytes": [12, 40], "requested_length": 2}
+{"sequence": 814, "operation": 507, "direction": "tx", "at_ns": 4424558439033843, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 815, "operation": 508, "direction": "tx", "at_ns": 4424558489036754, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 816, "operation": 509, "direction": "tx", "at_ns": 4424558539031951, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 817, "operation": 510, "direction": "tx", "at_ns": 4424558589032621, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 818, "operation": 511, "direction": "tx", "at_ns": 4424558639025515, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 819, "operation": 512, "direction": "tx", "at_ns": 4424558645438069, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 820, "operation": 512, "direction": "rx", "at_ns": 4424558645943783, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 821, "operation": 512, "direction": "rx", "at_ns": 4424558645991177, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 822, "operation": 513, "direction": "tx", "at_ns": 4424558652422675, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 823, "operation": 513, "direction": "rx", "at_ns": 4424558652931430, "bytes": [255, 255, 7, 4, 0, 62], "requested_length": 6}
+{"sequence": 824, "operation": 513, "direction": "rx", "at_ns": 4424558652976712, "bytes": [13, 169], "requested_length": 2}
+{"sequence": 825, "operation": 514, "direction": "tx", "at_ns": 4424558689036106, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 826, "operation": 515, "direction": "tx", "at_ns": 4424558739020327, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 827, "operation": 516, "direction": "tx", "at_ns": 4424558789012037, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 828, "operation": 517, "direction": "tx", "at_ns": 4424558839023395, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 829, "operation": 518, "direction": "tx", "at_ns": 4424558889035649, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 830, "operation": 519, "direction": "tx", "at_ns": 4424558895429354, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 831, "operation": 519, "direction": "rx", "at_ns": 4424558895940669, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 832, "operation": 519, "direction": "rx", "at_ns": 4424558895987007, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 833, "operation": 520, "direction": "tx", "at_ns": 4424558902467307, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 834, "operation": 520, "direction": "rx", "at_ns": 4424558902973437, "bytes": [255, 255, 7, 4, 0, 187], "requested_length": 6}
+{"sequence": 835, "operation": 520, "direction": "rx", "at_ns": 4424558903019231, "bytes": [13, 44], "requested_length": 2}
+{"sequence": 836, "operation": 521, "direction": "tx", "at_ns": 4424558939095426, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 837, "operation": 522, "direction": "tx", "at_ns": 4424558989086911, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 838, "operation": 523, "direction": "tx", "at_ns": 4424559039044508, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 839, "operation": 524, "direction": "tx", "at_ns": 4424559089025945, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 840, "operation": 525, "direction": "tx", "at_ns": 4424559139008918, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 841, "operation": 526, "direction": "tx", "at_ns": 4424559145393567, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 842, "operation": 526, "direction": "rx", "at_ns": 4424559145905298, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 843, "operation": 526, "direction": "rx", "at_ns": 4424559145951411, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 844, "operation": 527, "direction": "tx", "at_ns": 4424559152393950, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 845, "operation": 527, "direction": "rx", "at_ns": 4424559152899153, "bytes": [255, 255, 7, 4, 0, 59], "requested_length": 6}
+{"sequence": 846, "operation": 527, "direction": "rx", "at_ns": 4424559152963347, "bytes": [14, 171], "requested_length": 2}
+{"sequence": 847, "operation": 528, "direction": "tx", "at_ns": 4424559189064407, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 848, "operation": 529, "direction": "tx", "at_ns": 4424559239028147, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 849, "operation": 530, "direction": "tx", "at_ns": 4424559289023057, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 850, "operation": 531, "direction": "tx", "at_ns": 4424559339022287, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 851, "operation": 532, "direction": "tx", "at_ns": 4424559389018413, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 852, "operation": 533, "direction": "tx", "at_ns": 4424559395401717, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 853, "operation": 533, "direction": "rx", "at_ns": 4424559395913384, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 854, "operation": 533, "direction": "rx", "at_ns": 4424559395959210, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 855, "operation": 534, "direction": "tx", "at_ns": 4424559402402389, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 856, "operation": 534, "direction": "rx", "at_ns": 4424559402910887, "bytes": [255, 255, 7, 4, 0, 184], "requested_length": 6}
+{"sequence": 857, "operation": 534, "direction": "rx", "at_ns": 4424559402955433, "bytes": [14, 46], "requested_length": 2}
+{"sequence": 858, "operation": 535, "direction": "tx", "at_ns": 4424559439027243, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 859, "operation": 536, "direction": "tx", "at_ns": 4424559489029000, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 860, "operation": 537, "direction": "tx", "at_ns": 4424559539020005, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 861, "operation": 538, "direction": "tx", "at_ns": 4424559589062883, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 862, "operation": 539, "direction": "tx", "at_ns": 4424559639026398, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 863, "operation": 540, "direction": "tx", "at_ns": 4424559645456776, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 864, "operation": 540, "direction": "rx", "at_ns": 4424559645964123, "bytes": [255, 255, 7, 4, 0, 194], "requested_length": 6}
+{"sequence": 865, "operation": 540, "direction": "rx", "at_ns": 4424559646009628, "bytes": [1, 49], "requested_length": 2}
+{"sequence": 866, "operation": 541, "direction": "tx", "at_ns": 4424559652420742, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 867, "operation": 541, "direction": "rx", "at_ns": 4424559652930808, "bytes": [255, 255, 7, 4, 0, 53], "requested_length": 6}
+{"sequence": 868, "operation": 541, "direction": "rx", "at_ns": 4424559652974714, "bytes": [15, 176], "requested_length": 2}
+{"sequence": 869, "operation": 542, "direction": "tx", "at_ns": 4424559689034619, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 870, "operation": 543, "direction": "tx", "at_ns": 4424559739038263, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 871, "operation": 544, "direction": "tx", "at_ns": 4424559789041428, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 872, "operation": 545, "direction": "tx", "at_ns": 4424559839050449, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 873, "operation": 546, "direction": "tx", "at_ns": 4424559889025580, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 874, "operation": 547, "direction": "tx", "at_ns": 4424559895421557, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 875, "operation": 547, "direction": "rx", "at_ns": 4424559895932040, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 876, "operation": 547, "direction": "rx", "at_ns": 4424559895978474, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 877, "operation": 548, "direction": "tx", "at_ns": 4424559902423220, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 878, "operation": 548, "direction": "rx", "at_ns": 4424559902929959, "bytes": [255, 255, 7, 4, 0, 180], "requested_length": 6}
+{"sequence": 879, "operation": 548, "direction": "rx", "at_ns": 4424559902974888, "bytes": [15, 49], "requested_length": 2}
+{"sequence": 880, "operation": 549, "direction": "tx", "at_ns": 4424559939247569, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 881, "operation": 550, "direction": "tx", "at_ns": 4424559989049894, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 882, "operation": 551, "direction": "tx", "at_ns": 4424560039115653, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 883, "operation": 552, "direction": "tx", "at_ns": 4424560089053152, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 884, "operation": 553, "direction": "tx", "at_ns": 4424560139080861, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 885, "operation": 554, "direction": "tx", "at_ns": 4424560145527016, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 886, "operation": 554, "direction": "rx", "at_ns": 4424560146027578, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 887, "operation": 554, "direction": "rx", "at_ns": 4424560146074076, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 888, "operation": 555, "direction": "tx", "at_ns": 4424560152477157, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 889, "operation": 555, "direction": "rx", "at_ns": 4424560152984055, "bytes": [255, 255, 7, 4, 0, 50], "requested_length": 6}
+{"sequence": 890, "operation": 555, "direction": "rx", "at_ns": 4424560153028153, "bytes": [0, 194], "requested_length": 2}
+{"sequence": 891, "operation": 556, "direction": "tx", "at_ns": 4424560189072697, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 892, "operation": 557, "direction": "tx", "at_ns": 4424560239044725, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 893, "operation": 558, "direction": "tx", "at_ns": 4424560289074002, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 894, "operation": 559, "direction": "tx", "at_ns": 4424560339050286, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 895, "operation": 560, "direction": "tx", "at_ns": 4424560389061995, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 896, "operation": 561, "direction": "tx", "at_ns": 4424560395448756, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 897, "operation": 561, "direction": "rx", "at_ns": 4424560395957478, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 898, "operation": 561, "direction": "rx", "at_ns": 4424560396013640, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 899, "operation": 562, "direction": "tx", "at_ns": 4424560402439026, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 900, "operation": 562, "direction": "rx", "at_ns": 4424560402947301, "bytes": [255, 255, 7, 4, 0, 176], "requested_length": 6}
+{"sequence": 901, "operation": 562, "direction": "rx", "at_ns": 4424560402992166, "bytes": [0, 68], "requested_length": 2}
+{"sequence": 902, "operation": 563, "direction": "tx", "at_ns": 4424560439117130, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 903, "operation": 564, "direction": "tx", "at_ns": 4424560489065443, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 904, "operation": 565, "direction": "tx", "at_ns": 4424560539103840, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 905, "operation": 566, "direction": "tx", "at_ns": 4424560589032856, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 906, "operation": 567, "direction": "tx", "at_ns": 4424560639018675, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 907, "operation": 568, "direction": "tx", "at_ns": 4424560645494846, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 908, "operation": 568, "direction": "rx", "at_ns": 4424560646001681, "bytes": [255, 255, 7, 4, 0, 244], "requested_length": 6}
+{"sequence": 909, "operation": 568, "direction": "rx", "at_ns": 4424560646046867, "bytes": [1, 255], "requested_length": 2}
+{"sequence": 910, "operation": 569, "direction": "tx", "at_ns": 4424560652449051, "bytes": [255, 255, 7, 4, 2, 56, 2, 184], "written_count": 8}
+{"sequence": 911, "operation": 569, "direction": "rx", "at_ns": 4424560652955694, "bytes": [255, 255, 7, 4, 0, 45], "requested_length": 6}
+{"sequence": 912, "operation": 569, "direction": "rx", "at_ns": 4424560652999535, "bytes": [1, 198], "requested_length": 2}
+{"sequence": 913, "operation": 570, "direction": "tx", "at_ns": 4424560689048303, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 914, "operation": 571, "direction": "tx", "at_ns": 4424560739021673, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 915, "operation": 572, "direction": "tx", "at_ns": 4424560789031876, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 916, "operation": 573, "direction": "tx", "at_ns": 4424560839042144, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 244, 1, 75], "written_count": 11}
+{"sequence": 917, "operation": 574, "direction": "tx", "at_ns": 4424560891125639, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 0, 0, 64], "written_count": 11}
+{"sequence": 918, "operation": 575, "direction": "tx", "at_ns": 4424560949835167, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 919, "operation": 575, "direction": "rx", "at_ns": 4424560950338001, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 920, "operation": 575, "direction": "rx", "at_ns": 4424560950388787, "bytes": [244], "requested_length": 1}
+{"sequence": 921, "operation": 576, "direction": "tx", "at_ns": 4424560956839165, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 922, "operation": 576, "direction": "rx", "at_ns": 4424560957338576, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 923, "operation": 576, "direction": "rx", "at_ns": 4424560957383633, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 924, "operation": 577, "direction": "tx", "at_ns": 4424560963807707, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 925, "operation": 577, "direction": "rx", "at_ns": 4424560964309741, "bytes": [255, 255, 7, 4, 0, 44], "requested_length": 6}
+{"sequence": 926, "operation": 577, "direction": "rx", "at_ns": 4424560964356431, "bytes": [1, 199], "requested_length": 2}
+{"sequence": 927, "operation": 578, "direction": "tx", "at_ns": 4424561149815370, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 928, "operation": 578, "direction": "rx", "at_ns": 4424561150331741, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 929, "operation": 578, "direction": "rx", "at_ns": 4424561150380479, "bytes": [244], "requested_length": 1}
+{"sequence": 930, "operation": 579, "direction": "tx", "at_ns": 4424561156900748, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 931, "operation": 579, "direction": "rx", "at_ns": 4424561157458880, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 932, "operation": 579, "direction": "rx", "at_ns": 4424561157503202, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 933, "operation": 580, "direction": "tx", "at_ns": 4424561163911755, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 934, "operation": 580, "direction": "rx", "at_ns": 4424561164458911, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 935, "operation": 580, "direction": "rx", "at_ns": 4424561164505408, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 936, "operation": 581, "direction": "tx", "at_ns": 4424561349710610, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 937, "operation": 581, "direction": "rx", "at_ns": 4424561350205924, "bytes": [255, 255, 7, 3, 0, 1], "requested_length": 6}
+{"sequence": 938, "operation": 581, "direction": "rx", "at_ns": 4424561350253414, "bytes": [244], "requested_length": 1}
+{"sequence": 939, "operation": 582, "direction": "tx", "at_ns": 4424561356666959, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 940, "operation": 582, "direction": "rx", "at_ns": 4424561357171170, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 941, "operation": 582, "direction": "rx", "at_ns": 4424561357214723, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 942, "operation": 583, "direction": "tx", "at_ns": 4424561363686319, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 943, "operation": 583, "direction": "rx", "at_ns": 4424561364187969, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 944, "operation": 583, "direction": "rx", "at_ns": 4424561364234755, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 945, "operation": 584, "direction": "tx", "at_ns": 4424561366485045, "bytes": [255, 255, 254, 7, 131, 46, 2, 7, 0, 0, 64], "written_count": 11}
+{"sequence": 946, "operation": 585, "direction": "tx", "at_ns": 4424561366619834, "bytes": [255, 255, 7, 4, 3, 40, 0, 201], "written_count": 8}
+{"sequence": 947, "operation": 585, "direction": "rx", "at_ns": 4424561367120652, "bytes": [255, 255, 7, 2, 0, 246], "requested_length": 6}
+{"sequence": 948, "operation": 586, "direction": "tx", "at_ns": 4424561423597394, "bytes": [255, 255, 7, 4, 2, 40, 1, 201], "written_count": 8}
+{"sequence": 949, "operation": 586, "direction": "rx", "at_ns": 4424561424092740, "bytes": [255, 255, 7, 3, 0, 0], "requested_length": 6}
+{"sequence": 950, "operation": 586, "direction": "rx", "at_ns": 4424561424140198, "bytes": [245], "requested_length": 1}
+{"sequence": 951, "operation": 587, "direction": "tx", "at_ns": 4424561432606010, "bytes": [255, 255, 7, 4, 2, 46, 2, 194], "written_count": 8}
+{"sequence": 952, "operation": 587, "direction": "rx", "at_ns": 4424561433119917, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 953, "operation": 587, "direction": "rx", "at_ns": 4424561433163663, "bytes": [0, 244], "requested_length": 2}
+{"sequence": 954, "operation": 588, "direction": "tx", "at_ns": 4424561441644355, "bytes": [255, 255, 7, 4, 2, 58, 2, 182], "written_count": 8}
+{"sequence": 955, "operation": 588, "direction": "rx", "at_ns": 4424561442155318, "bytes": [255, 255, 7, 4, 0, 0], "requested_length": 6}
+{"sequence": 956, "operation": 588, "direction": "rx", "at_ns": 4424561442200567, "bytes": [0, 244], "requested_length": 2}

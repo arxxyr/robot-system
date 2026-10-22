@@ -1,0 +1,24 @@
+{
+  "usb": {
+    "left": {
+      "serial": "5A7C121427",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0",
+      "usec_initialized": "3536208877616",
+      "resolved": "/dev/ttyACM0",
+      "rdev": 42496
+    },
+    "right": {
+      "serial": "5A7C122340",
+      "devpath": "/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1",
+      "usec_initialized": "3359632006336",
+      "resolved": "/dev/ttyACM1",
+      "rdev": 42497
+    }
+  },
+  "refs_verified": 74,
+  "non_uart_commands": 26,
+  "prior_front_terminal": "front-zero-stability-r1-hardware $129 %165 743494 1 1",
+  "front_children_reaped": 222,
+  "front_original_result": "NEEDS_MANUAL_POWER_CUT",
+  "new_field_timestamp": false
+}

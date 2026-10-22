@@ -1,0 +1,29 @@
+{
+  "status": "PASS_PREPARATION_ONLY",
+  "at_ns": 1792670100451338347,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "source_sha256": "304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221",
+  "refs_checked": 74,
+  "readonly_commands": 24,
+  "process_clean": true,
+  "plans": {
+    "front": {
+      "sha256": "c35fa82d9d566174115dcd7f7c8f7a70c27a15e2d15c537f3209a5cebb722523",
+      "scope": "仅前8复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（三轮各按同一获准稳定性判据）；三轮稳定架空并持续观察；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，末组PV严格0，再按原路径断扭；仅前轮前两组另允许原字0x8032并保留原值，末组及初始/断扭后停止门不变",
+      "duration_ns": 20000000000
+    },
+    "left": {
+      "sha256": "b7de4ac5830d067f43c9f1f037c5605ce0c527a472e260c4cc39d6f1dd95e9cd",
+      "scope": "仅左7复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（三轮各按同一获准稳定性判据）；三轮稳定架空并持续观察；左7的SDK动作初始/最终PV仍须严格0，整机14读不替代动作门；20秒后额外SYNC零速并保持使能，500毫秒内三组TE1/GV0/PV读取，末组PV严格0，再按原路径断扭",
+      "duration_ns": 20000000000
+    }
+  },
+  "uart": 0,
+  "go_created": false,
+  "current_usb": "CHECK_AFTER_FIELD_REPLY"
+}

@@ -1,6 +1,6 @@
 {
   "stage": "base_wheel_stop_stability_2026-10-22_r1",
-  "status": "PASS_SOFTWARE_ONLY",
+  "status": "SOFTWARE_PASS_HARDWARE_FRONT_FAIL_LEFT_LOCAL_PASS",
   "baseline_commit": "d99e9388f82508639ee6cd691c56f17e20be0938",
   "approval": "approval.json",
   "change": "固定7/8/9映射复用同一14读稳定性合同、采集、当次凭据、停止分类及普通READ前置；三轮原始速度保留，不做均值抵消或直接清零。",
@@ -60,17 +60,268 @@
     "root_acceptance": "PASS_SOFTWARE_ONLY"
   },
   "hardware": {
-    "new_go": false,
-    "uart": 0,
-    "new_motion": false,
-    "candidate_hardware_status": "NOT_RUN"
+    "new_go": 2,
+    "new_motion": 2,
+    "order": [
+      "front",
+      "left"
+    ],
+    "source_commit": "6f40033b8bf6ebd306c2d53cd7f61584fcf8e099",
+    "field_confirmation": "field-confirmation.json",
+    "order_override_and_no_power_cut": "user-disposition.json",
+    "collection": "hardware-collection.json",
+    "cleanup": "hardware-cleanup.json",
+    "independent_resource_check": "hardware-resource-check.json",
+    "review": "hardware-review.json",
+    "runs": {
+      "front": {
+        "run": "front-hardware/run.json",
+        "result": "NEEDS_MANUAL_POWER_CUT",
+        "probe": "FAIL",
+        "zero_stop": "FAIL",
+        "zero_velocity_raw_unsigned": [
+          250,
+          32818,
+          32818
+        ],
+        "zero_velocity_decoded": [
+          250,
+          -50,
+          -50
+        ],
+        "nonzero_sync_count": 400,
+        "motion_samples": 79,
+        "cumulative_delta_raw": 9921,
+        "enabled_attempt_window_ns": 20500813143,
+        "stop": "UNKNOWN",
+        "position": "UNKNOWN",
+        "identity": "UNKNOWN",
+        "manual_power_cut_required_original": true,
+        "connection_closed": true,
+        "error": "ValueError('右轮SDK单次20秒诊断失败，禁止重试')",
+        "stability": {
+          "before": {
+            "left7": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                2664,
+                2664,
+                2664,
+                2664,
+                2664
+              ],
+              "position_span_raw": 0
+            },
+            "front8": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                3424,
+                3424,
+                3424,
+                3424,
+                3424
+              ],
+              "position_span_raw": 0
+            },
+            "right9": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                950,
+                950,
+                949,
+                950,
+                950
+              ],
+              "position_span_raw": 1
+            }
+          },
+          "after": {
+            "left7": {
+              "status": "NOT_CAPTURED"
+            },
+            "front8": {
+              "status": "NOT_CAPTURED"
+            },
+            "right9": {
+              "status": "NOT_CAPTURED"
+            }
+          }
+        },
+        "physical_observation": "用户报告实际已经停止；未单独确认本次全程持续转动；拒绝断电，不伪造OFF或覆盖原FAIL"
+      },
+      "left": {
+        "run": "left-hardware/run.json",
+        "result": "FAIL",
+        "probe": "PASS",
+        "zero_stop": "PASS",
+        "zero_velocity_raw_unsigned": [
+          300,
+          0,
+          0
+        ],
+        "zero_velocity_decoded": [
+          300,
+          0,
+          0
+        ],
+        "nonzero_sync_count": 400,
+        "motion_samples": 79,
+        "cumulative_delta_raw": 9925,
+        "enabled_attempt_window_ns": 20500488144,
+        "stop": "PASS",
+        "position": "PASS",
+        "identity": "PASS",
+        "manual_power_cut_required_original": false,
+        "connection_closed": true,
+        "error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+        "stability": {
+          "before": {
+            "left7": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                2664,
+                2664,
+                2664,
+                2664,
+                2664
+              ],
+              "position_span_raw": 0
+            },
+            "front8": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                1206,
+                1206,
+                1206,
+                1206,
+                1206
+              ],
+              "position_span_raw": 0
+            },
+            "right9": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                950,
+                950,
+                950,
+                950,
+                949
+              ],
+              "position_span_raw": 1
+            }
+          },
+          "after": {
+            "left7": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                451,
+                451,
+                451,
+                451,
+                451
+              ],
+              "position_span_raw": 0
+            },
+            "front8": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                1206,
+                1206,
+                1206,
+                1206,
+                1206
+              ],
+              "position_span_raw": 0
+            },
+            "right9": {
+              "status": "PASS",
+              "velocity_raw_unsigned": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "position_raw": [
+                950,
+                950,
+                950,
+                950,
+                950
+              ],
+              "position_span_raw": 0
+            }
+          }
+        },
+        "physical_observation": "left-physical-observation.json：明确持续转动、结束完全停止",
+        "limitation": "局部20秒/零速/STOP/位置/身份通过；原整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+      }
+    },
+    "candidate_hardware_status": "三轮14读在front前置、left前后共9个独立窗口通过；前8在SDK保持使能末组失败，未进入后置停止窗口",
+    "root_acceptance": "前轮原FAIL保持；左轮动作/零速/停止局部PASS；三轮固件合同DEFERRED保持"
   },
   "limits": [
     "仅维护整机停止快照；SDK初始/最终严格零、保持使能零速500ms及原前8中间组8032例外不变。",
     "五组离散位置/速度不是同时采样，1.5秒为软件总预算；不证明固件内部根因或窗口之间连续静止。",
     "原停止失败、三轮固件合同未闭环及D15 OPEN/DEFERRED、deployable=false保持。"
   ],
-  "next": "软件验证和Git收尾后，使用新现场事实与一次GO补前轮/左轮原20秒零速停止验证；本次软件授权不代替动作授权。",
+  "next": "按本次用户批准，仅统一三轮保持使能零速末组0/±50合同的软件调整；原SDK初始/断扭后严格0及三轮14读不变；不追加实机。",
   "D15": "OPEN/DEFERRED",
   "deployable": false,
   "prepared_plans": {
@@ -93,5 +344,49 @@
     "origin": "SSH_TIMEOUT_RETRY_PENDING",
     "github": "d99e9388f82508639ee6cd691c56f17e20be0938",
     "after_commit_proof": "Git收尾结果另存临时目录，不为回写提交SHA再制造提交。"
-  }
+  },
+  "wheel_feedback_comparison": {
+    "TE0_stopped": {
+      "left7": {
+        "observed_raw": [
+          0,
+          50,
+          32818
+        ],
+        "evidence": [
+          "../left_wheel_feedback_2026-10-20_r1/hardware/run.json",
+          "../left_wheel_stop_stability_2026-10-20_r1/hardware/run.json"
+        ],
+        "physical": "已报告无转动抖动，位置跨度1"
+      },
+      "front8": {
+        "observed_raw": [
+          50
+        ],
+        "evidence": [
+          "../base_zero_stop_2026-10-21_r1/right-hardware-r2/right8-normal-read-command_0150.strace"
+        ],
+        "limit": "该次单位置快照及未绑定清晰现场观察，不单凭+50判停"
+      },
+      "right9": {
+        "observed_raw": [
+          0,
+          50,
+          32818
+        ],
+        "evidence": [
+          "../right_wheel_feedback_2026-10-22_r1/hardware/run.json",
+          "../right_wheel_feedback_2026-10-22_r1/hardware-r2/run.json"
+        ],
+        "physical": "第二轮已报告无转动抖动，位置跨度1"
+      }
+    },
+    "TE1_zero_goal": {
+      "front8": "本次250,-50,-50；末组原标准失败",
+      "left7": "本次300,0,0，通过",
+      "right9": "之前300,0,0，通过；本次未重复"
+    },
+    "conclusion": "三轮断扭静止反馈均出现过0/±50；TE1零速末组非零目前仅前8复现，不能混同两阶段。"
+  },
+  "software_update": "zero-stop-update/summary.json：新规则本机/Orin133方法及fmt→根Clippy、独审通过；新规则未实机"
 }
