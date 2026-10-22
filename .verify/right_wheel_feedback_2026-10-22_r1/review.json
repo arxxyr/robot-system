@@ -1,0 +1,113 @@
+{
+  "schema": "RIGHT9_FEEDBACK_INDEPENDENT_REVIEW_V1",
+  "reviewer": "/root/xlerobot_local_check",
+  "reviewed_at_utc": "2026-10-22T09:37:52.335658+00:00",
+  "decision": "PASS_SOFTWARE_ONLY",
+  "findings": [],
+  "baseline_commit": "db53ac310c09ca32f46d1ab18a38971d5c9abf5d",
+  "sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "c875a6e266e2894af4256873dd4e0bcf1c1911c2cad8d7206b940ab2afbd137d",
+      "bytes": 121280,
+      "before_after_identical": true
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0a14ee87e778f22cfa5e243f9990416170b8c5e903202c19eec81c3549542ed1",
+      "bytes": 168317,
+      "before_after_identical": true
+    }
+  },
+  "scope": "仅新增固定right9的14读诊断，复用前8流程；不写参数、不启用或运动、不调用STOP、不将PV/PP记载判为停止。",
+  "static_review": [
+    {
+      "location": "scripts/run_hardware_maintenance.py:130",
+      "result": "front_feedback_contract默认motor8保持旧输出；显式motor9仅构造right9固定target/scope。校验拒绝bool、任意ID、左7/前8合同混用与字段篡改。"
+    },
+    {
+      "location": "scripts/run_hardware_maintenance.py:330",
+      "result": "position_targets_from_plan与make_plan/CLI互斥检查绑定right_wheel_feedback_only，不允许叠加左/前诊断、pulse、zero-stop或位置动作；validate_go绑定完整计划digest、right9 scope及原600秒现场时效。"
+    },
+    {
+      "location": "scripts/run_hardware_maintenance.py:780",
+      "result": "只读argv固定右总线、ID9、read-raw四字段；工具完整身份检查和真实Popen前hook保留。原帧逐核serial_device/motor_id/TX目标/RX ID/长度/error/checksum/LE原字；默认ID7路径不变。"
+    },
+    {
+      "location": "scripts/run_hardware_maintenance.py:864",
+      "result": "固定14次TE/GV→五组PP/PV→GV/TE，五槽0/250/500/750/1000ms及总1.5秒、下一槽截止不续期。首末TE/GV严格0，PV/PP原字仅记录；采集验证重核完整原帧、时序及plan，不信status字段。"
+    },
+    {
+      "location": "scripts/run_hardware_maintenance.py:903",
+      "result": "首次读错/身份错误/GO到期/信号/迟到即记录原件并粘性封锁，无补读、复跑或末尾TE额外读取；仅移除本轮安装的hook，保留外来hook。"
+    },
+    {
+      "location": "scripts/run_hardware_maintenance.py:1853",
+      "result": "execute保留维护独占四锁、主机/引用/USB前置、GO一次消费及非UART身份后验；right9报告用RIGHT9_DIAGNOSTIC_ONLY和DIAGNOSTIC_CAPTURED，STOP/位置始终NOT_EVALUATED_DIAGNOSTIC_ONLY，不宣称静止或解除固件合同。"
+    }
+  ],
+  "targeted_verification": {
+    "runner": "uv run --no-project python -B，导入现有确定性测试，按名仅执行10方法。",
+    "methods": [
+      "LeftFeedbackTests.test_right_feedback_fourteen_fixed_reads_keep_signed_fifty_words_and_position_span",
+      "LeftFeedbackTests.test_right_feedback_plan_scope_go_and_fixed_target_reject_mixups_and_missing_authority",
+      "LeftFeedbackTests.test_right_feedback_wrong_id_bad_frame_te_goal_and_io_errors_block_further_reads",
+      "LeftFeedbackTests.test_right_feedback_next_slot_total_budget_and_go_expiry_never_fill_missing_reads",
+      "LeftFeedbackTests.test_right_feedback_execute_has_only_fourteen_reads_locks_and_nonuart_finish",
+      "LeftFeedbackTests.test_front_fourteen_reads_preserve_all_velocity_words_and_position_span_without_stop_claim",
+      "LeftFeedbackTests.test_front_real_prelaunch_rechecks_after_tempfile_setup_and_preserves_foreign_hook",
+      "LeftFeedbackTests.test_other_motor_nonzero_never_uses_left_wheel_exception",
+      "RightPulseTests.test_front_zero_exception_is_fixed_in_plan_scope_and_cannot_reuse_old_go",
+      "RightPulseTests.test_front_zero_exception_rejects_last_minus_fifty_other_negative_words_and_other_wheels"
+    ],
+    "passed": 10,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "elapsed_seconds": 0.197,
+    "counting": "10为最终126方法的子集，新增5也包含其中；与本机/原生全套及方法内参数分支不累计。",
+    "coverage": "目标/GO/合同篡改拒绝、ID/原帧错误、首末TE/GV非零、通信/信号、下一槽/总时限及GO到期、成功与五种execute结果；必要旧前8、左7和front8032回归。",
+    "diff_check_exit": 0
+  },
+  "baseline_comparison": {
+    "method": "只读git show基线，在内存以同一完整绑定夹具调用旧/新make_plan；排除源码SHA/大小后比较完整JSON，不写基线副本。",
+    "unchanged_full_plan_families": [
+      "default",
+      "left_readonly",
+      "front_readonly",
+      "right_zero_False",
+      "right_zero_True",
+      "front_zero_False",
+      "front_zero_True",
+      "left_zero_False",
+      "left_zero_True"
+    ],
+    "unchanged_ast_functions": [
+      "left_stop_contract",
+      "validate_left_stop_window",
+      "classify_stop_snapshot",
+      "run_right_wheel_pulse",
+      "install_right_pulse_guard",
+      "finish_verification",
+      "classify_run_result"
+    ],
+    "ast_comparison": "ast.dump(include_attributes=False)逐函数完全相同；front8032仍仅front8 pulse零阶段前两组，右9诊断不扩大STOP或运动合同。"
+  },
+  "prepared_plan": {
+    "path": "plan.json",
+    "plan_sha256": "ed789b192535c7b51a566e034570b816a66eb852c172e5d541194c85c9f17bdc",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "go_present": false,
+    "actions_started": 0,
+    "scope_matches_fixed_right9": true
+  },
+  "limits": [
+    "本次仅独立静态审核与纯内存软件验证，未SSH/UART/硬件动作/新GO，未重跑全套或原生工具链。",
+    "原生126/0skip、实际SDK黄金及fmt/Clippy由root核验，不计为本独审执行结果。",
+    "当前用户OFF、无本次现场GO；软件通过不授权新采集或动作。",
+    "旧right9普通READ原帧0032=+50与用户未见实际轮动的差异仍待诊断；不推物理静止或固件根因，也不把±50判零。",
+    "原整机STOP失败、前轮失败历史、固件合同DEFERRED、D15 OPEN/DEFERRED及deployable=false保持。"
+  ]
+}

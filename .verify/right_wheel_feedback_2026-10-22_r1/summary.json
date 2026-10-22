@@ -1,0 +1,64 @@
+{
+  "schema": "HARDWARE_DIAGNOSTIC_SUMMARY_V1",
+  "stage": "right_wheel_feedback_2026-10-22_r1",
+  "status": "SOFTWARE_VERIFIED_PLAN_ONLY",
+  "baseline_commit": "db53ac310c09ca32f46d1ab18a38971d5c9abf5d",
+  "problem": "前轮20秒及零速局部通过后，整机停止普通READ收到right9原字0032=+50；现场报告右轮未动，具体原因未知。",
+  "prior_run": "../front_zero_intermediate_2026-10-22_r1/front-hardware/run.json",
+  "physical_observation": "right9-physical-observation.json",
+  "change": "复用前8固定14读路径，只增加right9选择；不启用、不写电机、不改停止门。",
+  "scope": "仅右轮right9以SYNC_READ先读TE0/GV0，0/250/500/750/1000ms各读PP再PV，末读GV0/TE0，共14次只读；PV原字及PP跨度只作诊断，不判停止、不写电机；三轮稳定架空并持续观察",
+  "plan_sha256": "ed789b192535c7b51a566e034570b816a66eb852c172e5d541194c85c9f17bdc",
+  "source_identity": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "c875a6e266e2894af4256873dd4e0bcf1c1911c2cad8d7206b940ab2afbd137d",
+      "bytes": 121280
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "0a14ee87e778f22cfa5e243f9990416170b8c5e903202c19eec81c3549542ed1",
+      "bytes": 168317
+    }
+  },
+  "verification": {
+    "local_methods": 126,
+    "local_pass": 125,
+    "local_sdk_skipped": 1,
+    "local_log": "local-tests.log",
+    "orin_methods": 126,
+    "orin_pass": 126,
+    "orin_skipped": 0,
+    "sdk_mock_serial_golden": true,
+    "actual_commit_quality": "cargo fmt --all → cargo clippy --all --all-targets -- -D warnings",
+    "source_count": 597,
+    "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "native_result": "software/result.json",
+    "collection": "software/collection.json",
+    "cleanup": "software/cleanup.json",
+    "independent_review": "review.json",
+    "review_targeted_subset": 10,
+    "old_plan_families_unchanged": 9,
+    "root_acceptance": "PASS_SOFTWARE_ONLY",
+    "bound_refs_checked_before_plan": 74
+  },
+  "hardware": {
+    "uart_calls": 0,
+    "register_writes": 0,
+    "go_issued": false,
+    "last_power_state": "OFF_USER_REPORTED",
+    "stop": "NOT_EVALUATED",
+    "motion": "NOT_RUN",
+    "current_readiness": "PENDING"
+  },
+  "unchanged": {
+    "left7_stability": true,
+    "front8_intermediate_8032_only": true,
+    "other_stop_strict_zero": true,
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "next": "取得本次恢复供电及连续观察确认后，只执行计划的一次right9 14读；不自动重试动作或放宽停止判据。",
+  "limitations": [
+    "SYNC_READ诊断不替代原普通READ故障；不复现不能判修复。",
+    "位置跨度和速度原字仅记录，不以软件验证替代实机停止结论。"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "recorded_at_ns": 1792661397111223000,
+  "source": "本聊天用户消息",
+  "answer": "实际上没有动，为什么会有这个",
+  "interpreted_target": "right9",
+  "interpretation_basis": "紧接root说明本轮后验right9返回+50；已向用户明确按刚才讨论的右轮记录。",
+  "physical_motion": "NONE_USER_REPORTED",
+  "reference_run": "../front_zero_intermediate_2026-10-22_r1/front-hardware/run.json",
+  "reference_run_sha256": "2774d333ce5cd5b71687382db07652f42231f1cc24bc81a3f6ecbd75b315b08b",
+  "qualifications": [
+    "观察不修改原STOP UNKNOWN或NEEDS_MANUAL_POWER_CUT",
+    "不证明编码器量化或固件根因",
+    "不构成恢复供电、UART或新动作授权"
+  ],
+  "last_power_state": "OFF_USER_REPORTED"
+}
