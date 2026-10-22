@@ -1,0 +1,187 @@
+{
+  "status": "SOFTWARE_PASS",
+  "recorded_at_utc": "2026-10-22T16:35:49.442047+00:00",
+  "base_commit": "8d7c0237f3bdc67b016c96086bd2821b60f2beec",
+  "scope": "S0内部左总线左臂/头部Position分组；复用原命令缓冲、SerialTick、Feetech连接和整总线停止",
+  "contract": [
+    "JointSelection按配置槽位选择；All为默认且wire明确All，不修改FlatBuffers/RPC/trait方法/状态机。",
+    "Mask仅支持完整适配器维度Position；空或越界选择、非法维度、选中值非有限和无效时间窗口拒绝。",
+    "XleRobotBus1Layout核对左臂1..6、头7/8名称与ID，支持配置重排；Feetech仅写选中ID，校准按原槽位。",
+    "每总线单命令流、控制权和停止域；未选中目标保留在设备，读取、模式、启用、停止和确认仍覆盖整总线。",
+    "部分Position在原Motion租约下执行，probe期限为来源期限和50ms预算的较早者；Feetech入口另检当前时间，不新增wire硬截止保证。",
+    "HardRT本期拒绝Mask。CAN-FD驱动、右侧Position/Velocity混合模式、相机均未接入。"
+  ],
+  "sources": {
+    "crates/robot-core/src/adapter.rs": {
+      "sha256": "a19481d286620ff8d80c3e4b59425df4a61d4b95af6f03d7b64df878e5f16d20",
+      "bytes": 27759
+    },
+    "crates/robot-adapters/mock/src/lib.rs": {
+      "sha256": "5fc32ca1d1f03fed2d113ceb8aec3df4535c0240f01aadb953db0a094740c47a",
+      "bytes": 29852
+    },
+    "crates/robot-adapters/feetech/src/adapter.rs": {
+      "sha256": "19aab0d7f1da82783a9fca8c04bd3c4c7fcabe7d4ee3aa4684988f1e6d9096d8",
+      "bytes": 76518
+    },
+    "crates/robot-s0/src/base_ingress.rs": {
+      "sha256": "25258c9362f1a3867c3deec1a5dd7b89990c57b1ba82c3b27487a8b5b9c4e751",
+      "bytes": 33639
+    },
+    "crates/robot-s0/src/ipc_thread.rs": {
+      "sha256": "eaafa713b5d55956bcb5fb6e0f8202d0540ee775c31d295e04a7f8b7ed74e5f0",
+      "bytes": 122420
+    },
+    "crates/robot-s0/src/lib.rs": {
+      "sha256": "078cfc441d8b45fa2ed0a0ebf6196dabc7c21b6be98760c86619244038406e39",
+      "bytes": 5615
+    },
+    "crates/robot-s0/src/rt_thread.rs": {
+      "sha256": "f958fe13afe05058ba25a2fb5162b1fa2aec5ea8f09e8a98d1258155722d6bbb",
+      "bytes": 80888
+    },
+    "crates/robot-s0/src/serial_tick.rs": {
+      "sha256": "3c99d592f9ddf6b669347bbf9ff90d68a07c89100a6a5cba489d42e9816692c3",
+      "bytes": 63457
+    },
+    "crates/robot-s0/src/grouped_position.rs": {
+      "sha256": "e037386b2999cf2de69782a44b395867765683b310a61e768f550caf54c761f1",
+      "bytes": 6301
+    }
+  },
+  "toolchain": {
+    "local": "rustc 1.101.0-nightly 1a2c4797e aarch64-apple-darwin",
+    "orin": "rustc 1.101.0-nightly 1a2c4797e aarch64-unknown-linux-gnu",
+    "local_log": "local-rustc.log",
+    "orin_log": "native/rustc-after.log"
+  },
+  "reference": {
+    "official_local": {
+      "path": "/Users/loosqk/repo/robot/XLeRobot-0.2.0",
+      "commit": "850355e2d4792512edd3afc893690cf33fcf48c4",
+      "finding": "该版本software未提供实际总线驱动"
+    },
+    "orin_source_copy": {
+      "path": "/Users/loosqk/repo/robot/XLeRobot",
+      "project": "xlerobot-dimos 0.1.0",
+      "path_review": "run_xlerobot.py→TickLoop/shared_bus→FeetechBus按请求ID写入；参考共享连接和选中ID，不照搬隐式写配置、自动启用或吞错重试"
+    }
+  },
+  "verification": {
+    "local_libraries": {
+      "passed": 383,
+      "failed": 0,
+      "ignored": 0,
+      "packages": {
+        "feetech": 220,
+        "mock": 19,
+        "core": 144
+      },
+      "log": "local-tests.log"
+    },
+    "local_clippy": {
+      "exit_code": 0,
+      "scope": "core/mock/feetech all-targets",
+      "log": "local-clippy.log"
+    },
+    "local_r2": {
+      "passed": 1,
+      "counting": "同一Feetech方法补充截止断言，为383子集",
+      "test_log": "local-tests-r2.log",
+      "clippy_log": "local-clippy-r2.log"
+    },
+    "orin_libraries": {
+      "passed": 387,
+      "failed": 0,
+      "ignored": 0,
+      "packages": {
+        "feetech": 220,
+        "mock": 19,
+        "core": 148
+      },
+      "log": "prior-attempts/orin-r1/libs.log"
+    },
+    "orin_layout": {
+      "passed": 2,
+      "log": "prior-attempts/orin-r1/s0-grouped.log"
+    },
+    "orin_serial_tick": {
+      "passed": 21,
+      "log": "prior-attempts/orin-r2/s0-serial-tick.log"
+    },
+    "orin_hard_rt_guard": {
+      "passed": 1,
+      "log": "prior-attempts/orin-r2/s0-hard-rt.log"
+    },
+    "orin_existing_serial_rt_e2e": {
+      "passed": 5,
+      "features": "test-comm-fault-hook",
+      "test_threads": 1,
+      "hardware": "MockSerialRTAdapter",
+      "log": "prior-attempts/orin-r2/serial-rt-e2e.log"
+    },
+    "orin_feetech_deadline_supplement": {
+      "passed": 1,
+      "counting": "387内同一方法，不累计",
+      "log": "prior-attempts/orin-r2/feetech-deadline.log"
+    },
+    "orin_distinct_methods": 416,
+    "new_methods": 11,
+    "counting": "分批覆盖；不将重复运行、平台复验、补充断言作为新增方法，不宣称单批全过或完整workspace测试。R2仅测试修正，R3仅文档注释反引号修正，未改生产逻辑。",
+    "commit_quality": {
+      "order": [
+        "cargo fmt --all",
+        "cargo clippy --all --all-targets -- -D warnings"
+      ],
+      "exit_codes": [
+        0,
+        0
+      ],
+      "steps": "native/steps.txt",
+      "clippy_log": "native/clippy.log"
+    },
+    "review": "实施自测、独立静态评审及root复核通过；独审未代替Cargo执行。"
+  },
+  "prior_failures": [
+    {
+      "log": "prior-attempts/mac-s0-compile.log",
+      "result": "S0在macOS因原Linux专用模块和O_PATH编译失败；改由Orin验证，未扩展平台支持。"
+    },
+    {
+      "log": "prior-attempts/local-tests-initial.log",
+      "result": "新乱序配置夹具按配置顺序喂握手导致1失败；修正为原总线真实ID排序后通过。"
+    },
+    {
+      "log": "prior-attempts/local-clippy-initial.log",
+      "result": "两个新增测试lint，定向修正后通过。"
+    },
+    {
+      "log": "prior-attempts/orin-r1/s0-serial-tick.log",
+      "result": "19过2失败：View不携带seq；begin_leased仅检查authority，不保证wire截止拒写。修正新增测试假设，保留生产语义，并补Feetech入口过期零事务负例。"
+    },
+    {
+      "log": "prior-attempts/orin-r2/clippy.log",
+      "result": "3处doc_markdown注释缺反引号，root仅修注释后fmt和根Clippy通过。"
+    }
+  ],
+  "source_alignment_and_cleanup": {
+    "changed_rust_files": 9,
+    "local_orin_final_sha_match": true,
+    "fmt_changed_frozen_source": false,
+    "native_receipt": "native/launch.json",
+    "native_receipt_sha256": "19187b8bdf97d35cdd85c29a881f06ce17b6831f221018cfcd073b6202cc5c8e",
+    "owned_tmux_processes_and_remote_temporaries": "已自然退出、回收并清理",
+    "target": "复用既有target，无新target或重复源码包",
+    "unfinished_stash": "7a34b74d267b1b87fc8d91381554d0d3b5199a33保留"
+  },
+  "limits": {
+    "physical_uart_access": false,
+    "hardware_motion": false,
+    "install_or_service_change": false,
+    "daemon_group_wire_entry": false,
+    "full_hal_complete": false,
+    "D15": "OPEN/DEFERRED",
+    "deployable": false,
+    "next": "只核右侧同总线Position/Velocity约束；任何实机动作前通知并按当前现场事实执行。"
+  }
+}

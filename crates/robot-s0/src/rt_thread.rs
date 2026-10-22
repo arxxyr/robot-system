@@ -42,7 +42,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 
-use robot_core::adapter::{ControlMode, HardRtAdapter, JointCommandBuf, JointStateBuf, RtSnapshot};
+use robot_core::adapter::{
+    ControlMode, HardRtAdapter, JointCommandBuf, JointCommandView, JointSelection, JointStateBuf,
+    RtSnapshot,
+};
 use robot_core::executor_ctrl::{
     AdapterErr, AdapterResp, OutputPolicy, OutputSafetyState, emergency_codes, normal_codes,
     pack_completed, unpack_pending_normal,
@@ -61,6 +64,17 @@ use robot_core::control_authority::{
 };
 use robot_core::error::RobotError;
 use robot_core::serial_services::AbortReason;
+
+/// 部分 Position 本期只接入 SerialRT，不把内部掩码带入原 HardRT 合同。
+fn write_full_bus<A: HardRtAdapter>(
+    adapter: &mut A,
+    command: &JointCommandView<'_>,
+) -> Result<(), RobotError> {
+    if command.selection != JointSelection::All {
+        return Err(RobotError::Unsupported("HardRT暂不支持部分关节命令"));
+    }
+    adapter.write_command(command)
+}
 
 /// RT 线程配置。
 #[derive(Clone, Copy, Debug)]
@@ -435,8 +449,10 @@ fn run_rt_loop<A: HardRtAdapter>(
             if do_write {
                 let cmd_guard = cmd_reader.load();
                 let cmd = cmd_guard.as_view();
-                if with_normal_lease(ctrl, NormalIoIntent::Motion, || adapter.write_command(&cmd))
-                    .is_err()
+                if with_normal_lease(ctrl, NormalIoIntent::Motion, || {
+                    write_full_bus(&mut adapter, &cmd)
+                })
+                .is_err()
                 {
                     metrics.write_errors.fetch_add(1, Ordering::Relaxed);
                 }
@@ -739,6 +755,31 @@ fn apply_cpu_pin(cfg: &RtThreadConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hard_rt_rejects_partial_selection_before_adapter_write() {
+        use robot_core::adapter::ManipulatorAdapter;
+        let mut adapter = MockHardRTAdapter::with_unlimited_limits(8);
+        adapter.connect().unwrap();
+        adapter.enable(true).unwrap();
+        let mut command = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            joint_count: 8,
+            positions: [1.0; robot_core::adapter::MAX_JOINTS],
+            stamp_ns: 100,
+            deadline_ns: 200,
+            ..JointCommandBuf::default()
+        };
+        write_full_bus(&mut adapter, &command.as_view()).unwrap();
+        command.selection = JointSelection::Mask(0xc0);
+        command.positions.fill(2.0);
+        assert_eq!(
+            write_full_bus(&mut adapter, &command.as_view()),
+            Err(RobotError::Unsupported("HardRT暂不支持部分关节命令"))
+        );
+        let mut state = JointStateBuf::default();
+        adapter.read_state(&mut state).unwrap();
+        assert_eq!(&state.positions[..8], &[1.0; 8]);
+    }
     use robot_adapter_mock::MockHardRTAdapter;
     use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
     use robot_core::executor_ctrl::ExecutorCtrlClient;

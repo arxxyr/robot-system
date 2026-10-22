@@ -123,10 +123,22 @@ impl ManipulatorAdapter for MockHardRTAdapter {
         if !self.connected {
             return Err(RobotError::NotConnected);
         }
+        cmd.validate_selection(self.state.joint_count as usize)?;
         if !self.enabled {
             // 未 enable 时静默吞掉命令（不报错，state 不更新）——对应 S0 state machine
             // SAFE/READY 下 rt_thread 仍在跑但命令不应生效。Part 2 rt_thread 会根据
             // state machine 决定是否调 write_command。
+            return Ok(());
+        }
+        if cmd.selection != robot_core::adapter::JointSelection::All {
+            // 未选中槽位连同速度、力矩反馈一并保留，不补写或缓存旧目标。
+            for i in 0..self.state.joint_count as usize {
+                if cmd.selection.contains(i) {
+                    self.state.positions[i] = cmd.positions[i];
+                    self.state.velocities[i] = cmd.velocities[i];
+                    self.state.torques[i] = cmd.torques[i];
+                }
+            }
             return Ok(());
         }
         // 位置 echo：直接拷到 state；只拷 `joint_count` 前缀。
@@ -427,6 +439,7 @@ mod tests {
             velocities,
             torques,
             mode: ControlMode::Position,
+            selection: robot_core::adapter::JointSelection::All,
             stamp_ns: 1_000_000,
             deadline_ns: 2_000_000,
         }
@@ -440,6 +453,65 @@ mod tests {
         assert_eq!(info.kind, AdapterKind::Manipulator);
         assert_eq!(info.name, "mock_hard_rt");
         assert!(!info.vendor_sdk);
+    }
+
+    #[test]
+    fn serial_partial_position_preserves_other_slots_and_rejects_invalid_commands() {
+        use robot_core::adapter::{JointCommandBuf, JointSelection};
+        let mut adapter = MockSerialRTAdapter::with_unlimited_limits(8);
+        adapter.connect().unwrap();
+        adapter.enable(true).unwrap();
+        let initial = JointCommandBuf {
+            positions: [1.0; MAX_JOINTS],
+            velocities: [2.0; MAX_JOINTS],
+            torques: [3.0; MAX_JOINTS],
+            mode: ControlModeRepr::Position,
+            joint_count: 8,
+            stamp_ns: 10,
+            deadline_ns: 20,
+            ..JointCommandBuf::default()
+        };
+        adapter.write_command(&initial.as_view()).unwrap();
+        let mut head = JointCommandBuf {
+            selection: JointSelection::Mask(0xc0),
+            ..initial
+        };
+        head.positions[..8].fill(4.0);
+        head.velocities[..8].fill(5.0);
+        head.torques[..8].fill(6.0);
+        adapter.write_command(&head.as_view()).unwrap();
+        let mut state = JointStateBuf::default();
+        adapter.read_state(&mut state).unwrap();
+        assert_eq!(&state.positions[..8], &[1., 1., 1., 1., 1., 1., 4., 4.]);
+        assert_eq!(&state.velocities[..8], &[2., 2., 2., 2., 2., 2., 5., 5.]);
+        assert_eq!(&state.torques[..8], &[3., 3., 3., 3., 3., 3., 6., 6.]);
+        for invalid in [
+            JointCommandBuf {
+                mode: ControlModeRepr::Velocity,
+                ..head
+            },
+            JointCommandBuf {
+                selection: JointSelection::Mask(0),
+                ..head
+            },
+            JointCommandBuf {
+                selection: JointSelection::Mask(0x100),
+                ..head
+            },
+            JointCommandBuf {
+                joint_count: 7,
+                ..head
+            },
+        ] {
+            assert!(adapter.write_command(&invalid.as_view()).is_err());
+            let mut unchanged = JointStateBuf::default();
+            adapter.read_state(&mut unchanged).unwrap();
+            assert_eq!(unchanged, state);
+        }
+        adapter.safety_stop().unwrap();
+        let mut enabled = [true; 8];
+        adapter.read_torque_enable_mask(&mut enabled).unwrap();
+        assert_eq!(enabled, [false; 8]);
     }
 
     #[test]

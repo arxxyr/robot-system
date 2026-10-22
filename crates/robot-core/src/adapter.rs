@@ -91,6 +91,28 @@ pub struct AdapterInfo {
 /// 未经证据的纳秒断言）。
 pub const MAX_JOINTS: usize = 32;
 
+/// S0 内部的位置写入范围；跨进程命令仍为 `All`，不改变 wire schema。
+/// 掩码按 adapter 的配置槽位排列，不直接以电机 ID 作位号。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum JointSelection {
+    #[default]
+    All,
+    Mask(u32),
+}
+
+impl JointSelection {
+    #[must_use]
+    pub fn contains(self, index: usize) -> bool {
+        match self {
+            Self::All => true,
+            Self::Mask(mask) => u32::try_from(index)
+                .ok()
+                .and_then(|shift| 1_u32.checked_shl(shift))
+                .is_some_and(|bit| mask & bit != 0),
+        }
+    }
+}
+
 /// 关节状态的 POD buffer —— adapter 把当前 state 写进这里，RT 线程读。
 ///
 /// 全 `[f32; MAX_JOINTS]` 固定长度数组；`joint_count` 告诉调用方实际有效位数。
@@ -117,6 +139,7 @@ pub struct JointCommandBuf {
     pub velocities: [f32; MAX_JOINTS],
     pub torques: [f32; MAX_JOINTS],
     pub mode: ControlModeRepr,
+    pub selection: JointSelection,
     pub stamp_ns: u64,
     pub deadline_ns: u64,
     pub joint_count: u8,
@@ -174,6 +197,7 @@ pub struct JointCommandView<'a> {
     pub velocities: &'a [f32],
     pub torques: &'a [f32],
     pub mode: ControlMode,
+    pub selection: JointSelection,
     pub stamp_ns: u64,
     pub deadline_ns: u64,
 }
@@ -189,9 +213,63 @@ impl JointCommandBuf {
             velocities: &self.velocities[..n],
             torques: &self.torques[..n],
             mode: self.mode.into(),
+            selection: self.selection,
             stamp_ns: self.stamp_ns,
             deadline_ns: self.deadline_ns,
         }
+    }
+}
+
+impl JointCommandView<'_> {
+    /// 部分写入只用于完整总线维度的 Position；旧 `All` 行为保持不变。
+    ///
+    /// # Errors
+    /// 非 Position、空/越界选择、维度、选中值或时间窗口无效。
+    pub fn validate_selection(&self, joint_count: usize) -> Result<(), RobotError> {
+        let JointSelection::Mask(mask) = self.selection else {
+            return Ok(());
+        };
+        if self.mode != ControlMode::Position {
+            return Err(RobotError::InvalidParameter("部分关节命令仅支持位置模式"));
+        }
+        if !(1..=MAX_JOINTS).contains(&joint_count)
+            || self.positions.len() != joint_count
+            || self.velocities.len() != joint_count
+            || self.torques.len() != joint_count
+        {
+            return Err(RobotError::InvalidParameter("部分位置目标需要完整总线维度"));
+        }
+        let allowed = u32::MAX >> (MAX_JOINTS - joint_count);
+        if mask == 0 || mask & !allowed != 0 {
+            return Err(RobotError::InvalidParameter("关节选择为空或越界"));
+        }
+        for i in 0..joint_count {
+            if self.selection.contains(i)
+                && (!self.positions[i].is_finite()
+                    || !self.velocities[i].is_finite()
+                    || !self.torques[i].is_finite())
+            {
+                return Err(RobotError::InvalidParameter("选中关节目标必须有限"));
+            }
+        }
+        if self.deadline_ns <= self.stamp_ns {
+            return Err(RobotError::InvalidParameter("部分位置目标时间窗口无效"));
+        }
+        Ok(())
+    }
+
+    /// # Errors
+    /// 部分位置目标来自未来或已经过期；全选仍沿用原执行路径的时间合同。
+    pub fn validate_selection_time(&self, now_ns: u64) -> Result<(), RobotError> {
+        if self.selection != JointSelection::All {
+            if self.stamp_ns > now_ns {
+                return Err(RobotError::InvalidParameter("部分位置目标时间戳来自未来"));
+            }
+            if now_ns >= self.deadline_ns {
+                return Err(RobotError::DeadlineExceeded);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -474,6 +552,64 @@ mod tests {
         let view = buf.as_view();
         assert_eq!(view.positions, &[1.0, 2.0, 3.0]);
         assert_eq!(view.velocities.len(), 3);
+        assert_eq!(view.selection, JointSelection::All);
+    }
+
+    #[test]
+    fn partial_position_selection_validates_without_changing_all_contract() {
+        let mut command = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            joint_count: 8,
+            stamp_ns: 10,
+            deadline_ns: 20,
+            selection: JointSelection::Mask(0xc0),
+            ..JointCommandBuf::default()
+        };
+        // 未选中的占位值不参与位置写入；选中槽位任何非有限字段均拒绝。
+        command.positions[0] = f32::NAN;
+        assert!(command.as_view().validate_selection(8).is_ok());
+        for mask in [0, 1 << 8, u32::MAX] {
+            let invalid = JointCommandBuf {
+                selection: JointSelection::Mask(mask),
+                ..command
+            };
+            assert!(invalid.as_view().validate_selection(8).is_err());
+        }
+        for mode in [
+            ControlModeRepr::Velocity,
+            ControlModeRepr::Torque,
+            ControlModeRepr::ServoPosition,
+            ControlModeRepr::Stop,
+        ] {
+            assert!(
+                JointCommandBuf { mode, ..command }
+                    .as_view()
+                    .validate_selection(8)
+                    .is_err()
+            );
+        }
+        assert!(command.as_view().validate_selection(7).is_err());
+        command.velocities[7] = f32::INFINITY;
+        assert!(command.as_view().validate_selection(8).is_err());
+        command.selection = JointSelection::All;
+        assert!(command.as_view().validate_selection(7).is_ok());
+        assert!(command.as_view().validate_selection_time(u64::MAX).is_ok());
+
+        let all_bits = JointCommandBuf {
+            selection: JointSelection::Mask(u32::MAX),
+            joint_count: 32,
+            mode: ControlModeRepr::Position,
+            stamp_ns: 10,
+            deadline_ns: 20,
+            ..JointCommandBuf::default()
+        };
+        assert!(all_bits.as_view().validate_selection(MAX_JOINTS).is_ok());
+        assert!(all_bits.as_view().validate_selection_time(9).is_err());
+        assert!(all_bits.as_view().validate_selection_time(10).is_ok());
+        assert_eq!(
+            all_bits.as_view().validate_selection_time(20),
+            Err(RobotError::DeadlineExceeded)
+        );
     }
 
     #[test]

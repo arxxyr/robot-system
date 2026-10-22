@@ -1,0 +1,9 @@
+   Compiling robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+    Finished `test` profile [optimized + debuginfo] target(s) in 1.34s
+     Running unittests src/lib.rs (target/debug/build/robot-adapter-feetech/4e82b59fce275864/out/robot_adapter_feetech-4e82b59fce275864)
+
+running 1 test
+test adapter::tests::invalid_partial_commands_never_start_a_bus_transaction ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.00s
+

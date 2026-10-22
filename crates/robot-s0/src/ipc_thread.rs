@@ -1035,7 +1035,11 @@ fn parse_joint_command(
     stamp_ns: u64,
     now: MonoRawNs,
 ) -> Result<JointCommandBuf, JointCommandParseError> {
-    let mut buf = JointCommandBuf::default();
+    // wire 没有关节选择字段；只允许原全选语义。
+    let mut buf = JointCommandBuf {
+        selection: robot_core::adapter::JointSelection::All,
+        ..JointCommandBuf::default()
+    };
 
     let target = fb.target();
     let n = match fb.mode() {
@@ -1195,6 +1199,7 @@ mod tests {
         assert_eq!(command.torques.map(f32::to_bits), [0_u32; MAX_JOINTS]);
         assert_eq!(command.joint_count, 4);
         assert_eq!(command.mode, ControlModeRepr::Velocity);
+        assert_eq!(command.selection, robot_core::adapter::JointSelection::All);
         assert_eq!(
             (command.stamp_ns, command.deadline_ns, command.seq),
             (100, 200, 7)

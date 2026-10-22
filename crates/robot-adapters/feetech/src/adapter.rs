@@ -574,6 +574,10 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
 
     fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
         self.require_connected().map_err(RobotError::from)?;
+        cmd.validate_selection(self.joint_ids.len())?;
+        if cmd.selection != robot_core::adapter::JointSelection::All {
+            cmd.validate_selection_time(self.clock.now().0)?;
+        }
         self.bus.set_op_class(BusOpClass::PeriodicWrite);
         match cmd.mode {
             ControlMode::Position => {}
@@ -596,6 +600,9 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         self.cmd_entries.clear();
         let use_clamp = !self.calibrations.is_empty();
         for i in 0..n {
+            if !cmd.selection.contains(i) {
+                continue;
+            }
             let mut raw = rad_to_raw(cmd.positions[i]);
             if use_clamp {
                 let cal = &self.calibrations[i];
@@ -863,7 +870,10 @@ mod tests {
         )
         .unwrap();
         // handshake：connect() 对每个 motor 调 ping（PING ack + READ Model_Number）
-        for &(_, id) in joints {
+        // 总线握手按 ID 排序，配置槽位可独立重排。
+        let mut handshake_ids: Vec<_> = joints.iter().map(|&(_, id)| id).collect();
+        handshake_ids.sort_unstable();
+        for id in handshake_ids {
             handle.push_rx(&ack_status(id));
             handle.push_rx(&read_status(id, &[0x09, 0x03])); // 777 LE
         }
@@ -1225,6 +1235,135 @@ mod tests {
         // raw 3500 LE = [0xAC, 0x0D]
         let has_raw = tx.windows(5).any(|w| *w == [0x2A, 0x02, 0x01, 0xAC, 0x0D]);
         assert!(has_raw, "无 calibration 应直写 raw=3500");
+    }
+
+    #[test]
+    fn partial_position_wire_selects_only_head_ids_and_keeps_calibration_slot_order() {
+        use robot_core::adapter::{ControlModeRepr, JointCommandBuf, JointSelection};
+        for ids in [[1, 2, 3, 4, 5, 6, 7, 8], [8, 3, 6, 1, 7, 4, 2, 5]] {
+            let names: Vec<_> = ids.iter().map(|id| format!("joint_{id}")).collect();
+            let joints: Vec<_> = names
+                .iter()
+                .zip(ids)
+                .map(|(name, id)| (name.as_str(), id))
+                .collect();
+            let calibrations = ids
+                .iter()
+                .map(|&id| {
+                    MotorCalibration::new(id, 0, 0, 1000 + u16::from(id), 3000 + u16::from(id))
+                        .unwrap()
+                })
+                .collect();
+            let (mut adapter, handle) = make_adapter_with_calibration(&joints, calibrations);
+            let mut command = JointCommandBuf {
+                positions: [f32::NAN; robot_core::adapter::MAX_JOINTS],
+                mode: ControlModeRepr::Position,
+                joint_count: 8,
+                deadline_ns: 1_000_000,
+                ..JointCommandBuf::default()
+            };
+            let mut mask = 0;
+            let mut expected = vec![0xff, 0xff, 0xfe, 10, 0x83, 42, 2];
+            for (slot, &id) in ids.iter().enumerate() {
+                if id == 7 || id == 8 {
+                    mask |= 1 << slot;
+                    command.positions[slot] = raw_to_rad(if id == 7 { 3500 } else { 0 });
+                    let clamped = if id == 7 { 3007_u16 } else { 1008_u16 };
+                    expected.push(id);
+                    expected.extend_from_slice(&clamped.to_le_bytes());
+                }
+            }
+            command.selection = JointSelection::Mask(mask);
+            expected.push(checksum(&expected[2..]));
+            adapter.write_command(&command.as_view()).unwrap();
+            // 真 FeetechAdapter→FeetechBus→MockTransport；整份帧只有 ID7/8。
+            assert_eq!(handle.drain_tx(), expected);
+
+            // 部分位置写不改变全总线 safety_stop 和确认的目标集合。
+            adapter.safety_stop().unwrap();
+            let stop = handle.drain_tx();
+            assert_eq!(&stop[..7], &[0xff, 0xff, 0xfe, 20, 0x83, 40, 1]);
+            assert_eq!(
+                stop[7..23]
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|entry| (entry[0], entry[1]))
+                    .collect::<Vec<_>>(),
+                ids.map(|id| (id, 0))
+            );
+            for id in ids {
+                handle.push_rx(&read_status(id, &[0]));
+            }
+            let mut enabled = [true; 8];
+            adapter.read_torque_enable_mask(&mut enabled).unwrap();
+            assert_eq!(enabled, [false; 8]);
+            let confirm = handle.drain_tx();
+            assert_eq!(&confirm[7..15], &ids);
+        }
+    }
+
+    #[test]
+    fn invalid_partial_commands_never_start_a_bus_transaction() {
+        use robot_core::adapter::{ControlModeRepr, JointCommandBuf, JointSelection};
+        let (mut adapter, handle) = make_adapter(&[("arm", 1), ("head", 7)]);
+        adapter
+            .bus
+            .set_services(Some(Arc::new(NoTransactionProbe)), None);
+        let valid = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            selection: JointSelection::Mask(2),
+            joint_count: 2,
+            deadline_ns: 1_000,
+            ..JointCommandBuf::default()
+        };
+        let mut nonfinite = valid;
+        nonfinite.positions[1] = f32::NAN;
+        for invalid in [
+            JointCommandBuf {
+                selection: JointSelection::Mask(0),
+                ..valid
+            },
+            JointCommandBuf {
+                selection: JointSelection::Mask(4),
+                ..valid
+            },
+            JointCommandBuf {
+                joint_count: 1,
+                ..valid
+            },
+            JointCommandBuf {
+                stamp_ns: 1,
+                ..valid
+            },
+            JointCommandBuf {
+                deadline_ns: 0,
+                ..valid
+            },
+            nonfinite,
+        ]
+        .into_iter()
+        .chain(
+            [
+                ControlModeRepr::Velocity,
+                ControlModeRepr::Torque,
+                ControlModeRepr::ServoPosition,
+                ControlModeRepr::Stop,
+            ]
+            .map(|mode| JointCommandBuf { mode, ..valid }),
+        ) {
+            assert!(adapter.write_command(&invalid.as_view()).is_err());
+            assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+        }
+        // 形状和窗口本身合法，但真实 adapter 入口时已到来源截止；仍不得申请事务。
+        adapter.clock = Arc::new(robot_core::time::MockClock::new(
+            robot_core::time::MonoRawNs(1_000),
+        ));
+        assert_eq!(
+            adapter.write_command(&valid.as_view()),
+            Err(RobotError::DeadlineExceeded)
+        );
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
     }
 
     #[test]

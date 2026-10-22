@@ -549,6 +549,7 @@ impl BaseIngress {
         let seq = NonZeroU64::new(self.accepted_counter).ok_or(IngressReject::GateClosed)?;
         let mut buffer = JointCommandBuf {
             mode: ControlModeRepr::Velocity,
+            selection: robot_core::adapter::JointSelection::All,
             stamp_ns: command.cursor.stamp.0,
             deadline_ns: command.deadline.0,
             joint_count: 3,

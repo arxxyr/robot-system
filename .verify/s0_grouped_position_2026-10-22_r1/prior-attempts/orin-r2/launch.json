@@ -1,0 +1,100 @@
+{
+  "local": "/var/folders/r8/l2sdsr4d34jd7mjkfvp6qs1w0000gn/T/robot-system-s0-grouped-native-r2-1shu6hoj",
+  "remote": "/tmp/robot-s0-grouped-native-r2",
+  "transport_exit": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"s0-grouped-position-native-r2 $144 %180 756267 0\\n\", \"stderr\": \"\", \"source_files_verified\": 9, \"backups\": 2}\n",
+  "stderr": "",
+  "steps": [
+    [
+      "rustc-before",
+      [
+        "rustc",
+        "-vV"
+      ]
+    ],
+    [
+      "feetech-deadline",
+      [
+        "cargo",
+        "test",
+        "-p",
+        "robot-adapter-feetech",
+        "--lib",
+        "invalid_partial_commands_never_start_a_bus_transaction"
+      ]
+    ],
+    [
+      "s0-serial-tick",
+      [
+        "cargo",
+        "test",
+        "-p",
+        "robot-s0",
+        "--lib",
+        "serial_tick::tests"
+      ]
+    ],
+    [
+      "s0-hard-rt",
+      [
+        "cargo",
+        "test",
+        "-p",
+        "robot-s0",
+        "--lib",
+        "hard_rt_rejects_partial_selection_before_adapter_write"
+      ]
+    ],
+    [
+      "serial-rt-e2e",
+      [
+        "cargo",
+        "test",
+        "-p",
+        "robot-s0",
+        "--test",
+        "serial_rt_e2e",
+        "--features",
+        "test-comm-fault-hook",
+        "--",
+        "--test-threads=1"
+      ]
+    ],
+    [
+      "fmt",
+      [
+        "cargo",
+        "fmt",
+        "--all"
+      ]
+    ],
+    [
+      "clippy",
+      [
+        "cargo",
+        "clippy",
+        "--all",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ]
+    ],
+    [
+      "rustc-after",
+      [
+        "rustc",
+        "-vV"
+      ]
+    ]
+  ],
+  "cleanup": {
+    "terminal": "%180 756267 1 101",
+    "source9_match_r2": true,
+    "raw_logs_sha_matched": 8,
+    "pid_gone": true,
+    "pane_removed": true,
+    "remote_own_tmp_and_2_backups_removed": true,
+    "source_and_target_retained": true
+  }
+}

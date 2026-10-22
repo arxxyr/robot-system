@@ -62,6 +62,7 @@ pub mod event_ingress;
 pub mod freeze_control;
 #[cfg(any(test, feature = "test-freeze-hook"))]
 pub mod freeze_hook;
+pub mod grouped_position;
 pub mod hard_rt_ctrl;
 pub mod io_thread;
 pub mod ipc_pending;

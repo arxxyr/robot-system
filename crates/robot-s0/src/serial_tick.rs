@@ -3,7 +3,8 @@
 use std::sync::atomic::Ordering;
 
 use robot_core::adapter::{
-    ControlMode, JointCommandView, JointStateBuf, MAX_JOINTS, RtSnapshot, SerialRtAdapter,
+    ControlMode, JointCommandView, JointSelection, JointStateBuf, MAX_JOINTS, RtSnapshot,
+    SerialRtAdapter,
 };
 use robot_core::diag::DiagSink;
 use robot_core::error::RobotError;
@@ -53,12 +54,16 @@ fn velocity_joint_count(command: &JointCommandView<'_>) -> Result<usize, RobotEr
     Ok(count)
 }
 
-/// 仅速度模式改变周期输出；其它模式保留既有策略调用合同。
+/// 速度及内部部分位置目标受来源时间约束；全选其它模式保留原策略合同。
 fn select_periodic_output(
     command: &JointCommandView<'_>,
     policy: OutputPolicy,
     now: MonoRawNs,
 ) -> Result<PeriodicOutput, RobotError> {
+    if !matches!(policy, OutputPolicy::StopTorque | OutputPolicy::Disabled) {
+        command.validate_selection(command.positions.len())?;
+        command.validate_selection_time(now.0)?;
+    }
     match (command.mode, policy) {
         (_, OutputPolicy::StopTorque | OutputPolicy::Disabled)
         | (ControlMode::Velocity, OutputPolicy::ReadyHold) => Ok(PeriodicOutput::Skip),
@@ -558,31 +563,43 @@ impl SerialTick {
         let zeros = [0.0_f32; MAX_JOINTS];
         // 同一分派时刻同时约束来源有效性与本次事务预算，不用第二次取时延长窗口。
         let dispatched_at = clock.now();
-        let output = match select_periodic_output(command, policy, dispatched_at) {
-            Ok(PeriodicOutput::Skip) => return true,
-            Ok(PeriodicOutput::Forward) => *command,
-            Ok(PeriodicOutput::VelocityZero {
-                joint_count,
-                stamp_ns,
-                deadline_ns,
-            }) => JointCommandView {
-                positions: &zeros[..joint_count],
-                velocities: &zeros[..joint_count],
-                torques: &zeros[..joint_count],
-                mode: ControlMode::Velocity,
-                stamp_ns,
-                deadline_ns,
-            },
-            Err(error) => {
-                metrics.write_errors.fetch_add(1, Ordering::Relaxed);
-                self.route_periodic(error, context);
-                return false;
-            }
+        let selection = if command.selection == JointSelection::All
+            || matches!(policy, OutputPolicy::StopTorque | OutputPolicy::Disabled)
+        {
+            Ok(())
+        } else {
+            command.validate_selection(adapter.joint_count())
         };
+        let output =
+            match selection.and_then(|()| select_periodic_output(command, policy, dispatched_at)) {
+                Ok(PeriodicOutput::Skip) => return true,
+                Ok(PeriodicOutput::Forward) => *command,
+                Ok(PeriodicOutput::VelocityZero {
+                    joint_count,
+                    stamp_ns,
+                    deadline_ns,
+                }) => JointCommandView {
+                    positions: &zeros[..joint_count],
+                    velocities: &zeros[..joint_count],
+                    torques: &zeros[..joint_count],
+                    mode: ControlMode::Velocity,
+                    selection: JointSelection::All,
+                    stamp_ns,
+                    deadline_ns,
+                },
+                Err(error) => {
+                    metrics.write_errors.fetch_add(1, Ordering::Relaxed);
+                    self.route_periodic(error, context);
+                    return false;
+                }
+            };
         // 零目标只借用本地栈数组，不改来源命令或 latest slot；仍申请原 Motion 租约。
         let transaction_deadline = dispatched_at.0.saturating_add(PERIODIC_WRITE_BUDGET_NS);
         let write_deadline = match output.mode {
             ControlMode::Velocity => output.deadline_ns.min(transaction_deadline),
+            ControlMode::Position if output.selection != JointSelection::All => {
+                output.deadline_ns.min(transaction_deadline)
+            }
             _ => transaction_deadline,
         };
         // probe 截止时间约束 checkpoint/liveness；此处不宣称串口 wire 已有硬拒写期限。
@@ -769,6 +786,7 @@ mod tests {
             velocities: [2.0; MAX_JOINTS],
             torques: [3.0; MAX_JOINTS],
             mode: mode.into(),
+            selection: JointSelection::All,
             stamp_ns: 100,
             deadline_ns: 200,
             joint_count: 3,
@@ -790,6 +808,7 @@ mod tests {
             expected.torques.map(f32::to_bits)
         );
         assert_eq!(actual.mode, expected.mode);
+        assert_eq!(actual.selection, expected.selection);
         assert_eq!(actual.joint_count, expected.joint_count);
         assert_eq!(actual.stamp_ns, expected.stamp_ns);
         assert_eq!(actual.deadline_ns, expected.deadline_ns);
@@ -807,6 +826,7 @@ mod tests {
         stops: usize,
         confirms: usize,
         last_confirm_all_off: bool,
+        last_confirm_count: usize,
         read_error: Option<RobotError>,
         write_error: Option<RobotError>,
     }
@@ -847,6 +867,7 @@ mod tests {
                 .map_err(RobotError::Aborted)?;
             let mut recorded = JointCommandBuf {
                 mode: target.mode.into(),
+                selection: target.selection,
                 stamp_ns: target.stamp_ns,
                 deadline_ns: target.deadline_ns,
                 joint_count: u8::try_from(target.velocities.len()).unwrap(),
@@ -892,6 +913,7 @@ mod tests {
                 .begin_leased(BusOpClass::Confirm)
                 .map_err(RobotError::Aborted)?;
             self.confirms += 1;
+            self.last_confirm_count = out.len();
             let result = self.inner.read_torque_enable_mask(out);
             self.last_confirm_all_off = result.is_ok() && out.iter().all(|enabled| !enabled);
             self.probe.finish_leased(lease);
@@ -915,6 +937,10 @@ mod tests {
 
     impl Fixture {
         fn new(enabled: bool) -> Self {
+            Self::with_joint_count(enabled, 3)
+        }
+
+        fn with_joint_count(enabled: bool, joint_count: u8) -> Self {
             let clock = Arc::new(MockClock::new(MonoRawNs(100)));
             let ctrl = Arc::new(SerialIoCtrlInner::new_serial(test_authority(true)));
             let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
@@ -924,9 +950,9 @@ mod tests {
                 probe: probe.clone(),
                 diag: SerialDiagRing::new(),
                 metrics: SerialIoThreadMetrics::default(),
-                tick: SerialTick::new(true, 3, MonoRawNs(100)),
+                tick: SerialTick::new(true, usize::from(joint_count), MonoRawNs(100)),
                 adapter: RecordingAdapter {
-                    inner: MockSerialRTAdapter::with_unlimited_limits(3),
+                    inner: MockSerialRTAdapter::with_unlimited_limits(joint_count),
                     probe,
                     last_command: None,
                     write_attempts: 0,
@@ -935,11 +961,13 @@ mod tests {
                     stops: 0,
                     confirms: 0,
                     last_confirm_all_off: false,
+                    last_confirm_count: 0,
                     read_error: None,
                     write_error: None,
                 },
             };
-            let boot = command(ControlMode::Velocity);
+            let mut boot = command(ControlMode::Velocity);
+            boot.joint_count = joint_count;
             for _ in 0..3 {
                 fixture.step(&boot.as_view());
             }
@@ -994,6 +1022,165 @@ mod tests {
             // 原故障路由可保留不可信确认；这里只证明真实停止与读回，不能补成可信 PASS。
             assert_ne!(self.ctrl.safety_state(), OutputSafetyState::TorqueOn);
         }
+    }
+
+    fn bus1_layout() -> crate::grouped_position::XleRobotBus1Layout {
+        let config: crate::config_loader::RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus1_full.toml")).unwrap();
+        crate::grouped_position::XleRobotBus1Layout::from_hardware(&config.hardware[0]).unwrap()
+    }
+
+    #[test]
+    fn grouped_position_runs_original_tick_feedback_and_full_bus_fault_stop() {
+        use crate::grouped_position::Bus1PositionGroup;
+        let layout = bus1_layout();
+        let mut fixture = Fixture::with_joint_count(true, 8);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        let mut all = command(ControlMode::Position);
+        all.joint_count = 8;
+        fixture.step(&all.as_view());
+        let head = layout
+            .command(Bus1PositionGroup::Head, &[0.2, 0.3], 72, 100, 200)
+            .unwrap();
+        fixture.step(&head.as_view());
+        assert_eq!(
+            &fixture.tick.state.positions[..8],
+            &[1., 1., 1., 1., 1., 1., 0.2, 0.3]
+        );
+        assert_eq!(
+            &fixture.tick.state.velocities[..8],
+            &[2., 2., 2., 2., 2., 2., 0., 0.]
+        );
+        assert_eq!(
+            &fixture.tick.state.torques[..8],
+            &[3., 3., 3., 3., 3., 3., 0., 0.]
+        );
+        let mut expected_head = head;
+        expected_head.seq = 0; // 借用视图不携带 slot 的 seq，记录器不伪造来源元数据。
+        assert_same_command(
+            fixture.adapter.last_command.as_ref().unwrap(),
+            &expected_head,
+        );
+        let arm = layout
+            .command(Bus1PositionGroup::LeftArm, &[0.4; 6], 73, 100, 200)
+            .unwrap();
+        fixture.step(&arm.as_view());
+        assert_eq!(
+            &fixture.tick.state.positions[..8],
+            &[0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.2, 0.3]
+        );
+        assert_eq!(fixture.tick.state.joint_count, 8);
+        assert_eq!(fixture.tick.state.stamp_ns, 100);
+        let before_failure = fixture.tick.state;
+        fixture.adapter.read_error = Some(RobotError::HardwareFault("确定性分组反馈故障"));
+        fixture.step(&head.as_view());
+        assert_eq!(fixture.tick.state, before_failure);
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+        fixture.step(&head.as_view());
+        fixture.step(&head.as_view());
+        assert_eq!(fixture.adapter.stops, 2);
+        assert_eq!(fixture.adapter.confirms, 2);
+        assert_eq!(fixture.adapter.last_confirm_count, 8);
+        assert!(fixture.adapter.last_confirm_all_off);
+        assert_ne!(fixture.ctrl.inhibit_bits(), 0);
+    }
+
+    #[test]
+    fn invalid_grouped_position_faults_before_adapter_write_and_stops_whole_bus() {
+        use crate::grouped_position::Bus1PositionGroup;
+        let valid = bus1_layout()
+            .command(Bus1PositionGroup::Head, &[0.2, 0.3], 1, 100, 200)
+            .unwrap();
+        let mut nonfinite = valid;
+        nonfinite.positions[7] = f32::NAN;
+        for invalid in [
+            JointCommandBuf {
+                selection: JointSelection::Mask(0),
+                ..valid
+            },
+            JointCommandBuf {
+                selection: JointSelection::Mask(1 << 8),
+                ..valid
+            },
+            JointCommandBuf {
+                joint_count: 7,
+                ..valid
+            },
+            JointCommandBuf {
+                mode: robot_core::adapter::ControlModeRepr::Velocity,
+                ..valid
+            },
+            JointCommandBuf {
+                stamp_ns: 101,
+                ..valid
+            },
+            JointCommandBuf {
+                deadline_ns: 100,
+                ..valid
+            },
+            nonfinite,
+        ] {
+            let mut fixture = Fixture::with_joint_count(true, 8);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            fixture.step(&invalid.as_view());
+            fixture.assert_fault_then_stop(&invalid.as_view());
+            assert_eq!(fixture.adapter.last_confirm_count, 8);
+        }
+    }
+
+    #[test]
+    fn grouped_position_source_deadline_bounds_probe_progress() {
+        use crate::grouped_position::Bus1PositionGroup;
+        let target = bus1_layout()
+            .command(Bus1PositionGroup::Head, &[0.2, 0.3], 1, 100, 200)
+            .unwrap();
+        let mut fixture = Fixture::with_joint_count(true, 8);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        let context = SerialTickContext {
+            ctrl: &fixture.ctrl,
+            probe: &fixture.probe,
+            diag: &fixture.diag,
+            clock: fixture.clock.as_ref(),
+            metrics: &fixture.metrics,
+        };
+        fixture.probe.begin_tick();
+        assert!(
+            fixture
+                .tick
+                .periodic_write(&mut fixture.adapter, &target.as_view(), &context)
+        );
+        assert_eq!(fixture.adapter.write_attempts, 1);
+        assert_eq!(fixture.adapter.writes, 1);
+        assert_eq!(fixture.adapter.reads, 0);
+        let progress = fixture.ctrl.liveness_counter.load(Ordering::Relaxed);
+        fixture.clock.set(MonoRawNs(200));
+        fixture.probe.checkpoint();
+        assert_eq!(
+            fixture.ctrl.liveness_counter.load(Ordering::Relaxed),
+            progress
+        );
+        assert!(!fixture.probe.tick_progress_allowed());
+    }
+
+    #[test]
+    fn grouped_position_estop_stops_and_confirms_all_eight_joints() {
+        use crate::grouped_position::Bus1PositionGroup;
+        let target = bus1_layout()
+            .command(Bus1PositionGroup::Head, &[0.2, 0.3], 1, 100, 200)
+            .unwrap();
+        let mut fixture = Fixture::with_joint_count(true, 8);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        fixture.step(&target.as_view());
+        let writes = fixture.adapter.write_attempts;
+        fixture.set_policy(OutputPolicy::StopTorque);
+        let _ = fixture.ctrl.authority().estop();
+        fixture.step(&target.as_view());
+        fixture.step(&target.as_view());
+        assert_eq!(fixture.adapter.write_attempts, writes);
+        assert_eq!(fixture.adapter.stops, 2);
+        assert_eq!(fixture.adapter.confirms, 2);
+        assert_eq!(fixture.adapter.last_confirm_count, 8);
+        assert!(fixture.adapter.last_confirm_all_off);
     }
 
     #[test]
