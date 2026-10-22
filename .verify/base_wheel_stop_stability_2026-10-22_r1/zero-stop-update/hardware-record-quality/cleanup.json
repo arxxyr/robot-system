@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-22T13:18:56.584891+00:00",
+  "precondition": "base-zero-update-record-quality-r1 $134 %170 746170 1 0 已在cleanup-attempt1中完成删除",
+  "only_pane": "%170",
+  "owned_session_absent": true,
+  "temporary_runner_removed": true,
+  "original_target_retained": true,
+  "postcheck_correction_reference": "cleanup-attempt1.json",
+  "uart": 0,
+  "go": 0,
+  "exit_code": 0
+}

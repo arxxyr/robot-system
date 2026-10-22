@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "removed_owned_dead_pane": "front-zero-update-r1-hardware $133 %169 745625 1 1",
+  "exact_session_absent": true,
+  "original_files_preserved": true,
+  "resource_check": "front-resource-check.json",
+  "uart": 0,
+  "motion_observation": "用户确认本次前轮明显持续转动、结束完全停止",
+  "watch": "本次动作及清场已结束，不授权后续动作"
+}

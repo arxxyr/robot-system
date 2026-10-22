@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-22T13:18:04.849135+00:00",
+  "pane": "base-zero-update-record-quality-r1 $134 %170 746170 1 0",
+  "pane_pid_absent": true,
+  "owner_pid": 746175,
+  "owner_absent": true,
+  "direct_step_children_absent": true,
+  "direct_step_children": 4,
+  "downloaded": {
+    "result.json": {
+      "bytes": 2774,
+      "sha256": "4f2c6ebaca15baa1f00ce5361505d2fb2242557217e8a43f9b4db6c810e39c9e"
+    },
+    "owner.exit": {
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy.log": {
+      "bytes": 70,
+      "sha256": "3c9d5ca89c8c34ce5b2d6125a9da7f8705ab2717ea0cfafb410996f7252e7fee"
+    },
+    "rustc-before.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    },
+    "rustc-after.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    }
+  },
+  "local_597_and_frozen_python_match": true
+}

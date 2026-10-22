@@ -1,0 +1,40 @@
+{
+  "argv": [
+    "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+    "-B",
+    "-I",
+    "-S",
+    "/home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/software/scripts/run_hardware_maintenance.py",
+    "--bindings",
+    "/home/loosqk/robot-checks/front-wheel-feedback-20261022-r1/current-bindings.json",
+    "--output",
+    "/home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/front-hardware",
+    "--run-id",
+    "front-zero-update-r1",
+    "--artifact-root",
+    "/home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update",
+    "--wheel-pulse",
+    "front",
+    "--zero-stop-check",
+    "--execute",
+    "--approval",
+    "/home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/front-go.json"
+  ],
+  "tmux_argv": [
+    "tmux",
+    "new-session",
+    "-d",
+    "-s",
+    "front-zero-update-r1-hardware",
+    "-n",
+    "hardware",
+    "-P",
+    "-F",
+    "#{session_name} #{session_id} #{pane_id} #{pane_pid}",
+    "/bin/sh -c 'tmux set-option -p -t \"$TMUX_PANE\" remain-on-exit on && exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 -B -I -S /home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/software/scripts/run_hardware_maintenance.py --bindings /home/loosqk/robot-checks/front-wheel-feedback-20261022-r1/current-bindings.json --output /home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/front-hardware --run-id front-zero-update-r1 --artifact-root /home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update --wheel-pulse front --zero-stop-check --execute --approval /home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/front-go.json > /home/loosqk/robot-checks/base-wheel-stop-stability-20261022-r1/zero-stop-update/front-driver.log 2>&1'"
+  ],
+  "exit_code": 0,
+  "stdout": "front-zero-update-r1-hardware $133 %169 745625\n",
+  "stderr": "",
+  "started_at_ns": 1792674887417411420
+}

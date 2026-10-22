@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"execution_files\": {\"front-hardware\": false, \"front-go.json\": false, \"front-go.json.consumed\": false, \"front-launch.json\": false, \"front-prelaunch.json\": false, \"front-plan.json\": false, \"front-driver.log\": false}, \"session_exists\": false}\n{\"status\": \"NETWORK_RECOVERED_PREPARATION_PASS\", \"at_ns\": 1792674548472141549, \"usb\": {\"left\": {\"serial\": \"5A7C121427\", \"devpath\": \"/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.3/1-2.4.3:1.0/tty/ttyACM0\", \"usec_initialized\": \"3536208877616\", \"resolved\": \"/dev/ttyACM0\", \"rdev\": 42496}, \"right\": {\"serial\": \"5A7C122340\", \"devpath\": \"/devices/platform/bus@0/3610000.usb/usb1/1-2/1-2.4/1-2.4.4/1-2.4.4:1.0/tty/ttyACM1\", \"usec_initialized\": \"3359632006336\", \"resolved\": \"/dev/ttyACM1\", \"rdev\": 42497}}, \"non_uart_commands\": 26, \"refs_verified\": 74, \"new_uart\": 0, \"new_go\": 0}\n",
+  "stderr": "",
+  "previous_launch_error": "SSH banner exchange timeout，未取得启动回执",
+  "previous_observation_error": "SSH banner exchange timeout",
+  "previous_field_expired": true
+}

@@ -1,6 +1,6 @@
 {
   "stage": "base_wheel_stop_stability_2026-10-22_r1",
-  "status": "SOFTWARE_PASS_HARDWARE_FRONT_FAIL_LEFT_LOCAL_PASS",
+  "status": "SOFTWARE_PASS_HISTORICAL_FRONT_FAIL_LEFT_LOCAL_PASS_NEW_FRONT_LOCAL_PASS",
   "baseline_commit": "d99e9388f82508639ee6cd691c56f17e20be0938",
   "approval": "approval.json",
   "change": "固定7/8/9映射复用同一14读稳定性合同、采集、当次凭据、停止分类及普通READ前置；三轮原始速度保留，不做均值抵消或直接清零。",
@@ -321,7 +321,7 @@
     "五组离散位置/速度不是同时采样，1.5秒为软件总预算；不证明固件内部根因或窗口之间连续静止。",
     "原停止失败、三轮固件合同未闭环及D15 OPEN/DEFERRED、deployable=false保持。"
   ],
-  "next": "按本次用户批准，仅统一三轮保持使能零速末组0/±50合同的软件调整；原SDK初始/断扭后严格0及三轮14读不变；不追加实机。",
+  "next": "当前指定单轮验证已完成；不重复左/右轮、不扩大设计。保留必要原件，完成清理与双远程master/dev收尾。",
   "D15": "OPEN/DEFERRED",
   "deployable": false,
   "prepared_plans": {
@@ -388,5 +388,6 @@
     },
     "conclusion": "三轮断扭静止反馈均出现过0/±50；TE1零速末组非零目前仅前8复现，不能混同两阶段。"
   },
-  "software_update": "zero-stop-update/summary.json：新规则本机/Orin133方法及fmt→根Clippy、独审通过；新规则未实机"
+  "software_update": "zero-stop-update/summary.json：新规则软件验证通过；新版前轮20秒/零速/停止及现场确认通过，本次未触发±50容差；历史前轮原FAIL保留。",
+  "current_completion": "zero-stop-update/summary.json#bounded_three_wheel_completion：复用此前右9/左7，补齐三轮跨轮次、跨版本的架空受监督单轮闭环。"
 }

@@ -1,5 +1,5 @@
 {
-  "status": "PASS_SOFTWARE_ONLY",
+  "status": "PASS_SOFTWARE_AND_BOUNDED_FRONT_CYCLE",
   "authorization": "../user-disposition.json",
   "change": "仅三轮保持使能零速阶段：前两组维持正向0..1000并允许原字8032；末组固定原字0/50/8032，保留原值。",
   "unchanged": [
@@ -28,7 +28,56 @@
   "reference": "../summary.json#reference；原Python调用链无±50滤波",
   "native": "software/result.json",
   "review": "review.json",
-  "hardware": "NOT_RUN_NEW_CANDIDATE",
+  "hardware": {
+    "source_commit": "691748085dbb8a9a39da31b66db9423df830325f",
+    "run": "front-hardware/run.json",
+    "new_go": 1,
+    "new_motion": 1,
+    "wheel": "front8",
+    "plan_sha256": "8db42139a685e8e128570370785647aee87e0a41c31d05d9473b2c2828655ff3",
+    "field_confirmation": "field-confirmation-r2.json",
+    "physical_observation": "front-physical-observation.json",
+    "probe": "PASS",
+    "zero_stop": "PASS",
+    "stop": "PASS",
+    "position": "PASS",
+    "identity": "PASS",
+    "identity_checks": 106,
+    "nonzero_sync_writes": 400,
+    "raw_goal": 500,
+    "duration_seconds": 20,
+    "motion_samples": 79,
+    "cumulative_position_raw": 9920,
+    "zero_velocity_raw_unsigned": [
+      300,
+      0,
+      0
+    ],
+    "zero_elapsed_ns": 479417510,
+    "enabled_attempt_to_te0_ns": 20500567606,
+    "sdk_final_te_gv_pv": [
+      0,
+      0,
+      0
+    ],
+    "new_final_plus_minus_50_branch_exercised": false,
+    "three_wheel_stability": "前后六个独立14读窗口均PASS，普通速度快照及窗口PV全0，位置跨度均0；详front-review.json。",
+    "original_overall_result": "FAIL",
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "manual_power_cut_required": false,
+    "connection_closed": true,
+    "collection": "front-collection.json",
+    "original_files": 750,
+    "original_bytes": 2349179,
+    "children_reaped_absent": 366,
+    "independent_resource_check": "front-resource-check.json",
+    "cleanup": "front-cleanup.json",
+    "review": "front-review.json",
+    "original_failure_preservation": "原run整体FAIL仅因BASE_FIRMWARE_CONTRACT_UNVERIFIED；不改写原件或此前失败。",
+    "network_recovery": "network-recovery.json：旧现场事实过期前后均未启动；重新确认后只有本次一个GO，未续写旧时间戳。",
+    "collection_failure_preserved": "首次收集因io变量遮蔽失败，随后仅读取同一批原件；见front-collection.json，无动作重试。",
+    "watch": "本次动作与清场已结束，不授权后续动作；没有新增断电回执。"
+  },
   "prior_hardware": "../summary.json#hardware；304a旧候选前轮原FAIL和左轮局部PASS保持",
   "D15": "OPEN/DEFERRED",
   "deployable": false,
@@ -53,5 +102,57 @@
     "counting": "133方法子集，不累计",
     "evidence": "review.json"
   },
-  "root_acceptance": "PASS_SOFTWARE_ONLY"
+  "root_acceptance": "当前受监督单轮验证范围完成；软件与前轮局部闭环PASS，原整run FAIL及固件合同DEFERRED保留。",
+  "bounded_three_wheel_completion": {
+    "status": "PASS_ACROSS_RUNS_AND_VERSIONS",
+    "scope": "三轮稳定架空、持续看护下，各自+500/20秒→零速→断扭/停止反馈及现场动停确认完成。",
+    "evidence": {
+      "right9": {
+        "run": "../../front_wheel_feedback_2026-10-22_r1/right-zero-hardware/run.json",
+        "source": "8aea4bb7",
+        "zero": [
+          300,
+          0,
+          0
+        ],
+        "receipt": "../../front_wheel_feedback_2026-10-22_r1/right-zero-physical-observation.json"
+      },
+      "left7": {
+        "run": "../left-hardware/run.json",
+        "source": "304a006e",
+        "zero": [
+          300,
+          0,
+          0
+        ],
+        "receipt": "../left-physical-observation.json"
+      },
+      "front8": {
+        "run": "front-hardware/run.json",
+        "source": "14fb328f",
+        "zero": [
+          300,
+          0,
+          0
+        ],
+        "receipt": "front-physical-observation.json"
+      }
+    },
+    "order": "先前右轮通过；旧前轮失败后用户另行要求先测左轮并通过；最后只补新版前轮，没有重复左/右轮。",
+    "limits": [
+      "不是同批同版本三轮验证，未做地面组合运动。",
+      "±50没有清零或平均；本次没有复现，不证明固件波动根因已修复。",
+      "固件单位/Phase、生产RPC/S0/S1 Velocity、D15与deployable=false保持原状态。"
+    ]
+  },
+  "record_commit_quality": {
+    "result": "hardware-record-quality/result.json",
+    "fmt_then_root_clippy": "PASS",
+    "source_identity_unchanged": true,
+    "tests_rerun": 0,
+    "collection": "hardware-record-quality/collection.json",
+    "cleanup": "hardware-record-quality/cleanup.json",
+    "first_cleanup_check_failure_preserved": "hardware-record-quality/cleanup-attempt1.json"
+  },
+  "next": "本轮不追加动作；保留必要原帧并完成Git收尾。地面三轮组合和生产控制链另行确定范围。"
 }
