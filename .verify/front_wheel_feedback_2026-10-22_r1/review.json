@@ -1,0 +1,99 @@
+{
+  "review_status": "PASS_SOFTWARE_ONLY",
+  "baseline_commit": "6bb4ebcec5b246f29f07bb5e22ee964cf43f07dc",
+  "reviewed_sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "8aea4bb769c3d248914329ad21a4bcdbe1193468bf3b77bb0f55ad2bc8ee1b0d",
+      "bytes": 118491
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "50836955a00eda630ceffabac73c245fdebd3e529dbb9056af6af351b4ced263",
+      "bytes": 150708
+    }
+  },
+  "scope": "仅在现有维护入口增加固定前8十四项只读采集，不扩展停止判据。",
+  "targeted_tests": {
+    "methods_run": 14,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "counting_note": "14方法属于全套116的子集；execute子场景、额外故障场景及重复运行均不累计方法数。",
+    "output": "test_front_execute_only_fourteen_reads_and_identity_no_stop_in_success_or_failure (independent_front_review_tests.LeftFeedbackTests.test_front_execute_only_fourteen_reads_and_identity_no_stop_in_success_or_failure) ... ok\ntest_front_fixed_plan_go_scope_and_final_metadata_cannot_be_forged_or_mixed (independent_front_review_tests.LeftFeedbackTests.test_front_fixed_plan_go_scope_and_final_metadata_cannot_be_forged_or_mixed) ... ok\ntest_front_fourteen_reads_preserve_all_velocity_words_and_position_span_without_stop_claim (independent_front_review_tests.LeftFeedbackTests.test_front_fourteen_reads_preserve_all_velocity_words_and_position_span_without_stop_claim) ... ok\ntest_front_next_slot_total_deadline_and_go_expiry_never_compress_or_fill_reads (independent_front_review_tests.LeftFeedbackTests.test_front_next_slot_total_deadline_and_go_expiry_never_compress_or_fill_reads) ... ok\ntest_front_nonzero_te_gv_communication_signal_and_evidence_fail_stickily (independent_front_review_tests.LeftFeedbackTests.test_front_nonzero_te_gv_communication_signal_and_evidence_fail_stickily) ... ok\ntest_front_raw_support_does_not_relax_default_left7_target_or_contract (independent_front_review_tests.LeftFeedbackTests.test_front_raw_support_does_not_relax_default_left7_target_or_contract) ... ok\ntest_front_real_prelaunch_rechecks_after_tempfile_setup_and_preserves_foreign_hook (independent_front_review_tests.LeftFeedbackTests.test_front_real_prelaunch_rechecks_after_tempfile_setup_and_preserves_foreign_hook) ... ok\ntest_front_wrong_target_frame_and_tool_identity_fail_without_followup_reads (independent_front_review_tests.LeftFeedbackTests.test_front_wrong_target_frame_and_tool_identity_fail_without_followup_reads) ... ok\ntest_fixed_fourteen_reads_record_fifty_without_whole_stop_pass (independent_front_review_tests.LeftFeedbackTests.test_fixed_fourteen_reads_record_fifty_without_whole_stop_pass) ... ok\ntest_every_read_fault_stops_without_retry_or_final_torque_read (independent_front_review_tests.LeftFeedbackTests.test_every_read_fault_stops_without_retry_or_final_torque_read) ... ok\ntest_stability_rejects_motion_span_two_bad_speed_and_negative_zero (independent_front_review_tests.LeftFeedbackTests.test_stability_rejects_motion_span_two_bad_speed_and_negative_zero) ... ok\ntest_other_motor_nonzero_never_uses_left_wheel_exception (independent_front_review_tests.LeftFeedbackTests.test_other_motor_nonzero_never_uses_left_wheel_exception) ... ok\ntest_same_connection_twenty_seconds_repeats_only_right9_fixed_goal (independent_front_review_tests.RightPulseTests.test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal) ... ok\ntest_zero_stop_keeps_enable_for_all_three_fixed_samples_before_final_disable (independent_front_review_tests.RightPulseTests.test_zero_stop_keeps_enable_for_all_three_fixed_samples_before_final_disable) ... ok\n\n----------------------------------------------------------------------\nRan 14 tests in 0.141s\n\nOK\n"
+  },
+  "existing_plan_compatibility": {
+    "plans_compared": 8,
+    "unchanged_except_source_identity": true,
+    "options": [
+      {},
+      {
+        "left_wheel_feedback_only": true
+      },
+      {
+        "right_wheel_pulse": true,
+        "zero_stop_check": false
+      },
+      {
+        "right_wheel_pulse": true,
+        "zero_stop_check": true
+      },
+      {
+        "wheel_pulse_target": "front",
+        "zero_stop_check": false
+      },
+      {
+        "wheel_pulse_target": "front",
+        "zero_stop_check": true
+      },
+      {
+        "wheel_pulse_target": "left",
+        "zero_stop_check": false
+      },
+      {
+        "wheel_pulse_target": "left",
+        "zero_stop_check": true
+      }
+    ]
+  },
+  "independent_front_failure_points": {
+    "scenario_count": 42,
+    "categories": {
+      "通信异常": 14,
+      "坏帧": 14,
+      "信号": 14
+    },
+    "all14_read_indexes_each": true,
+    "stop_at_injected_read": true,
+    "retries_rejected_without_UART": true,
+    "owned_prelaunch_hooks_removed": true
+  },
+  "verified_constraints": [
+    "前8目标、14读、1.5秒及独立scope/GO完整绑定，混合入口和篡改拒绝。",
+    "首末TE/GV严格0；PP/PV原字和位置跨度只记录，不解码物理运动或套左7例外。",
+    "固定0/250/500/750/1000ms，下一采样槽及总期限均检查，不压缩补采。",
+    "创建临时输出文件后、真实Popen前再次检查就绪、信号和绝对期限。",
+    "只移除本轮安装钩子，拒绝外来钩子后保留原对象。",
+    "采齐只记DIAGNOSTIC_CAPTURED；STOP及位置为NOT_EVALUATED_DIAGNOSTIC_ONLY，不产生左7候选PASS。",
+    "左7原PV集合0/±50及PP跨度≤1保持；普通停止检查中的前8非零仍失败。",
+    "未增加电机写、启用、断扭或参数修改；8份原入口计划逐JSON一致，仅排除源码身份。",
+    "复用原四锁、主机/USB/引用身份、GO一次消费及非UART后验；日志/报告关闭失败撤销采集成功。"
+  ],
+  "resolved_review_observations": [
+    {
+      "issue": "已有前轮prelaunch钩子导致入口拒绝时，finally可能误删外来钩子。",
+      "resolution": "改为仅清本轮实际安装对象，并有保留外来钩子的确定性负控。"
+    },
+    {
+      "issue": "最终原件核验不能仅信status及附带元信息。",
+      "resolution": "重核目标、kind、same_frame、anchor、计划、原帧、顺序时戳、TE/GV及实际跨度。"
+    }
+  ],
+  "review_attempt_note": "第一次独立14方法通过；后置基线比较的内存夹具缺完整b2身份，正确零IO拒绝。仅补齐内存绑定后重跑同14方法及比较，生产源码保持冻结，不累计次数。",
+  "findings": [],
+  "limitations": [
+    "本审仅内存及mock执行测试，无SSH、UART、硬件GO或新现场事实。",
+    "1.5秒为软件预算；SYNC_READ诊断不替代此前普通READ故障原帧。",
+    "全套116、真实SDK及fmt/Clippy由root原生验证另行提供。",
+    "软件通过不清除历史硬件FAIL/UNKNOWN，也不更改实际电源状态。",
+    "D15 OPEN/DEFERRED、固件合同DEFERRED、deployable=false保持。"
+  ]
+}

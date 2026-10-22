@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "started_at": "2026-10-22T07:47:46.917042+00:00",
+  "finished_at": "2026-10-22T07:47:46.994111+00:00",
+  "refs": 74,
+  "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53",
+  "uart": 0,
+  "go": 0,
+  "saved": {
+    "current-bindings.json": {
+      "sha256": "636e54a9ed890d9eb9e53e12316ec16b5e2ed9ecdb5015e039cc6bc951f895ea",
+      "bytes": 44775
+    },
+    "launch-argv.json": {
+      "sha256": "c7ecd87cd77fc4cdb7f383d8df13ae4f7982df36fdd7f614d732560ed00fbb9e",
+      "bytes": 579
+    }
+  }
+}

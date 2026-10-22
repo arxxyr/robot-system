@@ -1,6 +1,6 @@
 {
   "schema": "BASE_ZERO_STOP_SOFTWARE_SUMMARY_V1",
-  "status": "R1_ZERO_STOP_REGISTERS_PASS_R2_PRECHECK_FAILED_OFF_UNCONFIRMED",
+  "status": "R1_ZERO_STOP_REGISTERS_PASS_R2_PRECHECK_FAILED_OFF_USER_REPORTED",
   "baseline_commit": "fc13f1c1f29284ce5d69a22d89c18cc8d6c4b257",
   "scope": "仅现有pulse路径可选零速单独停止检查；保持TE1/GV0，固定三组50/250/450ms读TE/GV/PV，第三组PV严格0，然后仍finally零速及独立TE0/原停止门",
   "source_inputs": {
@@ -69,7 +69,7 @@
   },
   "hardware_go_issued": true,
   "hardware_zero_stop_result": "R1_REGISTER_DIAGNOSTIC_PASS_PHYSICAL_OBSERVATION_UNKNOWN",
-  "physical_power_or_floor_state": "三轮架空为本次用户报告；R2失败后实际OFF未确认",
+  "physical_power_or_floor_state": "用户确认双电源已切断，机械臂和架空底盘支撑稳定；来源power-off-receipt-r2.json；非仪器核实",
   "production_velocity_wiring": "NOT_CHANGED",
   "firmware_contract": "STILL_UNVERIFIED",
   "D15": "OPEN/DEFERRED",
@@ -111,7 +111,7 @@
     "existing_target_retained": true,
     "local_owned_tmp_logs_removed_after_verified_copy": true
   },
-  "next": "先完成失败收尾，下一步只核对前轮right8的+50与位置稳定性，不能直接重跑或泛化左轮例外；停止门/Phase及生产Velocity不改",
+  "next": "复用现有维护入口准备前轮right8固定14次只读时序；不扩大左7例外、不改停止门。软件准备后仍需新的供电/持续看护事实及独立GO，不能直接重跑20秒动作",
   "hardware_runs": {
     "R1": {
       "plan_sha256": "e4c2913b4f449167e41a509415e27e37c14ed93eac167eed90ccf824adbe7817",
@@ -182,7 +182,9 @@
         "ordinary": 94,
         "sync_read": 14
       },
-      "last_uart_sequence": 150
+      "last_uart_sequence": 150,
+      "later_power_off_receipt": "power-off-receipt-r2.json",
+      "current_physical_power_state": "OFF_USER_REPORTED"
     }
   },
   "current_authorizations": {

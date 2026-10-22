@@ -297,7 +297,8 @@ def feedback_reference(path):
 
 class FeedbackIO:
     """右7只读内存端点；计时、故障及原帧可独立注入。"""
-    def __init__(self):
+    def __init__(self,motor=7):
+        self.motor=motor
         self.t=0;self.sequence=0;self.commands=[];self.calls=[]
         self.child=None;self.interrupted=None;self.evidence_errors=[]
         self.process_snapshots=[];self.journal=io.StringIO()
@@ -316,6 +317,8 @@ class FeedbackIO:
             if 'fuser' in argv:return ''
             raise AssertionError(argv)
         self.check()
+        prelaunch=getattr(self,'front_feedback_before_spawn',None)
+        if prelaunch is not None:prelaunch(argv)
         self.sequence+=1;self.calls.append(list(argv))
         self.commands.append({'argv':list(argv),'started_ns':self.t})
         self.t+=10_000_000+(self.slow_ns if self.sequence==self.slow_at else 0)
@@ -331,10 +334,10 @@ class FeedbackIO:
         if register=='Present_Velocity':
             value=self.velocities[self.velocity_index%len(self.velocities)];self.velocity_index+=1
         value=abs(value)|(0x8000 if value<0 else 0)
-        tx=[255,255,254,5,130,address,width,7];tx.append((~sum(tx[2:]))&255)
-        rx=[255,255,7,width+2,0,*value.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
+        tx=[255,255,254,5,130,address,width,self.motor];tx.append((~sum(tx[2:]))&255)
+        rx=[255,255,self.motor,width+2,0,*value.to_bytes(width,'little')];rx.append((~sum(rx[2:]))&255)
         if self.sequence==self.bad_at:rx[-1]^=1
-        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':7,
+        return json.dumps({'operation':'sync_read','serial_device':m.DEVICES['right'],'motor_id':self.motor,
                            'register':register,'requested_register_address':address,'width':width,
                            'raw_unsigned':value,'tx':tx,'rx':rx})+'\n'
 
@@ -1750,9 +1753,10 @@ class LeftFeedbackTests(unittest.TestCase):
                 'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
                 'refs':[dict(self.reference)],'binary_paths':[self.reference['path']]}
 
-    def plan(self):
+    def plan(self,*,front=False):
         root='/home/loosqk/robot-checks/feedback'
-        return m.make_plan(self.bindings(),root+'/run','feedback',root,left_wheel_feedback_only=True)
+        return m.make_plan(self.bindings(),root+'/run','feedback',root,
+                           left_wheel_feedback_only=not front,front_wheel_feedback_only=front)
 
     def go(self,plan,now):
         facts={**{k:True for k in m.FACTS},'confirmed_at_ns':now}
@@ -1761,11 +1765,11 @@ class LeftFeedbackTests(unittest.TestCase):
                 'host':plan['bindings']['host'],'source':'内存夹具，无硬件授权',
                 'physical':{'left':dict(facts),'right':{**facts,'all_three_wheels_off_ground':True,
                 'base_stably_supported':True,'continuous_wheel_observation':True,
-                'base_confirmation_kind':'CURRENT_SETUP_READY','base_confirmation_scope':m.LEFT_FEEDBACK_SCOPE,
+                'base_confirmation_kind':'CURRENT_SETUP_READY','base_confirmation_scope':plan['scope'],
                 'base_confirmation_answer':'夹具只读'}}}
 
-    def engine(self):
-        return m.ProbeEngine(FeedbackIO(),self.plan())
+    def engine(self,*,front=False):
+        return m.ProbeEngine(FeedbackIO(motor=8 if front else 7),self.plan(front=front))
 
     def snapshot_engine(self,pv=0,guard=False):
         rows=idle_rows();rows['right:7']['Present_Velocity']=pv
@@ -2086,7 +2090,7 @@ class LeftFeedbackTests(unittest.TestCase):
     def test_final_journal_or_report_failure_revokes_candidate_pass(self):
         self.check_execute_cases(('journal','report'))
 
-    def check_execute_cases(self,faults):
+    def check_execute_cases(self,faults,*,front=False):
         for fault in faults:
             root=self.root/str(fault);root.mkdir()
             helper=root/'helper.py';helper.write_text('# 本机空helper\n')
@@ -2097,7 +2101,8 @@ class LeftFeedbackTests(unittest.TestCase):
                 for name in ('rx_trust.lock','estop_latch.lock'):
                     path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
                     bindings['protection'][side][name]={'path':str(path)}
-            executor=FeedbackIO();executor.fail_at=fault
+            executor=FeedbackIO(motor=8 if front else 7);executor.fail_at=fault
+            if front:executor.positions=[1200,1210,1220,1230,1240];executor.velocities=[100,-250,50,-50,0x8000]
             if fault=='journal':
                 class FailedClose(io.StringIO):
                     def close(self):raise OSError('注入日志关闭失败')
@@ -2123,7 +2128,8 @@ class LeftFeedbackTests(unittest.TestCase):
                   patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')) as finish,
                   patch.object(m,'write_new',side_effect=write_report),
                   patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO()) as messages):
-                plan=m.make_plan(bindings,root/'run','feedback',root,left_wheel_feedback_only=True)
+                plan=m.make_plan(bindings,root/'run','feedback',root,
+                                 left_wheel_feedback_only=not front,front_wheel_feedback_only=front)
                 go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
@@ -2136,14 +2142,168 @@ class LeftFeedbackTests(unittest.TestCase):
                 report=json.loads((root/'run/run.json').read_text())
             if fault=='journal':self.assertIn('journal_close_error',report)
             self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
-            self.assertEqual(report['left7_candidate_verification']['status'],'PASS' if fault is None else 'FAIL')
+            verification='front8_feedback_capture' if front else 'left7_candidate_verification'
+            self.assertEqual(report[verification]['status'],('DIAGNOSTIC_CAPTURED' if front else 'PASS') if fault is None else 'FAIL')
             self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
+            self.assertEqual(report['position_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
             expected_identity={'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS')
             self.assertEqual(report['identity_verification']['status'],expected_identity)
             self.assertEqual(len(report['owned_locks']),4)
             self.assertEqual(len(executor.calls),3 if fault==3 else 14)
             self.assertTrue(Path(str(approval)+'.consumed').exists())
             self.assertFalse(report['deployable'])
+
+    def test_front_fourteen_reads_preserve_all_velocity_words_and_position_span_without_stop_claim(self):
+        engine=self.engine(front=True)
+        engine.io.positions=[4093,4095,0,100,65535]
+        engine.io.velocities=[50,-50,250,0x8000,0xffff]
+        m.run_front_wheel_feedback(engine,lambda:None)
+        row=engine.rows[0]
+        self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED');self.assertFalse(row['stop_verified'])
+        self.assertFalse(row['same_frame']);self.assertFalse(engine.manual_cut)
+        self.assertEqual([c[4] for c in engine.io.calls],
+                         ['Torque_Enable','Goal_Velocity']+['Present_Position','Present_Velocity']*5+['Goal_Velocity','Torque_Enable'])
+        self.assertTrue(all(c[:4]==[self.reference['path'],m.DEVICES['right'],'8','read-raw'] for c in engine.io.calls))
+        self.assertEqual([s['raw']['raw_unsigned'] for s in row['samples'] if s['register']=='Present_Velocity'],
+                         [50,0x8032,250,0x8000,0xffff])
+        self.assertEqual(row['position_span_raw'],65535)
+        self.assertEqual([s['started_ns']-row['observation_started_ns'] for s in row['samples']
+                          if s['register']=='Present_Position'],[0,250_000_000,500_000_000,750_000_000,1_000_000_000])
+        self.assertLessEqual(row['finished_ns']-row['started_ns'],1_500_000_000)
+        self.assertFalse(hasattr(engine.io,'front_feedback_before_spawn'))
+        m.validate_front_feedback_window(row,engine.plan)
+
+    def test_front_fixed_plan_go_scope_and_final_metadata_cannot_be_forged_or_mixed(self):
+        root='/home/loosqk/robot-checks/feedback'
+        for options in ({'left_wheel_feedback_only':True},{'right_wheel_pulse':True},
+                        {'wheel_pulse_target':'front'},{'zero_stop_check':True}):
+            with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,
+                                                         front_wheel_feedback_only=True,**options)
+        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,['head-1'],front_wheel_feedback_only=True)
+        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,front_wheel_feedback_only=1)
+        plan=self.plan(front=True);go=self.go(plan,100);m.validate_go(go,plan,200)
+        for key,value in (('target',['right',7,'base_left_wheel']),('reads',12),('capture_budget_ns',2_000_000_000),
+                          ('present_velocity_policy','ZERO_OR_FIFTY'),('position_span_policy','AT_MOST_ONE')):
+            bad=copy.deepcopy(plan);bad['front_wheel_feedback_only'][key]=value
+            with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
+        for key in ('scope','target'):
+            bad=copy.deepcopy(go)
+            if key=='scope':bad['physical']['right']['base_confirmation_scope']=m.LEFT_FEEDBACK_SCOPE
+            else:bad['plan_sha256']=m.digest(self.plan())
+            with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
+        with self.assertRaises(ValueError):m.validate_go(self.go(plan,100),plan,600_000_000_101)
+        for extra in ('right_wheel_pulse','left_wheel_feedback_only'):
+            bad=copy.deepcopy(plan);bad[extra]={}
+            with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('不可创建child')) as child:
+            for args in (['--front-wheel-feedback-only','--left-wheel-feedback-only'],
+                         ['--front-wheel-feedback-only','--right-wheel-pulse'],
+                         ['--front-wheel-feedback-only','--wheel-pulse','left'],
+                         ['--front-wheel-feedback-only','--position-target','head-1'],
+                         ['--front-wheel-feedback-only','--zero-stop-check'],['--front-wheel-feedback-only','--execute']):
+                with self.assertRaises(ValueError):m.main(args)
+            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--front-wheel-feedback-only']),0)
+            self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
+        engine=self.engine(front=True);m.run_front_wheel_feedback(engine,lambda:None)
+        for key,value in (('kind','left7_stop_stability'),('same_frame',True),('anchor_raw',100),
+                          ('position_span_raw',500),('stop_verified',True),('observation_started_ns',0)):
+            bad=copy.deepcopy(engine.rows[0]);bad[key]=value
+            with self.assertRaises(ValueError):m.validate_front_feedback_window(bad,engine.plan)
+
+    def test_front_wrong_target_frame_and_tool_identity_fail_without_followup_reads(self):
+        for key,value in (('motor_id',7),('motor_id',9),('serial_device',m.DEVICES['left']),('width',True),
+                          ('register','Present_Velocity'),('requested_register_address',58),
+                          ('tx',[255]),('rx',[255]),('raw_unsigned',True)):
+            engine=self.engine(front=True);command=engine.io.command
+            def changed(argv,**kwargs):
+                raw=json.loads(command(argv,**kwargs));raw[key]=value
+                return json.dumps(raw)+'\n'
+            engine.io.command=changed
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),1);self.assertTrue(engine.front_feedback_blocked)
+            self.assertTrue(engine.manual_cut);self.assertTrue(engine.rows[0]['uart_blocked'])
+            self.assertFalse(hasattr(engine.io,'front_feedback_before_spawn'))
+        for key in ('sha256','inode','mode','mtime_ns'):
+            engine=self.engine(front=True);ref=m.left_feedback_tool_ref(engine.plan)
+            ref[key]='0'*64 if key=='sha256' else ref[key]+1
+            with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
+            self.assertEqual(engine.io.calls,[])
+
+    def test_front_nonzero_te_gv_communication_signal_and_evidence_fail_stickily(self):
+        for fault,index in (('torque_at',1),('goal_at',2),('goal_at',13),('torque_at',14),
+                            ('fail_at',4),('bad_at',5),('signal_at',6),('evidence',7)):
+            engine=self.engine(front=True)
+            if fault=='evidence':
+                command=engine.io.command
+                def broken(argv,**kwargs):
+                    text=command(argv,**kwargs)
+                    if engine.io.sequence==index:engine.io.evidence_errors.append('原件失败')
+                    return text
+                engine.io.command=broken
+            else:setattr(engine.io,fault,index)
+            with self.subTest(fault=fault,index=index),self.assertRaises((ValueError,OSError)):
+                m.run_front_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),index);self.assertTrue(engine.front_feedback_blocked)
+            self.assertTrue(engine.manual_cut);self.assertFalse(engine.rows[0]['stop_verified'])
+            count=len(engine.io.calls)
+            with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
+            self.assertEqual(len(engine.io.calls),count)
+
+    def test_front_next_slot_total_deadline_and_go_expiry_never_compress_or_fill_reads(self):
+        for fault,index,delay in (('slot',4,250_000_000),('total',14,1_500_000_000),('go',5,0)):
+            engine=self.engine(front=True)
+            if fault!='go':engine.io.slow_at=index;engine.io.slow_ns=delay
+            def gate():
+                if fault=='go':m.require(engine.io.sequence<index,'GO已到期')
+            with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,gate)
+            self.assertEqual(len(engine.io.calls),index)
+            row=engine.rows[0];self.assertIn('raw',row['samples'][-1])
+            self.assertEqual(row['samples'][-1]['status'],'READ_VALID')
+            if fault=='slot':self.assertLess(row['finished_ns'],row['deadline_ns'])
+            self.assertTrue(row['uart_blocked']);self.assertTrue(engine.manual_cut)
+        engine=self.engine(front=True)
+        with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO过期')))
+        self.assertEqual(engine.io.calls,[])
+
+    def test_front_real_prelaunch_rechecks_after_tempfile_setup_and_preserves_foreign_hook(self):
+        engine=self.engine(front=True)
+        original=m.tempfile.TemporaryFile
+        real=m.RealExecutor(m.RIGHT_PULSE_WRITE,self.root)
+        real.now=engine.io.now;real.check=engine.io.check
+        self.addCleanup(real.journal.close)
+        def command(argv,**kwargs):
+            real.front_feedback_before_spawn=engine.io.front_feedback_before_spawn
+            return real.command(argv,**kwargs)
+        engine.io.command=command
+        def delayed(*args,**kwargs):
+            stream=original(*args,**kwargs);engine.io.t=1_500_000_000
+            return stream
+        with patch.object(m.tempfile,'TemporaryFile',delayed),patch.object(m.subprocess,'Popen',side_effect=AssertionError('不应启动UART')) as child:
+            with self.assertRaisesRegex(ValueError,'超窗'):m.run_front_wheel_feedback(engine,lambda:None)
+            child.assert_not_called()
+        self.assertEqual(len(real.commands),1);self.assertIsNone(real.commands[0]['pid'])
+        self.assertIsNone(real.child);self.assertEqual(engine.rows[0]['samples'][0]['status'],'UNKNOWN')
+        self.assertNotIn('raw',engine.rows[0]['samples'][0]);self.assertFalse(hasattr(engine.io,'front_feedback_before_spawn'))
+        engine=self.engine(front=True);foreign=lambda argv:None
+        engine.io.front_feedback_before_spawn=foreign
+        with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
+        self.assertIs(engine.io.front_feedback_before_spawn,foreign);self.assertEqual(engine.io.calls,[])
+
+    def test_front_raw_support_does_not_relax_default_left7_target_or_contract(self):
+        engine=self.engine(front=True);m.run_front_wheel_feedback(engine,lambda:None)
+        raw=engine.rows[0]['samples'][0]['raw']
+        self.assertEqual(m.validate_left_feedback_raw(raw,'Torque_Enable',motor=8),0)
+        with self.assertRaises(ValueError):m.validate_left_feedback_raw(raw,'Torque_Enable')
+        for motor in (6,9,True):
+            with self.assertRaises(ValueError):m.validate_left_feedback_raw(raw,'Torque_Enable',motor=motor)
+        left=self.engine();left.io.positions=[1212,1212,1214,1212,1212]
+        with self.assertRaises(ValueError):m.run_left_wheel_feedback(left,lambda:None)
+        self.assertEqual(m.left_stop_contract()['position_span_max'],1)
+        self.assertEqual(m.left_stop_contract()['present_velocity_raw_unsigned'],[0,50,0x8032])
+        self.assertNotIn('front_wheel_feedback_only',self.plan())
+
+    def test_front_execute_only_fourteen_reads_and_identity_no_stop_in_success_or_failure(self):
+        self.check_execute_cases((None,3,'post','journal','report'),front=True)
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

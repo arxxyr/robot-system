@@ -1,0 +1,96 @@
+{
+  "schema": "FRONT_WHEEL_FEEDBACK_SUMMARY_V1",
+  "status": "SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "baseline_commit": "6bb4ebcec5b246f29f07bb5e22ee964cf43f07dc",
+  "trigger": {
+    "prior_stage": "../base_zero_stop_2026-10-21_r1/summary.json",
+    "run": "R2",
+    "motor": "right8",
+    "ordinary_read_present_velocity": 50,
+    "frame_hex": "FF FF 08 04 00 32 00 C1",
+    "motion_writes": 0,
+    "later_power_off_receipt": "../base_zero_stop_2026-10-21_r1/power-off-receipt-r2.json"
+  },
+  "scope": "仅现有维护脚本新增固定前轮right8只读选项，首末TE/GV必须0，固定五组PP/PV原帧共14读；PV和PP跨度只作诊断，不改变任何电机停止判据",
+  "reference_check": "已检查现有readonly15、普通READ抓帧及base_feedback_diagnostic_r2；旧入口目标/字段固定，不能仅换JSON形成前8时序。复用既有b2 read-raw、RealExecutor、GO、四锁及非UART身份收尾",
+  "uart": 0,
+  "hardware_go_issued": false,
+  "hardware_result": "NOT_RUN",
+  "firmware_contract": "STILL_UNVERIFIED",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "source_inputs": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "8aea4bb769c3d248914329ad21a4bcdbe1193468bf3b77bb0f55ad2bc8ee1b0d",
+      "bytes": 118491
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "50836955a00eda630ceffabac73c245fdebd3e529dbb9056af6af351b4ced263",
+      "bytes": 150708
+    }
+  },
+  "local_tests": {
+    "methods": 116,
+    "passed": 115,
+    "skipped": 1,
+    "skip_reason": "本机未配置Orin实际SDK；原生116项已补同版SDK黄金验证，0跳过",
+    "path": "local-tests.log",
+    "sha256": "b18c3772697efc1d28d9843b123bfdb0cb9177b0b0571ccc93a94cb7b98fa328",
+    "new_front_methods": 8,
+    "new_methods_are_subset": true,
+    "old_plan_contract_cases": 8,
+    "old_plan_contracts_equal_baseline": true
+  },
+  "native_validation": {
+    "status": "PASS",
+    "methods": 116,
+    "skipped": 0,
+    "path": "software/result.json",
+    "sha256": "4278e59a24b22d8fabf207c32b206f4f23c47baa0d836780e238dface9377729",
+    "actual_fmt_then_root_clippy": "PASS",
+    "rustc": "1a2c4797e",
+    "source_count": 597,
+    "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "python_inputs_equal_before_after_local": true,
+    "sdk_manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044",
+    "sdk_complete_identity_equal": true
+  },
+  "independent_review": {
+    "status": "PASS_SOFTWARE_ONLY",
+    "path": "review.json",
+    "sha256": "eed17a83ad4eee7c5ef2f746b64986d64aad0f65f35ba2ae7dcb766266bf4d34",
+    "targeted_methods": 14,
+    "subset_of": 116,
+    "fault_scenarios": 42,
+    "hardware": false
+  },
+  "plan": {
+    "path": "plan.json",
+    "digest": "f914606fef2677cb18d3b2ea86e879b9a3496372708b2ae9862f403d99d17253",
+    "target": [
+      "right",
+      8,
+      "base_front_wheel"
+    ],
+    "cli_option": "--front-wheel-feedback-only",
+    "current_bindings": "current-bindings.json",
+    "bindings_sha256": "636e54a9ed890d9eb9e53e12316ec16b5e2ed9ecdb5015e039cc6bc951f895ea",
+    "hardware_go_issued": false,
+    "hardware_result": "NOT_RUN"
+  },
+  "cleanup": {
+    "path": "software/cleanup.json",
+    "collection": "software/collection.json",
+    "terminal": "front-wheel-feedback-quality-r1 $113 %149 736577 1 0",
+    "owner_and_children_absent": true,
+    "step_children": 13,
+    "raw_files": 15,
+    "raw_bytes": 84281,
+    "all_sha256_verified": true,
+    "only_owned_pane_tmp_removed": true,
+    "original_target_retained": true
+  },
+  "physical_power_state": "OFF_USER_REPORTED，来源上一轮power-off-receipt-r2.json；无新的供电或看护事实",
+  "root_acceptance": "PASS_SOFTWARE_ONLY",
+  "next": "只读采集前先取得当次供电、三轮架空稳定支撑及持续看护事实，再使用固定计划和一次GO；不重跑20秒动作、不自动修改前轮停止判据"
+}
