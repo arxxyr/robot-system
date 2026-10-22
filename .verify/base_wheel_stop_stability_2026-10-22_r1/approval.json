@@ -1,0 +1,30 @@
+{
+  "source": "本轮用户直接指令",
+  "answer": "底盘这三个统一处理，考虑怎么过滤这种波动",
+  "recorded_at_ns": 1792669512421412000,
+  "scope": "right7/right8/right9维护停止快照统一复用固定14读稳定性规则；仅软件实现与验证，不授权新硬件动作",
+  "baseline_commit": "d99e9388f82508639ee6cd691c56f17e20be0938",
+  "prior_right9_approval": "../right_wheel_stop_stability_2026-10-22_r1/approval.json",
+  "rule": {
+    "motors": [
+      7,
+      8,
+      9
+    ],
+    "torque_enable": 0,
+    "goal_velocity": 0,
+    "velocity_raw_unsigned": [
+      0,
+      50,
+      32818
+    ],
+    "samples": 5,
+    "observation_ns": 1000000000,
+    "capture_budget_ns": 1500000000,
+    "position_span_max": 1,
+    "include_snapshot_position": true,
+    "keep_raw_values": true,
+    "missing_timeout_or_out_of_range": "FAIL"
+  },
+  "hardware_go": false
+}

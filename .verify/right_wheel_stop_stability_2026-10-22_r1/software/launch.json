@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"right-wheel-stop-stability-quality-r1 $127 %163 742753 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/right-wheel-stop-stability-quality-r1.py\", \"temporary_runner_sha256\": \"aade260f9dcdf605f309cbd8e95b11407013155ca520f8b917ee8216768a0ac8\", \"uploaded\": {\"scripts/run_hardware_maintenance.py\": {\"bytes\": 124172, \"sha256\": \"212e36f177a103429c5e50e553071b9e7e5ce9fc4d13f0be772680fbcba1607c\"}, \"scripts/tests/test_hardware_maintenance.py\": {\"bytes\": 180732, \"sha256\": \"bc4864ddef5c6e2d694bde6f26b2fae2c66a4ac4ba0ac50ec2c38d8826d995c1\"}}}\n",
+  "stderr": ""
+}

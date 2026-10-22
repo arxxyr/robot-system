@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-wheel-stop-stability-quality-r1 $128 %164 743024 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-wheel-stop-stability-quality-r1.py\", \"temporary_runner_sha256\": \"569cebc98245ffe02a752f60cc4bf4152d731e5bdbd97d860bad7ebcfd37e92c\", \"uploaded\": {\"scripts/run_hardware_maintenance.py\": {\"bytes\": 124079, \"sha256\": \"304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221\"}, \"scripts/tests/test_hardware_maintenance.py\": {\"bytes\": 182601, \"sha256\": \"c823dd62a191864efb07453aa5b8384f1042893945542dac5f3121f1a61fcd70\"}}}\n",
+  "stderr": ""
+}

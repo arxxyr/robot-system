@@ -42,7 +42,8 @@ TARGETS = [("left", 5, "left_arm_wrist_roll"), ("right", 5, "right_arm_wrist_rol
 POSITION_TARGETS = dict(zip(('left-wrist', 'right-wrist', 'head-1', 'head-2'), TARGETS))
 BASE_TARGETS = [('right',8,'base_front_wheel'),('right',7,'base_left_wheel'),('right',9,'base_right_wheel')]
 WHEEL_PULSE_TARGETS = {'right':BASE_TARGETS[2],'front':BASE_TARGETS[0],'left':BASE_TARGETS[1]}
-RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（仅左7按获准稳定性判据）；三轮稳定架空并持续观察'
+WHEEL_STOP_TARGETS = {7:'left',8:'front',9:'right'}
+RIGHT_PULSE_SCOPE = '仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（三轮各按同一获准稳定性判据）；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
 RIGHT_PULSE_HELPER = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/diagnostic-candidate/fixtures/raw_right9_from_r14_r2.py',
@@ -108,8 +109,11 @@ LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
 
 
-def left_stop_contract():
-    return {'version':'RIGHT7_STABILITY_V1','target':['right',7,'base_left_wheel'],
+def left_stop_contract(*,motor=7):
+    """保留旧入口名，按motor统一处理底盘三轮；默认左7供既有只读入口使用。"""
+    require(type(motor) is int and motor in WHEEL_STOP_TARGETS,'停止稳定性仅接受固定底盘三轮')
+    return {'version':f'RIGHT{motor}_STABILITY_V1',
+            'target':list(WHEEL_PULSE_TARGETS[WHEEL_STOP_TARGETS[motor]]),
             'raw_tool':dict(RIGHT_PULSE_RAW),'reads':14,'register_writes':0,
             'sample_offsets_ns':[0,250_000_000,500_000_000,750_000_000,1_000_000_000],
             'capture_budget_ns':1_500_000_000,'torque_enable':0,'goal_velocity':0,
@@ -329,7 +333,8 @@ def select_position_targets(names=None):
 
 def position_targets_from_plan(plan):
     """执行只接受计划中已绑定的目标；不从全局四项列表补跑未选电机。"""
-    require(plan.get('left7_stop_contract')==left_stop_contract(),'缺少当次固定左7停止合同')
+    for motor,prefix in WHEEL_STOP_TARGETS.items():
+        require(plan.get(f'{prefix}{motor}_stop_contract')==left_stop_contract(motor=motor),'缺少当次固定三轮停止合同')
     if 'right_wheel_feedback_only' in plan:
         validate_front_feedback_plan(plan,motor=9)
         return []
@@ -396,7 +401,8 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             "limitations": ["停止寄存器证据不替代物理独立断电确认",
                             "base仅mode1/Goal0合同；Model/Phase解释门未闭合，本软件结果不授权新base动作"],
             "scope": "单电机独立维护动作/停止验证；非整车运动学、S0/S1接入、H2/D15或生产验收"}
-    plan['left7_stop_contract']=left_stop_contract()
+    for motor,prefix in WHEEL_STOP_TARGETS.items():
+        plan[f'{prefix}{motor}_stop_contract']=left_stop_contract(motor=motor)
     if pulse_requested:
         plan['right_wheel_pulse']=right_pulse_contract(wheel_pulse_target or 'right',zero_stop_check=zero_stop_check)
         plan['scope']=plan['right_wheel_pulse']['scope']
@@ -818,10 +824,15 @@ def validate_left_feedback_raw(raw,register, *, motor=7):
     return value
 
 
-def validate_left_stop_window(row,plan,anchor):
-    contract=left_stop_contract()
-    require(plan.get('left7_stop_contract')==contract
+def validate_left_stop_window(row,plan,anchor,*,motor=7):
+    """保留旧入口名，按motor核验各轮独立原帧及稳定性，不计算平均速度。"""
+    contract=left_stop_contract(motor=motor)
+    prefix=WHEEL_STOP_TARGETS[motor]
+    require(plan.get(f'{prefix}{motor}_stop_contract')==contract
             and row.get('plan_sha256')==digest(plan),'左轮停止合同或计划绑定变化')
+    require((row.get('side'),row.get('motor'),row.get('name'))==tuple(contract['target'])
+            and row.get('kind')==f'{prefix}{motor}_stop_stability'
+            and row.get('same_frame') is False,'停止窗口目标或种类变化')
     require(row.get('anchor_raw')==anchor and (anchor is None or type(anchor) is int and 0<=anchor<=4095),
             '左轮快照锚点不符')
     start,observation,finish,deadline=(row.get(k) for k in
@@ -847,7 +858,7 @@ def validate_left_stop_window(row,plan,anchor):
                 '左轮读取时刻/命令序号不符')
         if offset is not None:
             require(begin>=observation+offset,'左轮采样早于固定时刻')
-        value=validate_left_feedback_raw(sample.get('raw'),register)
+        value=validate_left_feedback_raw(sample.get('raw'),register,motor=motor)
         if register in ('Torque_Enable','Goal_Velocity'):
             require(value==0,'左轮TE/GV非零')
         elif register=='Present_Velocity':
@@ -902,26 +913,31 @@ def validate_front_feedback_window(row,plan,*,motor=8):
             '前轮观察起点不在前置与首组之间')
 
 
-def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7):
-    """固定14读；默认左7停止候选，前8/右9仅诊断，任何失败立即封锁且不补读。"""
+def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7,stop_recheck=False):
+    """三轮复用固定14读；前8/右9独立诊断仍仅记录，不生成停止凭据。"""
     require(type(motor) is int and motor in (7,8,9),'窗口仅接受固定左7、前8或右9')
-    front=motor in (8,9)
-    blocked='front_feedback_blocked' if front else 'left_stop_blocked'
+    require(type(stop_recheck) is bool,'停止复核选择必须为布尔值')
+    front=motor in (8,9) and not stop_recheck
+    prefix=WHEEL_STOP_TARGETS[motor]
+    blocked='front_feedback_blocked' if front else prefix+'_stop_blocked'
     require(not getattr(engine,blocked,False),'只读窗口UART已封锁')
     if front:
         validate_front_feedback_plan(engine.plan,motor=motor)
         require(anchor is None,'前轮诊断不使用停止快照锚点')
     else:
-        require(engine.plan.get('left7_stop_contract')==left_stop_contract(),'左轮停止合同缺失或变化')
+        require(engine.plan.get(f'{prefix}{motor}_stop_contract')==left_stop_contract(motor=motor),
+                '停止稳定性合同缺失或变化')
     io=engine.io
-    contract=engine.plan['right_wheel_feedback_only' if motor==9 else 'front_wheel_feedback_only' if front else 'left7_stop_contract']
+    contract=engine.plan[('right_wheel_feedback_only' if motor==9 else 'front_wheel_feedback_only') if front
+                         else f'{prefix}{motor}_stop_contract']
     reference=left_feedback_tool_ref(engine.plan)
-    row={'side':'right','motor':motor,'name':'base_right_wheel' if motor==9 else 'base_front_wheel' if front else 'base_left_wheel',
-         'kind':'right9_feedback_diagnostic' if motor==9 else 'front8_feedback_diagnostic' if front else 'left7_stop_stability',
+    row={'side':'right','motor':motor,'name':WHEEL_PULSE_TARGETS[prefix][2],
+         'kind':('right9_feedback_diagnostic' if motor==9 else 'front8_feedback_diagnostic') if front
+                else f'{prefix}{motor}_stop_stability',
          'status':'FAIL','samples':[],'errors':[],'register_writes':0,'same_frame':False,
          'stop_verified':False,'uart_blocked':False,'started_ns':io.now(),
          'anchor_raw':anchor,'plan_sha256':digest(engine.plan)}
-    setattr(engine,'front_feedback_evidence' if front else 'left_stop_evidence',row)
+    setattr(engine,'front_feedback_evidence' if front else prefix+'_stop_evidence',row)
     deadline=row['started_ns']+contract['capture_budget_ns']
     read_deadline=deadline
     row['deadline_ns']=deadline
@@ -968,7 +984,9 @@ def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7):
                 ready()
             io.front_feedback_before_spawn=prelaunch
             installed_prelaunch=prelaunch
-        else:engine.left_stop_window_active=ready
+        else:
+            engine.left_stop_window_active=ready
+            engine.stop_window_motor=motor
         read('Torque_Enable')
         read('Goal_Velocity')
         row['observation_started_ns']=io.now()
@@ -990,7 +1008,7 @@ def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7):
             validate_front_feedback_window(row,engine.plan,motor=motor)
             row['status']='DIAGNOSTIC_CAPTURED'
         else:
-            validate_left_stop_window(row,engine.plan,anchor)
+            validate_left_stop_window(row,engine.plan,anchor,motor=motor)
             row['status']='PASS'
     except BaseException as error:
         row['errors'].append(repr(error))
@@ -1004,7 +1022,9 @@ def collect_left_stop_window(engine,check_go,anchor=None, *, motor=7):
         if front:
             if installed_prelaunch is not None and getattr(io,'front_feedback_before_spawn',None) is installed_prelaunch:
                 del io.front_feedback_before_spawn
-        else:engine.left_stop_window_active=None
+        else:
+            engine.left_stop_window_active=None
+            engine.stop_window_motor=None
         if row['status'] not in ('PASS','DIAGNOSTIC_CAPTURED'):
             row['finished_ns']=io.now()
     return row
@@ -1149,7 +1169,7 @@ def install_right_pulse_guard(engine,helper):
             window=getattr(engine,'left_stop_window_active',None)
             if window is not None:
                 require(path==RIGHT_PULSE_RAW['path'] and len(argv)==5
-                        and argv[1:4]==[DEVICES['right'],'7','read-raw']
+                        and argv[1:4]==[DEVICES['right'],str(engine.stop_window_motor),'read-raw']
                         and argv[4] in LEFT_FEEDBACK_META,'左轮停止窗口禁止写入或其他目标读取')
                 window()
                 return original(argv,**kwargs)
@@ -1168,10 +1188,12 @@ def install_right_pulse_guard(engine,helper):
                 text=traced(argv,**kwargs)
             match=re.fullmatch(rf'read {re.escape(argv[4])}@{argv[2]} = (-?\d+)\n',text)
             require(match is not None,'普通READ回执未知')
-            left_candidate=(argv[1:5]==[DEVICES['right'],'7','read','Present_Velocity']
-                            and engine.plan.get('left7_stop_contract')==left_stop_contract()
-                            and int(match[1]) in (0,50,-50))
-            require(argv[4] not in STOP_REGS or int(match[1])==0 or left_candidate,
+            stop_motor=getattr(engine,'stop_snapshot_motor',None)
+            candidate=(stop_motor in WHEEL_STOP_TARGETS
+                       and argv[1:5]==[DEVICES['right'],str(stop_motor),'read','Present_Velocity']
+                       and engine.plan.get(f'{WHEEL_STOP_TARGETS[stop_motor]}{stop_motor}_stop_contract')==left_stop_contract(motor=stop_motor)
+                       and int(match[1]) in (0,50,-50))
+            require(argv[4] not in STOP_REGS or int(match[1])==0 or candidate,
                     '原停止READ非零:'+argv[4])
             if not cleanup and check_go is not None:
                 check_go()
@@ -1596,33 +1618,40 @@ def snapshot(io, *, cleanup=False, engine=None):
     values, errors={},[]
     if engine is not None:
         # 每轮只使用本次对象凭据；上一轮或JSON旧报告均不能充当新窗口。
-        engine.left_stop_receipt=None
-        engine.left_stop_evidence=None
-        if getattr(engine,'left_stop_blocked',False):
-            return values,[{'motor':'right:7','register':'Present_Velocity','error':'左轮窗口已粘性封锁'}]
+        for prefix in WHEEL_STOP_TARGETS.values():
+            setattr(engine,prefix+'_stop_receipt',None)
+            setattr(engine,prefix+'_stop_evidence',None)
+        for motor,prefix in WHEEL_STOP_TARGETS.items():
+            if getattr(engine,prefix+'_stop_blocked',False):
+                return values,[{'motor':f'right:{motor}','register':'Present_Velocity','error':'停止窗口已粘性封锁'}]
     for side in SERIALS:
         for motor in range(1,9 if side=='left' else 10):
             row={}
             values[f'{side}:{motor}']=row
             for register in REGS:
                 try:
+                    if engine is not None:engine.stop_snapshot_motor=motor if side=='right' else None
                     row[register]=io.poke(side,motor,'read',register,cleanup=cleanup)
                 except BaseException as error:
                     errors.append({'motor':f'{side}:{motor}','register':register,'error':repr(error)})
-            if engine is not None and (side,motor)==('right',7):
+                finally:
+                    if engine is not None:engine.stop_snapshot_motor=None
+            if engine is not None and side=='right' and motor in WHEEL_STOP_TARGETS:
+                prefix=WHEEL_STOP_TARGETS[motor]
                 try:
                     require(set(row)==set(REGS) and row['Operating_Mode']==1
                             and type(row['Torque_Enable']) is int and row['Torque_Enable']==0
                             and type(row['Goal_Velocity']) is int and row['Goal_Velocity']==0
                             and type(row['Present_Position']) is int and 0<=row['Present_Position']<=4095
                             and type(row['Present_Velocity']) is int and row['Present_Velocity'] in (0,50,-50),
-                            '左轮快照不满足固定窗口前置')
-                    evidence=collect_left_stop_window(engine,engine.left_stop_go_check,row['Present_Position'])
-                    engine.left_stop_receipt=SimpleNamespace(values=values,plan_sha256=digest(engine.plan),
-                                                             evidence=evidence)
+                            '停止快照不满足固定窗口前置')
+                    evidence=collect_left_stop_window(engine,engine.left_stop_go_check,row['Present_Position'],
+                                                      motor=motor,stop_recheck=True)
+                    setattr(engine,prefix+'_stop_receipt',SimpleNamespace(values=values,plan_sha256=digest(engine.plan),
+                                                                         evidence=evidence))
                 except BaseException as error:
-                    errors.append({'motor':'right:7','register':'Present_Velocity','error':repr(error)})
-                    engine.left_stop_blocked=True
+                    errors.append({'motor':f'right:{motor}','register':'Present_Velocity','error':repr(error)})
+                    setattr(engine,prefix+'_stop_blocked',True)
                     engine.manual_cut=True
                     if hasattr(engine,'right_pulse_block'):
                         engine.right_pulse_block(error)
@@ -1630,30 +1659,34 @@ def snapshot(io, *, cleanup=False, engine=None):
     return values,errors
 
 
-def validate_left_stop_receipt(values,engine):
-    receipt=getattr(engine,'left_stop_receipt',None)
+def validate_left_stop_receipt(values,engine,*,motor=7):
+    """保留旧入口名，三轮凭据分别绑定当前快照对象和本轮原帧。"""
+    require(type(motor) is int and motor in WHEEL_STOP_TARGETS,'停止凭据仅接受固定底盘三轮')
+    prefix=WHEEL_STOP_TARGETS[motor]
+    receipt=getattr(engine,prefix+'_stop_receipt',None)
     require(type(receipt) is SimpleNamespace and receipt.values is values
             and receipt.plan_sha256==digest(engine.plan)
-            and receipt.evidence is engine.left_stop_evidence
-            and not getattr(engine,'left_stop_blocked',False),'缺少本轮左轮停止窗口凭据')
-    require(values['right:7']['Present_Velocity'] in (0,50,-50),'左轮快照PV超出候选集合')
-    validate_left_stop_window(receipt.evidence,engine.plan,values['right:7']['Present_Position'])
+            and receipt.evidence is getattr(engine,prefix+'_stop_evidence',None)
+            and not getattr(engine,prefix+'_stop_blocked',False),'缺少本轮停止窗口凭据')
+    require(values[f'right:{motor}']['Present_Velocity'] in (0,50,-50),'停止快照PV超出候选集合')
+    validate_left_stop_window(receipt.evidence,engine.plan,values[f'right:{motor}']['Present_Position'],motor=motor)
 
 
 def classify_stop_snapshot(values, read_errors=(), cleanup_errors=(), *, child_active=False, engine=None):
-    """固定17电机停止读回；仅左7可使用本轮14读稳定性证据，原始PV不归零。"""
+    """固定17电机停止读回；底盘三轮各用本轮14读稳定性证据，原始PV不归零。"""
     issues=[]; observed={}
-    left_valid=False
+    stability={motor:False for motor in WHEEL_STOP_TARGETS}
     if not isinstance(values,dict):
         return {'status':'UNKNOWN','issues':[{'code':'STOP_SNAPSHOT_MISSING'}],'observed':{},'motors_expected':17}
     if set(values)!=set(MOTOR_KEYS):
         issues.append({'code':'STOP_MOTOR_SET_INCOMPLETE','status':'UNKNOWN'})
     if engine is not None:
-        try:
-            validate_left_stop_receipt(values,engine)
-            left_valid=True
-        except BaseException as error:
-            issues.append({'code':'LEFT7_STABILITY_UNCONFIRMED','status':'UNKNOWN','error':repr(error)})
+        for motor,prefix in WHEEL_STOP_TARGETS.items():
+            try:
+                validate_left_stop_receipt(values,engine,motor=motor)
+                stability[motor]=True
+            except BaseException as error:
+                issues.append({'code':f'{prefix.upper()}{motor}_STABILITY_UNCONFIRMED','status':'UNKNOWN','error':repr(error)})
     for key in MOTOR_KEYS:
         row=values.get(key,{})
         row=row if isinstance(row,dict) else {}
@@ -1663,8 +1696,8 @@ def classify_stop_snapshot(values, read_errors=(), cleanup_errors=(), *, child_a
             observed[key][register]=actual
             if type(actual) is not int:
                 issues.append({'code':'STOP_REGISTER_UNKNOWN','status':'UNKNOWN','motor':key,'register':register,'actual':actual})
-            elif actual!=0 and not (key=='right:7' and register=='Present_Velocity'
-                                    and left_valid and actual in (50,-50)):
+            elif actual!=0 and not (register=='Present_Velocity' and actual in (50,-50)
+                                    and any(key==f'right:{motor}' and valid for motor,valid in stability.items())):
                 issues.append({'code':'STOP_REGISTER_NONZERO','status':'FAIL','motor':key,'register':register,'actual':actual})
     for error in read_errors:
         if not isinstance(error,dict) or error.get('register') in STOP_REGS:
@@ -1675,7 +1708,7 @@ def classify_stop_snapshot(values, read_errors=(), cleanup_errors=(), *, child_a
         issues.append({'code':'STOP_CHILD_NOT_REAPED','status':'UNKNOWN'})
     status='UNKNOWN' if any(e['status']=='UNKNOWN' for e in issues) else 'FAIL' if issues else 'PASS'
     return {'status':status,'issues':issues,'observed':observed,'motors_expected':17,'registers':list(STOP_REGS),
-            'left7_stability_used':left_valid}
+            **{f'{prefix}{motor}_stability_used':stability[motor] for motor,prefix in WHEEL_STOP_TARGETS.items()}}
 
 
 def classify_position_snapshot(values,before,probes):
@@ -1732,7 +1765,8 @@ def finish_verification(report,io,engine,bindings,proc_helper):
     except BaseException as error:
         values,read_errors={},[{'code':'FINAL_SNAPSHOT_ERROR','error':repr(error)}]
     report['after'],report['after_errors']=values,read_errors
-    report['after_left7_stability']=getattr(engine,'left_stop_evidence',None)
+    for motor,prefix in WHEEL_STOP_TARGETS.items():
+        report[f'after_{prefix}{motor}_stability']=getattr(engine,prefix+'_stop_evidence',None)
     cleanup_errors=[{'motor':f"{row['side']}:{row['motor']}",'error':error}
                     for row in engine.rows for error in row.get('cleanup_errors',[])]
     if engine.manual_cut:
@@ -1816,7 +1850,8 @@ def run_motion_probes(engine,bindings,plan):
 
 def validate_snapshot(values, before=None, probes=(), *, engine=None):
     if engine is not None:
-        validate_left_stop_receipt(values,engine)
+        for motor in WHEEL_STOP_TARGETS:
+            validate_left_stop_receipt(values,engine,motor=motor)
     targets={(row['side'],row['motor']):row for row in probes
              if row.get('status')!='NOT_RUN' and row.get('decision')!='DEFERRED'}
     for key,row in values.items():
@@ -1824,7 +1859,7 @@ def validate_snapshot(values, before=None, probes=(), *, engine=None):
         require(set(row)==set(REGS), f'寄存器缺失：{key}')
         require(all(type(row[register]) is int for register in STOP_REGS)
                 and row['Torque_Enable']==row['Goal_Velocity']==0
-                and (row['Present_Velocity']==0 or key=='right:7' and engine is not None
+                and (row['Present_Velocity']==0 or side=='right' and motor in WHEEL_STOP_TARGETS and engine is not None
                      and row['Present_Velocity'] in (50,-50)), f'非安全静止：{key}')
         require(row['Operating_Mode']==(1 if side=='right' and motor>=7 else 0),f'mode漂移：{key}')
         require(0<=row['Present_Position']<=4095, f'位置范围未知：{key}')
@@ -1919,7 +1954,8 @@ def execute(plan, go, approval):
                     else:run_left_wheel_feedback(engine,lambda:validate_go(go,plan,time.time_ns()))
                 else:
                     report['before'],report['before_errors']=snapshot(io,engine=engine)
-                    report['before_left7_stability']=getattr(engine,'left_stop_evidence',None)
+                    for motor,prefix in WHEEL_STOP_TARGETS.items():
+                        report[f'before_{prefix}{motor}_stability']=getattr(engine,prefix+'_stop_evidence',None)
                     require(not report['before_errors'],'初始17电机读取失败')
                     validate_snapshot(report['before'],engine=engine)
                     run_motion_probes(engine,bindings,plan)

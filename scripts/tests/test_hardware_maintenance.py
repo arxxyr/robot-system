@@ -18,11 +18,17 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import run_hardware_maintenance as m
 
+
+def stop_contracts():
+    return {f'{prefix}{motor}_stop_contract':m.left_stop_contract(motor=motor)
+            for motor,prefix in m.WHEEL_STOP_TARGETS.items()}
+
+
 PLAN = {'position_targets':m.TARGETS, 'position_delta_raw':24,'minimum_excursion_raw':12,'return_tolerance_raw':4,
         'position_wait_ms':800,'base_raw':[20,-20],'pulse_target_ms':150,
         'nonzero_window_fail_ns':1_000_000_000,'observed_velocity_raw_max':40,
         'observed_wheel_delta_raw_min':3,'observed_wheel_delta_raw_max':64,
-        'left7_stop_contract':m.left_stop_contract()}
+        **stop_contracts()}
 CALI = {'id':5,'range_min':73,'range_max':3864}
 
 
@@ -228,7 +234,8 @@ class OwnerTests(unittest.TestCase):
 
     def test_go_rejects_wrong_plan_missing_facts_and_expiration(self):
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS, 'bindings':{'host':{'boot_id':'test'}}}
+              **stop_contracts(),
+              'position_targets':m.TARGETS, 'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当次用户现场答复',
             'physical':{s:{**{f:True for f in m.FACTS},'confirmed_at_ns':100} for s in m.SERIALS}}
@@ -245,7 +252,8 @@ class OwnerTests(unittest.TestCase):
                'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
         self.assertEqual(set(m.FACTS),set(facts))
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+              **stop_contracts(),
+              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
             'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
             'host':plan['bindings']['host'],'source':'当次用户现场答复',
@@ -256,7 +264,8 @@ class OwnerTests(unittest.TestCase):
         facts={'supported':True,'unloaded':True,'area_clear':True,
                'continuous_presence_until_cleanup':True,'immediate_power_cut':True}
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/test',
-              'left7_stop_contract':m.left_stop_contract(),'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
+              **stop_contracts(),
+              'position_targets':m.TARGETS,'bindings':{'host':{'boot_id':'test'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root',
             'plan_sha256':m.digest(plan),'issued_at_ns':100,'expires_at_ns':1000,
             'host':plan['bindings']['host'],'source':'当次用户现场答复',
@@ -346,6 +355,18 @@ class SnapshotIO(FeedbackIO):
     def __init__(self,rows,fail=None):
         super().__init__()
         self.rows=rows;self.fail=fail;self.reads=[];self.positions=[rows['right:7']['Present_Position']]*5
+        self.wheel_samples={motor:{'positions':[rows[f'right:{motor}']['Present_Position']]*5,
+            'velocities':[0]*5,'position_index':0,'velocity_index':0} for motor in (8,9)}
+    def command(self,argv,**kwargs):
+        if argv[0]!=m.RIGHT_PULSE_RAW['path'] or argv[2] not in ('8','9'):return super().command(argv,**kwargs)
+        motor=int(argv[2]);samples=self.wheel_samples[motor]
+        saved=(self.motor,self.positions,self.velocities,self.position_index,self.velocity_index)
+        self.motor=motor;self.positions=samples['positions'];self.velocities=samples['velocities']
+        self.position_index=samples['position_index'];self.velocity_index=samples['velocity_index']
+        try:return super().command(argv,**kwargs)
+        finally:
+            samples['position_index'],samples['velocity_index']=self.position_index,self.velocity_index
+            self.motor,self.positions,self.velocities,self.position_index,self.velocity_index=saved
     def poke(self,side,motor,action,register,cleanup=False):
         key=f'{side}:{motor}'; self.reads.append((key,register,cleanup))
         if (key,register)==self.fail: raise OSError('原始READ不可得')
@@ -370,7 +391,7 @@ class ClassificationTests(unittest.TestCase):
         replacement=patch.dict(m.RIGHT_PULSE_RAW,{k:reference[k] for k in ('path','sha256','bytes')},clear=True)
         replacement.start();self.addCleanup(replacement.stop)
         executor=SnapshotIO(after,read_fail)
-        engine=m.ProbeEngine(executor,{**PLAN,'left7_stop_contract':m.left_stop_contract(),
+        engine=m.ProbeEngine(executor,{**PLAN,**stop_contracts(),
                                        'bindings':{'refs':[reference]}})
         engine.left_stop_go_check=lambda:None
         engine.rows=copy.deepcopy(probes); engine.manual_cut=manual
@@ -644,7 +665,7 @@ class ClassificationTests(unittest.TestCase):
             def __init__(self,tool,output):
                 self.regs=idle_rows();self.calls=[];self.child=None;self.interrupted=None;self.commands=[]
                 self.process_snapshots=[];self.evidence_errors=[];self.journal=io.StringIO();self.t=0;self.output=Path(output)
-                self.feedback=FeedbackIO();self.feedback.positions=[1000]*5;self.sequence=0
+                self.feedback=SnapshotIO(self.regs);self.sequence=0
             def mark_signal(self,*args):raise AssertionError('本例不发送信号')
             def check(self):pass
             def now(self):return self.t
@@ -702,9 +723,12 @@ class ClassificationTests(unittest.TestCase):
             self.assertEqual([p['status'] for p in report['probes']],['PASS']*4+['NOT_RUN']*3)
             self.assertEqual(report['result'],'FAIL');self.assertFalse(report['manual_power_cut_required'])
             self.assertEqual(report['stop_verification']['status'],'PASS');self.assertEqual(report['identity_verification']['status'],'PASS')
-            self.assertEqual(len(executor.feedback.calls),28)
+            self.assertEqual(len(executor.feedback.calls),84)
             self.assertTrue(report['stop_verification']['left7_stability_used'])
+            self.assertTrue(report['stop_verification']['right9_stability_used'])
+            self.assertTrue(report['stop_verification']['front8_stability_used'])
             self.assertNotEqual(report['before_left7_stability']['started_ns'],report['after_left7_stability']['started_ns'])
+            self.assertNotEqual(report['before_right9_stability']['started_ns'],report['after_right9_stability']['started_ns'])
             json.dumps(report)
             self.assertEqual(sum(len(row) for phase in ('before','after') for row in report[phase].values()),204)
             for motor in (7,8,9):
@@ -717,7 +741,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_v1_go_and_changed_artifact_root_rejected(self):
         plan={'schema':'MAINTENANCE_PLAN_V2','artifact_root':'/home/loosqk/robot-checks/new-run','position_targets':m.TARGETS,
-              'left7_stop_contract':m.left_stop_contract(),
+              **stop_contracts(),
               'bindings':{'host':{'boot_id':'same'}}}
         go={'schema':'MAINTENANCE_GO_V2','artifact_root':plan['artifact_root'],'issued_by':'root','plan_sha256':m.digest(plan),
             'issued_at_ns':100,'expires_at_ns':1000,'host':plan['bindings']['host'],'source':'当前现场确认',
@@ -1115,6 +1139,14 @@ class RightPulseTests(unittest.TestCase):
                 continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
                 base_confirmation_scope=plan['scope'],base_confirmation_answer='夹具就绪')
             m.validate_go(go,plan,200)
+            self.assertIn('三轮各按同一获准稳定性判据',plan['scope'])
+            old=copy.deepcopy(plan)
+            old['scope']=old['scope'].replace('三轮各按同一获准稳定性判据','仅左7和右9各按获准稳定性判据')
+            old['right_wheel_pulse']['scope']=old['scope']
+            with self.assertRaises(ValueError):m.position_targets_from_plan(old)
+            old_go=copy.deepcopy(go);old_go['plan_sha256']=m.digest(old)
+            old_go['physical']['right']['base_confirmation_scope']=old['scope']
+            with self.assertRaises(ValueError):m.validate_go(old_go,plan,200)
             for value in (original['scope'],m.pulse_scope('front' if wheel!='front' else 'right',zero_stop_check=True)):
                 bad=copy.deepcopy(go);bad['physical']['right']['base_confirmation_scope']=value
                 with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
@@ -1289,17 +1321,18 @@ class RightPulseTests(unittest.TestCase):
             self.assertEqual((executor.torque,executor.goal),(0,0));self.assertTrue(row['connection']['closed'])
 
     def test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7(self):
-        for speeds in ([0,0,50],[0,0,1000],[250,50,-50],[250,50,0x8000],[1001,0,0]):
-            executor,engine=self.engine('left',zero_stop_check=True);executor.sdk_zero_coast=list(speeds)
-            row=self.perform(executor,engine,False)
-            self.assertEqual(row['zero_stop_check']['status'],'FAIL')
-            last=row['zero_stop_check']['samples'][-1]['raw'][-1]
-            self.assertEqual(last['register'],'Present_Velocity');self.assertEqual(last['status'],'READ_VALID')
-            self.assertEqual(last['raw_unsigned'],abs(speeds[0 if speeds[0]==1001 else 2])|(
-                0x8000 if speeds[0 if speeds[0]==1001 else 2]<0 else 0))
-            self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
-            self.assertTrue(row['connection']['closed']);self.assertEqual((executor.torque,executor.goal),(0,0))
-            self.assertEqual(row['cleanup_raw'],[])
+        for wheel in ('left','front','right'):
+            for speeds in ([0,0,50],[0,0,1000],[250,50,-50],[250,50,0x8000],[1001,0,0]):
+                executor,engine=self.engine(wheel,zero_stop_check=True);executor.sdk_zero_coast=list(speeds)
+                row=self.perform(executor,engine,False)
+                self.assertEqual(row['zero_stop_check']['status'],'FAIL')
+                last=row['zero_stop_check']['samples'][-1]['raw'][-1]
+                self.assertEqual(last['register'],'Present_Velocity');self.assertEqual(last['status'],'READ_VALID')
+                self.assertEqual(last['raw_unsigned'],abs(speeds[0 if speeds[0]==1001 else 2])|(
+                    0x8000 if speeds[0 if speeds[0]==1001 else 2]<0 else 0))
+                self.assertTrue(engine.manual_cut);self.assertTrue(row['uart_blocked'])
+                self.assertTrue(row['connection']['closed']);self.assertEqual((executor.torque,executor.goal),(0,0))
+                self.assertEqual(row['cleanup_raw'],[])
 
     def test_zero_stop_rejects_wrong_enable_or_goal_in_each_group(self):
         for index in (1,2,3):
@@ -1454,17 +1487,18 @@ class RightPulseTests(unittest.TestCase):
     def test_left_snapshot_exception_never_relaxes_sdk_initial_or_final_zero(self):
         self.assertEqual(m.left_stop_contract()['present_velocity_raw_unsigned'],[0,50,0x8032])
         self.assertEqual(m.left_stop_contract()['reads'],14)
-        for phase in ('initial','final'):
-            executor,engine=self.engine('left')
-            if phase=='initial':executor.stop_velocity=50
-            else:executor.sdk_coast=[50]*5
-            row=self.perform(executor,engine,False)
-            self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
-            if phase=='initial':
-                self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
-            else:
-                self.assertEqual([sample['velocity_raw'] for sample in row['settle_samples']],[50]*5)
-            self.assertTrue(row['connection']['closed'])
+        for wheel in ('left','front','right'):
+            for phase in ('initial','final'):
+                executor,engine=self.engine(wheel)
+                if phase=='initial':executor.stop_velocity=50
+                else:executor.sdk_coast=[50]*5
+                row=self.perform(executor,engine,False)
+                self.assertFalse(row['stopped_confirmed']);self.assertTrue(engine.manual_cut)
+                if phase=='initial':
+                    self.assertEqual(row['writes'],[]);self.assertEqual(executor.sdk_nonzero_count,0)
+                else:
+                    self.assertEqual([sample['velocity_raw'] for sample in row['settle_samples']],[50]*5)
+                self.assertTrue(row['connection']['closed'])
 
     def test_named_target_cli_and_plan_reject_arbitrary_ids_mixed_or_multiple_selections(self):
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('拒绝前置不得child')) as child:
@@ -1905,8 +1939,9 @@ class LeftFeedbackTests(unittest.TestCase):
     def engine(self,*,front=False,right=False):
         return m.ProbeEngine(FeedbackIO(motor=9 if right else 8 if front else 7),self.plan(front=front,right=right))
 
-    def snapshot_engine(self,pv=0,guard=False):
+    def snapshot_engine(self,pv=0,guard=False,*,wheel_pv=None):
         rows=idle_rows();rows['right:7']['Present_Velocity']=pv
+        for motor,value in (wheel_pv or {}).items():rows[f'right:{motor}']['Present_Velocity']=value
         executor=SnapshotIO(rows)
         engine=m.ProbeEngine(executor,self.plan());engine.left_stop_go_check=lambda:None
         if guard:
@@ -1927,6 +1962,11 @@ class LeftFeedbackTests(unittest.TestCase):
             helper=SimpleNamespace(META=m.LEFT_FEEDBACK_META,install_stop_wire_capture=lambda module:None)
             m.install_right_pulse_guard(engine,helper)
         return engine
+
+    def wheel_samples(self,engine,motor,**changes):
+        if motor==7:
+            for name,value in changes.items():setattr(engine.io,name,value)
+        else:engine.io.wheel_samples[motor].update(changes)
 
     def guard_patches(self):
         stack=contextlib.ExitStack()
@@ -1995,7 +2035,7 @@ class LeftFeedbackTests(unittest.TestCase):
         for pv in (0,50,-50):
             engine=self.snapshot_engine(pv)
             values,errors=m.snapshot(engine.io,engine=engine)
-            self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),14)
+            self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),42)
             self.assertEqual(len(engine.io.reads),102)
             m.validate_snapshot(values,engine=engine)
             result=m.classify_stop_snapshot(values,engine=engine)
@@ -2007,7 +2047,7 @@ class LeftFeedbackTests(unittest.TestCase):
                 self.assertEqual(m.classify_stop_snapshot(values)['status'],'FAIL')
             original_evidence=engine.left_stop_evidence
             next_values,next_errors=m.snapshot(engine.io,engine=engine)
-            self.assertEqual(next_errors,[]);self.assertEqual(len(engine.io.calls),28)
+            self.assertEqual(next_errors,[]);self.assertEqual(len(engine.io.calls),84)
             self.assertIsNot(original_evidence,engine.left_stop_evidence)
             with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
             self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
@@ -2064,18 +2104,19 @@ class LeftFeedbackTests(unittest.TestCase):
             self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
 
     def test_other_motor_nonzero_never_uses_left_wheel_exception(self):
-        for key in ('right:8','right:9','left:7','left:1','right:5'):
+        for key in ('left:7','left:1','right:5'):
             for register in m.STOP_REGS:
                 engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
                 values[key][register]=50
                 with self.subTest(key=key,register=register),self.assertRaises(ValueError):
                     m.validate_snapshot(values,engine=engine)
                 self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'FAIL')
-        for register in ('Torque_Enable','Goal_Velocity'):
-            engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
-            values['right:7'][register]=1
-            with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
-            self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'FAIL')
+        for key in ('right:7','right:8','right:9'):
+            for register in ('Torque_Enable','Goal_Velocity'):
+                engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
+                values[key][register]=1
+                with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'FAIL')
 
     def test_guard_snapshot_and_final_classifier_agree_and_cleanup_window_is_independent(self):
         with self.guard_patches():
@@ -2087,7 +2128,7 @@ class LeftFeedbackTests(unittest.TestCase):
                 engine.right_pulse['observation_deadline_ns']=0
                 engine.right_pulse['normal_failed']=True
                 after,errors=m.snapshot(engine.io,cleanup=True,engine=engine)
-                self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),28)
+                self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),84)
                 self.assertEqual(m.classify_stop_snapshot(after,engine=engine)['status'],'PASS')
                 self.assertTrue(all(argv[3]=='read-raw' for argv in engine.io.calls))
 
@@ -2145,6 +2186,163 @@ class LeftFeedbackTests(unittest.TestCase):
         old=copy.deepcopy(plan);del old['left7_stop_contract']
         old_go=self.go(old,100)
         with self.assertRaises(ValueError):m.validate_go(old_go,plan,200)
+
+    def test_wheel_stop_fixed_contract_and_old_or_tampered_plan_go_rejected(self):
+        plan=self.plan();go=self.go(plan,100)
+        for motor,prefix in ((7,'left'),(8,'front'),(9,'right')):
+            key=f'{prefix}{motor}_stop_contract'
+            expected=m.left_stop_contract();expected.update(version=f'RIGHT{motor}_STABILITY_V1',
+                target=['right',motor,f'base_{prefix}_wheel'])
+            self.assertEqual(plan[key],expected)
+            for field,value in (('target',['right',6,'other']),('reads',12),
+                                ('capture_budget_ns',1_500_000_001),('position_span_max',2),
+                                ('present_velocity_raw_unsigned',[0,50,0x8032,51])):
+                bad=copy.deepcopy(plan);bad[key][field]=value
+                for supplied in (go,self.go(bad,100)):
+                    with self.subTest(motor=motor,field=field),self.assertRaises(ValueError):m.validate_go(supplied,bad,200)
+            old=copy.deepcopy(plan);del old[key]
+            with self.assertRaises(ValueError):m.validate_go(self.go(old,100),old,200)
+            with self.assertRaises(ValueError):m.validate_go(self.go(old,100),plan,200)
+        for motor in (6,True,'9',10):
+            with self.assertRaises(ValueError):m.left_stop_contract(motor=motor)
+
+    def test_wheel_stop_fresh_windows_preserve_zero_and_signed_fifties(self):
+        for motor,prefix in m.WHEEL_STOP_TARGETS.items():
+            for pv in (0,50,-50):
+                engine=self.snapshot_engine(wheel_pv={motor:pv})
+                self.wheel_samples(engine,motor,positions=[1000,1001,1000,1001,1000],velocities=[-50,0,50,-50,0])
+                before,errors=m.snapshot(engine.io,engine=engine)
+                self.assertEqual(errors,[]);m.validate_snapshot(before,engine=engine)
+                result=m.classify_stop_snapshot(before,engine=engine)
+                self.assertEqual(result['status'],'PASS');self.assertTrue(result[f'{prefix}{motor}_stability_used'])
+                self.assertEqual(result['observed'][f'right:{motor}']['Present_Velocity'],pv)
+                window=getattr(engine,prefix+'_stop_evidence')
+                self.assertEqual(window['anchor_raw'],1000)
+                self.assertEqual(window['kind'],f'{prefix}{motor}_stop_stability')
+                self.assertEqual([r['register'] for r in window['samples']],
+                    ['Torque_Enable','Goal_Velocity']+['Present_Position','Present_Velocity']*5+['Goal_Velocity','Torque_Enable'])
+                self.assertEqual([r['raw']['raw_unsigned'] for r in window['samples'] if r['register']=='Present_Velocity'],
+                                 [0x8032,0,50,0x8032,0])
+                self.assertTrue(all(r['raw']['motor_id']==motor for r in window['samples']))
+                self.assertEqual(window['deadline_ns']-window['started_ns'],1_500_000_000)
+                receipt=getattr(engine,prefix+'_stop_receipt')
+                after,errors=m.snapshot(engine.io,cleanup=True,engine=engine)
+                self.assertEqual(errors,[]);self.assertEqual(len(engine.io.calls),84)
+                self.assertIsNot(window,getattr(engine,prefix+'_stop_evidence'))
+                self.assertIsNot(receipt,getattr(engine,prefix+'_stop_receipt'))
+                m.validate_snapshot(after,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(before,engine=engine)['status'],'UNKNOWN')
+
+    def test_wheel_stop_receipt_rejects_copy_cross_motor_and_forged_evidence(self):
+        for motor,prefix in m.WHEEL_STOP_TARGETS.items():
+            for mutation in ('json_values','json_receipt','cross_receipt','cross_evidence','missing_read','bad_id','wrong_anchor',
+                             'wrong_plan','late','wrong_kind'):
+                engine=self.snapshot_engine(wheel_pv={motor:50});values,errors=m.snapshot(engine.io,engine=engine)
+                self.assertEqual(errors,[])
+                evidence=getattr(engine,prefix+'_stop_evidence');other='front' if motor==7 else 'left'
+                if mutation=='json_values':values=json.loads(json.dumps(values))
+                if mutation=='json_receipt':setattr(engine,prefix+'_stop_receipt',{'values':values,'evidence':evidence,'status':'PASS'})
+                if mutation=='cross_receipt':setattr(engine,prefix+'_stop_receipt',getattr(engine,other+'_stop_receipt'))
+                if mutation=='cross_evidence':
+                    setattr(engine,prefix+'_stop_evidence',getattr(engine,other+'_stop_evidence'))
+                    getattr(engine,prefix+'_stop_receipt').evidence=getattr(engine,other+'_stop_evidence')
+                if mutation=='missing_read':evidence['samples'].pop()
+                if mutation=='bad_id':evidence['samples'][3]['raw']['motor_id']=8 if motor==7 else 7
+                if mutation=='wrong_anchor':evidence['anchor_raw']+=1
+                if mutation=='wrong_plan':evidence['plan_sha256']='0'*64
+                if mutation=='late':evidence['finished_ns']=evidence['deadline_ns']+1
+                if mutation=='wrong_kind':evidence['kind']='right9_feedback_diagnostic'
+                with self.subTest(motor=motor,mutation=mutation),self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
+                self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
+
+    def test_wheel_stop_rejects_span_anchor_wrap_bad_raw_and_nonzero_te_gv(self):
+        for motor,prefix in m.WHEEL_STOP_TARGETS.items():
+            offset=14*(motor-7)
+            for fault,index in (('positions',None),('anchor',None),('wrap',None),('velocity',None),('negative_zero',None),
+                                ('wrong_id',None),('fail_at',1),('bad_at',4),('torque_at',1),('goal_at',2),('goal_at',13),('torque_at',14)):
+                engine=self.snapshot_engine(wheel_pv={motor:-50})
+                if fault=='positions':
+                    self.wheel_samples(engine,motor,positions=[1000,1001,1002,1001,1000],velocities=[50,-50,50,-50,0])
+                elif fault=='anchor':self.wheel_samples(engine,motor,positions=[1002]*5)
+                elif fault=='wrap':
+                    engine.io.rows[f'right:{motor}']['Present_Position']=4095
+                    self.wheel_samples(engine,motor,positions=[4095,0,0,0,0])
+                elif fault=='velocity':self.wheel_samples(engine,motor,velocities=[0,51,0,0,0])
+                elif fault=='negative_zero':self.wheel_samples(engine,motor,velocities=[0x8000]*5)
+                elif fault=='wrong_id':
+                    original=engine.io.command
+                    def wrong_id(argv,**kwargs):
+                        text=original(argv,**kwargs)
+                        if argv[2]==str(motor):
+                            raw=json.loads(text);other=8 if motor==7 else 7
+                            raw['motor_id']=other;raw['tx'][-2]=other;raw['rx'][2]=other
+                            raw['tx'][-1]=(~sum(raw['tx'][2:-1]))&255;raw['rx'][-1]=(~sum(raw['rx'][2:-1]))&255
+                            return json.dumps(raw)+'\n'
+                        return text
+                    engine.io.command=wrong_id
+                else:setattr(engine.io,fault,offset+index)
+                values,errors=m.snapshot(engine.io,engine=engine)
+                self.assertTrue(errors);self.assertTrue(getattr(engine,prefix+'_stop_blocked'));self.assertTrue(engine.manual_cut)
+                self.assertIsNone(getattr(engine,prefix+'_stop_receipt'))
+                self.assertEqual(m.classify_stop_snapshot(values,errors,engine=engine)['status'],'UNKNOWN')
+                reads=len(engine.io.calls)+len(engine.io.reads)
+                m.snapshot(engine.io,cleanup=True,engine=engine)
+                self.assertEqual(len(engine.io.calls)+len(engine.io.reads),reads)
+            for register,value in (('Operating_Mode',0),('Torque_Enable',1),('Goal_Velocity',1),
+                                   ('Present_Velocity',49),('Present_Velocity',-51),('Present_Position',4096)):
+                engine=self.snapshot_engine();engine.io.rows[f'right:{motor}'][register]=value
+                _,errors=m.snapshot(engine.io,engine=engine)
+                self.assertTrue(errors);self.assertEqual(len(engine.io.calls),offset)
+
+    def test_wheel_stop_budget_and_go_expiry_block_without_retry_or_tail_reads(self):
+        for motor,prefix in m.WHEEL_STOP_TARGETS.items():
+            offset=14*(motor-7)
+            for index in (offset+1,offset+6,offset+14):
+                engine=self.snapshot_engine(wheel_pv={motor:50})
+                engine.io.slow_at=index;engine.io.slow_ns=1_500_000_000
+                _,errors=m.snapshot(engine.io,engine=engine)
+                self.assertTrue(errors);self.assertTrue(getattr(engine,prefix+'_stop_blocked'))
+                self.assertEqual(len(engine.io.calls),index)
+                self.assertIn('raw',getattr(engine,prefix+'_stop_evidence')['samples'][-1])
+            engine=self.snapshot_engine(wheel_pv={motor:-50})
+            expiry=(motor-7)*1_060_000_000+10_000_000
+            engine.left_stop_go_check=lambda:m.require(engine.io.now()<expiry,'本轮GO到期')
+            _,errors=m.snapshot(engine.io,engine=engine)
+            self.assertTrue(errors);self.assertEqual(len(engine.io.calls),offset+1)
+            self.assertTrue(getattr(engine,prefix+'_stop_blocked'));self.assertTrue(engine.manual_cut)
+
+    def test_wheel_stop_guard_binds_snapshot_and_raw_target_without_widening_sdk(self):
+        with self.guard_patches():
+            for motor,prefix in m.WHEEL_STOP_TARGETS.items():
+                for pv in (50,-50):
+                    engine=self.snapshot_engine(guard=True,wheel_pv={motor:pv})
+                    values,errors=m.snapshot(engine.io,engine=engine)
+                    self.assertEqual(errors,[]);m.validate_snapshot(values,engine=engine)
+                    self.assertIsNone(engine.stop_snapshot_motor);self.assertIsNone(engine.stop_window_motor)
+                    with self.assertRaises(ValueError):engine.io.poke('right',motor,'read','Present_Velocity',cleanup=True)
+                    self.assertTrue(engine.right_pulse['uart_blocked'])
+                engine=self.snapshot_engine(guard=True)
+                other=8 if motor==7 else 7
+                wrong=[m.RIGHT_PULSE_RAW['path'],m.DEVICES['right'],str(other),'read-raw','Torque_Enable']
+                with self.assertRaises(ValueError):
+                    m.collect_left_stop_window(engine,lambda:engine.io.command(wrong),1000,motor=motor,stop_recheck=True)
+                self.assertEqual(engine.io.calls,[]);self.assertTrue(getattr(engine,prefix+'_stop_blocked'))
+                self.assertTrue(engine.right_pulse['uart_blocked'])
+
+    def test_front_right_diagnostic_remains_record_only_and_cannot_supply_stop_receipt(self):
+        for motor in (8,9):
+            engine=self.engine(front=motor==8,right=motor==9);engine.io.positions=[1000,1004,1008,1012,1016]
+            engine.io.velocities=[50,-50,51,-51,0]
+            key='front_wheel_feedback_only' if motor==8 else 'right_wheel_feedback_only'
+            contract=copy.deepcopy(engine.plan[key]);scope=engine.plan['scope']
+            m.run_front_wheel_feedback(engine,lambda:None,motor=motor)
+            row=engine.rows[0]
+            self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED');self.assertFalse(row['stop_verified'])
+            self.assertEqual(row['position_span_raw'],16)
+            self.assertEqual(engine.plan[key],contract);self.assertEqual(engine.plan['scope'],scope)
+            self.assertFalse(any(hasattr(engine,prefix+'_stop_receipt') for prefix in m.WHEEL_STOP_TARGETS.values()))
+            self.assertEqual(m.classify_stop_snapshot(idle_rows(),engine=engine)['status'],'UNKNOWN')
+            with self.assertRaises(ValueError):m.validate_left_stop_window(row,engine.plan,None,motor=motor)
 
     def test_deadline_and_go_expiry_keep_last_frame_then_stop(self):
         for index in (1,5,14):

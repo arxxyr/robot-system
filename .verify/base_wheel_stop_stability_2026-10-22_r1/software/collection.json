@@ -1,0 +1,50 @@
+{
+  "at": "2026-10-22T11:50:54.156316+00:00",
+  "pane": "base-wheel-stop-stability-quality-r1 $128 %164 743024 1 0",
+  "pane_pid_absent": true,
+  "owner_pid": 743029,
+  "owner_absent": true,
+  "direct_step_children_absent": true,
+  "direct_step_children": 7,
+  "downloaded": {
+    "result.json": {
+      "bytes": 5092,
+      "sha256": "27dd16bd6a9d983bb103c209d49a20f0287c1840c0df2fe3263409a24b217417"
+    },
+    "owner.exit": {
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy.log": {
+      "bytes": 70,
+      "sha256": "3c9d5ca89c8c34ce5b2d6125a9da7f8705ab2717ea0cfafb410996f7252e7fee"
+    },
+    "native-tests.log": {
+      "bytes": 22383,
+      "sha256": "ee40e0aa677f2dbaaf4495e0f36efa57885f05f97d09df3f2b3bafb803702529"
+    },
+    "default-plan.log": {
+      "bytes": 330,
+      "sha256": "0f4a8c8f03e1881494f8804f08cc615c6a84815d58a1388121857daae400bbb8"
+    },
+    "execute-incomplete.log": {
+      "bytes": 46,
+      "sha256": "a80aada0761a36daae71e4a7994f19c437431d01aafc58aee48bcbf9cc3b294a"
+    },
+    "rustc-before.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    },
+    "rustc-after.log": {
+      "bytes": 215,
+      "sha256": "3a0109e421817d23d1da03e9a864e584798f4ec97662f06f37381cd76295e93b"
+    }
+  },
+  "local_597_and_frozen_python_match": true,
+  "sdk12_complete_identity_matches_reference": true,
+  "sdk_manifest_sha256": "c61efd2cefff0bf635fcc285ab1ee1ac28cd9823554caa5fdf53453ae6eb3044"
+}

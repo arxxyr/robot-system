@@ -1,0 +1,100 @@
+{
+  "schema": "BASE_WHEEL_STOP_STABILITY_INDEPENDENT_REVIEW_V1",
+  "reviewer": "/root/xlerobot_local_check",
+  "reviewed_at_utc": "2026-10-22T11:50:54.941559+00:00",
+  "decision": "PASS_SOFTWARE_ONLY",
+  "findings": [],
+  "approval": {
+    "path": "approval.json",
+    "answer": "底盘这三个统一处理，考虑怎么过滤这种波动",
+    "scope": "right7/right8/right9维护停止快照统一复用固定14读稳定性规则；仅软件实现与验证，不授权新硬件动作",
+    "hardware_go": false
+  },
+  "baseline_commit": "d99e9388f82508639ee6cd691c56f17e20be0938",
+  "sources": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221",
+      "bytes": 124079,
+      "before_after_identical": true
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "c823dd62a191864efb07453aa5b8384f1042893945542dac5f3121f1a61fcd70",
+      "bytes": 182601,
+      "before_after_identical": true
+    }
+  },
+  "review": [
+    "固定映射仅right7/8/9，复用既有合同、14读collector、receipt和报告循环，保留left_*旧入口名及默认7；没有增加框架或新采集工具。",
+    "三轮各要求TE/GV首末严格0、PV原字仅0/50/0x8032、五组名义0/250/500/750/1000ms、总1.5秒；原普通PP锚点与五组PP共同跨度≤1，不用平均速度或正负抵消。",
+    "每次snapshot清空三轮旧receipt/evidence，前后各重新采窗口；任一轮失败立即返回并粘性封锁后续快照。即使PV为0，也不能跳过该轮完整新窗口。",
+    "receipt逐轮绑定本次values/evidence对象、完整plan digest、ID/名称/kind、锚点及原帧校验；跨轮、旧JSON、缺帧、篡改、诊断kind和旧窗口不能充当STOP凭据。",
+    "普通READ的0/±50候选现在三轮均仅限当前stop_snapshot_motor及匹配固定合同；标记在finally清除，窗口raw只允许本次motor四字段READ，不能写入或读其他目标。",
+    "STOP与validate_snapshot仅接受有对应凭据的三轮PV±50；所有电机TE/GV及所有非底盘电机PV仍严格0。classify原样保留observed值，分别记录三轮stability_used及before/after证据。",
+    "PLAN固定新增front8/right9合同并校验三轮完整合同，pulse scope显式三轮规则，旧GO/缺合同/篡改合同均拒绝；诊断scope和内部合同不变。",
+    "SDK初始、运动中、TE1零速末组及SDK断扭后最终值保持原规则；前8中间8032例外未扩大，SDK独立SYNC0/TE0及500ms/21秒未修改。诊断仍DIAGNOSTIC_CAPTURED/STOP未评估。"
+  ],
+  "targeted_verification": {
+    "runner": "uv run --no-project python -B；按名仅运行既有12个确定性方法。",
+    "methods": [
+      "LeftFeedbackTests.test_wheel_stop_fixed_contract_and_old_or_tampered_plan_go_rejected",
+      "LeftFeedbackTests.test_wheel_stop_fresh_windows_preserve_zero_and_signed_fifties",
+      "LeftFeedbackTests.test_wheel_stop_receipt_rejects_copy_cross_motor_and_forged_evidence",
+      "LeftFeedbackTests.test_wheel_stop_rejects_span_anchor_wrap_bad_raw_and_nonzero_te_gv",
+      "LeftFeedbackTests.test_wheel_stop_budget_and_go_expiry_block_without_retry_or_tail_reads",
+      "LeftFeedbackTests.test_wheel_stop_guard_binds_snapshot_and_raw_target_without_widening_sdk",
+      "LeftFeedbackTests.test_front_right_diagnostic_remains_record_only_and_cannot_supply_stop_receipt",
+      "LeftFeedbackTests.test_other_motor_nonzero_never_uses_left_wheel_exception",
+      "RightPulseTests.test_zero_stop_last_velocity_and_every_raw_boundary_stay_strict_for_left7",
+      "RightPulseTests.test_left_snapshot_exception_never_relaxes_sdk_initial_or_final_zero",
+      "RightPulseTests.test_front_zero_exception_rejects_last_minus_fifty_other_negative_words_and_other_wheels",
+      "ClassificationTests.test_execute_route_four_positions_pass_base_blocked_still_all_postchecks"
+    ],
+    "passed": 12,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "elapsed_seconds": 0.693,
+    "counting": "12为最终133方法的子集，不与本机/原生或方法内三轮参数分支累计。",
+    "counterexamples": [
+      "三轮分别测试PV[50,-50,50,-50,0]均值为0但PP[1000,1001,1002,1001,1000]跨度2，必须失败。",
+      "三轮分别测试PP4095→0，按获准原始位置跨度规则失败，不用环绕折算绕过。",
+      "锚点与窗口位置相差2、51/负零、错ID、缺失、非零TE/GV、迟到/GO过期均失败并禁止后续UART。",
+      "三轮前后合计84条raw读取各绑定fresh对象；跨轮/旧窗口receipt拒绝；完整execute保留三轮分项报告。"
+    ],
+    "diff_check_exit": 0
+  },
+  "independent_baseline_comparison": {
+    "method": "只读git show后在内存比较；未复制基线源码或修改仓库。",
+    "unchanged_contracts": [
+      "默认left_stop_contract",
+      "left_feedback_contract",
+      "front_feedback_contract默认8",
+      "front_feedback_contract motor9"
+    ],
+    "unchanged_ast_functions": [
+      "run_right_wheel_pulse",
+      "validate_front_feedback_window",
+      "validate_left_feedback_raw",
+      "run_front_wheel_feedback"
+    ],
+    "full_plan_families": [
+      "default",
+      "left_readonly",
+      "front_readonly",
+      "right_readonly",
+      "right_zero_False",
+      "right_zero_True",
+      "front_zero_False",
+      "front_zero_True",
+      "left_zero_False",
+      "left_zero_True"
+    ],
+    "expected_only_plan_changes": "各类新增固定front8/right9_stop_contract；pulse scope改为三轮各按同一规则。排除源码SHA/大小及这些获准差分后，10类完整JSON均相等。"
+  },
+  "limits": [
+    "本次仅独立源码与纯内存软件核对，未SSH/UART/新GO/硬件动作，未重复全套或原生工具链。",
+    "五组为继承的名义采样时刻，PP/PV先后读取，总预算不是硬件截止或连续位置保证；不宣称零速度物理测量。",
+    "三轮统一维护STOP候选尚未实机验收；旧FAIL、原±50帧和现场回执分别保留，不回填为PASS或把原值改零。",
+    "D15 OPEN/DEFERRED、固件合同DEFERRED及deployable=false保持。"
+  ]
+}

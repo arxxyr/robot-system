@@ -1,0 +1,97 @@
+{
+  "stage": "base_wheel_stop_stability_2026-10-22_r1",
+  "status": "PASS_SOFTWARE_ONLY",
+  "baseline_commit": "d99e9388f82508639ee6cd691c56f17e20be0938",
+  "approval": "approval.json",
+  "change": "固定7/8/9映射复用同一14读稳定性合同、采集、当次凭据、停止分类及普通READ前置；三轮原始速度保留，不做均值抵消或直接清零。",
+  "source_identity": {
+    "scripts/run_hardware_maintenance.py": {
+      "sha256": "304a006ed22dc5d96df4cd47f93ae8e9bce0a86d2fe8d6e4b4fe57dad2b2e221",
+      "bytes": 124079
+    },
+    "scripts/tests/test_hardware_maintenance.py": {
+      "sha256": "c823dd62a191864efb07453aa5b8384f1042893945542dac5f3121f1a61fcd70",
+      "bytes": 182601
+    }
+  },
+  "reference": {
+    "kind": "Orin工作栈的本地副本，非当前上游HEAD",
+    "files": [
+      {
+        "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/adapters/bus2_base.py",
+        "sha256": "0d1e4967c703154d816fd6717d09c21d9204076072f578aac071eb222334f435",
+        "bytes": 12959
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/common/feetech_io/bus.py",
+        "sha256": "706a7d9fad50a3d25dfe8dfc3f7d592a743b48cb7469fec8d822ce4fb90806c7",
+        "bytes": 14304
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/common/feetech_io/encoding.py",
+        "sha256": "7e8c95b05ee4ae7ee0f65a874dbbf420a972c9302d6be52a0919b7f42e6590c6",
+        "bytes": 2956
+      },
+      {
+        "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/common/units.py",
+        "sha256": "c7512eddfa3db04465bcbe99c28dc83519262a3e447e1ba40640c0d99cc6bdb1",
+        "bytes": 6790
+      }
+    ],
+    "finding": "原版sync_read经sign-magnitude解码及线性单位换算，未内置±50死区或时间滤波；write_stop只发目标零，不能作为实际停止读回。"
+  },
+  "verification": {
+    "local_methods": 133,
+    "local_pass": 132,
+    "local_sdk_skipped": 1,
+    "local_log": "local-tests.log",
+    "orin_methods": 133,
+    "orin_pass": 133,
+    "orin_skipped": 0,
+    "sdk_golden_test_executed": true,
+    "native_result": "software/result.json",
+    "collection": "software/collection.json",
+    "cleanup": "software/cleanup.json",
+    "actual_fmt_then_root_clippy": "PASS",
+    "source_count": 597,
+    "source_manifest_sha256": "976cbae7cf87895d277260b8fb87ef2e67ccb0c89e9d2d23ac642527fc80a0e2",
+    "independent_review": "review.json",
+    "review_subset": 12,
+    "root_acceptance": "PASS_SOFTWARE_ONLY"
+  },
+  "hardware": {
+    "new_go": false,
+    "uart": 0,
+    "new_motion": false,
+    "candidate_hardware_status": "NOT_RUN"
+  },
+  "limits": [
+    "仅维护整机停止快照；SDK初始/最终严格零、保持使能零速500ms及原前8中间组8032例外不变。",
+    "五组离散位置/速度不是同时采样，1.5秒为软件总预算；不证明固件内部根因或窗口之间连续静止。",
+    "原停止失败、三轮固件合同未闭环及D15 OPEN/DEFERRED、deployable=false保持。"
+  ],
+  "next": "软件验证和Git收尾后，使用新现场事实与一次GO补前轮/左轮原20秒零速停止验证；本次软件授权不代替动作授权。",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "prepared_plans": {
+    "front": {
+      "hardware_go": false,
+      "current_usb_not_checked": true,
+      "plan_sha256": "c35fa82d9d566174115dcd7f7c8f7a70c27a15e2d15c537f3209a5cebb722523",
+      "binding_reference": "../front_wheel_feedback_2026-10-22_r1/current-bindings.json",
+      "note": "仅内存构造验证，未使用的完整PLAN不重复归档；实机前须重核当前设备与绑定。"
+    },
+    "left": {
+      "hardware_go": false,
+      "current_usb_not_checked": true,
+      "plan_sha256": "b7de4ac5830d067f43c9f1f037c5605ce0c527a472e260c4cc39d6f1dd95e9cd",
+      "binding_reference": "../front_wheel_feedback_2026-10-22_r1/current-bindings.json",
+      "note": "仅内存构造验证，未使用的完整PLAN不重复归档；实机前须重核当前设备与绑定。"
+    }
+  },
+  "git_sync_at_precommit": {
+    "origin": "SSH_TIMEOUT_RETRY_PENDING",
+    "github": "d99e9388f82508639ee6cd691c56f17e20be0938",
+    "after_commit_proof": "Git收尾结果另存临时目录，不为回写提交SHA再制造提交。"
+  }
+}
