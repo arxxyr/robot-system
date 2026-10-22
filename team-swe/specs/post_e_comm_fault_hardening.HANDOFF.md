@@ -2,6 +2,14 @@
 
 ## 当前步骤
 
+### 前轮20秒完成，零速第二组−50失败，左轮未执行（UTC2026-10-22）
+
+用户按顺序授权前8、左7各一次，并明确每次动作20秒；复用同源8aea4bb7入口，只有目标和输出变化。前8本次400次非零SYNC、79组位置/速度、累计位置9917，20秒后保持TE1/GV0：第一组PV400，第二组有效原帧`FF FF 08 04 00 32 80 41`为−50，触发原“SDK保持使能零速检查的速度越界”，第三组未执行。独立收尾seq581发送SYNC零速、seq582末写TE0收到有效ACK；随后SDK关闭、后续UART封锁，没有最终速度/整机停止读回。原NEEDS_MANUAL_POWER_CUT及STOP/位置/身份UNKNOWN保持，已要求现场双电源断电，回执待定；左轮没有GO或动作。
+
+同$118/%154/PID738717自然dead1/exit1，194直属child回收、两串口四锁释放；400份原件1807603B逐SHA回收，仅所属dead pane清理。初次只读观察器假定失败采样含velocity_raw而KeyError，仅重新解析同一run原帧，未重启硬件。见[同一摘要](../../.verify/front_wheel_feedback_2026-10-22_r1/summary.json)、[本次原件](../../.verify/front_wheel_feedback_2026-10-22_r1/front-zero-collection.json)及[电源状态](../../.verify/front_wheel_feedback_2026-10-22_r1/front-zero-power-state.json)。不改参数、停止门或历史结论，先完成本次失败收尾；D15 OPEN/DEFERRED、deployable=false保持。
+
+本次独审确认第二组−50为有效回包，非坏帧或超时；已有0..1000速度门拒绝后只执行两项独立收尾写，最终读回没有执行。日志提交前现装nightly1a2c4797e实际fmt→根Clippy通过、597及两Python首尾/本机同源；只清理本轮质量%155和临时runner，原target保留，无软件测试重跑或新UART。
+
 ### 右9零速停止与现场动作观察闭环完成（UTC2026-10-22 08:12）
 
 用户当次确认观察人员已就位后，仅执行准备好的右9一次+500/20秒。400次非零SYNC、79组反馈，累计位置9947；随后保持使能发送零速，三组TE/GV/PV为1/0/300、1/0/0、1/0/0，阶段479.519889ms，启用至TE0为20.500607833秒。断扭、原17电机STOP、位置及106项身份检查通过，manual=false。用户明确报告“右轮明显持续转动，结束后完全停止”。本次受监督维护诊断闭环通过，原run整体FAIL仅来自三项BASE_FIRMWARE_CONTRACT_UNVERIFIED，保持原件和冻结合同。

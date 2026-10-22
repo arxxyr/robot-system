@@ -1,0 +1,13 @@
+{
+  "source": "call_895dc936454546d7822301ca5873963f",
+  "answer": "全部就绪，可按顺序各执行一次",
+  "confirmed_at_ns": 1792657171000000000,
+  "expires_at_ns": 1792657771000000000,
+  "order": [
+    "front8",
+    "left7"
+  ],
+  "each_once": true,
+  "require_front_pass_before_left": true,
+  "notice_before_each_motion": true
+}

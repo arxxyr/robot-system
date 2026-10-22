@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"front-left-zero-record-quality-r1 $119 %155 739158 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/front-left-zero-record-quality-r1.py\", \"temporary_runner_sha256\": \"915497c8350222df7da795c6c90f5434fb2bfabeeaea89dcecc137e4f1c9acb0\"}\n",
+  "stderr": ""
+}
