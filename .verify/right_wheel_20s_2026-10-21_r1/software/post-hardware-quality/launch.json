@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"right20-post-hardware-quality-r1 $105 %141 726447 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/robot-system-right20-post-hardware-quality-r1.py\", \"temporary_runner_sha256\": \"5e6fcf335db8bca675dfac30cebacdee4820baa7dda5af06c389d5ad38619809\"}\n",
+  "stderr": ""
+}

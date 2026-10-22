@@ -1,0 +1,39 @@
+{
+  "schema": "MAINTENANCE_GO_V2",
+  "issued_by": "root",
+  "plan_sha256": "5e5d167f10dacb19a713bfc4aa2ff44f32eab63fa5fa71492da428a7de15edb5",
+  "artifact_root": "/home/loosqk/robot-checks/right-wheel-20s-20261021-r1",
+  "issued_at_ns": 1792639673293980091,
+  "expires_at_ns": 1792640220000000000,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "6cf7ee3e-a3c5-4c91-80bc-4ca924818b53"
+  },
+  "source": "request_user_input_async call_544a3e19404646e7b6f9c0f1ea10969c 当前直接用户答复；首次收到UTC2026-10-22T03:27:00Z",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1792639620000000000
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1792639620000000000,
+      "all_three_wheels_off_ground": true,
+      "base_stably_supported": true,
+      "continuous_wheel_observation": true,
+      "base_confirmation_kind": "CURRENT_SETUP_READY",
+      "base_confirmation_scope": "仅右9复用已装SDK同一连接：SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒只读停稳且最终TE/GV/PV严格零→整机停止检查（仅左7按获准稳定性判据）；三轮稳定架空并持续观察",
+      "base_confirmation_answer": "现在全部就绪，可执行这一次"
+    }
+  }
+}

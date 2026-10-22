@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-22T03:31:50.850515+00:00",
+  "precondition": "right20-post-hardware-quality-r1 $105 %141 726447 1 0",
+  "only_pane": "%141",
+  "temporary_runner_removed": true,
+  "target_retained": true,
+  "uart": 0,
+  "exit_code": 0
+}

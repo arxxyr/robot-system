@@ -1,0 +1,32 @@
+{
+  "at": "2026-10-22T03:31:49.931686+00:00",
+  "pane": "right20-post-hardware-quality-r1 $105 %141 726447 1 0",
+  "owner_and_four_direct_children_absent": true,
+  "downloaded": {
+    "result.json": {
+      "bytes": 2711,
+      "sha256": "22e4f930c78f07e5819b658df488117603b950086ad4b20790a5d1de41d21ed3"
+    },
+    "owner.exit": {
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "fmt.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy.log": {
+      "bytes": 70,
+      "sha256": "3c9d5ca89c8c34ce5b2d6125a9da7f8705ab2717ea0cfafb410996f7252e7fee"
+    },
+    "rustc-before.log": {
+      "bytes": 215,
+      "sha256": "e1420abb84497cbf262a0befd0efd96ad407451645417a125f0e711072110dd8"
+    },
+    "rustc-after.log": {
+      "bytes": 215,
+      "sha256": "e1420abb84497cbf262a0befd0efd96ad407451645417a125f0e711072110dd8"
+    }
+  },
+  "local_597_and_python_match": true
+}

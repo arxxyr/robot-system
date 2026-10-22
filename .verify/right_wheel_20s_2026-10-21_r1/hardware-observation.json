@@ -1,0 +1,393 @@
+{
+  "observed_at_ns": 1792639721391740149,
+  "pane": "right-wheel-sdk-20s-r1-hardware $104 %140 725892 1 1",
+  "driver_pid_absent": true,
+  "driver_tail": "",
+  "keys": [
+    "schema",
+    "plan",
+    "go",
+    "result",
+    "hardware_layer",
+    "S0_S1_head_base_integration",
+    "H2_D15_closed",
+    "deployable",
+    "owned_locks",
+    "before",
+    "before_errors",
+    "before_left7_stability",
+    "after",
+    "after_errors",
+    "after_left7_stability",
+    "stop_verification",
+    "position_verification",
+    "identity_verification",
+    "error",
+    "probes",
+    "received_signal",
+    "child_active",
+    "commands",
+    "process_snapshots",
+    "evidence_errors",
+    "manual_power_cut_required"
+  ],
+  "run": {
+    "result": "FAIL",
+    "manual_power_cut_required": false
+  },
+  "stop_status": "PASS",
+  "identity_status": "PASS",
+  "probes": [
+    {
+      "side": "right",
+      "motor": 9,
+      "name": "base_right_wheel",
+      "kind": "raw_velocity_diagnostic",
+      "status": "PASS",
+      "errors": [],
+      "cleanup_errors": [],
+      "uart_blocked": false,
+      "normal_failed": false,
+      "metadata_verified": true,
+      "goal_verified": true,
+      "stopped_confirmed": true,
+      "initial_zero_attempted": true,
+      "initial_zero_verified": true,
+      "enable_attempted": true,
+      "enable_verified": true,
+      "velocity_attempted": true,
+      "off_attempted": true,
+      "zero_attempted": true,
+      "firmware_contract_verified": false,
+      "wire_path": "/home/loosqk/robot-checks/right-wheel-20s-20261021-r1/hardware/right9-sdk-wire.jsonl",
+      "connection": {
+        "owner_pid": 725892,
+        "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+        "baudrate": 1000000,
+        "open_attempted": true,
+        "close_attempted": true,
+        "closed": true,
+        "closed_ns": 4392947769876366
+      },
+      "anchor_raw": 3520,
+      "initial_zero_finished_ns": 4392927415379304,
+      "enable_attempt_started_ns": 4392927472093047,
+      "first_velocity_attempt_started_ns": 4392927487017450,
+      "observation_deadline_ns": 4392947487017450,
+      "skipped_write_slots": 0,
+      "observation_finished_ns": 4392947489018555,
+      "cumulative_delta_raw": 9950,
+      "disable_finished_ns": 4392947491726733,
+      "enabled_attempt_window_ns": 20019634902,
+      "settle_deadline_ns": 4392948491731565,
+      "settle_samples": [
+        {
+          "offset_ns": 50000000,
+          "raw": [
+            {
+              "sequence": 576,
+              "kind": "read",
+              "motor": 9,
+              "register": "Torque_Enable",
+              "address": 40,
+              "width": 1,
+              "value": null,
+              "started_ns": 4392947545705288,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                40,
+                1,
+                199
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                3,
+                0,
+                0,
+                243
+              ],
+              "wire_first_sequence": 920,
+              "data": [
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 0,
+              "finished_ns": 4392947548314037,
+              "wire_last_sequence": 922
+            },
+            {
+              "sequence": 577,
+              "kind": "read",
+              "motor": 9,
+              "register": "Goal_Velocity",
+              "address": 46,
+              "width": 2,
+              "value": null,
+              "started_ns": 4392947554123305,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                46,
+                2,
+                192
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                4,
+                0,
+                0,
+                0,
+                242
+              ],
+              "wire_first_sequence": 923,
+              "data": [
+                0,
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 0,
+              "finished_ns": 4392947556741943,
+              "wire_last_sequence": 925
+            },
+            {
+              "sequence": 578,
+              "kind": "read",
+              "motor": 9,
+              "register": "Present_Velocity",
+              "address": 58,
+              "width": 2,
+              "value": null,
+              "started_ns": 4392947562545227,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                58,
+                2,
+                180
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                4,
+                0,
+                250,
+                0,
+                248
+              ],
+              "wire_first_sequence": 926,
+              "data": [
+                250,
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 250,
+              "finished_ns": 4392947565142712,
+              "wire_last_sequence": 928
+            }
+          ],
+          "velocity_raw": 250
+        },
+        {
+          "offset_ns": 250000000,
+          "raw": [
+            {
+              "sequence": 579,
+              "kind": "read",
+              "motor": 9,
+              "register": "Torque_Enable",
+              "address": 40,
+              "width": 1,
+              "value": null,
+              "started_ns": 4392947745678582,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                40,
+                1,
+                199
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                3,
+                0,
+                0,
+                243
+              ],
+              "wire_first_sequence": 929,
+              "data": [
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 0,
+              "finished_ns": 4392947748273507,
+              "wire_last_sequence": 931
+            },
+            {
+              "sequence": 580,
+              "kind": "read",
+              "motor": 9,
+              "register": "Goal_Velocity",
+              "address": 46,
+              "width": 2,
+              "value": null,
+              "started_ns": 4392947754080599,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                46,
+                2,
+                192
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                4,
+                0,
+                0,
+                0,
+                242
+              ],
+              "wire_first_sequence": 932,
+              "data": [
+                0,
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 0,
+              "finished_ns": 4392947756694308,
+              "wire_last_sequence": 934
+            },
+            {
+              "sequence": 581,
+              "kind": "read",
+              "motor": 9,
+              "register": "Present_Velocity",
+              "address": 58,
+              "width": 2,
+              "value": null,
+              "started_ns": 4392947762503096,
+              "cleanup": true,
+              "status": "READ_VALID",
+              "expected_tx": [
+                255,
+                255,
+                9,
+                4,
+                2,
+                58,
+                2,
+                180
+              ],
+              "tx_attempts": 1,
+              "deadline_ns": 4392948491731565,
+              "rx_bytes": [
+                255,
+                255,
+                9,
+                4,
+                0,
+                0,
+                0,
+                242
+              ],
+              "wire_first_sequence": 935,
+              "data": [
+                0,
+                0
+              ],
+              "comm": 0,
+              "error_code": 0,
+              "raw_unsigned": 0,
+              "finished_ns": 4392947765130215,
+              "wire_last_sequence": 937
+            }
+          ],
+          "velocity_raw": 0
+        }
+      ],
+      "settle_finished_ns": 4392947767071480,
+      "wire_evidence": {
+        "path": "/home/loosqk/robot-checks/right-wheel-20s-20261021-r1/hardware/right9-sdk-wire.jsonl",
+        "sha256": "84a6abe12e5834beb6dead68a051bd817dc413686b560596fec8f4188efdd530",
+        "bytes": 136268,
+        "events": 937
+      }
+    },
+    {
+      "side": "right",
+      "motor": 8,
+      "name": "base_front_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    },
+    {
+      "side": "right",
+      "motor": 7,
+      "name": "base_left_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    },
+    {
+      "side": "right",
+      "motor": 9,
+      "name": "base_right_wheel",
+      "kind": "velocity",
+      "status": "NOT_RUN",
+      "decision": "DEFERRED",
+      "reason_code": "BASE_FIRMWARE_CONTRACT_UNVERIFIED"
+    }
+  ]
+}

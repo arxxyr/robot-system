@@ -1,6 +1,6 @@
 {
   "schema": "RIGHT9_SDK_20S_SUMMARY_V1",
-  "status": "SOFTWARE_PREPARED_HARDWARE_NOT_RUN",
+  "status": "RIGHT9_SUPERVISED_MOTION_FEEDBACK_STOP_PASS_CHASSIS_INCOMPLETE",
   "client_date": "2026-10-21",
   "source": {
     "scripts/run_hardware_maintenance.py": {
@@ -47,24 +47,83 @@
     "encoder_change_does_not_prove_visible_motion": true
   },
   "next_hardware": {
-    "uart": 0,
-    "go_created": false,
+    "uart_after_terminal": 0,
+    "new_go_created": false,
     "user_instruction": "下次动之前通知我",
     "notify_before_enable": true,
-    "fresh_field_state": "REQUIRED_AFTER_PREPARATION",
-    "old_go_reusable": false
+    "field_watch_released_after_cleanup": true,
+    "old_go_reusable": false,
+    "next_scope_not_authorized_by_this_go": "其余两轮或统一RPC链需各自准备、通知和当次现场确认"
   },
   "cleanup": {
     "native_software": "software/cleanup.json",
     "temporary_local_sdk": "temporary-sdk-cleanup.json",
-    "old_draft": "旧逐命令20秒草稿保留于stash 7a34b74d267b1b87fc8d91381554d0d3b5199a33，未合入候选"
+    "old_draft": "旧逐命令20秒草稿保留于stash 7a34b74d267b1b87fc8d91381554d0d3b5199a33，未合入候选",
+    "hardware": {
+      "terminal": "right-wheel-sdk-20s-r1-hardware $104 %140 725892 1 1",
+      "owner_and_children_absent": true,
+      "direct_children_reaped": 310,
+      "serial_and_four_locks_released": true,
+      "only_owned_dead_pane_killed": true,
+      "original_files": 638,
+      "original_bytes": 2057805,
+      "all_original_sha256_verified": true,
+      "collection": "hardware-collection.json"
+    },
+    "post_hardware_software_quality": "software/post-hardware-quality/cleanup.json"
   },
   "D15": "OPEN/DEFERRED",
   "deployable": false,
-  "physical_motion_verified": false,
+  "physical_motion_verified": true,
   "limitations": [
-    "20秒和21秒为软件有界预算，不是独立硬件断电保护",
-    "仍需实际轮动观察和原停止检查；不能宣称三轮底盘或统一RPC闭环通过",
-    "保留最初SSH255与启动前拒绝；实际native测试仅一次启动，未触UART"
-  ]
+    "仅右9受监督维护诊断的指令→实际动作→反馈→停止闭环通过；其余两轮、三轮固件/单位合同及统一RPC执行链未验收",
+    "本轮整体run仍因既定三项BASE_FIRMWARE_CONTRACT_UNVERIFIED而FAIL，原件不改写",
+    "20/21秒为软件预算，不是独立硬件断电；D15 OPEN/DEFERRED、deployable=false",
+    "先前500ms失败和未见轮动的用户观察保留；不能仅凭本轮变化证明旧故障的唯一根因"
+  ],
+  "hardware": {
+    "original_result": "FAIL",
+    "original_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+    "original_run_sha256": "2f6b0ef4b6db20577ebdb4ad783f5d9bf425fe54a5a5d09345956fc4b127c792",
+    "diagnostic_status": "PASS",
+    "stop_status": "PASS",
+    "stop_note": "17×3停止检查；仅左7使用获准1秒5组位置稳定性判据，终读PV50原样保留；不声称全部51值为零",
+    "identity_status": "PASS",
+    "identity_checks": 106,
+    "manual_power_cut_required": false,
+    "connection_owner_pid": 725892,
+    "single_connection_closed": true,
+    "velocity_raw": 500,
+    "nonzero_sync_writes": 400,
+    "motion_samples": 79,
+    "motion_pv_counts": {
+      "450": 16,
+      "500": 50,
+      "550": 13
+    },
+    "enabled_attempt_window_ns": 20019634902,
+    "first_nonzero_to_disable_ns": 20004709283,
+    "last_nonzero_attempt_before_deadline": true,
+    "cumulative_encoder_delta_raw": 9950,
+    "settle_raw_pv": [
+      250,
+      0
+    ],
+    "settle_finished_after_disable_ns": 275344747,
+    "actual_motion": "CONTINUOUS_ROTATION_USER_REPORTED",
+    "actual_stop": "COMPLETELY_STOPPED_USER_REPORTED",
+    "physical_observation": "physical-observation.json",
+    "go_consumed": true,
+    "no_automatic_retry": true,
+    "D15": "OPEN/DEFERRED",
+    "deployable": false,
+    "independent_review": "hardware-review.json"
+  },
+  "post_hardware_commit_checks": {
+    "result": "software/post-hardware-quality/result.json",
+    "status": "PASS",
+    "tests_rerun": 0,
+    "rust_source_unchanged": true,
+    "uart": 0
+  }
 }
