@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"right-wheel-feedback-record-quality-r1 $126 %162 742458 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/right-wheel-feedback-record-quality-r1.py\", \"temporary_runner_sha256\": \"b9a37b6c01c8558c026315c58b12ba5e2eac72c5e90d07882f514b95fa93fdec\"}\n",
+  "stderr": ""
+}

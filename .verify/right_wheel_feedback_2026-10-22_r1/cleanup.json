@@ -1,0 +1,9 @@
+{
+  "at_ns": 1792668344243055236,
+  "terminal": "right9-feedback-r1-hardware $124 %160 742024 1 0",
+  "owner_absent": true,
+  "only_owned_dead_pane_removed": "%160",
+  "uart_after_capture": 0,
+  "hardware_watch_closed": false,
+  "reason": "用户在当前现场确认时效内要求再采一次，只读范围不变"
+}

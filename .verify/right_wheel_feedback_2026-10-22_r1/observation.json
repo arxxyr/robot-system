@@ -1,0 +1,72 @@
+{
+  "handle": "right9-feedback-r1-hardware $124 %160 742024 1 0",
+  "at_ns": 1792668221045451774,
+  "keys": [
+    "schema",
+    "plan",
+    "go",
+    "result",
+    "hardware_layer",
+    "S0_S1_head_base_integration",
+    "H2_D15_closed",
+    "deployable",
+    "stop_verification",
+    "position_verification",
+    "owned_locks",
+    "identity_verification",
+    "probes",
+    "received_signal",
+    "child_active",
+    "commands",
+    "process_snapshots",
+    "evidence_errors",
+    "right9_feedback_capture",
+    "manual_power_cut_required"
+  ],
+  "result": "DIAGNOSTIC_CAPTURED",
+  "error": null,
+  "errors": null,
+  "needs_manual_power_cut": null,
+  "position_verification": {
+    "status": "NOT_EVALUATED_DIAGNOSTIC_ONLY"
+  },
+  "stop_verification": {
+    "status": "NOT_EVALUATED_DIAGNOSTIC_ONLY"
+  },
+  "identity_verification": {
+    "status": "PASS"
+  },
+  "right9_feedback_capture": {
+    "status": "DIAGNOSTIC_CAPTURED",
+    "contract": "RIGHT9_DIAGNOSTIC_ONLY"
+  },
+  "probe_shapes": [
+    {
+      "side": "right",
+      "motor": 9,
+      "name": "base_right_wheel",
+      "status": "DIAGNOSTIC_CAPTURED",
+      "errors": [],
+      "keys": [
+        "side",
+        "motor",
+        "name",
+        "kind",
+        "status",
+        "samples",
+        "errors",
+        "register_writes",
+        "same_frame",
+        "stop_verified",
+        "uart_blocked",
+        "started_ns",
+        "anchor_raw",
+        "plan_sha256",
+        "deadline_ns",
+        "observation_started_ns",
+        "finished_ns",
+        "position_span_raw"
+      ]
+    }
+  ]
+}

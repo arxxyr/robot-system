@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-22T11:29:34.057808+00:00",
+  "precondition": "right-wheel-feedback-record-quality-r1 $126 %162 742458 1 0",
+  "only_pane": "%162",
+  "temporary_runner_removed": true,
+  "original_target_retained": true,
+  "uart": 0,
+  "go": 0,
+  "exit_code": 0
+}
