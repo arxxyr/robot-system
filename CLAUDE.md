@@ -65,6 +65,16 @@
 ```
 设计版本:  v0.1.2（冻结）
 
+接入准备:  UTC2026-10-23复核10-22三轮SDK原帧，均Model777/FW3.10/Mode1/Phase12，初始TE0。
+           已有TE1/GV0零速序列前450→0→0、左300→0→0、右350→0→0；属于此前单轮实机通过。
+           当前mixed依赖的profile仍拒Phase12，厂家表未明确Mode1例外；不能用测试Phase4替代现场。
+           默认factory/wire及维护SDK pulse均未调用mixed，历史bus2_full全Position配置不可直接复用。
+           Orin主机/USB/占用核对通过；既有校准文件ID匹配，但昨日右3距上限3、右6低于下限13计数。
+           不能直接套+24或把clamp后的目标称原位保持，正式动作先核当前位置与校准范围。
+           本轮只核原件与主机接入，无新UART/参数写/动作/GO；不重复静态三读来绕过合同差异。
+           下一步仅定向解决本机raw零速合同并接既有维护入口；保留三轮14读停止复核，动作前预告。
+           原件与接入条件见s0_bus2_hardware_preparation_2026-10-23_r1/summary.json；D15/deployable不变。
+
 当前HAL:   UTC2026-10-23右总线内部混合目标软件完成：六臂Position＋前8/左7/右9 signed raw轮速。
            完整九槽目标共用来源截止和SerialRT写者；显式profile/Mode/TE/Phase/固件核对，不写EEPROM。
            首帧前校验完整目标及校准范围，GV→GP复用原绝对截止写路径；两帧非原子，失败整bus收敛。

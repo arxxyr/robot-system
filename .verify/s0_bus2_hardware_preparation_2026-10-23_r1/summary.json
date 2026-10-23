@@ -1,0 +1,393 @@
+{
+  "status": "PREPARATION_REVIEW_COMPLETE_MIXED_MOTION_NOT_READY",
+  "at_utc": "2026-10-23T17:59:04+00:00",
+  "software_commit": "bec8b7c7b2e3e43394395e12caa7b9664731ffdb",
+  "scope": "只核原始实机证据、厂家/原版调用链、当前主机接入及工具边界；不改驱动/Phase/模式/停止判据，不运行UART或动作",
+  "historical_wheel_evidence": [
+    {
+      "wheel": "front",
+      "motor": 8,
+      "readings": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Torque_Enable": 0
+      },
+      "run_path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/front-hardware/run.json",
+      "run_sha256": "a2f51b955a9b2d80e9847102321ec32d07c5bab11bc15e2c8e1bc3894c030131",
+      "metadata_sequences": {
+        "Model_Number": 1,
+        "Firmware_Major_Version": 2,
+        "Firmware_Minor_Version": 3,
+        "Operating_Mode": 4,
+        "Phase": 5,
+        "Torque_Enable": 7
+      },
+      "probe_status": "PASS",
+      "zero_stop_te1_gv0_pv": [
+        450,
+        0,
+        0
+      ],
+      "whole_run_result": "FAIL",
+      "firmware_contract_verified": false
+    },
+    {
+      "wheel": "left",
+      "motor": 7,
+      "readings": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Torque_Enable": 0
+      },
+      "run_path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/left-hardware/run.json",
+      "run_sha256": "4eab8fad9729255801c24793569d5ce8f28eae0c4079a12f1a241e0706a0edd5",
+      "metadata_sequences": {
+        "Model_Number": 1,
+        "Firmware_Major_Version": 2,
+        "Firmware_Minor_Version": 3,
+        "Operating_Mode": 4,
+        "Phase": 5,
+        "Torque_Enable": 7
+      },
+      "probe_status": "PASS",
+      "zero_stop_te1_gv0_pv": [
+        300,
+        0,
+        0
+      ],
+      "whole_run_result": "FAIL",
+      "firmware_contract_verified": false
+    },
+    {
+      "wheel": "right",
+      "motor": 9,
+      "readings": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Torque_Enable": 0
+      },
+      "run_path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/right-hardware/run.json",
+      "run_sha256": "4b583b0c64decccd0837565487d958afe88402d2e9de156abcc685bf48023671",
+      "metadata_sequences": {
+        "Model_Number": 1,
+        "Firmware_Major_Version": 2,
+        "Firmware_Minor_Version": 3,
+        "Operating_Mode": 4,
+        "Phase": 5,
+        "Torque_Enable": 7
+      },
+      "probe_status": "PASS",
+      "zero_stop_te1_gv0_pv": [
+        350,
+        0,
+        0
+      ],
+      "whole_run_result": "FAIL",
+      "firmware_contract_verified": false
+    }
+  ],
+  "historical_right_bus_after": {
+    "1": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2428,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "2": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1108,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "3": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2988,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "4": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 2842,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "5": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1459,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "6": {
+      "Operating_Mode": 0,
+      "Torque_Enable": 0,
+      "Present_Position": 1371,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "7": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 2334,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "8": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 865,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    },
+    "9": {
+      "Operating_Mode": 1,
+      "Torque_Enable": 0,
+      "Present_Position": 2857,
+      "Present_Velocity": 0,
+      "Goal_Position": 0,
+      "Goal_Velocity": 0
+    }
+  },
+  "freshness": "上述电机读数来自UTC2026-10-22，非本轮新采集，不能替代当前供电/看护事实。右臂1..6的最新Mode/TE已核，固件与Phase未在该轮采集；混合connect对臂核型号/Mode/TE，不需要臂Phase或固件合同。",
+  "current_host_receipt": "host-preflight.json",
+  "primary_reference_review": {
+    "checked_at_utc": "2026-10-23T17:59:04+00:00",
+    "manufacturer_table": "https://ftservo.github.io/ftservo-wiki/reference/parameter/memory-sts/",
+    "table_finding": "33区分Mode0位置/Mode1恒速；46及BIT3说明0值含义，没有明确仅适用Mode0，也没有给现场FW3.10适用声明。",
+    "sdk_example": "https://raw.githubusercontent.com/ftservo/FTServo_Linux/06fd3356dbd7bccd886b5a70d7ae0fccc6c76d38/examples/SMS_STS/WriteSpe/WriteSpe.cpp",
+    "sdk_finding": "示例在WheelMode(1)后用WriteSpe(0)停轮；同版实现不读Phase，WriteSpe写41..47，与现场只写46/47的SYNC不同，不能作为整段可替换调用。",
+    "legacy_portal": "本轮web读取doc.feetech.cn超时；使用厂商当前公开Wiki交叉核查，不声称旧version181已刷新。",
+    "local_original": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/adapters/bus2_base.py及shared_bus调用链；connect有TE/Lock/Mode写，不能直接运行充当只读预检。"
+  },
+  "blockers": [
+    {
+      "id": "PHASE12_PROFILE",
+      "fact": "Sts3215WheelProfile::try_bind对Phase&8拒绝；现场三轮Phase12匹配期望后仍返回ZeroMeansMaximumSpeed。测试Phase4夹具不能替代现场值。",
+      "evidence_conflict": "通用表/现有profile与本机FW3.10 Mode1 Phase12已有TE1/GV0停轮证据存在适用性差异；既不把代码拒绝说成轮子实际不能停，也不据单轮局部通过宣称通用合同已解决。"
+    },
+    {
+      "id": "NO_MIXED_HARDWARE_ENTRY",
+      "fact": "new_bus2_mixed是显式内部构造；默认factory仍new，wire为All，现有maintenance pulse走SDK，poke是低层单ID入口。当前没有可直接运行并覆盖mixed S0链的动作命令。"
+    },
+    {
+      "id": "STOP_LAYER_BOUNDARY",
+      "fact": "Rust mixed断扭沿用九电机TE确认；Python维护停止另有三轮PV0/±50的14读稳定性复核，必须在实机维护入口继续复用，不能把Rust TE确认等同完整物理静止。"
+    },
+    {
+      "id": "MOTION_ANCHOR_NOT_CURRENT",
+      "fact": "10-22末读右3=2988，现有标定上限2991仅余3计数；右6=1371低于下限1384。不是当前关节状态，不能统一+24或把夹限后的目标称原位保持。",
+      "required": "正式试验使用新鲜位置和当前校准范围筛选可行动作；若当前保持目标会被clamp改变，先停在准备阶段，不自动移动夹爪或放宽范围。"
+    }
+  ],
+  "minimal_next_steps": [
+    "先把FW3.10/Mode1/Phase12已有零速实证与raw接口要求定向对齐，保留厂家名义SI profile拒绝；本轮仅登记候选方向，不修改判据或配置Phase。",
+    "合同问题解决后，只在既有poke/维护执行路径增加显式混合试验接点，绑定完整九槽和同一串口所有者；不接RPC、默认服务或新会话。",
+    "实际启动前以冻结read-raw工具补当前身份/模式/TE必要项，并复用维护独占、当前现场回执、停止检查及资源清场；不要重用旧GO或因静态三读增加重复轮次。",
+    "动作锚点另用本次新鲜反馈核对六臂校准范围与余量，不能复用昨日位置；不要求无关六臂固件/Phase重复读取。",
+    "首个混合动作的关节/幅度/轮速/时长须随具体验证方案预告；此前每个动作20秒的偏好保留，首轮具体数值尚未设定，不发GO。"
+  ],
+  "reusable_tools": {
+    "raw_read": "已有冻结feetech_poke <right-device> <id> read-raw <register>；当前工具身份见host-preflight",
+    "sdk_feedback": "现有14读只含TE/GV/PP/PV，不涵盖型号/固件/Phase",
+    "read6_r15": "固定right7/right8主次固件和Phase，共6读，旧run-id/绑定固定；不能改JSON冒充三轮或九电机新方案",
+    "maintenance": "保留run_hardware_maintenance.py的独占、600秒回执与三轮停止复核；不启动默认含动作计划"
+  },
+  "limits": {
+    "uart_reads": 0,
+    "register_writes": 0,
+    "hardware_actions": 0,
+    "new_go": false,
+    "physical_power": "UNKNOWN_CURRENT",
+    "field_readiness": "NOT_REQUESTED_FOR_THIS_PREPARATION",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "verification": "原18元数据状态帧ID/校验和/原值与当前摘要一致；三轮TE1/GV0零速序列核对；当前代码入口只读独审。无新增源码或新增软件测试。",
+  "calibration_files_current": {
+    "right_arm.json": {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
+      "sha256": "98ad69369b4bcfeb1cc84051116d8722709fe2d38b987c077e6e1453c2cea03e",
+      "data": {
+        "right_arm_shoulder_pan": {
+          "id": 1,
+          "drive_mode": 0,
+          "homing_offset": -136,
+          "range_min": 839,
+          "range_max": 3511
+        },
+        "right_arm_shoulder_lift": {
+          "id": 2,
+          "drive_mode": 0,
+          "homing_offset": 513,
+          "range_min": 957,
+          "range_max": 3295
+        },
+        "right_arm_elbow_flex": {
+          "id": 3,
+          "drive_mode": 0,
+          "homing_offset": -15,
+          "range_min": 812,
+          "range_max": 2991
+        },
+        "right_arm_wrist_flex": {
+          "id": 4,
+          "drive_mode": 0,
+          "homing_offset": -804,
+          "range_min": 1000,
+          "range_max": 3250
+        },
+        "right_arm_wrist_roll": {
+          "id": 5,
+          "drive_mode": 0,
+          "homing_offset": -1177,
+          "range_min": 114,
+          "range_max": 3884
+        },
+        "right_arm_gripper": {
+          "id": 6,
+          "drive_mode": 0,
+          "homing_offset": -507,
+          "range_min": 1384,
+          "range_max": 2847
+        }
+      }
+    },
+    "base.json": {
+      "path": "/home/loosqk/repo/dimensional-applications/calibration/base.json",
+      "sha256": "c35a8c47615293628fb88e28f0c90deb0b9cff6e3634e21f7de32790a7b4d671",
+      "data": {
+        "base_left_wheel": {
+          "id": 7,
+          "drive_mode": 0,
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "base_back_wheel": {
+          "id": 8,
+          "drive_mode": 0,
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "base_right_wheel": {
+          "id": 9,
+          "drive_mode": 0,
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        }
+      }
+    }
+  },
+  "calibration_scope": "仅现有右臂/底盘标定JSON文件与ID/范围盘点；不是物理标定复测，不直接启动历史全Position配置。",
+  "historical_positions_vs_current_calibration": [
+    {
+      "name": "right_arm_shoulder_pan",
+      "id": 1,
+      "historical_present_position": 2428,
+      "current_file_range": [
+        839,
+        3511
+      ],
+      "inside_range": true,
+      "distance_to_lower": 1589,
+      "distance_to_upper": 1083
+    },
+    {
+      "name": "right_arm_shoulder_lift",
+      "id": 2,
+      "historical_present_position": 1108,
+      "current_file_range": [
+        957,
+        3295
+      ],
+      "inside_range": true,
+      "distance_to_lower": 151,
+      "distance_to_upper": 2187
+    },
+    {
+      "name": "right_arm_elbow_flex",
+      "id": 3,
+      "historical_present_position": 2988,
+      "current_file_range": [
+        812,
+        2991
+      ],
+      "inside_range": true,
+      "distance_to_lower": 2176,
+      "distance_to_upper": 3
+    },
+    {
+      "name": "right_arm_wrist_flex",
+      "id": 4,
+      "historical_present_position": 2842,
+      "current_file_range": [
+        1000,
+        3250
+      ],
+      "inside_range": true,
+      "distance_to_lower": 1842,
+      "distance_to_upper": 408
+    },
+    {
+      "name": "right_arm_wrist_roll",
+      "id": 5,
+      "historical_present_position": 1459,
+      "current_file_range": [
+        114,
+        3884
+      ],
+      "inside_range": true,
+      "distance_to_lower": 1345,
+      "distance_to_upper": 2425
+    },
+    {
+      "name": "right_arm_gripper",
+      "id": 6,
+      "historical_present_position": 1371,
+      "current_file_range": [
+        1384,
+        2847
+      ],
+      "inside_range": false,
+      "distance_to_lower": -13,
+      "distance_to_upper": 1476
+    }
+  ],
+  "host_result": "非UART主机核查通过：双串口USB身份和权限正确，旧控制服务符合维护条件，两串口/四锁无持有者；9源码与7既有工具引用匹配。handoff服务active/exited按既有维护条件保留，未重启或改状态。",
+  "local_validation": {
+    "rust9_unchanged": true,
+    "historical_config_toml_values_unchanged": true,
+    "raw18_metadata_frames_revalidated": true,
+    "historical_run_sha256_checked": true,
+    "calibration_name_id_mapping_checked": true,
+    "old_stash_preserved": true
+  },
+  "review": "独立原始帧/入口/文档及root复核通过；两处校准余量计算与新鲜性边界通过；主机核查为非UART，不扩大为硬件就绪。",
+  "quality_receipt": "quality/result.json",
+  "quality_scope": "无Rust改动，按提交要求在同源Orin仅执行实际fmt→根Clippy并通过，沿用本日已更新nightly7189；未重跑428项。",
+  "cleanup": "本轮质量PID775978自然退出0，自有%185与临时目录已清，无残余构建进程；复用原source/target，旧stash保留。",
+  "completed_at_utc": "2026-10-23T18:04:08+00:00"
+}

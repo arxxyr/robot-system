@@ -1,3 +1,7 @@
+# 历史全 Position 配置（2026-10-23 接入复核）：不是本轮 Position/raw Velocity 混合入口。
+# 当前三轮的最近实机 Mode=1；不要按下述历史 Stage 2 步骤改 Mode/Lock 或启动本配置。
+# mixed 使用显式 new_bus2_mixed，Phase12 合同及维护动作入口尚未接通；当前边界见 CLAUDE.md。
+#
 # XLeRobot bus2 全栈 9-motor 真机闭环验证配置（task #15 Stage 2）。
 #
 # Stage 1（`xlerobot_bus2_right_arm_full.toml`）只驱动右臂 6 motor，base 三
