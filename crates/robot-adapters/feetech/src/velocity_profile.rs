@@ -127,6 +127,55 @@ pub struct Sts3215WheelProfile {
     unit: VelocityUnit,
 }
 
+/// 现场已验证的原始值合同；没有 SI 单位或任意方向速度承诺。
+/// 仅绑定型号777、固件3.10、模式1、Phase12及0/+500两个写入值。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Sts3215RawWheelProfile {
+    role: WheelRole,
+}
+
+impl Sts3215RawWheelProfile {
+    /// # Errors
+    /// 任一现场身份不符即拒绝，不解除名义 SI profile 的 Phase 限制。
+    pub fn try_bind(
+        observed: WheelObservation,
+        role: WheelRole,
+    ) -> Result<Self, WheelProfileError> {
+        if observed.motor_id != role.motor_id() {
+            return Err(WheelProfileError::WrongMotorId);
+        }
+        if observed.model != MODEL_NUMBER_STS3215 {
+            return Err(WheelProfileError::WrongModel);
+        }
+        if observed.mode != 1 {
+            return Err(WheelProfileError::WrongMode);
+        }
+        match observed.firmware {
+            None => return Err(WheelProfileError::FirmwareMissing),
+            Some(FirmwareVersion {
+                major: 3,
+                minor: 10,
+            }) => {}
+            Some(_) => return Err(WheelProfileError::FirmwareMismatch),
+        }
+        if observed.phase != 12 {
+            return Err(WheelProfileError::PhaseMismatch);
+        }
+        Ok(Self { role })
+    }
+
+    #[must_use]
+    pub const fn role(self) -> WheelRole {
+        self.role
+    }
+
+    /// 该实证合同只容许已测的零速和正向500，不把上限解释为连续范围。
+    #[must_use]
+    pub const fn accepts(self, raw: i16) -> bool {
+        matches!(raw, 0 | 500)
+    }
+}
+
 /// 名义反馈换算与原始wire字；负零反馈保留原件。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecodedWheelVelocity {
@@ -265,6 +314,69 @@ mod tests {
     fn profile(phase: u8, limit: u16) -> Sts3215WheelProfile {
         let (observation, contract) = inputs(WheelRole::Front, phase, limit);
         Sts3215WheelProfile::try_bind(observation, contract).unwrap()
+    }
+
+    #[test]
+    fn observed_raw_contract_is_exact_and_does_not_relax_nominal_phase() {
+        for role in [WheelRole::Front, WheelRole::Left, WheelRole::Right] {
+            let observation = WheelObservation {
+                motor_id: role.motor_id(),
+                model: 777,
+                mode: 1,
+                phase: 12,
+                firmware: Some(FirmwareVersion {
+                    major: 3,
+                    minor: 10,
+                }),
+            };
+            let profile = Sts3215RawWheelProfile::try_bind(observation, role).unwrap();
+            for raw in i16::MIN..=i16::MAX {
+                assert_eq!(profile.accepts(raw), matches!(raw, 0 | 500));
+            }
+            for bad in [
+                WheelObservation {
+                    motor_id: 1,
+                    ..observation
+                },
+                WheelObservation {
+                    model: 778,
+                    ..observation
+                },
+                WheelObservation {
+                    mode: 0,
+                    ..observation
+                },
+                WheelObservation {
+                    phase: 4,
+                    ..observation
+                },
+                WheelObservation {
+                    firmware: None,
+                    ..observation
+                },
+                WheelObservation {
+                    firmware: Some(FirmwareVersion {
+                        major: 3,
+                        minor: 11,
+                    }),
+                    ..observation
+                },
+            ] {
+                assert!(Sts3215RawWheelProfile::try_bind(bad, role).is_err());
+            }
+            assert_eq!(
+                Sts3215WheelProfile::try_bind(
+                    observation,
+                    WheelContract {
+                        role,
+                        firmware: observation.firmware.unwrap(),
+                        phase: 12,
+                        raw_limit: 500
+                    }
+                ),
+                Err(WheelProfileError::ZeroMeansMaximumSpeed)
+            );
+        }
     }
 
     #[test]

@@ -1,0 +1,109 @@
+{
+  "status": "SOFTWARE_PASS_HARDWARE_NOT_RUN",
+  "base_commit": "26f8e7b40559048a1271a72c99f057bf1e93b7ab",
+  "authorization": "继续，按已有实机证据对齐固件3.10、Phase12的 raw 零速合同，再接入现有维护入口。先完成软件验证，不改电机参数、不扩大设计，实机动作前通知我。",
+  "evidence_source": ".verify/s0_bus2_hardware_preparation_2026-10-23_r1/summary.json",
+  "scope": "仅本机Model777/FW3.10/Mode1/Phase12的raw 0与+500经验合同及既有维护入口；不提供SI单位换算或修改名义profile，不回填历史FAIL。",
+  "physical_uart_access": false,
+  "hardware_motion": false,
+  "motor_parameter_writes": false,
+  "fresh_hardware_go": false,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "implementation": {
+    "profile": "Model777/FW3.10/Mode1/Phase12 only; raw {0,+500}; old nominal SI profile unchanged",
+    "entry": "run_hardware_maintenance.py --bus2-mixed-raw-hold -> feetech_poke mixed-hold-right9 -> real FeetechAdapter",
+    "motion_plan": "Six right-arm joints hold fresh unclamped actual enable PP anchors; right9 +500 for 20s, front8/left7 raw0; 400 cycles, 79 feedback groups, original zero/stop checks",
+    "safety": "Same bus owner and real ControlAuthority leases, fixed GO/21s enable/500ms zero budgets, independent nine-motor disable; outer seventeen-motor stop/three wheel stability and identity checks",
+    "not_claimed": [
+      "physical mixed motion",
+      "SerialTick/S0/S1 integration acceptance",
+      "SI velocity conversion",
+      "production deployment"
+    ]
+  },
+  "local_validation": {
+    "rust_lib_methods": 227,
+    "rust_example_methods": 19,
+    "rust_failures": 0,
+    "rust_ignored": 0,
+    "rust_log": "local-r3-tests.log",
+    "final_probe_test": "local-final-r3-probe.log",
+    "final_probe_scenarios": 11,
+    "note": "Final change only advances simulated clock and exports real mock receipt; affected single method rechecked, not counted as new methods",
+    "clippy": "local-final-r2-clippy.log",
+    "maintenance_methods": 145,
+    "maintenance_pass": 144,
+    "maintenance_skipped": 1,
+    "maintenance_skip_reason": "local host lacks installed original Python SDK",
+    "maintenance_log": "local-maintenance-tests.log",
+    "cross_language": "python-rust-receipt-check.json"
+  },
+  "review": {
+    "status": "SOFTWARE_PASS",
+    "reviewer": "xlerobot_local_check",
+    "scope": "Complete production diff, contract limits, real lease/anchor/deadline/cleanup, hold classification, actual Rust JSON parsed by Python",
+    "final_module_sha256": "0bd1b43ae0510d9efec6144dc9ddfe6ef61a4a1034cbddd0fc29307075a30307",
+    "uart_access": false
+  },
+  "native_signal_fixture": "native-strace-signal.json",
+  "evidence_cleanup": {
+    "removed_redundant_intermediate_pass_logs": [
+      "local-r2-tests.log",
+      "local-r4-check.log",
+      "local-r3-clippy.log",
+      "local-final-clippy.log"
+    ],
+    "retained": "All failed attempts, final full test log, final affected test/Clippy logs and actual software receipt",
+    "hardware_evidence_deleted": false,
+    "raw_log_whitespace": "Three original test stdout logs end with a blank line; retained byte-for-byte. Git whitespace check applies to source/docs, not immutable captured logs."
+  },
+  "native_validation": {
+    "result": "PASS",
+    "record": "native/result.json",
+    "rust_lib_methods": 227,
+    "rust_example_methods": 19,
+    "maintenance_methods": 145,
+    "failures": 0,
+    "ignored": 0,
+    "checks": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings",
+      "cargo clippy -p robot-adapter-feetech --features real-hw --all-targets -- -D warnings",
+      "real-hw lib and feetech_poke tests",
+      "release feetech_poke build",
+      "full maintenance suite with actual installed SDK over simulated transport"
+    ],
+    "compiler": "nightly 7189d39d9 (2026-10-22)",
+    "source_and_sdk_unchanged": true,
+    "frozen_elf_sha256": "f756cec6b1353cca04e0606c6c7292c3186ed87684552674176585a647fd9a39"
+  },
+  "prepared_plan": {
+    "record": "actual-plan-only.json",
+    "validation": "actual-plan-check.json",
+    "sha256": "b7205a205f7cb15c282d9530cf77148faa3bdddf51464f59e16bd0bd0fbab4b2",
+    "refs_verified": 76,
+    "default_and_explicit_entry": "PLAN_ONLY / actions_started=0",
+    "actual_hardware_output_directory_created": false,
+    "new_go_created": false
+  },
+  "resource_cleanup": {
+    "record": "native/cleanup.json",
+    "owned_pane": "%186",
+    "natural_exit": 0,
+    "own_processes_and_temp_removed": true,
+    "own_python_cache_removed": true,
+    "existing_build_target_reused": true,
+    "frozen_elf_bindings_plan_preserved": true,
+    "existing_detached_worktrees_and_stash_preserved": true
+  },
+  "failures_retained": [
+    "Initial local Rust compile/Clippy/test errors and final fixture path/clock test failures are retained in logs; all resolved on final frozen inputs",
+    "Historical hardware failures and firmware DEFERRED reports are not rewritten"
+  ],
+  "next_step": "仅上述维护混合路径的受监督实机验证；动作前通知，重新取得当次供电/架空/支撑/看护状态。先读当前位置并严格核校准范围，越界即拒绝，不clamp或修改电机参数。",
+  "known_unresolved": [
+    "Historical right3 PP was three counts below upper bound and right6 thirteen below lower bound; current physical positions unknown",
+    "Raw direction/unit calibration, nominal SI profile and full SerialTick/S0/S1 integration remain outside this maintenance slice"
+  ]
+}

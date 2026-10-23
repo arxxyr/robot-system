@@ -125,6 +125,7 @@ pub struct FeetechAdapter<T: SerialTransport> {
     diag: Option<Arc<dyn DiagSink>>,
     connected: bool,
     mixed_bus2: Option<MixedBus2>,
+    mixed_arm_anchor: Option<([i32; 6], u64)>,
     command_budget_ns: u64,
     info: AdapterInfo,
     bus: FeetechBus<T>,
@@ -241,6 +242,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             diag: config.diag,
             connected: false,
             mixed_bus2: None,
+            mixed_arm_anchor: None,
             command_budget_ns: u64::try_from(config.call_deadline.as_nanos()).unwrap_or(u64::MAX),
             info: AdapterInfo {
                 name: config.adapter_name,
@@ -361,8 +363,31 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         let ids = mixed_ids
             .as_ref()
             .map_or(self.joint_ids.as_slice(), |ids| ids.as_slice());
+        if self.raw_mixed() {
+            self.mixed_arm_anchor = None;
+        }
+        let sampled_ns = if self.raw_mixed() {
+            self.clock.now().0
+        } else {
+            0
+        };
         self.bus
             .sync_read_by_id_into("Present_Position", ids, &mut self.pos_raw[..ids.len()])?;
+        let mut candidate_anchor = None;
+        if self.raw_mixed() {
+            if self
+                .clock
+                .now()
+                .0
+                .checked_sub(sampled_ns)
+                .is_none_or(|age| age > 200_000_000)
+            {
+                return Err(FeetechError::Aborted(
+                    robot_core::serial_services::AbortReason::Timeout,
+                ));
+            }
+            candidate_anchor = self.validate_raw_mixed_anchor(sampled_ns)?;
+        }
 
         // 构造 Goal entries = Present
         self.cmd_entries.clear();
@@ -384,7 +409,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             for (i, &id) in ids.iter().enumerate() {
                 let wanted = self.pos_raw[i];
                 let got = self.goal_raw[i];
-                if (got - wanted).abs() > SYNC_GOAL_TOLERANCE {
+                if (self.raw_mixed() && got != wanted) || (got - wanted).abs() > SYNC_GOAL_TOLERANCE
+                {
                     mismatch = Some((id, wanted, got));
                     break;
                 }
@@ -393,6 +419,9 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             let max = SYNC_GOAL_MAX_ATTEMPTS;
             match mismatch {
                 None => {
+                    if self.raw_mixed() {
+                        self.mixed_arm_anchor = candidate_anchor;
+                    }
                     if attempt > 1 {
                         self.record(2, 2, 0, attempt as u8, 0);
                     }
@@ -401,7 +430,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                 Some((id, wanted, got)) => {
                     let diff = got - wanted;
                     self.record(2, 1, id, attempt as u8, diff.unsigned_abs());
-                    if attempt == max {
+                    if attempt == max || self.raw_mixed() {
                         return Err(FeetechError::SyncGoalReadbackMismatch {
                             motor_id: id,
                             wrote: wanted,
@@ -449,6 +478,17 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         let mut first_failure = None;
         for index in 0..self.joint_names.len() {
             for attempt in 1..=TORQUE_ENABLE_MAX_ATTEMPTS {
+                if on && self.raw_mixed() {
+                    let fresh = self
+                        .mixed_arm_anchor
+                        .and_then(|(_, stamp)| self.clock.now().0.checked_sub(stamp))
+                        .is_some_and(|age| age <= 200_000_000);
+                    if !fresh {
+                        return Err(RobotError::Aborted(
+                            robot_core::serial_services::AbortReason::Timeout,
+                        ));
+                    }
+                }
                 match self
                     .bus
                     .write("Torque_Enable", &self.joint_names[index], target)
@@ -469,7 +509,9 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                         );
                         self.record_error(3, &error);
                         // 只有设备 NACK 可重试；通信、抢占和永久参数问题立即定级返回。
-                        if !matches!(error, FeetechError::StatusError(_)) {
+                        if (on && self.raw_mixed())
+                            || !matches!(error, FeetechError::StatusError(_))
+                        {
                             return Err(error.into());
                         }
                         self.record(3, 1, self.joint_ids[index], attempt as u8, 0);

@@ -1,0 +1,252 @@
+{
+  "base": "26f8e7b40559048a1271a72c99f057bf1e93b7ab",
+  "sdk_refs": [
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/__init__.py",
+      "sha256": "c3047515bd2992e6fc209386f11fd4c80722c519b21be2a3a7a91f2d96222941",
+      "bytes": 148,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900202,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/group_sync_read.py",
+      "sha256": "ccbbb3a864c047bf3a7808a0b455676b198645ee1caffa58dac562339a86ad76",
+      "bytes": 3563,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900214,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/group_sync_write.py",
+      "sha256": "70d2a9e2157692932dd6e25515e53d600da9ca87ffab656c4660fb0de4d03476",
+      "bytes": 2023,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900201,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/packet_handler.py",
+      "sha256": "96bb801133436122d39e868bc6492a226222a737c04560ea7a02d0c5eacef2fd",
+      "bytes": 273,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900205,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/port_handler.py",
+      "sha256": "c8dbb189ca98705bd71066d5a9a691b4c80b484c77ebe8a9ccc2d6c46321e999",
+      "bytes": 3168,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900215,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/protocol_packet_handler.py",
+      "sha256": "9932c85b9e2ac671a7e33f39e8e80b05d6592280d9f2bcebd85103845e36e655",
+      "bytes": 16331,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900204,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/scservo_sdk/scservo_def.py",
+      "sha256": "068f7ad5c453ad6e338543c706047253495fcd6bf9a632465501ace12fee0627",
+      "bytes": 1710,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900207,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/__init__.py",
+      "sha256": "5dec897fdef45a0eaf63eacda1e01d62e1e75490302584ae0238f75376592344",
+      "bytes": 3212,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13777111,
+      "mtime_ns": 1775749413843182684,
+      "ctime_ns": 1775749618702115073,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/serialposix.py",
+      "sha256": "5d56f98513391e1766a1847a04e2e1202ced4172a152803ba1c823a149a9b6f9",
+      "bytes": 35127,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13777500,
+      "mtime_ns": 1775749446568297146,
+      "ctime_ns": 1775749618702115073,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/serial/serialutil.py",
+      "sha256": "3c84f8c7c319f161a85d6f8db5bedc4f65255714589bdcbeee6f2daf65a17c0a",
+      "bytes": 21797,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13777558,
+      "mtime_ns": 1775749453256524549,
+      "ctime_ns": 1775749618702115073,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/feetech_servo_sdk-1.0.0.dist-info/METADATA",
+      "sha256": "2a313b217816c9abbb1dd62f1fb75c2655e00da7c86cd52e005fec595b196af8",
+      "bytes": 3412,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13900216,
+      "mtime_ns": 1775749704380988005,
+      "ctime_ns": 1775749704380988005,
+      "nlink": 2,
+      "symlink": false
+    },
+    {
+      "path": "/home/loosqk/repo/dimensional-applications/.venv/lib/python3.12/site-packages/pyserial-3.5.dist-info/METADATA",
+      "sha256": "42a8ab7e94ef0b7baa7e94cdac65d6b9254c608476f630120c990007bf472943",
+      "bytes": 1650,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 436,
+      "device": 66305,
+      "inode": 13778120,
+      "mtime_ns": 1775749511946515038,
+      "ctime_ns": 1775749618702115073,
+      "nlink": 2,
+      "symlink": false
+    }
+  ],
+  "rows": [
+    {
+      "path": "Cargo.lock",
+      "base_sha256": "44bebebce3f2042e4be87ae61426c5cfa745eeb1d5bf4dbe1fa44a795050700a",
+      "sha256": "1526d80cc235fc506b0250e91097ff05a3c3ba86d961370f6daa3cbb1d105cdf",
+      "bytes": 147071
+    },
+    {
+      "path": "crates/robot-adapters/feetech/Cargo.toml",
+      "base_sha256": "10eaa7b01080ad94db0a92ba605f0573a095213498cf6ad8b521b7d952b034d8",
+      "sha256": "d92bc5aef48f9c05e03f56e9c952bf6016f94cc9ba5933eedfb825dee27302ea",
+      "bytes": 3081
+    },
+    {
+      "path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+      "base_sha256": "fc9382417321c56f12f87842324074dd45ca2975bdc2850242b146df855cf4c4",
+      "sha256": "d3e36be8927537232b2cfc95b4054e227a77679b397654451d2f1bc7bbe833ec",
+      "bytes": 34298
+    },
+    {
+      "path": "crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs",
+      "base_sha256": null,
+      "sha256": "0bd1b43ae0510d9efec6144dc9ddfe6ef61a4a1034cbddd0fc29307075a30307",
+      "bytes": 45553
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/adapter.rs",
+      "base_sha256": "ea288a1f7f0974cd7041aadb3cf85da5d67febcb094f917d5e6617da21ce37e2",
+      "sha256": "fb87868aa68f669797a650ea74626e5840f073962f7fdf7c71e53f98a2ea2c53",
+      "bytes": 79671
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/diagnostic.rs",
+      "base_sha256": "f1d837be8029490328010de20a833881a7b26754dd04ffbbd8097eb5256e6520",
+      "sha256": "e9e04c9ccd5e07019ff30157a1489bf775af299e9b5cb2cda3916331123b3e3c",
+      "bytes": 15480
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/error.rs",
+      "base_sha256": "2c352c772723acdb883c7619efc1bcdee5800e7e92993dcc451f7f1fea6e9dcd",
+      "sha256": "60aac83e9788a169aa088a27c372677a9a43796c915885ef8e027f1da3a912ef",
+      "bytes": 20518
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/mixed_bus.rs",
+      "base_sha256": "059c3f5655f8fb9441f94441dde8c9fa6509444da97f167f533b0268ff0af0e1",
+      "sha256": "2fa55c64f9233cfe875a61ca9f2232eadf36adc157d17393579032eb2226031c",
+      "bytes": 35076
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/velocity_profile.rs",
+      "base_sha256": "0d62abc241149b8f7a3040c4d11b5168b666865a812e9559b2756d2461c61055",
+      "sha256": "1c2843d3f17be9289a815850961b0c8e15b21d1a8946c4e28fd3cef97a77943f",
+      "bytes": 21068
+    }
+  ],
+  "scripts": [
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+      "bytes": 152708
+    },
+    {
+      "path": "scripts/tests/test_hardware_maintenance.py",
+      "sha256": "da9e2645569318b7de8db7c976afb0237c5eb8dbc8416f08b08cee6db94c8ea9",
+      "bytes": 212653
+    },
+    {
+      "path": "scripts/tests/fixtures/hardware_maintenance_run02_return_error.json",
+      "sha256": "a7bfa3fbfc3f3039be9db68973348ba4db156b74f807e57a01eecda8dfd27948",
+      "bytes": 6971
+    }
+  ],
+  "source": "/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source",
+  "quality": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/quality",
+  "software": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software",
+  "tmp": "/tmp/robot-mixed-native-m3sqkf_m",
+  "session": "mixed-raw-quality-20261023",
+  "handle": "$150 %186 776698 0"
+}

@@ -156,6 +156,9 @@ pub enum FeetechError {
     #[error("标定电机 ID 与总线不匹配：expected={expected}, got={got}")]
     CalibrationMotorIdMismatch { expected: u8, got: u8 },
 
+    #[error("固定位置锚点不满足标定范围或raw/rad往返：motor={motor_id}, raw={raw}")]
+    CalibrationAnchorChanged { motor_id: u8, raw: i32 },
+
     // ── calibration JSON loader (task 29) ──────────────────────────────
     #[error("calibration file {path:?}: {source}")]
     CalibrationIo {
@@ -372,6 +375,7 @@ impl From<FeetechError> for robot_core::error::RobotError {
             | F::CalibrationMinOutOfRange(_)
             | F::CalibrationMaxOutOfRange(_)
             | F::CalibrationMotorIdMismatch { .. }
+            | F::CalibrationAnchorChanged { .. }
             | F::CalibrationEntryInvalid { .. }
             | F::CalibrationDuplicateMotor { .. } => Self::InvalidParameter("feetech calibration"),
             F::SyncGoalReadbackMismatch { .. } => {

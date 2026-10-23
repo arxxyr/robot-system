@@ -4233,6 +4233,7 @@ dependencies = [
  "assert_no_alloc",
  "criterion",
  "inventory",
+ "libc 1.0.0-alpha.4",
  "robot-core",
  "robot-logging",
  "serde",

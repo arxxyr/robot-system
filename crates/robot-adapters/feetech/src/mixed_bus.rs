@@ -3,15 +3,17 @@
 use super::{FeetechAdapter, FeetechAdapterConfig};
 use crate::bus::FeetechBus;
 use crate::calibration_io::clamp_raw;
-use crate::convert::{rad_to_raw, rad_to_tick_offset};
+use crate::convert::{rad_to_raw, rad_to_tick_offset, raw_to_rad};
 use crate::transport::{SerialTransport, SourceWriteDeadline};
-use crate::velocity_profile::{FirmwareVersion, Sts3215WheelProfile, WheelObservation, WheelRole};
+use crate::velocity_profile::{
+    FirmwareVersion, Sts3215RawWheelProfile, Sts3215WheelProfile, WheelObservation, WheelRole,
+};
 use robot_core::adapter::{ControlMode, JointCommandView, JointSelection};
 use robot_core::error::RobotError;
 use robot_core::serial_services::BusOpClass;
 use robot_core::time::{Deadline, MonoRawNs};
 
-const JOINTS: [(&str, u8); 9] = [
+pub(super) const JOINTS: [(&str, u8); 9] = [
     ("right_arm_shoulder_pan", 1),
     ("right_arm_shoulder_lift", 2),
     ("right_arm_elbow_flex", 3),
@@ -24,6 +26,38 @@ const JOINTS: [(&str, u8); 9] = [
 ];
 
 #[derive(Clone, Copy)]
+enum Profiles {
+    Nominal([Sts3215WheelProfile; 3]),
+    ObservedRaw([Sts3215RawWheelProfile; 3]),
+}
+impl Profiles {
+    fn role(self, index: usize) -> WheelRole {
+        match self {
+            Self::Nominal(p) => p[index].contract().role,
+            Self::ObservedRaw(p) => p[index].role(),
+        }
+    }
+    fn accepts(self, index: usize, raw: i16) -> bool {
+        match self {
+            Self::Nominal(p) => {
+                raw != i16::MIN && raw.unsigned_abs() <= p[index].contract().raw_limit
+            }
+            Self::ObservedRaw(p) => p[index].accepts(raw),
+        }
+    }
+    fn verify(self, index: usize, observation: WheelObservation) -> bool {
+        match self {
+            Self::Nominal(p) => {
+                Sts3215WheelProfile::try_bind(observation, p[index].contract()).is_ok()
+            }
+            Self::ObservedRaw(p) => {
+                Sts3215RawWheelProfile::try_bind(observation, p[index].role()).is_ok()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct MixedBus2 {
     pub(super) arm_ids: [u8; 6],
     pub(super) wheel_ids: [u8; 3],
@@ -31,15 +65,11 @@ pub(super) struct MixedBus2 {
     wheel_slots: [usize; 3],
     position_mask: u32,
     velocity_mask: u32,
-    profiles: [Sts3215WheelProfile; 3],
+    profiles: Profiles,
 }
 
 impl MixedBus2 {
-    fn bind(
-        names: &[String],
-        ids: &[u8],
-        profiles: [Sts3215WheelProfile; 3],
-    ) -> Result<Self, RobotError> {
+    fn bind(names: &[String], ids: &[u8], profiles: Profiles) -> Result<Self, RobotError> {
         if names.len() != 9 || ids.len() != 9 {
             return Err(RobotError::InvalidParameter("混合右总线需要完整九关节"));
         }
@@ -57,12 +87,11 @@ impl MixedBus2 {
             seen |= 1 << logical;
             slots[logical] = slot;
         }
-        for (profile, role) in
-            profiles
-                .iter()
-                .zip([WheelRole::Front, WheelRole::Left, WheelRole::Right])
+        for (index, role) in [WheelRole::Front, WheelRole::Left, WheelRole::Right]
+            .into_iter()
+            .enumerate()
         {
-            if profile.contract().role != role {
+            if profiles.role(index) != role {
                 return Err(RobotError::InvalidParameter(
                     "三轮profile顺序必须为前8、左7、右9",
                 ));
@@ -94,9 +123,82 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         adapter.mixed_bus2 = Some(MixedBus2::bind(
             &adapter.joint_names,
             &adapter.joint_ids,
-            profiles,
+            Profiles::Nominal(profiles),
         )?);
         Ok(adapter)
+    }
+
+    /// 仅现场实证的0/+500合同；不提供SI速度，不注册默认factory。
+    /// # Errors
+    /// 完整布局、标定、逐轮角色或原构造前提不符时拒绝。
+    pub fn new_bus2_mixed_raw(
+        config: FeetechAdapterConfig,
+        bus: FeetechBus<T>,
+        profiles: [Sts3215RawWheelProfile; 3],
+    ) -> Result<Self, RobotError> {
+        if config.calibrations.len() != 9
+            || config.calibrations.iter().any(|cal| {
+                cal.range_min > cal.range_max
+                    || cal.range_max > 4095
+                    || cal.homing_offset.unsigned_abs() > 2047
+            })
+        {
+            return Err(RobotError::InvalidParameter("实证raw混合总线需要完整标定"));
+        }
+        let mut adapter = Self::new(config, bus).map_err(RobotError::from)?;
+        adapter.mixed_bus2 = Some(MixedBus2::bind(
+            &adapter.joint_names,
+            &adapter.joint_ids,
+            Profiles::ObservedRaw(profiles),
+        )?);
+        Ok(adapter)
+    }
+
+    /// 返回本次enable防飞同步真正采用的六臂原始锚点及采样时刻，不是持续反馈保持。
+    #[must_use]
+    pub const fn mixed_arm_anchor(&self) -> Option<([i32; 6], u64)> {
+        self.mixed_arm_anchor
+    }
+
+    /// 防飞同步实际GP读回，仅本次enable成功后供维护摘要使用。
+    #[must_use]
+    pub fn mixed_arm_goal_readback(&self) -> Option<[i32; 6]> {
+        self.mixed_arm_anchor
+            .map(|_| self.goal_raw[..6].try_into().unwrap())
+    }
+
+    pub(super) fn validate_raw_mixed_anchor(
+        &self,
+        sampled_ns: u64,
+    ) -> Result<Option<([i32; 6], u64)>, crate::FeetechError> {
+        let Some(layout) = self
+            .mixed_bus2
+            .filter(|l| matches!(l.profiles, Profiles::ObservedRaw(_)))
+        else {
+            return Ok(None);
+        };
+        for (index, &slot) in layout.arm_slots.iter().enumerate() {
+            let raw = self.pos_raw[index];
+            let cal = &self.calibrations[slot];
+            if cal.range_min > cal.range_max
+                || cal.range_max > 4095
+                || !(i32::from(cal.range_min)..=i32::from(cal.range_max)).contains(&raw)
+                || !(0..=4095).contains(&raw)
+                || clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max)) != raw
+                || rad_to_raw(raw_to_rad(raw)) != raw
+            {
+                return Err(crate::FeetechError::CalibrationAnchorChanged {
+                    motor_id: layout.arm_ids[index],
+                    raw,
+                });
+            }
+        }
+        Ok(Some((self.pos_raw[..6].try_into().unwrap(), sampled_ns)))
+    }
+
+    pub(super) fn raw_mixed(&self) -> bool {
+        self.mixed_bus2
+            .is_some_and(|layout| matches!(layout.profiles, Profiles::ObservedRaw(_)))
     }
 
     pub(super) fn verify_mixed_bus2(&mut self) -> Result<(), RobotError> {
@@ -119,7 +221,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                 return Err(RobotError::InvalidParameter("混合总线模式或断扭状态不匹配"));
             }
         }
-        for (index, profile) in layout.profiles.iter().enumerate() {
+        for index in 0..3 {
             let name = &self.joint_names[layout.wheel_slots[index]];
             let mut read_byte = |register| {
                 u8::try_from(self.bus.read(register, name).map_err(RobotError::from)?)
@@ -136,7 +238,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                     minor: read_byte("Firmware_Minor_Version")?,
                 }),
             };
-            if Sts3215WheelProfile::try_bind(observation, profile.contract()).is_err() {
+            if !layout.profiles.verify(index, observation) {
                 return Err(RobotError::InvalidParameter(
                     "轮固件或Phase不符合显式profile",
                 ));
@@ -182,7 +284,13 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             }
             let mut raw = rad_to_raw(command.positions[slot]);
             if let Some(cal) = self.calibrations.get(slot) {
-                raw = clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max));
+                let clamped = clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max));
+                if self.raw_mixed() && raw != clamped {
+                    return Err(RobotError::InvalidParameter(
+                        "实证raw混合目标不允许标定限幅",
+                    ));
+                }
+                raw = clamped;
             }
             if !(-32767..=32767).contains(&raw) {
                 return Err(RobotError::InvalidParameter(
@@ -193,7 +301,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         }
         for (index, &slot) in layout.wheel_slots.iter().enumerate() {
             let raw = command.raw_velocities[slot];
-            if raw == i16::MIN || raw.unsigned_abs() > layout.profiles[index].contract().raw_limit {
+            if !layout.profiles.accepts(index, raw) {
                 return Err(RobotError::InvalidParameter("混合轮raw速度超过显式上限"));
             }
             velocities[index] = (layout.wheel_ids[index], i32::from(raw));
@@ -373,6 +481,19 @@ mod tests {
             phase: u8,
             bad_mode: bool,
         ) -> (Self, Result<(), RobotError>) {
+            Self::with_profile(ids, fail, phase, bad_mode, false)
+        }
+        #[allow(
+            clippy::too_many_lines,
+            reason = "完整构造与顺序握手夹具保留在一处，避免为104行拆成另一套连接模拟"
+        )]
+        fn with_profile(
+            ids: [u8; 9],
+            fail: u8,
+            phase: u8,
+            bad_mode: bool,
+            raw: bool,
+        ) -> (Self, Result<(), RobotError>) {
             let names: Vec<String> = ids
                 .iter()
                 .map(|id| {
@@ -402,19 +523,45 @@ mod tests {
                 motors,
             )
             .unwrap();
-            let mut adapter = FeetechAdapter::new_bus2_mixed(
-                FeetechAdapterConfig {
-                    clock: clock.clone(),
-                    preempt: None,
-                    diag: None,
-                    call_deadline: Duration::from_millis(50),
-                    adapter_name: "mixed_test",
-                    joint_names: names,
-                    calibrations: Vec::new(),
+            let config = FeetechAdapterConfig {
+                clock: clock.clone(),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
+                adapter_name: "mixed_test",
+                joint_names: names,
+                calibrations: if raw {
+                    ids.into_iter()
+                        .map(|id| crate::MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
+                        .collect()
+                } else {
+                    Vec::new()
                 },
-                bus,
-                profiles(),
-            )
+            };
+            let mut adapter = if raw {
+                FeetechAdapter::new_bus2_mixed_raw(
+                    config,
+                    bus,
+                    [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
+                        Sts3215RawWheelProfile::try_bind(
+                            WheelObservation {
+                                motor_id: role.motor_id(),
+                                model: 777,
+                                mode: 1,
+                                phase: 12,
+                                firmware: Some(FirmwareVersion {
+                                    major: 3,
+                                    minor: 10,
+                                }),
+                            },
+                            role,
+                        )
+                        .unwrap()
+                    }),
+                )
+            } else {
+                FeetechAdapter::new_bus2_mixed(config, bus, profiles())
+            }
             .unwrap();
             for id in 1..=9 {
                 handle.push_rx(&ack_status(id));
@@ -483,6 +630,82 @@ mod tests {
             remaining = &remaining[size..];
         }
         output
+    }
+
+    #[test]
+    fn observed_raw_rejects_unverified_values_and_clamp_before_first_motion_frame() {
+        for phase in [4, 12] {
+            let (fixture, result) =
+                Fixture::with_profile([9, 3, 6, 1, 8, 4, 2, 7, 5], 0, phase, false, true);
+            assert_eq!(result.is_ok(), phase == 12);
+            assert!(
+                frames(&fixture.handle.drain_tx())
+                    .iter()
+                    .all(|frame| matches!(frame[4], 1 | 2))
+            );
+        }
+        for ids in [[1, 2, 3, 4, 5, 6, 7, 8, 9], [9, 3, 6, 1, 8, 4, 2, 7, 5]] {
+            let (mut f, connected) = Fixture::new(ids, 0, 4, false);
+            connected.unwrap();
+            let layout = f.adapter.mixed_bus2.as_mut().unwrap();
+            layout.profiles = Profiles::ObservedRaw(
+                [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
+                    Sts3215RawWheelProfile::try_bind(
+                        WheelObservation {
+                            motor_id: role.motor_id(),
+                            model: 777,
+                            mode: 1,
+                            phase: 12,
+                            firmware: Some(FirmwareVersion {
+                                major: 3,
+                                minor: 10,
+                            }),
+                        },
+                        role,
+                    )
+                    .unwrap()
+                }),
+            );
+            f.adapter.calibrations = ids
+                .into_iter()
+                .map(|id| crate::MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
+                .collect();
+            let _ = f.handle.drain_tx();
+            let mut command = f.command();
+            for slot in f.adapter.mixed_bus2.unwrap().wheel_slots {
+                command.raw_velocities[slot] = 0;
+            }
+            let wheel = f.adapter.mixed_bus2.unwrap().wheel_slots[2];
+            for raw in [-500, -1, 1, 499, 501, i16::MIN] {
+                command.raw_velocities[wheel] = raw;
+                assert!(f.adapter.write_command(&command.as_view()).is_err());
+                assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+            }
+            command.raw_velocities[wheel] = 500;
+            let arm = f.adapter.mixed_bus2.unwrap().arm_slots[0];
+            f.adapter.calibrations[arm].range_min = 2100;
+            assert!(f.adapter.write_command(&command.as_view()).is_err());
+            assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+            f.adapter.calibrations[arm].range_min = 0;
+            f.adapter.write_command(&command.as_view()).unwrap();
+            assert_eq!(
+                &frames(&f.handle.drain_tx())[0][7..16],
+                &[8, 0, 0, 7, 0, 0, 9, 244, 1]
+            );
+            for (min, max, raw) in [
+                (2000, 1000, 1000),
+                (0, 4096, 2047),
+                (2000, 3000, 1999),
+                (2000, 3000, 3001),
+            ] {
+                f.adapter.calibrations[arm].range_min = min;
+                f.adapter.calibrations[arm].range_max = max;
+                f.adapter.pos_raw[..6].fill(2047);
+                f.adapter.pos_raw[0] = raw;
+                assert!(f.adapter.validate_raw_mixed_anchor(1).is_err());
+                assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+            }
+        }
     }
 
     #[test]

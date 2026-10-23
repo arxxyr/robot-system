@@ -1,0 +1,15 @@
+    Checking regex-automata v0.4.18
+    Checking zerocopy v0.8.56
+    Checking matchers v0.2.0
+    Checking tracing-subscriber v0.3.23
+    Checking robot-core v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-core)
+    Checking num-traits v0.2.19
+    Checking half v2.7.1
+    Checking ciborium-ll v0.2.2
+    Checking regex v1.13.1
+    Checking ciborium v0.2.2
+    Checking tinytemplate v1.2.1
+    Checking robot-logging v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-logging)
+    Checking criterion v0.8.2
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/feetech)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 11.70s

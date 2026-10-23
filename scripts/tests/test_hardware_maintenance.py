@@ -211,6 +211,35 @@ class OwnerTests(unittest.TestCase):
             with self.assertRaises(ValueError): e.command([sys.executable,'-c','print("cleanup")'],cleanup=True)
             self.assertTrue(e.commands[1]['reaped']); e.journal.close()
 
+    def test_mixed_child_requests_one_group_interrupt_then_reaps_without_kill(self):
+        for reason in ('go','signal','budget'):
+            with self.subTest(reason=reason),tempfile.TemporaryDirectory() as d:
+                e=self.make_io(d);ready=Path(d)/'ready';stopped=Path(d)/'stopped'
+                code=('import pathlib,signal,time\n'
+                      f'ready=pathlib.Path({str(ready)!r});stopped=pathlib.Path({str(stopped)!r})\n'
+                      'def stop(_sig,_frame):\n'
+                      ' stopped.write_text("stopped");print("stopped",flush=True);raise SystemExit(0)\n'
+                      'signal.signal(signal.SIGINT,stop);ready.write_text("ready")\n'
+                      'while True:time.sleep(.01)\n')
+                actual_now=e.now;shift=[0]
+                e.now=lambda:actual_now()+shift[0]
+                def check():
+                    if not ready.exists():return
+                    if reason=='go':raise ValueError('原GO到期')
+                    if reason=='signal':e.mark_signal(signal.SIGHUP,None);e.check()
+                    shift[0]=m.MIXED_CHILD_BUDGET_NS+1
+                with self.assertRaises(ValueError):
+                    e.command([sys.executable,'-c',code],mixed_stop_check=check)
+                row=e.commands[0]
+                self.assertIsNone(e.child);self.assertTrue(row['reaped'])
+                self.assertEqual(row['exit_code'],0)
+                self.assertEqual(row['budget_ns'],28_000_000_000)
+                self.assertEqual(len(row['signals_sent']),1)
+                self.assertEqual(row['signals_sent'][0]['signal'],int(signal.SIGINT))
+                self.assertEqual(stopped.read_text(),'stopped')
+                self.assertEqual(row['over_budget'],reason=='budget')
+                self.assertTrue(row['mixed_stop_requested']);e.journal.close()
+
     def test_stderr_and_evidence_failure_are_sticky_after_reap(self):
         with tempfile.TemporaryDirectory() as d:
             e=self.make_io(d)
@@ -2907,6 +2936,188 @@ class LeftFeedbackTests(unittest.TestCase):
 
     def test_right_feedback_execute_has_only_fourteen_reads_locks_and_nonuart_finish(self):
         self.check_execute_cases((None,3,'post','journal','report'),right=True)
+
+
+class MixedRawTests(unittest.TestCase):
+    def setUp(self):
+        directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
+        self.directory=Path(directory.name);tool=feedback_reference(self.directory/'mixed-poke')
+        self.calibration={name:{'id':motor,'drive_mode':0,'homing_offset':0,'range_min':0,'range_max':4095}
+                          for motor,name in enumerate(m.MIXED_ARM_NAMES,1)}
+        path=self.directory/'right_arm.json';path.write_text(json.dumps(self.calibration));info=path.stat()
+        calibration={'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size,
+            'uid':info.st_uid,'gid':info.st_gid,'mode':info.st_mode&0o7777,'device':info.st_dev,
+            'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,'nlink':1,'symlink':False}
+        self.bindings=RightPulseTests.bindings(self)
+        self.bindings['refs'] += [tool,calibration];self.bindings['binary_paths'].append(tool['path'])
+        self.bindings['bus2_mixed_raw_hold']={'tool':tool,'arm_calibration':calibration}
+        self.root='/home/loosqk/robot-checks/mixed-fixture';self.expiry=600_000_000_000
+        self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True)
+
+    def receipt(self):
+        first=1_100_000_000;zero=first+20_000_000_000;zero_done=zero+1_000_000
+        cycles=[{'started_ns':first+index*50_000_000+1_000_000,
+                 'finished_ns':first+index*50_000_000+4_000_000,
+                 'source_deadline_ns':first+(index+1)*50_000_000} for index in range(400)]
+        cycles[0]={'started_ns':first-1_000_000,'finished_ns':first+2_000_000,
+                   'source_deadline_ns':first+49_000_000}
+        return {'schema':'FEETECH_MIXED_RIGHT9_V1','operation':'mixed-hold-right9','result':'PASS','error':None,
+            'serial_device':m.DEVICES['right'],
+            'arm_calibration_path':self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path'],
+            'go_expires_at_unix_ns':self.expiry,'motor_ids':[1,2,3,4,5,6,8,7,9],
+            'wheel_ids':[8,7,9],'wheel_raw_goal':[0,0,500],'pulse_duration_ns':20_000_000_000,
+            'zero_window_ns':500_000_000,'enable_budget_ns':21_000_000_000,'cycle_count':400,
+            'loaded_calibration':list(self.calibration.values()),
+            'arm_anchors':[{'motor_id':motor,'raw':1000,'goal_raw':1000,'calibration_min':0,
+                'calibration_max':4095,'sampled_ns':first-50_000_000} for motor in range(1,7)],
+            'wheel_anchors':[{'motor_id':motor,'raw':1000,'sampled_ns':first-20_000_000} for motor in (8,7)],
+            'arm_final':[{'motor_id':motor,'raw':1000} for motor in range(1,7)],'cycles':cycles,
+            'wheel_samples':[{'started_ns':cycles[index*5]['started_ns']+1_000_000,
+                'finished_ns':cycles[index*5]['started_ns']+2_000_000,
+                'position_raw':[1000,1000,(4000+index*5)%4096],'velocity_word':[0,0,500],
+                'arm_position_raw':[1000]*6} for index in range(1,80)],
+            'zero_samples':[{'started_ns':zero_done+offset,'finished_ns':zero_done+offset+1_000_000,
+                'torque_enable':1,'goal_velocity_word':0,'present_velocity_word':word}
+                for offset,word in zip((50_000_000,250_000_000,450_000_000),(400,50,0))],
+            'timing':{'enable_attempt_ns':1_000_000_000,'first_nonzero_ns':first,'zero_started_ns':zero,
+                'zero_finished_ns':zero_done,'disable_attempt_ns':zero_done+452_000_000,
+                'disable_finished_ns':zero_done+462_000_000,'finished_ns':zero_done+472_000_000},
+            'cleanup':{'zero_attempted':True,'zero_ok':True,'disable_attempted':True,'disable_ok':True,
+                       'torque_enable_after':[0]*9}}
+
+    def parse(self,row):
+        return m.parse_mixed_raw_result(json.dumps(row)+'\n',self.plan,self.expiry,self.calibration)
+
+    def perform(self,row=None,*,fail=False):
+        executor=RightPulseIO();executor.output=self.directory
+        data=row if row is not None else self.receipt()
+        def command(argv,**kwargs):
+            kwargs['mixed_stop_check']();executor.sequence+=1
+            executor.commands.append({'argv':list(argv),'reaped':True,'exit_code':0})
+            executor.calls.append(list(argv))
+            Path(argv[argv.index('-o')+1]).write_bytes(b'fixture only\n+++ exited with 0 +++\n')
+            return json.dumps(data)+'\n'
+        executor.command=command
+        engine=m.ProbeEngine(executor,self.plan)
+        m.install_right_pulse_guard(engine,SimpleNamespace(install_stop_wire_capture=lambda _module:None))
+        engine.right_pulse_go_check=lambda:None;engine.go_expires_at_unix_ns=self.expiry
+        verify=m.verify_ref
+        def reference(ref,**kwargs):
+            return b'' if ref['path']==m.RIGHT_PULSE_TRACE['path'] else verify(ref,**kwargs)
+        with patch.object(m,'verify_ref',side_effect=reference),patch.object(m.time,'time_ns',return_value=0),contextlib.redirect_stdout(io.StringIO()):
+            if fail:
+                with self.assertRaises(ValueError):m.run_motion_probes(engine,self.bindings,self.plan)
+            else:m.run_motion_probes(engine,self.bindings,self.plan)
+        return engine
+
+    def test_mixed_plan_binds_new_refs_exact_targets_and_rejects_all_old_mode_combinations(self):
+        self.assertEqual(m.position_targets_from_plan(self.plan),[])
+        self.assertEqual(self.plan['bus2_mixed_raw_hold']['allowed_raw_targets'],[0,500])
+        default=m.make_plan(self.bindings,self.root+'/default','mixed-default',self.root)
+        self.assertNotIn('bus2_mixed_raw_hold',default)
+        self.assertTrue(all(row['decision']=='DEFERRED' for row in default['base_targets']))
+        for options in ({'right_wheel_pulse':True},{'wheel_pulse_target':'left'},
+                        {'left_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
+                        {'right_wheel_feedback_only':True},{'zero_stop_check':True}):
+            with self.subTest(options=options),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True,**options)
+        with self.assertRaises(ValueError):
+            m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,['head-1'],bus2_mixed_raw_hold=True)
+        for mutation in ('old_tool','missing_ref','calibration','negative'):
+            bad=copy.deepcopy(self.plan)
+            if mutation=='old_tool':bad['bindings']['bus2_mixed_raw_hold']['tool']['sha256']=m.TOOL_SHA
+            if mutation=='missing_ref':bad['bindings']['refs'].pop()
+            if mutation=='calibration':bad['bus2_mixed_raw_hold']['arm_calibration']['sha256']='0'*64
+            if mutation=='negative':bad['bus2_mixed_raw_hold']['wheel_raw_goal']=[0,0,-500]
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.position_targets_from_plan(bad)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('不许启动')):
+            with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(m.main(['--bus2-mixed-raw-hold']),0)
+            with self.assertRaises(ValueError):m.main(['--bus2-mixed-raw-hold','--execute'])
+
+    def test_mixed_go_requires_original_ten_minute_scope_and_current_wheel_facts(self):
+        go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':self.root,
+            'plan_sha256':m.digest(self.plan),'host':self.bindings['host'],'source':'本次现场答复',
+            'issued_at_ns':1000,'expires_at_ns':self.expiry,
+            'physical':{side:{**{key:True for key in m.FACTS},'confirmed_at_ns':1000} for side in m.SERIALS}}
+        go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
+            continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
+            base_confirmation_scope=m.MIXED_RAW_SCOPE,base_confirmation_answer='本次混合维护就绪')
+        m.validate_go(go,self.plan,2000)
+        for mutation in ('scope','ttl','watch','old_plan'):
+            bad=copy.deepcopy(go)
+            if mutation=='scope':bad['physical']['right']['base_confirmation_scope']=m.RIGHT_PULSE_SCOPE
+            if mutation=='ttl':bad['expires_at_ns']=bad['issued_at_ns']+600_000_000_001
+            if mutation=='watch':bad['physical']['right']['continuous_wheel_observation']=False
+            if mutation=='old_plan':bad['plan_sha256']='0'*64
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.validate_go(bad,self.plan,2000)
+
+    def test_mixed_raw_receipt_preserves_words_wraps_and_each_original_zero_case(self):
+        for intermediate,final in ((0,0),(0x8032,50),(250,0x8032)):
+            row=self.receipt();row['zero_samples'][0]['present_velocity_word']=intermediate
+            row['zero_samples'][-1]['present_velocity_word']=final
+            row['wheel_samples'][0]['velocity_word'][:2]=[50,0x8032]
+            self.assertEqual(self.parse(row),row)
+
+    def test_mixed_receipt_rejects_forged_targets_timing_calibration_motion_and_cleanup(self):
+        changes=[('schema',lambda r:r.update(schema='PASS')),('extra',lambda r:r.update(hidden_write=True)),
+            ('id',lambda r:r['motor_ids'].__setitem__(0,True)),
+            ('raw',lambda r:r['wheel_raw_goal'].__setitem__(2,-500)),
+            ('expiry',lambda r:r.update(go_expires_at_unix_ns=self.expiry+1)),
+            ('calibration',lambda r:r['loaded_calibration'][0].update(range_max=4094)),
+            ('goal',lambda r:r['arm_anchors'][0].update(goal_raw=1001)),
+            ('stale',lambda r:r['arm_anchors'][0].update(sampled_ns=1)),
+            ('arm',lambda r:r['wheel_samples'][0]['arm_position_raw'].__setitem__(0,1005)),
+            ('arm_final',lambda r:r['arm_final'][0].update(raw=1005)),
+            ('wheel_anchor',lambda r:r['wheel_anchors'][0].update(motor_id=9)),
+            ('other_wheel',lambda r:r['wheel_samples'][0]['position_raw'].__setitem__(0,1005)),
+            ('other_speed',lambda r:r['wheel_samples'][0]['velocity_word'].__setitem__(0,51)),
+            ('no_pv',lambda r:[s['velocity_word'].__setitem__(2,0) for s in r['wheel_samples']]),
+            ('no_travel',lambda r:[s['position_raw'].__setitem__(2,4000) for s in r['wheel_samples']]),
+            ('reverse',lambda r:r['wheel_samples'][0]['velocity_word'].__setitem__(2,0x8032)),
+            ('cycle_missing',lambda r:r['cycles'].pop()),
+            ('deadline',lambda r:r['cycles'][2].update(source_deadline_ns=r['cycles'][2]['source_deadline_ns']+1)),
+            ('first_late',lambda r:r['cycles'][0].update(finished_ns=r['timing']['first_nonzero_ns']-1)),
+            ('sample_late',lambda r:r['wheel_samples'][0].update(finished_ns=r['cycles'][5]['finished_ns']+1)),
+            ('zero_late',lambda r:r['zero_samples'][-1].update(finished_ns=r['timing']['zero_started_ns']+500_000_001)),
+            ('te1',lambda r:r['zero_samples'][0].update(torque_enable=0)),
+            ('zero',lambda r:r['zero_samples'][-1].update(present_velocity_word=51)),
+            ('cleanup',lambda r:r['cleanup'].update(disable_ok=False)),
+            ('torque',lambda r:r['cleanup']['torque_enable_after'].__setitem__(8,1)),
+            ('failed',lambda r:r.update(result='FAIL',error='原失败'))]
+        for name,change in changes:
+            row=self.receipt();change(row)
+            with self.subTest(name=name),self.assertRaises(ValueError):self.parse(row)
+        text=json.dumps(self.receipt())
+        for bad in (text+'\n'+text,text.replace('"result": "PASS"','"result":"PASS","result":"PASS"')):
+            with self.assertRaises(ValueError):m.parse_mixed_raw_result(bad,self.plan,self.expiry,self.calibration)
+
+    def test_mixed_run_uses_one_traced_child_and_original_position_stop_identity_gates(self):
+        engine=self.perform();self.assertEqual(len(engine.io.calls),1)
+        self.assertEqual(engine.io.calls[0][1:4],['-f','-I','3'])
+        self.assertEqual([probe['kind'] for probe in engine.rows],['position_hold']*6+['velocity'])
+        self.assertTrue(all('outward' not in probe and 'position_accuracy' not in probe for probe in engine.rows))
+        before=idle_rows();after=idle_rows()
+        for motor in range(1,7):before[f'right:{motor}']['Goal_Position']=0
+        after['right:9']['Present_Position']=1400
+        position=m.classify_position_snapshot(after,before,engine.rows);self.assertEqual(position['status'],'PASS')
+        report={'plan':self.plan,'probes':engine.rows,'mixed_raw_result':engine.mixed_raw_result,
+                'stop_verification':{'status':'PASS'},'identity_verification':{'status':'PASS'},
+                'position_verification':position,'child_active':False}
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        for key,value in (('stop_verification',{'status':'UNKNOWN'}),('identity_verification',{'status':'FAIL'}),
+                          ('position_verification',{'status':'FAIL'}),('child_active',True)):
+            bad=copy.deepcopy(report);bad[key]=value;self.assertNotEqual(m.classify_run_result(bad),'PASS')
+        for motor,register,value in (('right:1','Goal_Position',1001),('right:1','Present_Position',1005),
+                                     ('left:1','Goal_Position',1001),('right:8','Goal_Position',1001)):
+            bad=copy.deepcopy(after);bad[motor][register]=value
+            self.assertEqual(m.classify_position_snapshot(bad,before,engine.rows)['status'],'FAIL')
+
+    def test_mixed_bad_receipt_stickily_blocks_all_later_uart_and_never_retries(self):
+        row=self.receipt();row['cleanup']['disable_ok']=False
+        engine=self.perform(row,fail=True);self.assertEqual(len(engine.io.calls),1)
+        self.assertTrue(engine.manual_cut);self.assertTrue(engine.right_pulse['uart_blocked'])
+        with self.assertRaises(ValueError):engine.io.command(list(engine.mixed_trace_argv),allowed=(0,1),mixed_stop_check=engine.mixed_stop_check)
+        self.assertEqual(len(engine.io.calls),1)
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

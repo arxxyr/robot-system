@@ -1,0 +1,8 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.12s
+     Running unittests examples/feetech_poke.rs (target/debug/build/robot-adapter-feetech/824f9a9733bfd2fe/out/feetech_poke-824f9a9733bfd2fe)
+
+running 1 test
+test mixed_maintenance::tests::fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+

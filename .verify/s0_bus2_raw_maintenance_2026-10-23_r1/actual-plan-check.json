@@ -1,0 +1,73 @@
+{
+  "status": "PASS",
+  "refs_verified": 76,
+  "tool_ref": {
+    "path": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/quality/frozen/feetech_poke",
+    "sha256": "f756cec6b1353cca04e0606c6c7292c3186ed87684552674176585a647fd9a39",
+    "bytes": 1654864,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 493,
+    "device": 66305,
+    "inode": 17183504,
+    "mtime_ns": 1792782348608895621,
+    "ctime_ns": 1792782348608895621,
+    "nlink": 1,
+    "symlink": false,
+    "elf_machine": 183
+  },
+  "script_ref": {
+    "path": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software/scripts/run_hardware_maintenance.py",
+    "sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+    "bytes": 152708,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 436,
+    "device": 66305,
+    "inode": 17204888,
+    "mtime_ns": 1792782167111620915,
+    "ctime_ns": 1792782167111620915,
+    "nlink": 1,
+    "symlink": false
+  },
+  "bindings_path": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software/mixed-bindings.json",
+  "plan_path": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software/mixed-plan-only.json",
+  "plan_sha256": "b7205a205f7cb15c282d9530cf77148faa3bdddf51464f59e16bd0bd0fbab4b2",
+  "default_plan_only": {
+    "result": "PLAN_ONLY",
+    "actions_started": 0,
+    "required": [
+      "bindings",
+      "output",
+      "run-id",
+      "artifact-root"
+    ],
+    "position_targets": [
+      [
+        "left",
+        5,
+        "left_arm_wrist_roll"
+      ],
+      [
+        "right",
+        5,
+        "right_arm_wrist_roll"
+      ],
+      [
+        "left",
+        7,
+        "head_motor_1"
+      ],
+      [
+        "left",
+        8,
+        "head_motor_2"
+      ]
+    ],
+    "scope": "单电机独立维护；不运行硬件、不改保护"
+  },
+  "hardware_output_absent": true,
+  "fresh_go_created": false,
+  "uart_access": false,
+  "hardware_motion": false
+}

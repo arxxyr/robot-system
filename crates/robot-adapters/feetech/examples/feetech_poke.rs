@@ -17,6 +17,7 @@
 //! ## 用法
 //!
 //! ```bash
+//! feetech_poke <right-device> 9 mixed-hold-right9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒>
 //! feetech_poke <address> <motor_id> ping
 //! feetech_poke <address> <motor_id> sync-zero
 //! feetech_poke <address> <motor_id> sync-velocity <value>
@@ -59,7 +60,8 @@
 //!
 //! ## 安全警告
 //!
-//! - 本工具是**裸 wire**，不走 `FeetechAdapter` 的防飞序列（`sync Goal=Present →
+//! - `mixed-hold-right9`是显式受维护入口控制的真实adapter路径，固定六臂锚点+右9原始500，非daemon验收；仅此模式输出单JSON并遵守GO/信号与独立全九断扭。
+//! - 其余模式本工具是**裸 wire**，不走 `FeetechAdapter` 的防飞序列（`sync Goal=Present →
 //!   sleep 50ms → Torque_Enable=1`）。手动 `write Torque_Enable 1` 前一定要先
 //!   `write Goal_Position <当前 Present>`，否则 motor 会追寄存器里残留的旧 Goal。
 //! - 写 EEPROM 区寄存器（`Homing_Offset` / `Min_Position_Limit` / `Max_Position_
@@ -73,6 +75,9 @@
 //!   机械冲击 —— bring-up 阶段尽量小步推进。
 
 #![cfg(feature = "real-hw")]
+
+#[path = "feetech_poke/mixed_maintenance.rs"]
+mod mixed_maintenance;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -331,10 +336,12 @@ fn do_write<T: robot_adapter_feetech::SerialTransport>(
 }
 
 fn main() -> ExitCode {
-    // task-32：统一 tracing subscriber 初始化。
-    let _ = robot_logging::init();
-
     let args: Vec<String> = std::env::args().collect();
+    if args.get(3).map(String::as_str) == Some("mixed-hold-right9") {
+        return mixed_maintenance::main(&args);
+    }
+    // 原裸wire入口继续使用原日志初始化，固定维护stdout只输出一份JSON。
+    let _ = robot_logging::init();
     let prog = args
         .first()
         .cloned()

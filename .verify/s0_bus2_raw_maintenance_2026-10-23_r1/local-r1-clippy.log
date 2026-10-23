@@ -1,0 +1,163 @@
+    Checking robot-core v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-core)
+    Checking robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+error: using `chunks_exact` with a constant chunk size
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:370:42
+    |
+370 |             for (index, packet) in bytes.chunks_exact(8).enumerate() {
+    |                                          ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<8>().0.iter()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#chunks_exact_to_as_chunks
+    = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: this function has too many lines (328/100)
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:464:1
+    |
+464 | / fn run<T: SerialTransport + 'static>(
+465 | |     transport: T,
+466 | |     guard: Arc<Guard>,
+467 | |     calibrations: Vec<MotorCalibration>,
+468 | |     report: &mut Value,
+469 | | ) -> Result<(), String> {
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: this argument is passed by value, but not consumed in the function body
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:466:12
+    |
+466 |     guard: Arc<Guard>,
+    |            ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#needless_pass_by_value
+    = note: `-D clippy::needless-pass-by-value` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+466 |     guard: &Arc<Guard>,
+    |            +
+
+error: this argument is passed by value, but not consumed in the function body
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:467:19
+    |
+467 |     calibrations: Vec<MotorCalibration>,
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#needless_pass_by_value
+help: consider changing the type to
+    |
+467 -     calibrations: Vec<MotorCalibration>,
+467 +     calibrations: &[MotorCalibration],
+    |
+help: change `calibrations.clone()` to
+    |
+488 -         calibrations: calibrations.clone(),
+488 +         calibrations: calibrations.to_owned(),
+    |
+
+error: redundant closure
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:487:39
+    |
+487 |         joint_names: NAMES.iter().map(|n| n.to_string()).collect(),
+    |                                       ^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `std::string::ToString::to_string`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#redundant_closure_for_method_calls
+    = note: `-D clippy::redundant-closure-for-method-calls` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+
+error: consider adding a `;` to the last statement for consistent formatting
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:755:21
+    |
+755 |                     report["cleanup"]["torque_enable_after"] = json!([0, 0, 0, 0, 0, 0, 0, 0, 0])
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: add a `;` here: `report["cleanup"]["torque_enable_after"] = json!([0, 0, 0, 0, 0, 0, 0, 0, 0]);`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#semicolon_if_nothing_returned
+    = note: `-D clippy::semicolon-if-nothing-returned` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::semicolon_if_nothing_returned)]`
+
+error: this `if` statement can be collapsed
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:779:25
+    |
+779 | /                         if let Some((anchors, _)) = adapter.mixed_arm_anchor() {
+780 | |                             if final_raw
+781 | |                                 .iter()
+782 | |                                 .zip(anchors)
+...   |
+787 | |                         }
+    | |_________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+779 ~                         if let Some((anchors, _)) = adapter.mixed_arm_anchor()
+780 ~                             && final_raw
+781 |                                 .iter()
+...
+785 |                                 error = Some("六臂末置偏离固定锚点超过4计数".into());
+786 ~                             }
+    |
+
+error: could not compile `robot-adapter-feetech` (example "feetech_poke") due to 7 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: this function has too many lines (104/100)
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:486:9
+    |
+486 | /         fn with_profile(
+487 | |             ids: [u8; 9],
+488 | |             fail: u8,
+489 | |             phase: u8,
+490 | |             bad_mode: bool,
+491 | |             raw: bool,
+492 | |         ) -> (Self, Result<(), RobotError>) {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: used `assert!` to check that a value is empty
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:678:17
+    |
+678 |                 assert!(f.handle.drain_tx().is_empty());
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#assert_is_empty
+    = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+678 -                 assert!(f.handle.drain_tx().is_empty());
+678 +                 assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:684:13
+    |
+684 |             assert!(f.handle.drain_tx().is_empty());
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+684 -             assert!(f.handle.drain_tx().is_empty());
+684 +             assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:702:17
+    |
+702 |                 assert!(f.handle.drain_tx().is_empty());
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+702 -                 assert!(f.handle.drain_tx().is_empty());
+702 +                 assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
+    |
+
+error: could not compile `robot-adapter-feetech` (lib test) due to 4 previous errors

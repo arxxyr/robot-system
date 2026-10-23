@@ -1,0 +1,18 @@
+{
+  "result": "PASS",
+  "observed_state": "$150 %186 776698 1 0",
+  "pid_gone": true,
+  "direct_child_pgrep_exit": 1,
+  "build_process_pgrep_exits": {
+    "cargo": 1,
+    "rustc": 1,
+    "clippy-driver": 1
+  },
+  "removed_pane": "%186",
+  "session_absent_exit": 1,
+  "removed_tmp": "/tmp/robot-mixed-native-m3sqkf_m",
+  "tmp_absent": true,
+  "finished_unix_ns": 1792782406327422325,
+  "no_uart": true,
+  "frozen_elf_preserved": "/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/quality/frozen/feetech_poke"
+}

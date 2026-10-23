@@ -1,0 +1,11 @@
+   Compiling robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+error[E0046]: not all trait items implemented, missing: `sleep_for`
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:877:5
+    |
+877 |     impl RobotClock for AdvancingClock {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `sleep_for` in implementation
+    |
+    = help: implement the missing item: `fn sleep_for(&self, _: robot_core::time::DurationNs) { todo!() }`
+
+For more information about this error, try `rustc --explain E0046`.
+error: could not compile `robot-adapter-feetech` (example "feetech_poke" test) due to 1 previous error

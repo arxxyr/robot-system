@@ -1,0 +1,10 @@
+    Checking robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+error: no rules expected `0`
+   --> crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs:693:80
+    |
+693 |                 Ok(false) => report["cleanup"]["torque_enable_after"] = json!([0; 9]),
+    |                                                                                ^ no rules expected this token in macro call
+    |
+    = note: while trying to match end of macro
+
+error: could not compile `robot-adapter-feetech` (example "feetech_poke") due to 1 previous error

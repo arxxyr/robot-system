@@ -40,6 +40,8 @@ default = []
 real-hw = ["dep:serialport", "dep:tracing"]
 
 [dev-dependencies]
+# 仅固定维护example安装SIGINT/SIGTERM原子标记，复用已有工作区依赖。
+libc = { workspace = true }
 # 只有 feetech_poke example 的 main 显式初始化 subscriber，不进 library / daemon。
 robot-logging = { workspace = true }
 # Step 7 task 27c：criterion bench harness（5 组：sign-magnitude / LE byte /

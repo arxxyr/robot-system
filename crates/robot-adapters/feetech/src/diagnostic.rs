@@ -72,6 +72,7 @@ impl FeetechDiagnostic {
             | F::CalibrationMinOutOfRange(_)
             | F::CalibrationMaxOutOfRange(_)
             | F::CalibrationMotorIdMismatch { .. }
+            | F::CalibrationAnchorChanged { .. }
             | F::CalibrationEntryInvalid { .. }
             | F::CalibrationDuplicateMotor { .. } => Self::InvalidParameter(P::Calibration),
             F::CalibrationIo { .. } | F::CalibrationParse { .. } => {
