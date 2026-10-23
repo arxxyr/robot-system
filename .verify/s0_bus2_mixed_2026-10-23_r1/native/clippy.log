@@ -1,0 +1,149 @@
+    Checking robot-s0 v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-s0)
+   Compiling matrixmultiply v0.3.11
+   Compiling tonic-prost-build v0.14.6
+    Checking prost-reflect v0.16.5
+   Compiling mime_guess2 v2.3.1
+    Checking tonic-reflection v0.14.6
+    Checking re_async v0.38.1
+    Checking re_grpc_headers v0.38.1
+   Compiling zmij v1.0.23
+    Checking rawpointer v0.2.1
+   Compiling camino v1.2.6
+    Checking peg-runtime v0.8.6
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+    Checking peg v0.8.6
+    Checking re_protos v0.38.1
+   Compiling robot-rpc v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-rpc)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+    Checking futures v0.3.34
+    Checking cfb v0.14.0
+   Compiling thiserror v2.0.20
+   Compiling itoa v1.0.18
+    Checking unicase v2.9.0
+    Checking infer v0.22.0
+    Checking re_log_encoding v0.38.1
+   Compiling digest v0.10.7
+    Checking ndarray v0.16.1
+    Checking ply-rs-bw v3.0.0
+    Checking re_rvl v0.38.1
+   Compiling cpufeatures v0.2.17
+   Compiling cargo-platform v0.3.3
+    Checking parking v2.2.1
+   Compiling same-file v1.0.6
+   Compiling jiff-core v0.1.1
+    Checking emath v0.36.2
+    Checking array-init v2.1.0
+    Checking re_sdk_types v0.38.1
+   Compiling jiff v0.2.37
+    Checking walkdir v2.5.0
+    Checking event-listener v5.4.2
+   Compiling cargo_metadata v0.23.1
+   Compiling sha2 v0.10.9
+    Checking robot-kinematics v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-kinematics)
+   Compiling unindent v0.2.4
+   Compiling target-tuple v1.0.2
+    Checking base64 v0.23.1
+    Checking ureq-proto v0.6.4
+   Compiling re_build_tools v0.38.1
+    Checking event-listener-strategy v0.5.4
+    Checking re_uri v0.38.1
+    Checking webpki-roots v1.0.9
+    Checking concurrent-queue v2.5.0
+    Checking utf8-zero v0.8.1
+    Checking option-ext v0.2.0
+    Checking dirs-sys v0.5.0
+    Checking ureq v3.4.2
+    Checking async-channel v2.5.0
+    Checking re_log_channel v0.38.1
+    Checking robot-kinematics-xlerobot v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-kinematics-xlerobot)
+    Checking termcolor v1.4.1
+   Compiling object v0.37.3
+    Checking glob v0.3.4
+    Checking trybuild v1.0.121
+    Checking ehttp v0.7.1
+    Checking directories v6.0.0
+    Checking nom v8.0.0
+   Compiling async-stream-impl v0.3.6
+   Compiling portable-atomic v1.15.0
+   Compiling unicode-xid v0.2.6
+    Checking signature v2.2.0
+    Checking gimli v0.32.3
+   Compiling rayon-core v1.13.0
+    Checking ascii v1.1.0
+    Checking chunked_transfer v1.5.0
+    Checking indent v0.1.1
+    Checking konst_macro_rules v0.2.19
+    Checking re_chunk_store v0.38.1
+    Checking konst v0.2.20
+    Checking tiny_http v0.12.0
+    Checking hdrhistogram v7.6.0
+    Checking addr2line v0.25.1
+    Checking jsonwebtoken v10.4.0
+   Compiling const_format_proc_macros v0.2.34
+    Checking async-stream v0.3.6
+    Checking re_analytics v0.38.1
+    Checking robot-s1 v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-s1)
+   Compiling re_sdk v0.38.1
+    Checking re_lenses_core v0.38.1
+    Checking opentelemetry_sdk v0.32.1
+    Checking hmac v0.12.1
+    Checking miniz_oxide v0.8.9
+    Checking re_mutex v0.38.1
+   Compiling alloca v0.4.0
+   Compiling libmimalloc-sys v0.1.49
+    Checking rustc-demangle v0.1.28
+    Checking anstyle v1.0.14
+    Checking clap_lex v1.1.0
+   Compiling seq-macro v0.3.6
+    Checking ciborium-io v0.2.2
+    Checking ciborium-ll v0.2.2
+    Checking clap_builder v4.6.6
+    Checking re_query v0.38.1
+    Checking backtrace v0.3.76
+    Checking re_auth v0.38.1
+    Checking opentelemetry-proto v0.32.0
+    Checking re_lenses v0.38.1
+    Checking const_format v0.2.36
+    Checking re_grpc_client v0.38.1
+   Compiling rerun v0.38.1
+    Checking re_backoff v0.38.1
+    Checking poll-promise v0.3.0
+    Checking console v0.16.6
+    Checking similar v2.7.0
+    Checking itertools v0.13.0
+    Checking console v0.15.11
+    Checking sysinfo v0.39.6
+    Checking memory-stats v1.2.0
+    Checking cast v0.3.0
+    Checking tap v1.0.1
+    Checking unit-prefix v0.5.2
+    Checking indicatif v0.18.6
+    Checking criterion-plot v0.8.2
+    Checking re_entity_db v0.38.1
+    Checking re_memory v0.38.1
+    Checking similar-asserts v1.7.0
+    Checking re_redap_client v0.38.1
+    Checking rayon v1.12.0
+    Checking clap v4.6.6
+    Checking ciborium v0.2.2
+    Checking robot-tests v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-tests)
+    Checking re_capabilities v0.38.1
+    Checking tinytemplate v1.2.1
+    Checking page_size v0.6.0
+    Checking anes v0.1.6
+    Checking assert_no_alloc v1.1.2
+    Checking oorandom v11.1.5
+    Checking criterion v0.8.2
+    Checking mimalloc v0.1.52
+    Checking robot-viz v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-viz)
+    Checking robot-cli v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-cli)
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/feetech)
+    Checking robot-adapter-mock v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/mock)
+    Checking robot-transport v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-transport)
+    Checking robot-health v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-health)
+    Checking robot-logging v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-logging)
+    Checking robot-msg v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-msg)
+    Checking robot-core v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-core)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1m 39s

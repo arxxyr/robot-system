@@ -41,6 +41,11 @@ enum PeriodicOutput {
         stamp_ns: u64,
         deadline_ns: u64,
     },
+    MixedHold {
+        joint_count: usize,
+        stamp_ns: u64,
+        deadline_ns: u64,
+    },
 }
 
 fn velocity_joint_count(command: &JointCommandView<'_>) -> Result<usize, RobotError> {
@@ -60,6 +65,30 @@ fn select_periodic_output(
     policy: OutputPolicy,
     now: MonoRawNs,
 ) -> Result<PeriodicOutput, RobotError> {
+    if matches!(
+        command.selection,
+        JointSelection::MixedPositionRawVelocity { .. }
+    ) {
+        return match policy {
+            OutputPolicy::StopTorque | OutputPolicy::Disabled => Ok(PeriodicOutput::Skip),
+            OutputPolicy::ActiveForward => {
+                command.validate_selection(command.positions.len())?;
+                command.validate_selection_time(now.0)?;
+                Ok(PeriodicOutput::Forward)
+            }
+            OutputPolicy::ReadyHold | OutputPolicy::HoldCurrent | OutputPolicy::ZeroCommand => {
+                command.validate_selection(command.positions.len())?;
+                Ok(PeriodicOutput::MixedHold {
+                    joint_count: command.positions.len(),
+                    stamp_ns: now.0,
+                    deadline_ns: now
+                        .0
+                        .checked_add(PERIODIC_WRITE_BUDGET_NS)
+                        .ok_or(RobotError::InvalidParameter("混合保持截止时间溢出"))?,
+                })
+            }
+        };
+    }
     if !matches!(policy, OutputPolicy::StopTorque | OutputPolicy::Disabled) {
         command.validate_selection(command.positions.len())?;
         command.validate_selection_time(now.0)?;
@@ -546,6 +575,8 @@ impl SerialTick {
         )
     }
 
+    // 保留单一目标分派、预算安装和失败收敛路径，不为行数阈值拆成间接调度。
+    #[allow(clippy::too_many_lines)]
     fn periodic_write<A: SerialRtAdapter>(
         &mut self,
         adapter: &mut A,
@@ -561,6 +592,7 @@ impl SerialTick {
         } = *context;
         let policy = OutputPolicy::from_u8(ctrl.policy.load(Ordering::Acquire));
         let zeros = [0.0_f32; MAX_JOINTS];
+        let raw_zeros = [0_i16; MAX_JOINTS];
         // 同一分派时刻同时约束来源有效性与本次事务预算，不用第二次取时延长窗口。
         let dispatched_at = clock.now();
         let selection = if command.selection == JointSelection::All
@@ -582,11 +614,51 @@ impl SerialTick {
                     positions: &zeros[..joint_count],
                     velocities: &zeros[..joint_count],
                     torques: &zeros[..joint_count],
+                    raw_velocities: &raw_zeros[..joint_count],
                     mode: ControlMode::Velocity,
                     selection: JointSelection::All,
                     stamp_ns,
                     deadline_ns,
                 },
+                Ok(PeriodicOutput::MixedHold {
+                    joint_count,
+                    stamp_ns,
+                    deadline_ns,
+                }) => {
+                    let state = &self.state;
+                    let bounded = usize::from(state.joint_count) == joint_count
+                        && state.stamp_ns <= dispatched_at.0
+                        && dispatched_at.0 - state.stamp_ns <= PERIODIC_READ_BUDGET_NS
+                        && match command.selection {
+                            JointSelection::MixedPositionRawVelocity { position_mask, .. } => {
+                                state.positions[..joint_count].iter().enumerate().all(
+                                    |(slot, value)| {
+                                        !JointSelection::Mask(position_mask).contains(slot)
+                                            || value.is_finite()
+                                    },
+                                )
+                            }
+                            _ => false,
+                        };
+                    if !bounded {
+                        metrics.write_errors.fetch_add(1, Ordering::Relaxed);
+                        self.route_periodic(
+                            RobotError::InvalidParameter("混合保持缺少有界成功反馈"),
+                            context,
+                        );
+                        return false;
+                    }
+                    JointCommandView {
+                        positions: &state.positions[..joint_count],
+                        velocities: &zeros[..joint_count],
+                        torques: &zeros[..joint_count],
+                        raw_velocities: &raw_zeros[..joint_count],
+                        mode: ControlMode::Position,
+                        selection: command.selection,
+                        stamp_ns,
+                        deadline_ns,
+                    }
+                }
                 Err(error) => {
                     metrics.write_errors.fetch_add(1, Ordering::Relaxed);
                     self.route_periodic(error, context);
@@ -786,6 +858,7 @@ mod tests {
             velocities: [2.0; MAX_JOINTS],
             torques: [3.0; MAX_JOINTS],
             mode: mode.into(),
+            raw_velocities: [0; MAX_JOINTS],
             selection: JointSelection::All,
             stamp_ns: 100,
             deadline_ns: 200,
@@ -809,6 +882,7 @@ mod tests {
         );
         assert_eq!(actual.mode, expected.mode);
         assert_eq!(actual.selection, expected.selection);
+        assert_eq!(actual.raw_velocities, expected.raw_velocities);
         assert_eq!(actual.joint_count, expected.joint_count);
         assert_eq!(actual.stamp_ns, expected.stamp_ns);
         assert_eq!(actual.deadline_ns, expected.deadline_ns);
@@ -876,6 +950,8 @@ mod tests {
             recorded.positions[..target.positions.len()].copy_from_slice(target.positions);
             recorded.velocities[..target.velocities.len()].copy_from_slice(target.velocities);
             recorded.torques[..target.torques.len()].copy_from_slice(target.torques);
+            recorded.raw_velocities[..target.raw_velocities.len()]
+                .copy_from_slice(target.raw_velocities);
             self.last_command = Some(recorded);
             self.writes += 1;
             let result = self.inner.write_command(target);
@@ -1028,6 +1104,157 @@ mod tests {
         let config: crate::config_loader::RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus1_full.toml")).unwrap();
         crate::grouped_position::XleRobotBus1Layout::from_hardware(&config.hardware[0]).unwrap()
+    }
+
+    fn mixed_command() -> JointCommandBuf {
+        let config: crate::config_loader::RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+        crate::grouped_position::XleRobotBus2Layout::from_hardware(&config.hardware[0])
+            .unwrap()
+            .command([0.4; 6], [100, -100, 50], 77, 100, 200)
+            .unwrap()
+    }
+
+    #[test]
+    fn mixed_complete_target_reads_back_and_estop_confirms_all_nine() {
+        let mut fixture = Fixture::with_joint_count(true, 9);
+        fixture.set_policy(OutputPolicy::ActiveForward);
+        let source = mixed_command();
+        fixture.step(&source.as_view());
+        assert_eq!(&fixture.tick.state.positions[..6], &[0.4; 6]);
+        assert_eq!(&fixture.tick.state.velocities[6..9], &[-100., 100., 50.]);
+        let mut expected = source;
+        expected.seq = 0;
+        assert_same_command(fixture.adapter.last_command.as_ref().unwrap(), &expected);
+        assert_eq!(fixture.tick.state.joint_count, 9);
+        let writes = fixture.adapter.write_attempts;
+        fixture.set_policy(OutputPolicy::StopTorque);
+        let _ = fixture.ctrl.authority().estop();
+        fixture.step(&source.as_view());
+        fixture.step(&source.as_view());
+        assert_eq!(fixture.adapter.write_attempts, writes);
+        assert_eq!(fixture.adapter.last_confirm_count, 9);
+        assert!(fixture.adapter.last_confirm_all_off);
+        assert_eq!(fixture.adapter.stops, 2);
+    }
+
+    #[test]
+    fn mixed_hold_uses_bounded_feedback_and_zero_raw_without_refreshing_old_goal() {
+        for policy in [
+            OutputPolicy::ReadyHold,
+            OutputPolicy::HoldCurrent,
+            OutputPolicy::ZeroCommand,
+        ] {
+            for age_ns in [100, PERIODIC_READ_BUDGET_NS] {
+                let mut fixture = Fixture::with_joint_count(true, 9);
+                fixture.set_policy(OutputPolicy::ActiveForward);
+                let mut seed = mixed_command();
+                seed.positions[..6].fill(0.25);
+                seed.raw_velocities.fill(0);
+                fixture.step(&seed.as_view());
+                let source = mixed_command();
+                let original = source;
+                fixture.clock.set(MonoRawNs(100 + age_ns));
+                fixture.set_policy(policy);
+                fixture.step(&source.as_view());
+                let held = fixture.adapter.last_command.unwrap();
+                assert_eq!(&held.positions[..6], &[0.25; 6]);
+                assert_eq!(held.raw_velocities, [0; MAX_JOINTS]);
+                assert_eq!(held.selection, source.selection);
+                assert_eq!(
+                    (held.stamp_ns, held.deadline_ns),
+                    (100 + age_ns, 100 + age_ns + PERIODIC_WRITE_BUDGET_NS)
+                );
+                assert_same_command(&source, &original);
+                assert_eq!(&fixture.tick.state.velocities[6..9], &[0.; 3]);
+                assert_eq!(fixture.adapter.writes, 2);
+                assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::Idle);
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_hold_missing_stale_future_or_invalid_feedback_faults_before_write() {
+        for policy in [
+            OutputPolicy::ReadyHold,
+            OutputPolicy::HoldCurrent,
+            OutputPolicy::ZeroCommand,
+        ] {
+            for invalid in 0..5 {
+                let mut fixture = Fixture::with_joint_count(true, 9);
+                let source = mixed_command();
+                if invalid != 0 {
+                    fixture.set_policy(OutputPolicy::ActiveForward);
+                    fixture.step(&source.as_view());
+                }
+                match invalid {
+                    0 => assert_eq!(fixture.tick.state.joint_count, 0),
+                    1 => fixture.clock.set(MonoRawNs(101 + PERIODIC_READ_BUDGET_NS)),
+                    2 => fixture.clock.set(MonoRawNs(99)),
+                    3 => fixture.tick.state.positions[0] = f32::NAN,
+                    _ => fixture.tick.state.joint_count = 8,
+                }
+                let writes = fixture.adapter.write_attempts;
+                let reads = fixture.adapter.reads;
+                fixture.set_policy(policy);
+                fixture.step(&source.as_view());
+                assert_eq!(fixture.adapter.write_attempts, writes);
+                assert_eq!(fixture.adapter.reads, reads);
+                assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+                fixture.step(&source.as_view());
+                fixture.step(&source.as_view());
+                assert_eq!(fixture.adapter.last_confirm_count, 9);
+                assert!(fixture.adapter.last_confirm_all_off);
+                assert_eq!(fixture.adapter.stops, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_active_invalid_or_partial_transaction_failure_uses_original_full_bus_stop() {
+        let valid = mixed_command();
+        for invalid in 0..4 {
+            let mut source = valid;
+            match invalid {
+                0 => source.deadline_ns = 100,
+                1 => source.stamp_ns = 101,
+                2 => source.raw_velocities[7] = i16::MIN,
+                _ => {
+                    source.selection = JointSelection::MixedPositionRawVelocity {
+                        position_mask: 0x7f,
+                        velocity_mask: 0x1c0,
+                    }
+                }
+            }
+            let mut fixture = Fixture::with_joint_count(true, 9);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            fixture.step(&source.as_view());
+            fixture.assert_fault_then_stop(&source.as_view());
+            assert_eq!(fixture.adapter.last_confirm_count, 9);
+        }
+        // 与真实Feetech两帧之间过期/第二帧写错返回同类错误，验证原S0收敛路由。
+        for kind in [CommErrorKind::PendingDeadline, CommErrorKind::IoWrite] {
+            let mut fixture = Fixture::with_joint_count(true, 9);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            fixture.adapter.write_error = Some(RobotError::Comm(kind));
+            fixture.step(&valid.as_view());
+            let fault = fixture.ctrl.mailbox_snapshot().unwrap();
+            assert_eq!(
+                (fault.code, fault.detail),
+                (FaultCode::CommFault, kind.to_u8())
+            );
+            assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+            fixture.step(&valid.as_view());
+            fixture.step(&valid.as_view());
+            assert_eq!(fixture.adapter.write_attempts, 1);
+            assert_eq!(fixture.adapter.reads, 0);
+            assert_eq!(fixture.adapter.last_confirm_count, 9);
+            assert!(fixture.adapter.last_confirm_all_off);
+            assert_eq!(
+                fixture.ctrl.mailbox_snapshot().unwrap().generation,
+                fault.generation
+            );
+        }
     }
 
     #[test]

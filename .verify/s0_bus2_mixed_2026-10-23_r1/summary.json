@@ -1,0 +1,109 @@
+{
+  "status": "SOFTWARE_PASS",
+  "base_commit": "c54ee42ea58706e5df100370d7058de716fdf5b9",
+  "scope": "S0内部右总线：六臂Position与三轮signed raw Velocity共用一个完整目标、来源期限、SerialRT写者和停止域",
+  "source_manifest": "source-manifest.json",
+  "contract": [
+    "XleRobotBus2Layout按名称/ID核对九槽，支持配置重排；臂按ID1..6、轮按前8/左7/右9，历史base_back_wheel名称不改。",
+    "MixedPositionRawVelocity两mask非空、互斥且完整覆盖；独立i16 raw字段，拒MIN及profile上限越界，不伪装成rad/s。",
+    "new_bus2_mixed显式绑定三个已有profile；connect读取实际Mode/TE/Phase/固件，复用原型号777握手，不写模式或EEPROM；Phase12仍拒绝。",
+    "首写前校验全部目标及clamp后的GP范围，GV→GP共用min(来源截止,调用预算)和既有绝对截止写路径；两帧非原子，第二帧失败不重试。",
+    "enable只同步六臂Present到Goal，再三轮GV0、原50ms等待和全九TE1；正常disable仍原全九TE0，SafetyStop保留全九广播TE0。",
+    "ReadyHold/HoldCurrent/ZeroCommand取最近成功反馈，匹配九槽、非未来、年龄≤200ms且臂位置有限；轮raw0，独立50ms预算；非法反馈或写失败走原整bus故障停止。",
+    "mixed实例旧hold_current_position在I/O前拒绝，避免仅保持臂而留非零轮速；普通实例原路径保留。",
+    "默认factory/TOML、跨进程wire、All/左侧Mask合同不改；HardRT继续拒绝非All；原raw状态反馈及真实串口实现不改。"
+  ],
+  "reference": {
+    "local_orin_copy": "/Users/loosqk/repo/robot/XLeRobot",
+    "version": "xlerobot-dimos 0.1.0",
+    "path": "bus2_arm.py、bus2_base.py、_manipulator_base.py、common/shared_bus.py及FeetechBus实际调用链",
+    "reuse": "同连接与按目标ID分帧；不复制隐式模式写入、吞错和里程计假设"
+  },
+  "verification": {
+    "toolchain": "rustc 1.101.0-nightly 7189d39d9ce936881b8132c6addeaf3e295cd455 (2026-10-22)，Mac和Orin均已更新；rustup自身未更新",
+    "local_libraries": {
+      "passed": 389,
+      "failed": 0,
+      "ignored": 0,
+      "packages": {
+        "feetech": 225,
+        "mock": 19,
+        "core": 145
+      },
+      "log": "local-tests.log"
+    },
+    "local_quality": {
+      "fmt_pass": true,
+      "clippy_exit": 0,
+      "clippy_scope": "robot-core/robot-adapter-mock/robot-adapter-feetech --all-targets -D warnings",
+      "log": "local-clippy.log"
+    },
+    "native": {
+      "passed": 428,
+      "failed": 0,
+      "ignored": 0,
+      "test_groups": {
+        "libs": 393,
+        "s0-grouped": 3,
+        "s0-serial-tick": 25,
+        "s0-hard-rt": 1,
+        "s0-ipc": 1,
+        "serial-rt-e2e": 5
+      },
+      "fmt_then_root_clippy_exit": 0,
+      "xlerobot_real_all_targets_compile_exit": 0,
+      "receipt": "native/launch.json",
+      "source9_match": true,
+      "configuration7_match": true,
+      "compiler_before_after_identical": true
+    },
+    "new_test_methods": 11,
+    "counting": "本机和Orin复验不累计；新增方法及既有方法扩展断言均是相应测试集合子集；不宣称完整workspace测试或硬件端到端。",
+    "review": "实施自测、独立静态评审与root复核通过；9源SHA与最终Orin验证首尾一致。GP校准越界、Mock回退时钟、旧Hold误用已定向修正并验证；原生428个方法及真实串口特性编译通过。",
+    "local_commands": [
+      "cargo fmt --all",
+      "cargo clippy -p robot-core -p robot-adapter-mock -p robot-adapter-feetech --all-targets -- -D warnings",
+      "cargo test -p robot-core -p robot-adapter-mock -p robot-adapter-feetech --lib"
+    ],
+    "local_environment": "沿用项目sccache；无额外features/--locked；后续两doc与局部lint说明变更不重跑库测试。"
+  },
+  "prior_attempts": [
+    {
+      "log": "prior-attempts/robot-system-bus2-local-tests-r1.log",
+      "result": "暂停前新增测试4处未消费must_use返回值导致编译失败，修正后通过；原失败保留。"
+    },
+    {
+      "log": "prior-attempts/native-r1/clippy.log",
+      "result": "Orin首轮fmt0/根Clippy101：两doc标识缺反引号及periodic_write106行超过lint阈值；仅doc与带中文理由的局部行数豁免修正，无控制行为变更。该轮其余测试/feature检查均NOT_RUN，原件与两源历史SHA保留在launch.json。"
+    }
+  ],
+  "cleanup": {
+    "status": "COMPLETE",
+    "target": "复用既有target，无新target/源码包",
+    "unfinished_stash": "7a34b74d267b1b87fc8d91381554d0d3b5199a33保留",
+    "local_owned_temporaries_removed": [
+      "/tmp/robot-system-bus2-local-tests-r1.log",
+      "/tmp/robot-system-bus2-local-tests-r2.log",
+      "/tmp/robot-system-bus2-nightly-local-clippy-r1.log",
+      "/tmp/robot-system-bus2-nightly-local-tests-final.log",
+      "/tmp/robot-system-bus2-compile-r1.log",
+      "/tmp/robot-system-bus2-nightly-local-tests-r3.log",
+      "/tmp/robot-system-nightly-20261023-i_ykr1hf",
+      "/tmp/robot-system-s0-bus2-native-r2-zxnv3top"
+    ],
+    "intermediate_pass_logs": "未提交的compile/r2/r3中间成功日志由最终389项原日志取代；首编译FAIL与原生首Clippy FAIL保留。",
+    "native_receipt": "native/launch.json",
+    "native_owned_resources": "R1/R2进程自然退出，所属tmux pane和临时目录、备份已清；最终%184/PID766925退出0，无残余构建进程，source与既有target保留。"
+  },
+  "limits": {
+    "physical_uart_access": false,
+    "hardware_motion": false,
+    "install_or_service_change": false,
+    "default_daemon_mixed_entry": false,
+    "D15": "OPEN/DEFERRED",
+    "deployable": false,
+    "unverified": "现场Phase/固件合同、方向及SI单位、三轮联动、真实线缆时序与混合实机停止仍待验证。MockTransport协议测试与S0故障路由分别覆盖，不冒充真实Feetech端到端或硬件通过。",
+    "next": "先核显式mixed路径的现场固件/Phase合同；任何实机动作前通知并取得当前现场状态，不自动扩大范围。"
+  },
+  "completed_at_utc": "2026-10-23T17:51:02+00:00"
+}

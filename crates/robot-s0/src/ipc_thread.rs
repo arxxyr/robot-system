@@ -1200,6 +1200,7 @@ mod tests {
         assert_eq!(command.joint_count, 4);
         assert_eq!(command.mode, ControlModeRepr::Velocity);
         assert_eq!(command.selection, robot_core::adapter::JointSelection::All);
+        assert_eq!(command.raw_velocities, [0; MAX_JOINTS]);
         assert_eq!(
             (command.stamp_ns, command.deadline_ns, command.seq),
             (100, 200, 7)

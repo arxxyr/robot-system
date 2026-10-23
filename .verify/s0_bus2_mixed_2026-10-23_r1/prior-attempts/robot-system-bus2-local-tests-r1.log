@@ -1,0 +1,53 @@
+   Compiling robot-core v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-core)
+   Compiling robot-adapter-mock v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/mock)
+   Compiling robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
+error: unused return value of `MockHandle::drain_tx` that must be used
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:493:13
+    |
+493 |             f.handle.drain_tx();
+    |             ^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> crates/robot-adapters/feetech/src/lib.rs:50:11
+    |
+ 50 | #![forbid(unused_must_use)]
+    |           ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+    |
+493 |             let _ = f.handle.drain_tx();
+    |             +++++++
+
+error: unused return value of `MockHandle::drain_tx` that must be used
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:551:9
+    |
+551 |         f.handle.drain_tx();
+    |         ^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+551 |         let _ = f.handle.drain_tx();
+    |         +++++++
+
+error: unused return value of `MockHandle::drain_tx` that must be used
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:579:13
+    |
+579 |             f.handle.drain_tx();
+    |             ^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+579 |             let _ = f.handle.drain_tx();
+    |             +++++++
+
+error: unused return value of `MockHandle::drain_tx` that must be used
+   --> crates/robot-adapters/feetech/src/mixed_bus.rs:615:9
+    |
+615 |         f.handle.drain_tx();
+    |         ^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+615 |         let _ = f.handle.drain_tx();
+    |         +++++++
+
+error: could not compile `robot-adapter-feetech` (lib test) due to 4 previous errors

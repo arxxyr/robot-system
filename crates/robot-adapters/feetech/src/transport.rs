@@ -444,6 +444,42 @@ impl MockTransport {
 }
 
 impl SerialTransport for MockTransport {
+    fn write_all_until(
+        &mut self,
+        buf: &[u8],
+        deadline: SourceWriteDeadline<'_>,
+    ) -> Result<(), FeetechError> {
+        let now = deadline.clock().now();
+        if now >= deadline.source_deadline().as_mono_raw_ns() {
+            return Err(FeetechError::AbsoluteWriteFailure(
+                AbsoluteWriteFailure::before_write(
+                    AbsoluteWriteReason::SourceExpired,
+                    buf.len(),
+                    deadline.source_deadline(),
+                    Some(now),
+                ),
+            ));
+        }
+        self.write_all(buf)?;
+        let returned = deadline.clock().now();
+        if returned >= deadline.source_deadline().as_mono_raw_ns() || returned < now {
+            let mut failure = AbsoluteWriteFailure::before_write(
+                AbsoluteWriteReason::SourceExpired,
+                buf.len(),
+                deadline.source_deadline(),
+                Some(returned),
+            );
+            failure.got = buf.len();
+            failure.write_attempted = true;
+            if returned < now {
+                failure.reason = AbsoluteWriteReason::ClockRegressed { previous_at: now };
+                failure.previous_at = Some(now);
+            }
+            return Err(FeetechError::AbsoluteWriteFailure(failure));
+        }
+        Ok(())
+    }
+
     fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError> {
         if !self.connected {
             return Err(FeetechError::NotConnected);
@@ -717,6 +753,84 @@ mod tests {
             "expected empty tx, got {:?}",
             h.peek_tx()
         );
+    }
+
+    #[test]
+    fn mock_absolute_write_keeps_completed_bytes_and_rejects_expiry_clock_regression_and_disconnect()
+     {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct ReturningClock {
+            first: AtomicBool,
+            returned: u64,
+        }
+        impl RobotClock for ReturningClock {
+            fn now(&self) -> MonoRawNs {
+                MonoRawNs(if self.first.swap(false, Ordering::Relaxed) {
+                    10
+                } else {
+                    self.returned
+                })
+            }
+            fn sleep_until(&self, _: Deadline) {
+                panic!("内存写不得等待");
+            }
+            fn sleep_for(&self, _: robot_core::time::DurationNs) {
+                panic!("内存写不得等待");
+            }
+        }
+        for returned in [20, 9] {
+            let clock = ReturningClock {
+                first: AtomicBool::new(true),
+                returned,
+            };
+            let (mut transport, handle) = MockTransport::new();
+            let error = transport
+                .write_all_until(
+                    &[1, 2],
+                    SourceWriteDeadline::new(&clock, Deadline(MonoRawNs(20))),
+                )
+                .unwrap_err();
+            let FeetechError::AbsoluteWriteFailure(failure) = error else {
+                panic!("必须保留绝对写失败进度");
+            };
+            assert_eq!(
+                (failure.wanted, failure.got, failure.write_attempted),
+                (2, 2, true)
+            );
+            assert_eq!(failure.observed_at, Some(MonoRawNs(returned)));
+            assert_eq!(
+                failure.reason,
+                if returned == 20 {
+                    AbsoluteWriteReason::SourceExpired
+                } else {
+                    AbsoluteWriteReason::ClockRegressed {
+                        previous_at: MonoRawNs(10),
+                    }
+                }
+            );
+            assert_eq!(handle.drain_tx(), [1, 2]);
+        }
+        let clock = robot_core::time::MockClock::new(MonoRawNs(20));
+        let (mut transport, handle) = MockTransport::new();
+        let error = transport
+            .write_all_until(
+                &[1, 2],
+                SourceWriteDeadline::new(&clock, Deadline(MonoRawNs(20))),
+            )
+            .unwrap_err();
+        let FeetechError::AbsoluteWriteFailure(failure) = error else {
+            panic!("截止前置拒绝必须保留进度");
+        };
+        assert_eq!((failure.got, failure.write_attempted), (0, false));
+        transport.connected = false;
+        assert!(matches!(
+            transport.write_all_until(
+                &[1, 2],
+                SourceWriteDeadline::new(&clock, Deadline(MonoRawNs(21)))
+            ),
+            Err(FeetechError::NotConnected)
+        ));
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
     }
 
     #[test]

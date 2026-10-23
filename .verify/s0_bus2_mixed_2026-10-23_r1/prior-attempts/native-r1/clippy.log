@@ -1,0 +1,392 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.189
+   Compiling syn v3.0.5
+   Compiling syn v2.0.119
+    Checking cfg-if v1.0.4
+   Compiling serde_core v1.0.229
+   Compiling serde_derive v1.0.229
+    Checking memchr v2.8.3
+   Compiling serde v1.0.229
+    Checking once_cell v1.21.4
+   Compiling bytemuck_derive v1.12.1
+    Checking hashbrown v0.17.1
+    Checking bytemuck v1.25.2
+    Checking itoa v1.0.18
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.12
+   Compiling cc v1.4.5
+   Compiling thiserror v2.0.20
+    Checking bitflags v2.13.1
+    Checking equivalent v1.0.2
+    Checking pin-project-lite v0.2.17
+    Checking indexmap v2.14.2
+   Compiling thiserror-impl v2.0.20
+   Compiling zmij v1.0.23
+    Checking smallvec v1.16.0
+   Compiling serde_json v1.0.151
+    Checking tracing-core v0.1.36
+   Compiling semver v1.0.28
+   Compiling tracing-attributes v0.1.31
+   Compiling rustc_version v0.4.1
+   Compiling flatbuffers v25.12.19
+   Compiling either v1.18.0
+    Checking log v0.4.34
+    Checking aho-corasick v1.1.5
+    Checking tracing v0.1.44
+    Checking regex-syntax v0.8.11
+    Checking regex-automata v0.4.18
+   Compiling glob v0.3.4
+    Checking bytes v1.12.1
+   Compiling prettyplease v0.2.37
+   Compiling getrandom v0.4.3
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling rustversion v1.0.23
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling clang-sys v1.9.1
+   Compiling regex v1.13.1
+    Checking iceoryx2-pal-concurrency-sync v0.9.3
+   Compiling minimal-lexical v0.2.1
+   Compiling nom v7.1.3
+   Compiling libloading v0.8.9
+   Compiling bindgen v0.72.1
+   Compiling cexpr v0.6.0
+   Compiling itertools v0.13.0
+   Compiling shlex v1.3.0
+   Compiling rustc-hash v2.1.3
+   Compiling iceoryx2-pal-configuration v0.9.3
+   Compiling libc v1.0.0-alpha.4
+    Checking inventory v0.3.24
+    Checking crossbeam-channel v0.5.17
+    Checking iceoryx2-log-types v0.9.3
+    Checking iceoryx2-bb-elementary-traits v0.9.3
+    Checking robot-core v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-core)
+   Compiling iceoryx2-bb-elementary v0.9.3
+    Checking iceoryx2-bb-concurrency v0.9.3
+    Checking iceoryx2-log v0.9.3
+   Compiling iceoryx2-bb-derive-macros v0.9.3
+   Compiling blake3 v1.8.7
+   Compiling iceoryx2-pal-posix v0.9.3
+    Checking iceoryx2-bb-container v0.9.3
+   Compiling enum-iterator-derive v1.5.0
+    Checking iceoryx2-pal-print v0.9.3
+    Checking iceoryx2-bb-print v0.9.3
+    Checking constant_time_eq v0.4.2
+    Checking winnow v1.0.4
+    Checking arrayvec v0.7.8
+   Compiling robot-msg v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-msg)
+    Checking toml_parser v1.1.3+spec-1.1.0
+    Checking enum-iterator v2.3.0
+    Checking iceoryx2-bb-system-types v0.9.3
+    Checking serde_spanned v1.1.1
+    Checking tiny-fn v0.1.9
+    Checking toml_writer v1.1.2+spec-1.1.0
+    Checking iceoryx2-bb-posix v0.9.3
+    Checking iceoryx2-pal-os-api v0.9.3
+    Checking iceoryx2-bb-lock-free v0.9.3
+    Checking cobs v0.3.0
+    Checking toml_datetime v0.7.5+spec-1.1.0
+   Compiling iceoryx2-bb-loggers v0.9.3
+   Compiling zerocopy v0.8.56
+    Checking winnow v0.7.15
+   Compiling version_check v0.9.5
+    Checking iceoryx2-bb-linux v0.9.3
+    Checking iceoryx2-bb-memory v0.9.3
+    Checking postcard v1.1.3
+   Compiling zerocopy-derive v0.8.56
+    Checking toml v0.9.12+spec-1.1.0
+    Checking base64 v0.22.1
+    Checking sha1_smol v1.0.1
+    Checking iceoryx2-cal v0.9.3 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/3rd-party/iceoryx2-cal)
+    Checking toml_datetime v1.1.1+spec-1.1.0
+    Checking toml v1.1.5+spec-1.1.0
+    Checking iceoryx2 v0.9.3 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/3rd-party/iceoryx2)
+    Checking arc-swap v1.9.2
+    Checking lazy_static v1.5.0
+    Checking sharded-slab v0.1.7
+    Checking matchers v0.2.0
+    Checking tracing-log v0.2.0
+    Checking tracing-serde v0.2.0
+    Checking thread_local v1.1.10
+   Compiling anyhow v1.0.104
+   Compiling linktime-proc-macro v0.2.3
+   Compiling rustix v1.1.4
+    Checking robot-transport v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-transport)
+    Checking link-section v0.19.3
+    Checking nu-ansi-term v0.50.3
+    Checking tracing-subscriber v0.3.23
+    Checking ctor v1.0.13
+    Checking linux-raw-sys v0.12.1
+    Checking robot-logging v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-logging)
+    Checking half v2.7.1
+   Compiling getrandom v0.3.4
+    Checking futures-core v0.3.34
+    Checking uuid v1.26.0
+    Checking num-integer v0.1.47
+    Checking num-bigint v0.4.8
+   Compiling ahash v0.8.12
+    Checking futures-sink v0.3.34
+    Checking num-complex v0.4.6
+    Checking arrow-buffer v58.4.0
+    Checking arrow-schema v58.4.0
+    Checking errno v0.3.14
+    Checking iana-time-zone v0.1.65
+    Checking arrow-data v58.4.0
+    Checking chrono v0.4.45
+    Checking signal-hook-registry v1.4.8
+    Checking http v1.5.0
+   Compiling tokio-macros v2.7.2
+    Checking socket2 v0.6.5
+    Checking mio v1.2.3
+    Checking arrow-array v58.4.0
+    Checking tokio v1.53.1
+   Compiling zeroize_derive v1.5.0
+    Checking slab v0.4.12
+    Checking zeroize v1.9.0
+    Checking futures-channel v0.3.34
+   Compiling parking_lot_core v0.9.12
+    Checking lexical-util v1.0.7
+   Compiling ring v0.17.14
+   Compiling futures-macro v0.3.34
+    Checking futures-io v0.3.34
+    Checking futures-task v0.3.34
+    Checking fnv v1.0.7
+    Checking percent-encoding v2.3.2
+    Checking scopeguard v1.2.0
+   Compiling httparse v1.10.1
+    Checking lock_api v0.4.14
+    Checking futures-util v0.3.34
+    Checking rustls-pki-types v1.15.1
+    Checking arrow-select v58.4.0
+    Checking robot-health v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-health)
+   Compiling itertools v0.14.0
+    Checking subtle v2.6.1
+    Checking parking_lot v0.12.5
+    Checking lexical-write-integer v1.0.6
+    Checking lexical-parse-integer v1.0.6
+    Checking getrandom v0.2.17
+    Checking untrusted v0.9.0
+   Compiling prost-derive v0.14.4
+    Checking lexical-parse-float v1.0.6
+    Checking lexical-write-float v1.0.6
+    Checking tokio-util v0.7.19
+    Checking http-body v1.1.0
+   Compiling heck v0.5.0
+    Checking mime v0.3.17
+   Compiling rustls v0.23.45
+   Compiling crossbeam-epoch v0.9.21
+    Checking lexical-core v1.0.6
+    Checking rustls-webpki v0.103.15
+    Checking arrow-ord v58.4.0
+    Checking atoi v2.0.0
+    Checking ryu v1.0.23
+   Compiling crossbeam-deque v0.8.8
+    Checking tower-service v0.3.3
+    Checking byteorder v1.5.0
+    Checking arrow-cast v58.4.0
+    Checking httpdate v1.0.3
+    Checking try-lock v0.2.5
+    Checking simdutf8 v0.1.5
+    Checking fastrand v2.5.0
+    Checking atomic-waker v1.1.2
+    Checking h2 v0.4.19
+    Checking tempfile v3.27.0
+    Checking arrow-json v58.4.0
+    Checking want v0.3.1
+    Checking arrow-ipc v58.4.0
+    Checking arrow-string v58.4.0
+    Checking arrow-arith v58.4.0
+    Checking arrow-row v58.4.0
+    Checking sync_wrapper v1.0.2
+    Checking tower-layer v0.3.3
+   Compiling toml_edit v0.25.15+spec-1.1.0
+    Checking arrow v58.4.0
+    Checking hyper v1.11.1
+    Checking http-body-util v0.1.5
+   Compiling async-trait v0.1.92
+    Checking axum-core v0.5.6
+    Checking hyper-util v0.1.20
+   Compiling proc-macro-crate v3.5.0
+    Checking tower v0.5.3
+   Compiling generic-array v0.14.7
+    Checking crossbeam-queue v0.3.14
+   Compiling pin-project-internal v1.1.13
+   Compiling synstructure v0.14.0
+    Checking matchit v0.8.4
+    Checking openssl-probe v0.2.1
+    Checking rustls-native-certs v0.8.4
+    Checking axum v0.8.9
+    Checking pin-project v1.1.13
+    Checking crossbeam v0.8.5
+    Checking hyper-timeout v0.5.2
+   Compiling re_byte_size_derive v0.38.1
+    Checking tokio-rustls v0.26.6
+    Checking prost v0.14.4
+    Checking tokio-stream v0.1.19
+    Checking vec1 v1.12.1
+    Checking re_byte_size v0.38.1
+    Checking re_log v0.38.1
+   Compiling zerofrom-derive v0.1.8
+    Checking tonic v0.14.6
+   Compiling litrs v1.0.0
+   Compiling document-features v0.2.12
+    Checking zerofrom v0.1.8
+   Compiling yoke-derive v0.8.3
+    Checking stable_deref_trait v1.2.1
+    Checking typenum v1.20.1
+    Checking yoke v0.8.3
+    Checking tonic-prost v0.14.6
+    Checking itertools v0.15.0
+   Compiling zerovec-derive v0.11.6
+    Checking unicode-segmentation v1.13.3
+    Checking zerovec v0.11.8
+   Compiling displaydoc v0.2.7
+    Checking web-time v1.1.0
+    Checking unicode-width v0.2.2
+    Checking re_int v0.38.1
+    Checking re_format v0.38.1
+    Checking quiver_types v0.6.1
+    Checking re_span v0.38.1
+   Compiling quiver_derive v0.6.1
+    Checking puffin v0.20.0
+    Checking static_assertions v1.1.0
+   Compiling paste v1.0.15
+    Checking re_tracing v0.38.1
+    Checking tinystr v0.8.4
+    Checking crossterm v0.29.0
+    Checking quiver v0.6.1
+    Checking jiff-core v0.1.1
+    Checking writeable v0.6.4
+    Checking litemap v0.8.3
+    Checking adler2 v2.0.1
+    Checking nohash-hasher v0.2.0
+    Checking icu_locale_core v2.3.0
+    Checking jiff v0.2.37
+    Checking comfy-table v7.2.2
+    Checking re_tuid v0.38.1
+    Checking zerotrie v0.2.5
+    Checking potential_utf v0.1.6
+    Checking convert_case v0.11.0
+    Checking re_build_info v0.38.1
+    Checking rand_core v0.9.5
+    Checking ppv-lite86 v0.2.21
+   Compiling icu_normalizer_data v2.3.0
+    Checking utf8_iter v1.0.4
+   Compiling icu_properties_data v2.3.0
+   Compiling fixed v1.31.0
+    Checking icu_collections v2.3.0
+    Checking rand_chacha v0.9.0
+    Checking re_case v0.38.1
+    Checking icu_provider v2.3.1
+    Checking re_string_interner v0.38.1
+    Checking re_arrow_util v0.38.1
+    Checking az v1.3.0
+   Compiling crc32fast v1.5.1
+    Checking re_error v0.38.1
+    Checking re_types_core v0.38.1
+    Checking rand v0.9.5
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/feetech)
+   Compiling num-derive v0.4.2
+    Checking xxhash-rust v0.8.19
+    Checking simd-adler32 v0.3.10
+    Checking natord v1.0.9
+    Checking clean-path v0.2.1
+    Checking miniz_oxide v0.9.1
+    Checking icu_properties v2.3.0
+    Checking icu_normalizer v2.3.0
+    Checking re_quota_channel v0.38.1
+   Compiling strum_macros v0.26.4
+    Checking re_log_types v0.38.1
+    Checking strum v0.26.3
+    Checking flate2 v1.1.10
+    Checking idna_adapter v1.2.2
+    Checking idna v1.1.0
+    Checking re_sorbet v0.38.1
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking form_urlencoded v1.2.2
+   Compiling foldhash v0.1.5
+   Compiling hashbrown v0.15.5
+    Checking url v2.5.8
+    Checking digest v0.10.7
+    Checking robot-adapter-mock v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/mock)
+   Compiling unicase v2.9.0
+   Compiling siphasher v1.0.4
+   Compiling fixedbitset v0.5.7
+   Compiling petgraph v0.8.3
+   Compiling phf_shared v0.11.3
+   Compiling prost-types v0.14.4
+    Checking re_chunk v0.38.1
+    Checking futures-executor v0.3.34
+    Checking opentelemetry v0.32.0
+    Checking ordered-float v2.10.1
+    Checking cpufeatures v0.2.17
+   Compiling multimap v0.10.1
+   Compiling prost-build v0.14.4
+    Checking sha2 v0.10.9
+    Checking serde-value v0.7.0
+   Compiling phf v0.11.3
+    Checking robot-s0 v0.1.2 (/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-s0)
+   Compiling tonic-build v0.14.6
+   Compiling matrixmultiply v0.3.11
+   Compiling protoc-bin-vendored-linux-aarch_64 v3.2.0
+    Checking twox-hash v2.1.4
+   Compiling protoc-bin-vendored-macos-x86_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-x86_32 v3.2.0
+   Compiling protoc-bin-vendored-linux-s390_64 v3.2.0
+   Compiling peg-runtime v0.8.6
+   Compiling protoc-bin-vendored-macos-aarch_64 v3.2.0
+   Compiling protoc-bin-vendored-linux-ppcle_64 v3.2.0
+   Compiling protoc-bin-vendored-win32 v3.2.0
+   Compiling protoc-bin-vendored-linux-x86_64 v3.2.0
+   Compiling protoc-bin-vendored v3.2.0
+   Compiling peg-macros v0.8.6
+error: item in documentation is missing backticks
+ --> crates/robot-s0/src/grouped_position.rs:1:5
+  |
+1 | //! XLeRobot 内部总线目标入口；共用原 `SerialRT` writer、整总线启停与反馈。
+  |     ^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#doc_markdown
+  = note: `-D clippy::doc-markdown` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+1 - //! XLeRobot 内部总线目标入口；共用原 `SerialRT` writer、整总线启停与反馈。
+1 + //! `XLeRobot` 内部总线目标入口；共用原 `SerialRT` writer、整总线启停与反馈。
+  |
+
+error: item in documentation is missing backticks
+  --> crates/robot-s0/src/grouped_position.rs:87:21
+   |
+87 |     /// 位置不有限、raw 为 i16::MIN 或时间窗口无效。
+   |                            ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#doc_markdown
+help: try
+   |
+87 -     /// 位置不有限、raw 为 i16::MIN 或时间窗口无效。
+87 +     /// 位置不有限、raw 为 `i16::MIN` 或时间窗口无效。
+   |
+
+    Checking lz4_flex v0.13.1
+error: this function has too many lines (106/100)
+   --> crates/robot-s0/src/serial_tick.rs:578:5
+    |
+578 | /     fn periodic_write<A: SerialRtAdapter>(
+579 | |         &mut self,
+580 | |         adapter: &mut A,
+581 | |         command: &JointCommandView<'_>,
+582 | |         context: &SerialTickContext<'_>,
+583 | |     ) -> bool {
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/main/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: could not compile `robot-s0` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...

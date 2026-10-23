@@ -1,6 +1,6 @@
-//! 左总线的最小分组位置入口；共用原 `SerialRT` writer、整总线启停与反馈。
-//! 每总线仍只有一个命令流、控制权和停止域；selection 只缩小本次 Position
-//! 写入，未选中关节保持设备既有目标，不提供组级超时或并发多生产者。
+//! `XLeRobot` 内部总线目标入口；共用原 `SerialRT` writer、整总线启停与反馈。
+//! 每总线仍只有一个命令流、控制权和停止域；左总线选择 Position 组，右总线
+//! 使用一个完整的位置/raw速度目标，不提供组级超时或并发多生产者。
 
 use robot_core::adapter::{ControlModeRepr, JointCommandBuf, JointSelection};
 use robot_core::error::RobotError;
@@ -29,6 +29,95 @@ pub enum Bus1PositionGroup {
 #[derive(Clone, Copy, Debug)]
 pub struct XleRobotBus1Layout {
     slots: [usize; 8],
+}
+
+const BUS2_JOINTS: [(&str, u8); 9] = [
+    ("right_arm_shoulder_pan", 1),
+    ("right_arm_shoulder_lift", 2),
+    ("right_arm_elbow_flex", 3),
+    ("right_arm_wrist_flex", 4),
+    ("right_arm_wrist_roll", 5),
+    ("right_arm_gripper", 6),
+    ("base_back_wheel", 8),
+    ("base_left_wheel", 7),
+    ("base_right_wheel", 9),
+];
+
+/// 右总线同一完整目标：右臂位置与三轮 raw 速度共享一个来源期限。
+/// 本入口不启用默认 factory，也不证明设备 raw 单位或固件合同已获实机验证。
+#[derive(Clone, Copy, Debug)]
+pub struct XleRobotBus2Layout {
+    slots: [usize; 9],
+}
+
+impl XleRobotBus2Layout {
+    /// # Errors
+    /// 右总线九关节的名称/ID 缺失、重复或错配。
+    pub fn from_hardware(hardware: &HardwareSection) -> Result<Self, RobotError> {
+        if hardware.id != "right_arm_full_with_base"
+            || hardware.adapter != "feetech_sts3215"
+            || hardware.joints.len() != 9
+            || hardware.motor_ids.len() != 9
+        {
+            return Err(RobotError::InvalidParameter("需要右臂和底盘完整九关节配置"));
+        }
+        let mut slots = [0; 9];
+        let mut seen = 0_u16;
+        for (slot, (name, &id)) in hardware.joints.iter().zip(&hardware.motor_ids).enumerate() {
+            let Some(logical) = BUS2_JOINTS
+                .iter()
+                .position(|&(expected_name, expected_id)| {
+                    name == expected_name && id == expected_id
+                })
+            else {
+                return Err(RobotError::InvalidParameter("右总线关节名称与电机ID不匹配"));
+            };
+            if seen & (1 << logical) != 0 {
+                return Err(RobotError::InvalidParameter("右总线关节重复"));
+            }
+            seen |= 1 << logical;
+            slots[logical] = slot;
+        }
+        Ok(Self { slots })
+    }
+
+    /// 臂位置按 ID1..6、轮 raw 按前8/左7/右9；不混同为 rad/s。
+    /// 三轮上限另由显式 Feetech profile 在首个动作写入前统一验证。
+    /// # Errors
+    /// 位置不有限、raw 为 `i16::MIN` 或时间窗口无效。
+    pub fn command(
+        &self,
+        arm: [f32; 6],
+        wheels_raw: [i16; 3],
+        seq: u64,
+        stamp_ns: u64,
+        deadline_ns: u64,
+    ) -> Result<JointCommandBuf, RobotError> {
+        let mut command = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            joint_count: 9,
+            seq,
+            stamp_ns,
+            deadline_ns,
+            selection: JointSelection::MixedPositionRawVelocity {
+                position_mask: self.slots[..6]
+                    .iter()
+                    .fold(0, |mask, slot| mask | (1 << slot)),
+                velocity_mask: self.slots[6..]
+                    .iter()
+                    .fold(0, |mask, slot| mask | (1 << slot)),
+            },
+            ..JointCommandBuf::default()
+        };
+        for (&slot, target) in self.slots[..6].iter().zip(arm) {
+            command.positions[slot] = target;
+        }
+        for (&slot, target) in self.slots[6..].iter().zip(wheels_raw) {
+            command.raw_velocities[slot] = target;
+        }
+        command.as_view().validate_selection(9)?;
+        Ok(command)
+    }
 }
 
 impl XleRobotBus1Layout {
@@ -111,6 +200,50 @@ mod tests {
         let mut config: crate::config_loader::RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus1_full.toml")).unwrap();
         config.hardware.remove(0)
+    }
+
+    #[test]
+    fn mixed_bus2_mapping_preserves_front_left_right_raw_order_after_config_reorder() {
+        let mut config: crate::config_loader::RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+        let hardware = &mut config.hardware[0];
+        hardware.joints.reverse();
+        hardware.motor_ids.reverse();
+        let layout = XleRobotBus2Layout::from_hardware(hardware).unwrap();
+        let command = layout
+            .command([1., 2., 3., 4., 5., 6.], [100, -200, 300], 81, 100, 200)
+            .unwrap();
+        assert_eq!(
+            command.selection,
+            JointSelection::MixedPositionRawVelocity {
+                position_mask: 0x1f8,
+                velocity_mask: 7
+            }
+        );
+        assert_eq!(&command.positions[3..9], &[6., 5., 4., 3., 2., 1.]);
+        assert_eq!(&command.raw_velocities[..3], &[300, 100, -200]);
+        assert_eq!(
+            (command.seq, command.stamp_ns, command.deadline_ns),
+            (81, 100, 200)
+        );
+        for variant in 0..4 {
+            let mut invalid = hardware.clone();
+            match variant {
+                0 => invalid.id = "left_arm_full_with_head".into(),
+                1 => invalid.joints[0] = "head_motor_2".into(),
+                2 => invalid.motor_ids[0] = invalid.motor_ids[1],
+                _ => {
+                    invalid.joints.pop();
+                    invalid.motor_ids.pop();
+                }
+            }
+            assert!(XleRobotBus2Layout::from_hardware(&invalid).is_err());
+        }
+        assert!(
+            layout
+                .command([0.; 6], [0, i16::MIN, 0], 1, 100, 200)
+                .is_err()
+        );
     }
 
     #[test]

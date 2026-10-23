@@ -130,6 +130,20 @@ impl ManipulatorAdapter for MockHardRTAdapter {
             // state machine 决定是否调 write_command。
             return Ok(());
         }
+        if let robot_core::adapter::JointSelection::MixedPositionRawVelocity {
+            position_mask,
+            velocity_mask,
+        } = cmd.selection
+        {
+            for i in 0..self.state.joint_count as usize {
+                if robot_core::adapter::JointSelection::Mask(position_mask).contains(i) {
+                    self.state.positions[i] = cmd.positions[i];
+                } else if robot_core::adapter::JointSelection::Mask(velocity_mask).contains(i) {
+                    self.state.velocities[i] = f32::from(cmd.raw_velocities[i]);
+                }
+            }
+            return Ok(());
+        }
         if cmd.selection != robot_core::adapter::JointSelection::All {
             // 未选中槽位连同速度、力矩反馈一并保留，不补写或缓存旧目标。
             for i in 0..self.state.joint_count as usize {
@@ -438,6 +452,7 @@ mod tests {
             positions,
             velocities,
             torques,
+            raw_velocities: &[],
             mode: ControlMode::Position,
             selection: robot_core::adapter::JointSelection::All,
             stamp_ns: 1_000_000,

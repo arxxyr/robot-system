@@ -91,13 +91,18 @@ pub struct AdapterInfo {
 /// 未经证据的纳秒断言）。
 pub const MAX_JOINTS: usize = 32;
 
-/// S0 内部的位置写入范围；跨进程命令仍为 `All`，不改变 wire schema。
+/// S0 内部的写入范围/混合目标标记；跨进程命令仍为 `All`，不改变 wire schema。
 /// 掩码按 adapter 的配置槽位排列，不直接以电机 ID 作位号。
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum JointSelection {
     #[default]
     All,
     Mask(u32),
+    /// 一个来源期限下的位置与设备原始速度；不表示 SI 速度已获认证。
+    MixedPositionRawVelocity {
+        position_mask: u32,
+        velocity_mask: u32,
+    },
 }
 
 impl JointSelection {
@@ -109,6 +114,10 @@ impl JointSelection {
                 .ok()
                 .and_then(|shift| 1_u32.checked_shl(shift))
                 .is_some_and(|bit| mask & bit != 0),
+            Self::MixedPositionRawVelocity {
+                position_mask,
+                velocity_mask,
+            } => Self::Mask(position_mask | velocity_mask).contains(index),
         }
     }
 }
@@ -138,6 +147,8 @@ pub struct JointCommandBuf {
     pub positions: [f32; MAX_JOINTS],
     pub velocities: [f32; MAX_JOINTS],
     pub torques: [f32; MAX_JOINTS],
+    /// 只供明确的混合 tag 使用；signed raw 不经 rad/s 换算或浮点转整数。
+    pub raw_velocities: [i16; MAX_JOINTS],
     pub mode: ControlModeRepr,
     pub selection: JointSelection,
     pub stamp_ns: u64,
@@ -196,6 +207,7 @@ pub struct JointCommandView<'a> {
     pub positions: &'a [f32],
     pub velocities: &'a [f32],
     pub torques: &'a [f32],
+    pub raw_velocities: &'a [i16],
     pub mode: ControlMode,
     pub selection: JointSelection,
     pub stamp_ns: u64,
@@ -212,6 +224,7 @@ impl JointCommandBuf {
             positions: &self.positions[..n],
             velocities: &self.velocities[..n],
             torques: &self.torques[..n],
+            raw_velocities: &self.raw_velocities[..n],
             mode: self.mode.into(),
             selection: self.selection,
             stamp_ns: self.stamp_ns,
@@ -221,11 +234,50 @@ impl JointCommandBuf {
 }
 
 impl JointCommandView<'_> {
-    /// 部分写入只用于完整总线维度的 Position；旧 `All` 行为保持不变。
+    /// 校验内部部分位置或完整混合目标；旧 `All` 行为保持不变。
     ///
     /// # Errors
     /// 非 Position、空/越界选择、维度、选中值或时间窗口无效。
     pub fn validate_selection(&self, joint_count: usize) -> Result<(), RobotError> {
+        if let JointSelection::MixedPositionRawVelocity {
+            position_mask,
+            velocity_mask,
+        } = self.selection
+        {
+            if self.mode != ControlMode::Position
+                || !(1..=MAX_JOINTS).contains(&joint_count)
+                || self.positions.len() != joint_count
+                || self.velocities.len() != joint_count
+                || self.torques.len() != joint_count
+                || self.raw_velocities.len() != joint_count
+            {
+                return Err(RobotError::InvalidParameter(
+                    "混合目标需要完整总线位置和raw维度",
+                ));
+            }
+            let allowed = u32::MAX >> (MAX_JOINTS - joint_count);
+            if position_mask == 0
+                || velocity_mask == 0
+                || position_mask & velocity_mask != 0
+                || (position_mask | velocity_mask) != allowed
+            {
+                return Err(RobotError::InvalidParameter(
+                    "混合目标必须完整且互斥地覆盖总线",
+                ));
+            }
+            for i in 0..joint_count {
+                if JointSelection::Mask(position_mask).contains(i) && !self.positions[i].is_finite()
+                    || JointSelection::Mask(velocity_mask).contains(i)
+                        && self.raw_velocities[i] == i16::MIN
+                {
+                    return Err(RobotError::InvalidParameter("混合位置或raw速度无效"));
+                }
+            }
+            if self.deadline_ns <= self.stamp_ns {
+                return Err(RobotError::InvalidParameter("混合目标时间窗口无效"));
+            }
+            return Ok(());
+        }
         let JointSelection::Mask(mask) = self.selection else {
             return Ok(());
         };
@@ -610,6 +662,48 @@ mod tests {
             all_bits.as_view().validate_selection_time(20),
             Err(RobotError::DeadlineExceeded)
         );
+    }
+
+    #[test]
+    fn mixed_selection_requires_complete_disjoint_masks_and_typed_raw_values() {
+        let valid = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            joint_count: 9,
+            stamp_ns: 10,
+            deadline_ns: 20,
+            selection: JointSelection::MixedPositionRawVelocity {
+                position_mask: 0x3f,
+                velocity_mask: 0x1c0,
+            },
+            ..JointCommandBuf::default()
+        };
+        assert!(valid.as_view().validate_selection(9).is_ok());
+        for (positions, velocities) in [
+            (0, 0x1ff),
+            (0x3f, 0),
+            (0x3f, 0x1c1),
+            (0x3f, 0xc0),
+            (0x3f, 0x3c0),
+        ] {
+            let invalid = JointCommandBuf {
+                selection: JointSelection::MixedPositionRawVelocity {
+                    position_mask: positions,
+                    velocity_mask: velocities,
+                },
+                ..valid
+            };
+            assert!(invalid.as_view().validate_selection(9).is_err());
+        }
+        let mut invalid = valid;
+        invalid.raw_velocities[7] = i16::MIN;
+        assert!(invalid.as_view().validate_selection(9).is_err());
+        invalid = valid;
+        invalid.positions[5] = f32::INFINITY;
+        assert!(invalid.as_view().validate_selection(9).is_err());
+        invalid = valid;
+        invalid.mode = ControlModeRepr::Velocity;
+        assert!(invalid.as_view().validate_selection(9).is_err());
+        assert!(valid.as_view().validate_selection_time(20).is_err());
     }
 
     #[test]

@@ -46,6 +46,9 @@ use crate::types::MotorCalibration;
 #[path = "diagnostic.rs"]
 mod diagnostic;
 use diagnostic::FeetechDiagnostic;
+#[path = "mixed_bus.rs"]
+mod mixed_bus;
+use mixed_bus::MixedBus2;
 
 // ============================================================================
 // dimos `_manipulator_base.py::write_enable(True)` 序列的常量
@@ -121,6 +124,8 @@ pub struct FeetechAdapter<T: SerialTransport> {
     preempt: Option<Arc<dyn LeasedPreemptProbe>>,
     diag: Option<Arc<dyn DiagSink>>,
     connected: bool,
+    mixed_bus2: Option<MixedBus2>,
+    command_budget_ns: u64,
     info: AdapterInfo,
     bus: FeetechBus<T>,
     joint_names: Vec<String>,
@@ -235,6 +240,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             preempt: config.preempt,
             diag: config.diag,
             connected: false,
+            mixed_bus2: None,
+            command_budget_ns: u64::try_from(config.call_deadline.as_nanos()).unwrap_or(u64::MAX),
             info: AdapterInfo {
                 name: config.adapter_name,
                 kind: AdapterKind::Manipulator,
@@ -344,17 +351,23 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// # Errors
     /// - 透传 `sync_read` / `sync_write` 的 [`FeetechError`]（总线通信失败）
     /// - Readback 连续不匹配 → [`FeetechError::SyncGoalReadbackMismatch`]
+    ///
+    /// 显式 mixed 实例只同步六个臂关节，这是 Enable 准备原语，不代表全总线停止。
     pub fn sync_goal_to_present(&mut self) -> Result<(), FeetechError> {
         self.require_connected()?;
         self.bus.set_op_class(BusOpClass::NormalEffectful);
         // 1. 读 Present_Position（target 目标值）
+        let mixed_ids = self.mixed_bus2.map(|layout| layout.arm_ids);
+        let ids = mixed_ids
+            .as_ref()
+            .map_or(self.joint_ids.as_slice(), |ids| ids.as_slice());
         self.bus
-            .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)?;
+            .sync_read_by_id_into("Present_Position", ids, &mut self.pos_raw[..ids.len()])?;
 
         // 构造 Goal entries = Present
         self.cmd_entries.clear();
-        for i in 0..self.joint_ids.len() {
-            self.cmd_entries.push((self.joint_ids[i], self.pos_raw[i]));
+        for (i, &id) in ids.iter().enumerate() {
+            self.cmd_entries.push((id, self.pos_raw[i]));
         }
 
         // 2. 写入 + readback + retry
@@ -363,16 +376,16 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                 .sync_write_by_id("Goal_Position", &self.cmd_entries)?;
             self.sleep_or_abort(SYNC_GOAL_READBACK_WAIT)?;
             self.bus
-                .sync_read_by_id_into("Goal_Position", &self.joint_ids, &mut self.goal_raw)?;
+                .sync_read_by_id_into("Goal_Position", ids, &mut self.goal_raw[..ids.len()])?;
 
             // 比较 Goal (readback) vs Present (期望值) —— 允许 ±SYNC_GOAL_TOLERANCE
             // tick 的微小偏差（motor 内部编码精度噪声）
             let mut mismatch: Option<(u8, i32, i32)> = None;
-            for i in 0..self.joint_ids.len() {
+            for (i, &id) in ids.iter().enumerate() {
                 let wanted = self.pos_raw[i];
                 let got = self.goal_raw[i];
                 if (got - wanted).abs() > SYNC_GOAL_TOLERANCE {
-                    mismatch = Some((self.joint_ids[i], wanted, got));
+                    mismatch = Some((id, wanted, got));
                     break;
                 }
             }
@@ -413,6 +426,11 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// # Errors
     /// 透传 [`Self::sync_goal_to_present`] 的错误。
     pub fn hold_current_position(&mut self) -> Result<(), RobotError> {
+        if self.mixed_bus2.is_some() {
+            return Err(RobotError::Unsupported(
+                "混合总线保持须走S0有界反馈与轮零速",
+            ));
+        }
         self.sync_goal_to_present().map_err(|e| {
             self.record_error(2, &e);
             RobotError::from(e)
@@ -528,6 +546,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             self.record_error(1, &error);
             RobotError::from(error)
         })?;
+        self.verify_mixed_bus2()?;
         self.connected = true;
         Ok(())
     }
@@ -574,6 +593,15 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
 
     fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
         self.require_connected().map_err(RobotError::from)?;
+        if self.mixed_bus2.is_some() {
+            return self.write_mixed_bus2(cmd);
+        }
+        if matches!(
+            cmd.selection,
+            robot_core::adapter::JointSelection::MixedPositionRawVelocity { .. }
+        ) {
+            return Err(RobotError::Unsupported("混合目标需要显式混合总线构造"));
+        }
         cmd.validate_selection(self.joint_ids.len())?;
         if cmd.selection != robot_core::adapter::JointSelection::All {
             cmd.validate_selection_time(self.clock.now().0)?;
@@ -620,6 +648,9 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
 
     fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
         self.require_connected().map_err(RobotError::from)?;
+        if self.mixed_bus2.is_some() && mode != ControlMode::Stop {
+            return Err(RobotError::Unsupported("混合总线禁止整总线模式切换"));
+        }
         self.bus.set_op_class(BusOpClass::NormalEffectful);
         let op_mode_value: i32 = match mode {
             ControlMode::Position | ControlMode::ServoPosition => 0,
@@ -661,6 +692,12 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
                 self.record_error(3, &e);
                 RobotError::from(e)
             })?;
+            if let Some(layout) = self.mixed_bus2 {
+                let zeros = layout.wheel_ids.map(|id| (id, 0));
+                self.bus
+                    .sync_write_by_id("Goal_Velocity", &zeros)
+                    .map_err(RobotError::from)?;
+            }
             self.sleep_or_abort(ENABLE_SYNC_SETTLE)
                 .map_err(RobotError::from)?;
 
@@ -882,13 +919,13 @@ mod tests {
         (adapter, handle)
     }
 
-    fn ack_status(id: u8) -> Vec<u8> {
+    pub(super) fn ack_status(id: u8) -> Vec<u8> {
         let mut out = vec![0xFF, 0xFF, id, 0x02, 0x00];
         out.push(checksum(&out[2..]));
         out
     }
 
-    fn read_status(id: u8, params: &[u8]) -> Vec<u8> {
+    pub(super) fn read_status(id: u8, params: &[u8]) -> Vec<u8> {
         let len = u8::try_from(params.len() + 2).unwrap();
         let mut out = vec![0xFF, 0xFF, id, len, 0x00];
         out.extend_from_slice(params);

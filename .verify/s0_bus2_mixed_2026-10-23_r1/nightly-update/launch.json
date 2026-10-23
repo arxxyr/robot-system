@@ -1,0 +1,14 @@
+{
+  "local_log_directory": "/tmp/robot-system-nightly-20261023-i_ykr1hf",
+  "remote": "/tmp/robot-nightly-update-20261023-r1",
+  "ssh_exit": 0,
+  "stdout": "{\"exit_code\": 0, \"stdout\": \"nightly-update-20261023-r1 $146 %182 763160 0\\n\", \"stderr\": \"\", \"cargo_rustc_rustup_before\": []}\n",
+  "stderr": "",
+  "cleanup": {
+    "terminal": "%182 763160 1 0",
+    "pid_gone": true,
+    "pane_removed": true,
+    "remote_own_tmp_removed": true,
+    "sha_matched_logs": 4
+  }
+}

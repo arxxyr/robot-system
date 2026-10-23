@@ -779,6 +779,18 @@ mod tests {
         let mut state = JointStateBuf::default();
         adapter.read_state(&mut state).unwrap();
         assert_eq!(&state.positions[..8], &[1.0; 8]);
+        command.selection = JointSelection::MixedPositionRawVelocity {
+            position_mask: 0x3f,
+            velocity_mask: 0x1c0,
+        };
+        command.joint_count = 9;
+        command.raw_velocities[7] = 500;
+        assert_eq!(
+            write_full_bus(&mut adapter, &command.as_view()),
+            Err(RobotError::Unsupported("HardRT暂不支持部分关节命令"))
+        );
+        adapter.read_state(&mut state).unwrap();
+        assert_eq!(&state.positions[..8], &[1.0; 8]);
     }
     use robot_adapter_mock::MockHardRTAdapter;
     use robot_core::adapter::{ControlModeRepr, JointCommandBuf, MAX_JOINTS};
