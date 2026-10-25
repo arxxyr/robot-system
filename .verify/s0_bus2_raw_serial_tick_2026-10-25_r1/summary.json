@@ -1,0 +1,73 @@
+{
+  "status": "PASS_SOFTWARE_ONLY",
+  "base_commit": "1f87574a9f4840ad5a10c596f8ff2eed2104f13d",
+  "authorization": "我要出门，先完成其他的",
+  "scope": "补现有SerialTick与真实FW3.10/Phase12 raw FeetechAdapter的离线跨层验证，复用内存transport、MockClock和真实权限/停止链；不改默认入口、物理合同或架构。",
+  "gap": "现有SerialTick混合测试使用RecordingAdapter/MockSerialRTAdapter；真实Feetech混合测试未经过SerialTick与SerialPreemptProbe。",
+  "prior_preparation": {
+    "current_host_usb_refs_and_idle": "PASS: unchanged 76 refs, boot, USB enumerations, protection files, services, two serial ports and four lock holders checked without UART",
+    "field_state": "User is leaving; no field readiness granted",
+    "hardware_launch": "NOT_RUN"
+  },
+  "uart_access": false,
+  "hardware_motion": false,
+  "fresh_go_created": false,
+  "motor_parameter_writes": false,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "candidate": {
+    "files": {
+      "crates/robot-s0/src/serial_tick.rs": "6865a4d0a87d136bf5ac6296f00bd63bf047355bc620ae33359abac4a881b867",
+      "crates/robot-s0/src/serial_tick_feetech_tests.rs": "31b9b72474e10c09c4bcd9adcd2008bf5714d1b308674144c51a49e11b1dfd95"
+    },
+    "production_changes": false,
+    "new_test_methods": [
+      "raw_enable_forward_hold_and_estop_use_real_serial_tick_and_all_nine",
+      "raw_expiry_between_gv_and_gp_omits_gp_read_and_retry_then_stops_all_nine",
+      "raw_unobserved_negative_speed_is_rejected_before_first_motion_frame"
+    ]
+  },
+  "static_review": {
+    "status": "PASS",
+    "scope": "真实pending Enable及owner commit，无probe旁路；独立黄金帧、来源deadline、禁止后续普通IO/重试及全九停止读回",
+    "reviewer": "mixed_ready_review",
+    "not_claimed": [
+      "physical motion",
+      "thread scheduling timing",
+      "default factory release"
+    ],
+    "final_assertion": "Confirm读回前预填九槽true，确保全九读回确实更新输出而非复用旧false",
+    "final_lint_change": "root复核空TX断言从is_empty改为与空Vec比较，语义不变且失败会打印实际TX。"
+  },
+  "software_validation": {
+    "status": "PASS",
+    "native_first_pass": "native/r1/result.json",
+    "new_methods": 3,
+    "existing_serial_tick_methods": 25,
+    "unique_methods": 28,
+    "final_new_method_pass": "native/final-r1/new-tests.log",
+    "lint_fix_affected_method_pass": "native/final-r2/negative-raw-test.log",
+    "final_quality": "native/final-r2/result.json",
+    "commands_in_order": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "final_quality_exit_codes": [
+      0,
+      0
+    ],
+    "reruns_not_counted": "首次28方法通过；停止缓冲断言增强后补3，空TX断言lint修正后仅补受影响1方法。未重跑无关方法。",
+    "preserved_failure": "native/final-r1/clippy-root.log: 新nightly的assert_is_empty仅要求测试改用assert_eq!显示实际值，生产代码未修改。",
+    "scope": "Orin ARM64默认xlerobot组合的定向库测试与根Clippy；未运行全workspace测试或硬件。"
+  },
+  "quota_pause": "User explicitly cancelled the previous 60% remaining pause threshold.",
+  "toolchain": "toolchains.json: 两端rustc 1.101.0-nightly 12433c307b5a497388ffe2f4e49dbf1ab8c71fa0",
+  "source_parity": "source-parity.json: 536份当前Rust/Cargo/toolchain输入，排除.verify历史源码快照",
+  "remaining": "用户恢复现场看护后，先通知并获取当次就绪，再执行已有mixed-hold-right9维护路径；真实线程调度、默认factory/wire和完整S0/S1仍未验收。",
+  "resource_cleanup": {
+    "status": "PASS",
+    "receipt": "cleanup.json",
+    "reused_target": true,
+    "owned_tmux_and_pids_removed": true
+  }
+}

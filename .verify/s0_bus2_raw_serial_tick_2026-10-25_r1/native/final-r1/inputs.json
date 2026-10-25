@@ -1,0 +1,6 @@
+{
+  "previous": "../r1/result.json",
+  "changed_test": "crates/robot-s0/src/serial_tick_feetech_tests.rs",
+  "sha256": "f025348819edf494d53c6f912a7a8ea6a8d20596ffc9d69c1b105def9f51372b",
+  "production_unchanged": true
+}

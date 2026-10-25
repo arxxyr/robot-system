@@ -1,0 +1,26 @@
+{
+  "files": {
+    "inputs.json": {
+      "sha256": "46f86fc289cfa780ec1bb1105b101854ef95fe9c0d9dc0b89c15dfb0bde1607f",
+      "bytes": 1584
+    },
+    "result.json": {
+      "sha256": "979b62703e318471b1a6570b10a13cc4edab8b11c89b78c5004d79797022120f",
+      "bytes": 4895
+    },
+    "negative-raw-test.log": {
+      "sha256": "4c298debf93e19cacad8d66dca89d2407b1d83bb19f2d92daab8f13bb8385c33",
+      "bytes": 587
+    },
+    "fmt.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "clippy-root.log": {
+      "sha256": "d89f906bc687a6804bdf671434a4933d2efa9558268d03434257da91dca87b9b",
+      "bytes": 188
+    }
+  },
+  "state": "$151 %187 793640 1 0",
+  "pid_gone": true
+}

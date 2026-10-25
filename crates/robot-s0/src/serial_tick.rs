@@ -823,6 +823,10 @@ fn execute_serial_normal<A: SerialRtAdapter>(
     }
 }
 
+#[cfg(all(test, feature = "feetech"))]
+#[path = "serial_tick_feetech_tests.rs"]
+mod feetech_tests;
+
 #[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;

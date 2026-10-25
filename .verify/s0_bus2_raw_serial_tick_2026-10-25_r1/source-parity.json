@@ -1,0 +1,15 @@
+{
+  "checked_at_ns": 1792900962553719147,
+  "native_found": 536,
+  "native_set_sha256": "5470ffe9f51ec2c9ca31fff98c8b574fecac87ee2f5567e845071de0af668a6f",
+  "missing": [],
+  "differences": [],
+  "scope": "Git tracked current Rust/Cargo/toolchain files plus new SerialTick test; excludes .verify historical snapshots",
+  "count": 536,
+  "local_set_sha256": "5470ffe9f51ec2c9ca31fff98c8b574fecac87ee2f5567e845071de0af668a6f",
+  "result": "PASS",
+  "previous_set_sha256": "172dcb726ce933efe9237668167b9227951a55e696c9f12c18ccf585f69e7f8d",
+  "only_changed_since_previous": "crates/robot-s0/src/serial_tick_feetech_tests.rs: f0253488 -> 31b9b724; other 535 hashes unchanged",
+  "initial_scope_note": "First broad selection included 26 historical source snapshots under .verify; all were absent from the native build source and excluded. No historical files were copied or changed.",
+  "uart": false
+}
