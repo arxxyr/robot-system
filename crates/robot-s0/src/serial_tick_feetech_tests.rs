@@ -1,8 +1,8 @@
-//! 真实调度、控制权及 raw adapter 的离线交叉验证；仅底层串口使用内存回包。
+//! 真实 tick / 工作线程、控制权及 raw adapter 的离线交叉验证；串口使用内存回包。
 
 use super::*;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
 use std::time::Duration;
 
 use robot_adapter_feetech::adapter::FeetechAdapterConfig;
@@ -17,13 +17,15 @@ use robot_adapter_feetech::{
 };
 use robot_core::adapter::JointCommandBuf;
 use robot_core::executor_ctrl::{AdapterNormalReq, ExecutorCtrlClient, NormalReqStatus};
-use robot_core::time::{DurationNs, MockClock};
+use robot_core::time::{Deadline, DurationNs, MockClock};
+use robot_transport::{LatestCommandSlot, RtSnapshotPublisher, RtSnapshotReader};
 
 use crate::config_loader::RobotConfigToml;
 use crate::diag::SerialDiagRing;
 use crate::grouped_position::XleRobotBus2Layout;
 use crate::hard_rt_ctrl::test_authority;
 use crate::serial_io_ctrl::SerialIoCtrlClient;
+use crate::serial_io_thread::{SerialIoThreadConfig, SerialIoThreadHandle, spawn_serial_io_thread};
 
 const IDS: [u8; 9] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ARMS: [u8; 6] = [1, 2, 3, 4, 5, 6];
@@ -134,7 +136,7 @@ struct Fixture {
     diag: SerialDiagRing,
     metrics: SerialIoThreadMetrics,
     tick: SerialTick,
-    adapter: FeetechAdapter<Port>,
+    adapter: Option<FeetechAdapter<Port>>,
     layout: XleRobotBus2Layout,
     exchanges: Exchanges,
     handle: MockHandle,
@@ -143,6 +145,12 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        let mut fixture = Self::unstarted();
+        fixture.boot_and_enable();
+        fixture
+    }
+
+    fn unstarted() -> Self {
         let mut config: RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
         // 只复用既有名称/ID映射；该历史配置的全Position factory不用于此测试。
@@ -208,21 +216,19 @@ impl Fixture {
             profiles,
         )
         .unwrap();
-        let mut fixture = Self {
+        Self {
             tick: SerialTick::new(true, 9, clock.now()),
             clock,
             ctrl,
             probe,
             diag: SerialDiagRing::new(),
             metrics: SerialIoThreadMetrics::default(),
-            adapter,
+            adapter: Some(adapter),
             layout,
             exchanges,
             handle,
             expire_after_write,
-        };
-        fixture.boot_and_enable();
-        fixture
+        }
     }
 
     fn enqueue(&self, request: Vec<u8>, response: Vec<u8>) {
@@ -277,7 +283,7 @@ impl Fixture {
 
     fn step(&mut self, command: &JointCommandBuf) {
         self.tick.tick(
-            &mut self.adapter,
+            self.adapter.as_mut().unwrap(),
             &command.as_view(),
             &SerialTickContext {
                 ctrl: &self.ctrl,
@@ -297,7 +303,7 @@ impl Fixture {
         );
     }
 
-    fn boot_and_enable(&mut self) {
+    fn enqueue_boot(&self) {
         self.writes(40, 1, &IDS, &[0; 9]);
         for id in IDS {
             self.enqueue(packet(id, 1, &[]), packet(id, 0, &[]));
@@ -313,6 +319,21 @@ impl Fixture {
             self.read(id, 1, &[10]);
         }
         self.sync_read(40, 1, &IDS, &[0; 9]);
+    }
+
+    fn enqueue_enable(&self) {
+        self.sync_read(56, 2, &ARMS, &ANCHOR);
+        self.writes(42, 2, &ARMS, &ANCHOR);
+        self.sync_read(42, 2, &ARMS, &ANCHOR);
+        self.writes(46, 2, &WHEELS, &[0; 3]);
+        for id in IDS {
+            self.enqueue(packet(id, 3, &[40, 1]), packet(id, 0, &[]));
+        }
+        self.feedback(ANCHOR, 0);
+    }
+
+    fn boot_and_enable(&mut self) {
+        self.enqueue_boot();
         let boot = self.command(0);
         for _ in 0..3 {
             self.step(&boot);
@@ -333,23 +354,16 @@ impl Fixture {
         else {
             panic!("真实pending ENABLE必须入队");
         };
-        self.sync_read(56, 2, &ARMS, &ANCHOR);
-        self.writes(42, 2, &ARMS, &ANCHOR);
-        self.sync_read(42, 2, &ARMS, &ANCHOR);
-        self.writes(46, 2, &WHEELS, &[0; 3]);
-        for id in IDS {
-            self.enqueue(packet(id, 3, &[40, 1]), packet(id, 0, &[]));
-        }
-        self.feedback(ANCHOR, 0);
+        self.enqueue_enable();
         self.step(&boot);
         assert_eq!(client.poll_last_normal_resp(seq), Some(AdapterResp::Ok));
         self.ctrl.authority().commit_enable(owner).unwrap();
         assert_eq!(
-            self.adapter.mixed_arm_anchor().unwrap().0,
+            self.adapter.as_ref().unwrap().mixed_arm_anchor().unwrap().0,
             ANCHOR.map(i32::from)
         );
         assert_eq!(
-            self.adapter.mixed_arm_goal_readback(),
+            self.adapter.as_ref().unwrap().mixed_arm_goal_readback(),
             Some(ANCHOR.map(i32::from))
         );
         assert_eq!(
@@ -456,4 +470,235 @@ fn raw_unobserved_negative_speed_is_rejected_before_first_motion_frame() {
     assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
     assert!(fixture.ctrl.mailbox_snapshot().is_some());
     fixture.stop_and_confirm(&command);
+}
+
+/// 只在周期边界阻塞工作线程；设备与 probe 仍共用原 `MockClock`。
+/// 有界超时仅防测试挂死，测试结果依据握手和快照，不测墙钟调度速度。
+struct WorkerClock {
+    inner: Arc<MockClock>,
+    parked: mpsc::SyncSender<Deadline>,
+    release: Mutex<mpsc::Receiver<()>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl RobotClock for WorkerClock {
+    fn now(&self) -> MonoRawNs {
+        self.inner.now()
+    }
+
+    fn sleep_until(&self, deadline: Deadline) {
+        if self.parked.send(deadline).is_err()
+            || self
+                .release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .is_err()
+        {
+            self.stop.store(true, Ordering::Release);
+            return;
+        }
+        self.inner.sleep_until(deadline);
+    }
+
+    fn sleep_for(&self, duration: DurationNs) {
+        self.inner.sleep_for(duration);
+    }
+}
+
+/// 测试断言 panic 时也请求退出并唤醒周期门，避免遗留串口工作线程。
+struct Worker {
+    handle: Option<SerialIoThreadHandle>,
+    release: mpsc::SyncSender<()>,
+    parked: mpsc::Receiver<Deadline>,
+    next_deadline: Deadline,
+    snapshot: RtSnapshotReader<RtSnapshot>,
+    commands: robot_transport::LatestCommandWriter<JointCommandBuf>,
+    metrics: Arc<SerialIoThreadMetrics>,
+}
+
+impl Worker {
+    fn spawn(fixture: &mut Fixture) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let (parked_tx, parked) = mpsc::sync_channel(1);
+        let (release, release_rx) = mpsc::sync_channel(1);
+        let clock = Arc::new(WorkerClock {
+            inner: fixture.clock.clone(),
+            parked: parked_tx,
+            release: Mutex::new(release_rx),
+            stop: stop.clone(),
+        });
+        let boot = Arc::new(crate::boot_supervisor::BootShared::new(clock.now()));
+        let (commands, reader) = LatestCommandSlot::new(fixture.command(0));
+        let (publisher, snapshot) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let handle = spawn_serial_io_thread(
+            SerialIoThreadConfig::default(),
+            clock,
+            fixture.adapter.take().unwrap(),
+            reader,
+            publisher,
+            fixture.ctrl.clone(),
+            fixture.probe.clone(),
+            Arc::new(SerialDiagRing::new()),
+            true,
+            boot.clone(),
+            stop,
+        )
+        .unwrap();
+        let mut worker = Self {
+            metrics: handle.metrics().clone(),
+            handle: Some(handle),
+            release,
+            parked,
+            next_deadline: Deadline(fixture.clock.now()),
+            snapshot,
+            commands,
+        };
+        boot.spawned_at_ns
+            .store(fixture.clock.now().0, Ordering::Relaxed);
+        boot.spawned_reached.store(true, Ordering::Release);
+        worker.await_parked();
+        assert_eq!(worker.snapshot.load().tick_seq, 0);
+        assert_eq!(fixture.handle.drain_tx(), Vec::<u8>::new());
+        worker
+    }
+
+    fn await_parked(&mut self) {
+        self.next_deadline = self
+            .parked
+            .recv_timeout(Duration::from_secs(10))
+            .expect("真实工作线程必须到达下一个周期门");
+    }
+
+    fn step(&mut self) -> RtSnapshot {
+        let expected_seq = self.snapshot.load().tick_seq + 1;
+        let expected_deadline = self.next_deadline;
+        self.release.send(()).unwrap();
+        // 原 loop 在发布快照之后才进入下一次 sleep，因此握手也确认发布已完成。
+        self.await_parked();
+        let snapshot = self.snapshot.load();
+        assert_eq!(snapshot.tick_seq, expected_seq);
+        assert_eq!(snapshot.tick_deadline_ns, expected_deadline.0.0);
+        snapshot
+    }
+
+    fn finish(&mut self) {
+        self.handle.as_ref().unwrap().request_stop();
+        self.release.try_send(()).unwrap();
+        let handle = self.handle.take().unwrap();
+        let exit = handle.join().unwrap();
+        assert!(!exit.has_pending_enable());
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.request_stop();
+            let _ = self.release.try_send(());
+            // 异常清理不覆盖最初的失败；正常路径由 finish 检查退出结果。
+            let _ = handle.join();
+        }
+    }
+}
+
+#[test]
+fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() {
+    let mut fixture = Fixture::unstarted();
+    fixture.enqueue_boot();
+    let mut worker = Worker::spawn(&mut fixture);
+    for _ in 0..3 {
+        worker.step();
+    }
+    fixture.assert_consumed();
+    assert_eq!(
+        fixture.ctrl.safety_state(),
+        OutputSafetyState::TorqueOffConfirmed
+    );
+
+    let client = SerialIoCtrlClient::new(fixture.ctrl.clone());
+    let (owner, view) = fixture.ctrl.authority().reserve_enable().unwrap();
+    client.start_slot().post(view).unwrap();
+    let NormalReqStatus::Submitted { seq } = client.request_normal(AdapterNormalReq::Enable(true))
+    else {
+        panic!("真实 pending ENABLE 必须入队");
+    };
+    fixture.enqueue_enable();
+    worker.step();
+    assert_eq!(client.poll_last_normal_resp(seq), Some(AdapterResp::Ok));
+    fixture.ctrl.authority().commit_enable(owner).unwrap();
+    fixture.assert_consumed();
+
+    client.set_policy(OutputPolicy::ActiveForward);
+    worker.commands.store(fixture.command(500));
+    fixture.writes(46, 2, &WHEELS, &[0, 0, 500]);
+    fixture.writes(42, 2, &ARMS, &ANCHOR);
+    let positions = fixture.feedback(ANCHOR.map(|raw| raw + 1), 500);
+    let moving = worker.step();
+    assert_eq!(moving.state.joint_count, 9);
+    assert_eq!(moving.state.stamp_ns, fixture.clock.now().0);
+    assert_eq!(
+        moving.state.positions[..9]
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        positions.map(|raw| raw_to_rad(i32::from(raw)).to_bits()),
+    );
+    assert_eq!(
+        moving.state.velocities[..9]
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0].map(f32::to_bits),
+    );
+    fixture.assert_consumed();
+
+    client.set_policy(OutputPolicy::HoldCurrent);
+    fixture.writes(46, 2, &WHEELS, &[0; 3]);
+    fixture.writes(42, 2, &ARMS, &ANCHOR.map(|raw| raw + 1));
+    fixture.feedback(ANCHOR.map(|raw| raw + 1), 0);
+    let holding = worker.step();
+    assert_eq!(holding.state.stamp_ns, fixture.clock.now().0);
+    assert!(holding.state.stamp_ns > moving.state.stamp_ns);
+    assert_eq!(holding.state.velocities[8].to_bits(), 0.0_f32.to_bits());
+    fixture.assert_consumed();
+
+    client.safety_stop();
+    fixture.writes(40, 1, &IDS, &[0; 9]);
+    fixture.sync_read(40, 1, &IDS, &[0; 9]);
+    worker.step();
+    let stopped = worker.step();
+    fixture.assert_consumed();
+    assert_eq!(
+        fixture.ctrl.safety_state(),
+        OutputSafetyState::TorqueOffConfirmed
+    );
+    assert_eq!(
+        worker
+            .metrics
+            .normal_completed_count
+            .load(Ordering::Relaxed),
+        1
+    );
+    assert_eq!(worker.metrics.confirm_off_count.load(Ordering::Relaxed), 2);
+    assert_eq!(worker.metrics.read_errors.load(Ordering::Relaxed), 0);
+    assert_eq!(worker.metrics.write_errors.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        worker
+            .metrics
+            .snapshot_publish_errors
+            .load(Ordering::Relaxed),
+        0
+    );
+    let _ = fixture.handle.drain_tx();
+
+    // 工作线程已停在下一个 sleep；退出必须阻止下一 tick 的 IO 和快照发布。
+    worker.finish();
+    assert_eq!(fixture.handle.drain_tx(), Vec::<u8>::new());
+    assert_eq!(worker.metrics.tick_count.load(Ordering::Relaxed), 8);
+    assert_eq!(worker.snapshot.load().tick_seq, stopped.tick_seq);
+    assert_eq!(
+        worker.snapshot.load().tick_deadline_ns,
+        stopped.tick_deadline_ns
+    );
 }

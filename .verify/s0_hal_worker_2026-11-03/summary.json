@@ -1,0 +1,71 @@
+{
+  "status": "PASS_SOFTWARE_ONLY",
+  "date_local": "2026-11-03 America/Los_Angeles",
+  "base_commit": "23fc241fc7ee2bdbb293193196700642d75bcdf3",
+  "scope": "S0实际SerialRT线程从命令槽到真实raw FeetechAdapter及状态快照的离线集成；仅内存串口。",
+  "changes": {
+    "new_test": "raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick",
+    "existing_fixture": "复用原3项黄金帧，拆出启动和启用脚本",
+    "compatibility_fix": "bus.rs的map_or_else改为等价map_or，适应最新nightly Clippy；寄存器解码语义不变"
+  },
+  "validation": {
+    "environment": "已有Lima robot-viz-check，Linux aarch64，未连接硬件",
+    "rustc": "rustc 1.101.0-nightly (708c94ef0 2026-11-03)\nbinary: rustc\ncommit-hash: 708c94ef093ecc42fb8851e17d8383d999727abc\ncommit-date: 2026-11-03\nhost: aarch64-unknown-linux-gnu\nrelease: 1.101.0-nightly\nLLVM version: 23.1.5",
+    "quality": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "quality_exit": 0,
+    "tests": [
+      {
+        "command": "cargo test --locked -p robot-s0 --lib serial_tick::feetech_tests -- --test-threads=1",
+        "passed": 4,
+        "log": "feetech-tests.log"
+      },
+      {
+        "command": "cargo test --locked -p robot-s0 --lib serial_io_thread::tests -- --test-threads=1",
+        "passed": 16,
+        "log": "worker-regression.log"
+      },
+      {
+        "command": "cargo test --locked -p robot-adapter-feetech --lib bus::tests::read_present_position_decodes_sign_magnitude -- --exact",
+        "passed": 1,
+        "log": "decode-regression.log"
+      }
+    ],
+    "unique_methods": 21,
+    "first_failure": "clippy-r1.log：既有bus.rs闭包的unnecessary_lazy_evaluations；等价修正后通过",
+    "source_parity": "本机工作树与Linux测试源码rsync校验无差异（排除.git、target、.verify、.archify；AGENTS符号链接非构建输入）",
+    "static_review": "hal_gap_audit复核真实spawn/slot/snapshot覆盖、启用所有权和panic回收，无阻断问题"
+  },
+  "source_sha256": {
+    "crates/robot-s0/src/serial_tick_feetech_tests.rs": "de630bb6f417c1c0bddfaa3bc097c39ac17d52e1635f5c351dc0a0a024c80671",
+    "crates/robot-adapters/feetech/src/bus.rs": "d5836ced393c502afbaf89bd344e85537251eb94aa89f48b31d3756beecf25e2",
+    "Cargo.toml": "acad8a4e262968039ea28f1559c160ffdae25e29bdf7c30ef125a6e2ef2048a6",
+    "Cargo.lock": "1526d80cc235fc506b0250e91097ff05a3c3ba86d961370f6daa3cbb1d105cdf",
+    "rust-toolchain.toml": "75827257738ec9af6b3b5c7604c8b9ad0bf96d68efd62c4a664b42e70a9fe4ed"
+  },
+  "orin": "现有网关路径No route to host，直连mesh SOCKS error 1；未在Orin复验",
+  "uart": false,
+  "new_go": false,
+  "hardware_motion": false,
+  "motor_parameter_writes": false,
+  "not_claimed": [
+    "默认factory/wire混合入口",
+    "真实串口与机械动作",
+    "实时调度时延",
+    "全部S0 worker联合运行",
+    "相机采集",
+    "全身HAL完成"
+  ],
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "cleanup": {
+    "old_build_cache_removed": "25.7 GiB（旧Lima编译缓存，cargo clean）",
+    "current_build_cache": "复用原build路径，约1.5 GiB",
+    "owned_tmux": "已自然结束",
+    "temporary_source_and_runner": "已删除本轮Linux源码副本、runner和回收完的日志副本；本地/tmp runner已删除",
+    "vm": "已恢复Stopped",
+    "cargo_rustc_clippy_processes_remaining": 0
+  }
+}

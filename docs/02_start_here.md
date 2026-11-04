@@ -16,6 +16,8 @@
 
 ## 当前状态
 
+2026-11-03：S0 全身硬件层的当前完成边界与最小下一步见 [S0 HAL 状态](s0_hal_status.md)。下文为此前各阶段记录；相机仍未接入，混合实机和默认 factory/wire 仍待验。
+
 2026-09-30 当前新增独立软件候选：周期 Motion 写仅 `Aborted(Revoked)` 后重检原安全门，
 再由 PeriodicRead 独立申请读租约；外层 deadline 保留原相位并跳过错失周期，选择严格未来点。
 事务预算、急停优先级、RT setup 与停止门不变。两组 Orin red 原断言 FAIL 及首次联网 setup
