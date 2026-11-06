@@ -47,7 +47,8 @@
 # ```
 # /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00 → 右臂 + 底盘
 # right_arm.json → ID 1..=6（pan/lift/elbow/wrist_flex/wrist_roll/gripper）
-# base.json      → ID 7..=9（base_left_wheel / base_back_wheel / base_right_wheel）
+# base.json      → ID 7..=9（base_left_wheel / base_front_wheel / base_right_wheel）
+# 旧 base.json 的 base_back_wheel 仅作为前轮 ID8 的校准兼容键；左右轮不变。
 # ```
 #
 # ## base wheel 操作模式风险（必读）
@@ -98,7 +99,7 @@
 # | right_arm_wrist_roll    | 5 | 同上          | 同上            |
 # | right_arm_gripper       | 6 | [1384, 2847] | [-1.02, +1.23]  |
 # | base_left_wheel         | 7 | [0, 4095]    | [-π, +π]        |
-# | base_back_wheel         | 8 | [0, 4095]    | [-π, +π]        |
+# | base_front_wheel        | 8 | [0, 4095]    | [-π, +π]        |
 # | base_right_wheel        | 9 | [0, 4095]    | [-π, +π]        |
 #
 # base wheel 的 [0, 4095] 是连续旋转 motor 的标定写法（任意位置都合法）。
@@ -120,7 +121,7 @@ joints      = [
     "right_arm_wrist_roll",
     "right_arm_gripper",
     "base_left_wheel",
-    "base_back_wheel",
+    "base_front_wheel",
     "base_right_wheel",
 ]
 motor_ids   = [1, 2, 3, 4, 5, 6, 7, 8, 9]

@@ -1,0 +1,22 @@
+{
+  "old_incremental_cache": [
+    {
+      "path": "/home/loosqk/repo/robot/robot-system/target/debug/incremental",
+      "allocated_bytes_before": 3707039744,
+      "removed": true
+    },
+    {
+      "path": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/incremental",
+      "allocated_bytes_before": 17613451264,
+      "removed": true
+    }
+  ],
+  "removed_allocated_bytes": 21320491008,
+  "temporary_worktree_removed": true,
+  "temporary_runners_removed": true,
+  "owned_tmux_ended": true,
+  "compiler_processes_remaining": 0,
+  "refs_verified_after_cleanup": 77,
+  "frozen_tool_and_plan_preserved": true,
+  "uart_access": false
+}

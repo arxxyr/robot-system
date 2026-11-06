@@ -38,7 +38,7 @@ const BUS2_JOINTS: [(&str, u8); 9] = [
     ("right_arm_wrist_flex", 4),
     ("right_arm_wrist_roll", 5),
     ("right_arm_gripper", 6),
-    ("base_back_wheel", 8),
+    ("base_front_wheel", 8),
     ("base_left_wheel", 7),
     ("base_right_wheel", 9),
 ];
@@ -207,6 +207,15 @@ mod tests {
         let mut config: crate::config_loader::RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
         let hardware = &mut config.hardware[0];
+        assert_eq!(
+            hardware
+                .joints
+                .iter()
+                .zip(&hardware.motor_ids)
+                .find(|(_, id)| **id == 8)
+                .map(|(name, id)| (name.as_str(), *id)),
+            Some(("base_front_wheel", 8))
+        );
         hardware.joints.reverse();
         hardware.motor_ids.reverse();
         let layout = XleRobotBus2Layout::from_hardware(hardware).unwrap();

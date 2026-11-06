@@ -101,9 +101,9 @@ impl FeetechFactory {
                 RobotError::from(e)
             })?;
             let mut out = Vec::with_capacity(ctx.joint_names.len());
-            for name in ctx.joint_names {
-                if let Some(cal) = merged.get(name) {
-                    out.push(*cal);
+            for (name, &id) in ctx.joint_names.iter().zip(&motor_ids) {
+                if let Some(cal) = calibration_for_joint(&merged, name, id)? {
+                    out.push(cal);
                 } else {
                     tracing::error!(
                         joint = %name,
@@ -149,6 +149,26 @@ impl FeetechFactory {
             "feetech factory: built adapter"
         );
         Ok(adapter)
+    }
+}
+
+/// 仅前轮 ID8 单向兼容旧校准键，不改写校准文件或泛用 loader。
+fn calibration_for_joint(
+    calibrations: &HashMap<String, MotorCalibration>,
+    name: &str,
+    motor_id: u8,
+) -> Result<Option<MotorCalibration>, RobotError> {
+    let current = calibrations.get(name).copied();
+    if name != "base_front_wheel" || motor_id != 8 {
+        return Ok(current);
+    }
+    match (current, calibrations.get("base_back_wheel").copied()) {
+        (Some(_), Some(_)) => Err(RobotError::InvalidParameter("前轮校准的新旧名称同时存在")),
+        (Some(cal), None) | (None, Some(cal)) if cal.id == 8 => Ok(Some(cal)),
+        (Some(_), None) | (None, Some(_)) => {
+            Err(RobotError::InvalidParameter("前轮校准电机ID必须为8"))
+        }
+        (None, None) => Ok(None),
     }
 }
 
@@ -198,3 +218,65 @@ impl AdapterFactory for FeetechFactory {
 }
 
 inventory::submit! { &FeetechFactory as &dyn AdapterFactory }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn front_calibration_accepts_current_or_legacy_name_without_changing_values() {
+        let expected = MotorCalibration::new(8, 1, -12, 15, 4000).unwrap();
+        for key in ["base_front_wheel", "base_back_wheel"] {
+            let calibrations = HashMap::from([(key.to_owned(), expected)]);
+            assert_eq!(
+                calibration_for_joint(&calibrations, "base_front_wheel", 8).unwrap(),
+                Some(expected)
+            );
+            assert_eq!(calibrations.len(), 1);
+            assert_eq!(calibrations.get(key), Some(&expected));
+        }
+    }
+
+    #[test]
+    fn front_calibration_rejects_duplicate_names_and_wrong_calibration_id() {
+        let valid = MotorCalibration::identity(8);
+        let duplicate = HashMap::from([
+            ("base_front_wheel".to_owned(), valid),
+            ("base_back_wheel".to_owned(), valid),
+        ]);
+        assert!(calibration_for_joint(&duplicate, "base_front_wheel", 8).is_err());
+        for key in ["base_front_wheel", "base_back_wheel"] {
+            let wrong = HashMap::from([(key.to_owned(), MotorCalibration::identity(7))]);
+            assert!(calibration_for_joint(&wrong, "base_front_wheel", 8).is_err());
+        }
+    }
+
+    #[test]
+    fn front_calibration_alias_is_limited_to_front_motor_eight() {
+        let legacy = MotorCalibration::identity(8);
+        let left = MotorCalibration::identity(7);
+        let right = MotorCalibration::identity(9);
+        let calibrations = HashMap::from([
+            ("base_back_wheel".to_owned(), legacy),
+            ("base_left_wheel".to_owned(), left),
+            ("base_right_wheel".to_owned(), right),
+        ]);
+        for (name, id, expected) in [
+            ("base_front_wheel", 7, None),
+            ("base_front_wheel", 9, None),
+            ("base_left_wheel", 7, Some(left)),
+            ("base_right_wheel", 9, Some(right)),
+            ("head_motor_2", 8, None),
+        ] {
+            assert_eq!(
+                calibration_for_joint(&calibrations, name, id).unwrap(),
+                expected
+            );
+        }
+        let current_only = HashMap::from([("base_front_wheel".to_owned(), legacy)]);
+        assert_eq!(
+            calibration_for_joint(&current_only, "base_back_wheel", 8).unwrap(),
+            None
+        );
+    }
+}

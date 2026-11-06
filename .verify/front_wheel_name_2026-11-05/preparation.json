@@ -1,0 +1,47 @@
+{
+  "status": "BLOCKED_PREPARATION_ONLY",
+  "hardware_ready": false,
+  "blockers": [
+    {
+      "name": "unit:xlerobot-handoff.service",
+      "status": "NOT_READY",
+      "error": "ValueError('handoff既有状态漂移')"
+    }
+  ],
+  "started_at_ns": 1793947401796716170,
+  "finished_at_ns": 1793947402928545506,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b"
+  },
+  "refs_verified": 77,
+  "tool": {
+    "path": "/home/loosqk/robot-checks/front-wheel-name-20261105/quality/frozen/feetech_poke",
+    "sha256": "065bbd07d2a4d584d2db918bedf7291e643b8917277fb63fe442f2f3687578e2",
+    "bytes": 1624704,
+    "uid": 1000,
+    "gid": 1000,
+    "mode": 493,
+    "device": 66305,
+    "inode": 13800437,
+    "mtime_ns": 1793947352109893185,
+    "ctime_ns": 1793947352109893185,
+    "nlink": 1,
+    "symlink": false,
+    "elf_machine": 183
+  },
+  "script_sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+  "plan_sha256": "dbb55f6a5f459982c77328f4e164e88c2e964c43bf91474b2fd5ffc602d18611",
+  "bindings": "/home/loosqk/robot-checks/front-wheel-name-20261105/mixed-bindings.json",
+  "plan": "/home/loosqk/robot-checks/front-wheel-name-20261105/mixed-plan-only.json",
+  "os_commands": 26,
+  "child_reaped": true,
+  "physical_state": "UNKNOWN",
+  "fresh_go_created": false,
+  "uart_access": false,
+  "hardware_motion": false,
+  "motor_parameter_writes": false,
+  "hardware_output_absent": true
+}

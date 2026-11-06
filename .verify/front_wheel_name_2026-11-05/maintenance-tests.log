@@ -1,0 +1,27 @@
+   Compiling robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/front-wheel-name-20261105/source/crates/robot-adapters/feetech)
+    Finished `test` profile [optimized + debuginfo] target(s) in 7.63s
+     Running unittests examples/feetech_poke.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-adapter-feetech/02fb6257960f1340/out/feetech_poke-02fb6257960f1340)
+
+running 19 tests
+test mixed_maintenance::tests::fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop ... ok
+test tests::diagnostic_write_preflight_denies_even_missing_or_invalid_values ... ok
+test tests::existing_missing_invalid_and_unknown_arguments_remain_for_original_dispatch ... ok
+test tests::existing_write_preflight_keeps_supported_arguments ... ok
+test tests::firmware_version_preflight_rejects_write_and_preserves_read_before_open ... ok
+test tests::original_do_write_still_rejects_bad_arguments_without_mock_io ... ok
+test tests::original_read_still_sends_single_read_data ... ok
+test tests::read_and_ping_preflight_preserve_existing_dispatch ... ok
+test tests::read_raw_bad_checksum_has_exit1_and_no_json ... ok
+test tests::read_raw_keeps_bit15_words_unsigned_without_signed_or_si_fields ... ok
+test tests::read_raw_missing_or_partial_reply_has_exit1_and_no_json ... ok
+test tests::read_raw_preflight_rejects_bad_count_register_and_id_with_zero_mock_io ... ok
+test tests::read_raw_success_reports_requested_metadata_and_actual_sync_read_bytes ... ok
+test tests::read_raw_wrong_response_id_has_exit1_and_no_json ... ok
+test tests::sync_velocity_output_failure_does_not_resend_or_report_success ... ok
+test tests::sync_velocity_rejects_bad_values_argument_counts_and_ids_before_mock_io ... ok
+test tests::sync_velocity_sends_only_two_velocity_bytes_without_ack_or_torque_write ... ok
+test tests::sync_zero_rejects_extra_arguments_and_invalid_ids_before_mock_io ... ok
+test tests::sync_zero_sends_exact_single_id_packet_without_ack_or_other_register_writes ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

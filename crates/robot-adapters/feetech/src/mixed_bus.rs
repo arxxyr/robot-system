@@ -20,7 +20,7 @@ pub(super) const JOINTS: [(&str, u8); 9] = [
     ("right_arm_wrist_flex", 4),
     ("right_arm_wrist_roll", 5),
     ("right_arm_gripper", 6),
-    ("base_back_wheel", 8),
+    ("base_front_wheel", 8),
     ("base_left_wheel", 7),
     ("base_right_wheel", 9),
 ];

@@ -1,0 +1,14 @@
+{
+  "base_commit": "ba88c8b1e161b6b7f88e61e2101493b473faf648",
+  "full_index_patch_sha256": "504cd321bf80ee7d9670f40ebad0bbd99f43a56242f87ab8a1f85b9f7a2400d5",
+  "orin_diff_identical": true,
+  "files": {
+    "configs/xlerobot_bus2_full.toml": "75f2996a8c8eed8928ccb2a75a11c6d99a3d1c8c546b1e4466d6a78ee01d4428",
+    "crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs": "e50e5661017b4536305aec18de6b9e1f578c7e441b1053d984dbf36f4f8c9ca2",
+    "crates/robot-adapters/feetech/src/factory.rs": "4d1967cc67422e2005d4462fa9d1338cd466135cf26ab3a0c05944a2aec11908",
+    "crates/robot-adapters/feetech/src/mixed_bus.rs": "4afe31e91a02df4bab7067edd046502a53b742276a80c8bb424b3a6574063b90",
+    "crates/robot-s0/src/grouped_position.rs": "6421d8fd579225d35f9a5bf4bf3b5b0ffeac36a36f183f1439151d0afd81f5f8"
+  },
+  "note": "首个普通diff比较仅因Git默认缩写7/8位不同未通过；full-index比较一致。",
+  "scope": "最终源码和配置5文件；最终MD验证摘要不作为编译输入。"
+}

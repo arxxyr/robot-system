@@ -39,7 +39,7 @@ const NAMES: [&str; 9] = [
     "right_arm_wrist_flex",
     "right_arm_wrist_roll",
     "right_arm_gripper",
-    "base_back_wheel",
+    "base_front_wheel",
     "base_left_wheel",
     "base_right_wheel",
 ];

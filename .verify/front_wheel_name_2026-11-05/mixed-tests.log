@@ -1,0 +1,12 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.19s
+     Running unittests src/lib.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-adapter-feetech/882473656d49b9a6/out/robot_adapter_feetech-882473656d49b9a6)
+
+running 5 tests
+test adapter::mixed_bus::tests::mixed_enable_syncs_arm_only_zeros_wheels_then_enables_all_and_disable_remains_full_bus ... ok
+test adapter::mixed_bus::tests::mixed_invalid_profile_mode_and_full_targets_cannot_write_motion ... ok
+test adapter::mixed_bus::tests::mixed_second_write_failure_or_source_expiry_does_not_retry_and_stop_still_covers_bus ... ok
+test adapter::mixed_bus::tests::mixed_wire_targets_exact_groups_raw_sign_and_legacy_stop_has_no_transaction ... ok
+test adapter::mixed_bus::tests::observed_raw_rejects_unverified_values_and_clamp_before_first_motion_frame ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 225 filtered out; finished in 0.00s
+
