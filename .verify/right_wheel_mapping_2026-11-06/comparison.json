@@ -1,0 +1,760 @@
+{
+  "status": "OFFLINE_COMPARISON_AND_PROCEDURE_REVIEW",
+  "scope": "比较现有两次右9与2026-10-22目视通过右9；只审原件和现有入口，不连接主机/UART、不创建GO、不改参数、原件或安全判据。",
+  "inputs": [
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/base-right/run.json",
+      "sha256": "cb1778469e53374f32e0f89f886b83472019f149c52af9eddda61da3ced50118",
+      "bytes": 1645143
+    },
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/base-right/right9-sdk-wire.jsonl",
+      "sha256": "eb580382e5ce29b9d2cc5401221810954415ea1523f3c79ba558a715fa553923",
+      "bytes": 136933
+    },
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/base-right-r2/run.json",
+      "sha256": "9a18bd87996f0a950c09cd998fca330f7e8b1d0f6bac514a67939760020f4e12",
+      "bytes": 1645069
+    },
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/base-right-r2/right9-sdk-wire.jsonl",
+      "sha256": "68745979503ee6610d4a0e873dd1b9cc8c8706956117f8b540325737ba15be7f",
+      "bytes": 136923
+    },
+    {
+      "path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/right-hardware/run.json",
+      "sha256": "4b583b0c64decccd0837565487d958afe88402d2e9de156abcc685bf48023671",
+      "bytes": 1702365
+    },
+    {
+      "path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/right-hardware/right9-sdk-wire.jsonl",
+      "sha256": "619d137e433c17db654fc111d64767b52601c2c6f0b4da7bc50c7b04efad7b9f",
+      "bytes": 144535
+    },
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/summary.json",
+      "sha256": "33708b5da0f6992a6ed396ce84ec240314ae87ffcdc8b6e3b398bca2bc707560",
+      "bytes": 4192
+    },
+    {
+      "path": ".verify/front_wheel_name_2026-11-05/hardware/base-right-audit.json",
+      "sha256": "087d824ca89aca1f9f4d6c793098f516ddfc3fa3959bc05a76291fffe33d2d04",
+      "bytes": 8076
+    },
+    {
+      "path": ".verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/right-observation.json",
+      "sha256": "f86372a065dade84e7521bfc8dfdf6327688bdc001db8992e5ded3ae1ed6d237",
+      "bytes": 229
+    },
+    {
+      "path": "scripts/run_hardware_maintenance.py",
+      "sha256": "94a4a738ed59291c6f85032bd8e363cf9e61f5e007a9b403b80656e623a9ac0c",
+      "bytes": 153170
+    },
+    {
+      "path": "scripts/systemd/README_dimos_replace.md",
+      "sha256": "091cd3c8d1a3bc9d9fa88e38c981c076aad4de73c7487269faefc504ede48cc0",
+      "bytes": 47915
+    },
+    {
+      "path": "scripts/systemd/xlerobot-handoff.service",
+      "sha256": "4cce48f85d40642bab7c7646e06be38f37e3412bcc51031b29737b5527e03ace",
+      "bytes": 3367
+    },
+    {
+      "path": "crates/robot-adapters/feetech/src/registers.rs",
+      "sha256": "cd803f78c3d9177b9b1dbffd8a65a81c0f61338b8e5461bb74b1a2df9cacf205",
+      "bytes": 17594
+    },
+    {
+      "path": "configs/xlerobot.toml",
+      "sha256": "530bd32432aa2959f49b645f705f8b9dbc71fa15e79e5d25b3fdc6abb1b7ce21",
+      "bytes": 1746
+    },
+    {
+      "path": "/Users/loosqk/repo/robot/XLeRobot/src/xlerobot_dimos/common/feetech_io/calibration.py",
+      "sha256": "905ca73e31932e80559319336379bd6e413155ff921edf728dc432bb34a6f577",
+      "bytes": 6714
+    }
+  ],
+  "measurements": {
+    "current_r1": {
+      "raw_result": "FAIL",
+      "raw_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+      "diagnostic": "PASS",
+      "stop": "PASS",
+      "identity": "PASS",
+      "manual_power_cut_required": false,
+      "target": [
+        "right",
+        9,
+        "base_right_wheel"
+      ],
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "baudrate": 1000000,
+      "sdk_closed": true,
+      "initial_read_values": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Lock": 1,
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0,
+        "Present_Position": 2857
+      },
+      "writes": {
+        "nonzero_sync": 400,
+        "zero_sync": 3,
+        "torque_enable": 1,
+        "torque_disable": 1
+      },
+      "sdk_operations": 588,
+      "wire_events": 956,
+      "rx_status_header_ids": [
+        9
+      ],
+      "anchor_position_raw": 2857,
+      "sample_count": 79,
+      "first_sample": {
+        "offset_ns": 250000000,
+        "position_raw": 2958,
+        "velocity_raw": 450,
+        "delta_raw": 101
+      },
+      "last_sample": {
+        "offset_ns": 19750000000,
+        "position_raw": 520,
+        "velocity_raw": 450,
+        "cumulative_delta_raw": 9951
+      },
+      "after_stop_position_raw": 673,
+      "last_sample_to_after_stop_mod4096_delta": 153,
+      "velocity_histogram": {
+        "400": 1,
+        "450": 17,
+        "500": 47,
+        "550": 14
+      },
+      "sample_delta_histogram": {
+        "101": 1,
+        "122": 2,
+        "123": 1,
+        "124": 4,
+        "125": 11,
+        "126": 27,
+        "127": 21,
+        "128": 7,
+        "129": 3,
+        "130": 2
+      },
+      "zero_hold_te_gv_pv_raw": [
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 200
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        }
+      ],
+      "post_disable_velocity_raw_unsigned": [
+        0
+      ],
+      "final_mode_te_gv": {
+        "Operating_Mode": 1,
+        "Torque_Enable": 0,
+        "Goal_Velocity": 0
+      },
+      "unselected_wheel_positions": {
+        "right:7": {
+          "before": 1928,
+          "after": 1928
+        },
+        "right:8": {
+          "before": 94,
+          "after": 94
+        }
+      },
+      "physical_observation": {
+        "source": "call_ca39d670d09a4ad9bdef8444546fea7f",
+        "answer": "右轮轮胎本身完全没转",
+        "acceptance": "NOT_PASSED",
+        "cause": "UNKNOWN"
+      },
+      "script_sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+      "evidence_lines": {
+        "initial_metadata_wire": [
+          1,
+          27
+        ],
+        "initial_position_wire": [
+          28,
+          30
+        ],
+        "initial_zero_readback_wire": [
+          32,
+          34
+        ],
+        "enable_readback_wire": [
+          37,
+          39
+        ],
+        "nonzero_goal_readback_wire": [
+          41,
+          43
+        ],
+        "first_sample_position_wire": [
+          52,
+          54
+        ],
+        "last_sample_position_wire": [
+          910,
+          912
+        ],
+        "run_anchor": 49974,
+        "run_cumulative": 49981
+      },
+      "transition_readbacks": {
+        "after_initial_zero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 0,
+          "sdk_operation": 12,
+          "wire_lines": [
+            32,
+            34
+          ]
+        },
+        "after_enable": {
+          "register": "Torque_Enable",
+          "raw_unsigned": 1,
+          "sdk_operation": 14,
+          "wire_lines": [
+            37,
+            39
+          ]
+        },
+        "after_first_nonzero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 500,
+          "sdk_operation": 16,
+          "wire_lines": [
+            41,
+            43
+          ]
+        }
+      }
+    },
+    "current_r2": {
+      "raw_result": "FAIL",
+      "raw_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+      "diagnostic": "PASS",
+      "stop": "PASS",
+      "identity": "PASS",
+      "manual_power_cut_required": false,
+      "target": [
+        "right",
+        9,
+        "base_right_wheel"
+      ],
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "baudrate": 1000000,
+      "sdk_closed": true,
+      "initial_read_values": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Lock": 1,
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0,
+        "Present_Position": 673
+      },
+      "writes": {
+        "nonzero_sync": 400,
+        "zero_sync": 3,
+        "torque_enable": 1,
+        "torque_disable": 1
+      },
+      "sdk_operations": 588,
+      "wire_events": 956,
+      "rx_status_header_ids": [
+        9
+      ],
+      "anchor_position_raw": 673,
+      "sample_count": 79,
+      "first_sample": {
+        "offset_ns": 250000000,
+        "position_raw": 775,
+        "velocity_raw": 500,
+        "delta_raw": 102
+      },
+      "last_sample": {
+        "offset_ns": 19750000000,
+        "position_raw": 2432,
+        "velocity_raw": 450,
+        "cumulative_delta_raw": 9951
+      },
+      "after_stop_position_raw": 2583,
+      "last_sample_to_after_stop_mod4096_delta": 151,
+      "velocity_histogram": {
+        "450": 18,
+        "500": 43,
+        "550": 17,
+        "600": 1
+      },
+      "sample_delta_histogram": {
+        "102": 1,
+        "123": 1,
+        "124": 1,
+        "125": 15,
+        "126": 29,
+        "127": 24,
+        "128": 7,
+        "129": 1
+      },
+      "zero_hold_te_gv_pv_raw": [
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 350
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        }
+      ],
+      "post_disable_velocity_raw_unsigned": [
+        0
+      ],
+      "final_mode_te_gv": {
+        "Operating_Mode": 1,
+        "Torque_Enable": 0,
+        "Goal_Velocity": 0
+      },
+      "unselected_wheel_positions": {
+        "right:7": {
+          "before": 1928,
+          "after": 1928
+        },
+        "right:8": {
+          "before": 94,
+          "after": 94
+        }
+      },
+      "physical_observation": {
+        "source": "call_732d3377bcdb4ef28eab8f83cd365861",
+        "answer": "完全没有动，速度大一点",
+        "acceptance": "NOT_PASSED",
+        "cause": "UNKNOWN"
+      },
+      "script_sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+      "evidence_lines": {
+        "initial_metadata_wire": [
+          1,
+          27
+        ],
+        "initial_position_wire": [
+          28,
+          30
+        ],
+        "initial_zero_readback_wire": [
+          32,
+          34
+        ],
+        "enable_readback_wire": [
+          37,
+          39
+        ],
+        "nonzero_goal_readback_wire": [
+          41,
+          43
+        ],
+        "first_sample_position_wire": [
+          52,
+          54
+        ],
+        "last_sample_position_wire": [
+          910,
+          912
+        ],
+        "run_anchor": 49974,
+        "run_cumulative": 49981
+      },
+      "transition_readbacks": {
+        "after_initial_zero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 0,
+          "sdk_operation": 12,
+          "wire_lines": [
+            32,
+            34
+          ]
+        },
+        "after_enable": {
+          "register": "Torque_Enable",
+          "raw_unsigned": 1,
+          "sdk_operation": 14,
+          "wire_lines": [
+            37,
+            39
+          ]
+        },
+        "after_first_nonzero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 500,
+          "sdk_operation": 16,
+          "wire_lines": [
+            41,
+            43
+          ]
+        }
+      }
+    },
+    "historical_visually_passed": {
+      "raw_result": "FAIL",
+      "raw_error": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+      "diagnostic": "PASS",
+      "stop": "PASS",
+      "identity": "PASS",
+      "manual_power_cut_required": false,
+      "target": [
+        "right",
+        9,
+        "base_right_wheel"
+      ],
+      "device": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "baudrate": 1000000,
+      "sdk_closed": true,
+      "initial_read_values": {
+        "Model_Number": 777,
+        "Firmware_Major_Version": 3,
+        "Firmware_Minor_Version": 10,
+        "Operating_Mode": 1,
+        "Phase": 12,
+        "Lock": 1,
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0,
+        "Present_Position": 950
+      },
+      "writes": {
+        "nonzero_sync": 400,
+        "zero_sync": 3,
+        "torque_enable": 1,
+        "torque_disable": 1
+      },
+      "sdk_operations": 602,
+      "wire_events": 998,
+      "rx_status_header_ids": [
+        9
+      ],
+      "anchor_position_raw": 950,
+      "sample_count": 79,
+      "first_sample": {
+        "offset_ns": 250000000,
+        "position_raw": 1051,
+        "velocity_raw": 500,
+        "delta_raw": 101
+      },
+      "last_sample": {
+        "offset_ns": 19750000000,
+        "position_raw": 2709,
+        "velocity_raw": 550,
+        "cumulative_delta_raw": 9951
+      },
+      "after_stop_position_raw": 2857,
+      "last_sample_to_after_stop_mod4096_delta": 148,
+      "velocity_histogram": {
+        "450": 12,
+        "500": 51,
+        "550": 16
+      },
+      "sample_delta_histogram": {
+        "101": 1,
+        "124": 1,
+        "125": 19,
+        "126": 30,
+        "127": 17,
+        "128": 8,
+        "129": 2,
+        "130": 1
+      },
+      "zero_hold_te_gv_pv_raw": [
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 350
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        },
+        {
+          "Torque_Enable": 1,
+          "Goal_Velocity": 0,
+          "Present_Velocity": 0
+        }
+      ],
+      "post_disable_velocity_raw_unsigned": [
+        32818
+      ],
+      "final_mode_te_gv": {
+        "Operating_Mode": 1,
+        "Torque_Enable": 0,
+        "Goal_Velocity": 0
+      },
+      "unselected_wheel_positions": {
+        "right:7": {
+          "before": 2334,
+          "after": 2334
+        },
+        "right:8": {
+          "before": 865,
+          "after": 865
+        }
+      },
+      "physical_observation": {
+        "source": "request_user_input_async call_7f2fc7b3e9de4ee1af367b2757002708",
+        "answer": "右轮明显持续转动，结束后完全停止",
+        "received_at_ns": 1792680646257972000,
+        "wheel": "right",
+        "new_action": false
+      },
+      "script_sha256": "928b1412af420b2bc0261905b1f80362507fe24f18950d42c771147dc8ee5bd1",
+      "evidence_lines": {
+        "initial_metadata_wire": [
+          1,
+          27
+        ],
+        "initial_position_wire": [
+          28,
+          30
+        ],
+        "initial_zero_readback_wire": [
+          32,
+          34
+        ],
+        "enable_readback_wire": [
+          37,
+          39
+        ],
+        "nonzero_goal_readback_wire": [
+          41,
+          43
+        ],
+        "first_sample_position_wire": [
+          52,
+          54
+        ],
+        "last_sample_position_wire": [
+          910,
+          912
+        ],
+        "run_anchor": 50483,
+        "run_cumulative": 50490
+      },
+      "transition_readbacks": {
+        "after_initial_zero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 0,
+          "sdk_operation": 12,
+          "wire_lines": [
+            32,
+            34
+          ]
+        },
+        "after_enable": {
+          "register": "Torque_Enable",
+          "raw_unsigned": 1,
+          "sdk_operation": 14,
+          "wire_lines": [
+            37,
+            39
+          ]
+        },
+        "after_first_nonzero_sync": {
+          "register": "Goal_Velocity",
+          "raw_unsigned": 500,
+          "sdk_operation": 16,
+          "wire_lines": [
+            41,
+            43
+          ]
+        }
+      }
+    }
+  },
+  "cross_run": {
+    "pulse_contracts_deep_equal": true,
+    "sdk_reference_file_count": 12,
+    "sdk_file_hashes_equal": true,
+    "sequence_comparisons": {
+      "current_r1_vs_r2": {
+        "sample_count": 79,
+        "same_position": 0,
+        "same_velocity": 31,
+        "same_delta": 22,
+        "same_cumulative": 22,
+        "position_mod4096_offset_histogram": {
+          "1908": 2,
+          "1909": 2,
+          "1910": 5,
+          "1911": 20,
+          "1912": 22,
+          "1913": 19,
+          "1914": 8,
+          "1915": 1
+        },
+        "wire_payload_or_direction_differences": 258
+      },
+      "current_r1_vs_history": {
+        "sample_count": 79,
+        "same_position": 0,
+        "same_velocity": 36,
+        "same_delta": 14,
+        "same_cumulative": 20
+      },
+      "current_r2_vs_history": {
+        "sample_count": 79,
+        "same_position": 0,
+        "same_velocity": 29,
+        "same_delta": 25,
+        "same_cumulative": 25
+      }
+    },
+    "position_continuity": {
+      "historical_final_equals_r1_anchor": true,
+      "r1_final_equals_r2_anchor": true
+    }
+  },
+  "cumulative_9951": {
+    "all_three_equal": true,
+    "formula": "每组 delta=(PP-previous_PP+2048)%4096-2048；cumulative=sum(delta)。",
+    "source": "scripts/run_hardware_maintenance.py:1823-1832",
+    "last_sample_offset_ns": 19750000000,
+    "excluded": "最后一个采样时刻至20秒动作结束的250毫秒，以及随后零速减速段；它不是完整启停总位移。",
+    "conclusion": "9951来自采样位置差累计，不是写死值或目标速度积分。三组累计相同，但原始位置、速度、分组增量及停止后位置不同；当前两次48/79速度、57/79增量不同，不能仅据9951认定逐帧复制。"
+  },
+  "confirmed_and_unknown": [
+    "三次命令目标和RX状态头均为协议ID9，元数据均Model777/FW3.10/Mode1/Phase12；Phase只在动作前读取，不声称动作后重新确认。",
+    "两次当前维护回执停止/身份通过且manual=false；整体FAIL及用户轮胎未动的NOT_PASSED保持，不据旧混合失败要求当前重启。",
+    "反馈变化证明这些原帧中的PP/PV变化；协议ID9与现场右侧实际轮胎/输出轴的一一对应尚未独立证实。",
+    "未发现原始采样逐帧重复；此结论不证明反馈对应实物，不排除所有上游来源问题。未重新执行既有校验和审计。",
+    "当前证据不能把矛盾归因为机械故障、PID、观察错误或串台；根因仍UNKNOWN。"
+  ],
+  "two_capture_review": {
+    "verdict": "在下列条件满足时可复用现有工具作一次最小映射诊断；尚未实机执行或验收。",
+    "entry": "scripts/run_hardware_maintenance.py --right-wheel-feedback-only",
+    "contract": {
+      "target": [
+        "right",
+        9,
+        "base_right_wheel"
+      ],
+      "captures": 2,
+      "reads_each": 14,
+      "register_writes": 0,
+      "sampling": "首TE/GV，固定1秒五组PP/PV，末GV/TE；每次总预算1.5秒",
+      "transport": "原工具SYNC_READ，PP/PV先后采样；不替代原SDK普通READ路径",
+      "acceptance": "首末TE/GV必须0；PV及PP跨度只记录，DIAGNOSTIC_CAPTURED，stop_verified=false"
+    },
+    "source_lines": {
+      "contract": [
+        142,
+        153
+      ],
+      "validation": [
+        1206,
+        1244
+      ],
+      "read_only_target_enforcement": [
+        1307,
+        1315
+      ],
+      "capture": [
+        1319,
+        1338
+      ],
+      "failure_blocks_uart": [
+        1342,
+        1349
+      ],
+      "go": [
+        719,
+        751
+      ],
+      "service_process_holder_checks": [
+        1950,
+        1989
+      ],
+      "usb_identity": [
+        1992,
+        2003
+      ],
+      "cooperative_locks": [
+        2353,
+        2376
+      ],
+      "read_only_cleanup": [
+        2397,
+        2399
+      ],
+      "diagnostic_result": [
+        2418,
+        2439
+      ]
+    },
+    "required_conditions": [
+      "新的现场事实明确覆盖两次只读及中间人工轻转；三轮稳定架空，双臂空载有支撑，现场持续看护且可立即断电。两次独立GO绑定不同plan/output，一次性消费，600秒原现场时效不续期。",
+      "两侧S0/S1/gateway六unit及旧四unit均inactive/dead/MainPID0；控制/维护进程清洁，两串口普通和sudo fuser均无持有者；四合作锁在每次采集内独占，USB/boot/文件绑定按原入口核对。",
+      "handoff保持loaded/active/exited/MainPID0；不要为了清理stop或restart，它重新执行会产生全17电机20条零速/断扭写及读回，超出本次只读。",
+      "第一读须DIAGNOSTIC_CAPTURED、首末TE/GV0、身份通过、child结束、串口关闭/释放且现场轮胎静止，方通知人工轻转。第一读异常就沿原失败处理，不手转或自动执行第二读。",
+      "两次采集之间合作锁已经释放；这不是连续软件互锁。保持业务服务停止及无人启动其他控制/维护写者，若此条件不能保证则不触碰轮子。",
+      "只轻转机器人自身右侧的整个轮盘/轮毂约1/4圈并记录方向，不只拨外围自由滚子；不动另两轮，不把机器人落地；若阻力大立即放弃，不强扳或追求精确角度。",
+      "手离开并确认轮子静止后才发第二次独立GO执行原14读。若现场状态或600秒事实过期，按原门处理，不更改时间戳或扩大采集。"
+    ],
+    "interpretation": [
+      "比较两次各五个PP的范围/代表值及模4096差，并保留PV原字；只转约1/4圈用于避免整圈别名，不预设实际外轮1/4圈必然等于1024计数，传动比与传感器映射仍未实证。",
+      "若只有实际右轮盘被清楚轻转且前后PP出现远大于既有±1计数的稳定差，支持该物理操作与ID9反馈有关；不能单凭一次证实传动比、驱动扭矩或完整运动闭环。",
+      "若外轮盘确实转动而PP基本不变，映射/传动/反馈链仍待定位；不能直接判电机损坏。若只转滚子、阻力大未转成、轮回到原位或一整圈，结论为不具区分力。",
+      "采集不判整机停止，也不授权随后的电动动作；保留历史FAIL和本次物理观察未通过。"
+    ],
+    "manual_rotation_evidence": {
+      "explicit_contraindication_found_in_reviewed_sources": false,
+      "limit": "本次只审本地寄存器、维护合同与已绑定原版校准源码；没有本台轮组可反拖/允许力矩的厂家或现场验证，不能把未发现禁令当机械安全保证。",
+      "reference": "原版calibration.py:107,138仅说明断扭后人工摆关节/记录范围，非本轮底盘反拖认证。",
+      "lock_register": "registers.rs:6-9说明Lock=1是EPROM保存语义，不能当作机械锁死或制动证据。",
+      "stop_rule": "轮盘不能轻松转动就终止人工步骤，不加力、不用参数写或电动动作替代。"
+    },
+    "hardware_execution": "NOT_RUN",
+    "new_go_created": false
+  },
+  "preserved_boundaries": {
+    "raw_runs_unchanged": true,
+    "raw_logs_not_copied": true,
+    "checksum_audit_not_repeated": true,
+    "physical_motion_acceptance": "NOT_PASSED_FOR_CURRENT_TWO_RUNS",
+    "D15": "OPEN/DEFERRED",
+    "deployable": false
+  }
+}

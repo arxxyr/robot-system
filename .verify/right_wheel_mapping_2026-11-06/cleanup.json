@@ -1,0 +1,12 @@
+{
+  "quality_exit_code": 0,
+  "quality_tmux_absent": true,
+  "temporary_source_removed": true,
+  "prepared_launchers_retained": true,
+  "shared_target_reused": true,
+  "new_target_created": false,
+  "no_go_or_hardware_output": true,
+  "uart_access": false,
+  "note": "保留本次两段待执行启动器、计划及日志；未删除其他任务资源，未重启服务。",
+  "local_sdk_review_copies_removed": true
+}

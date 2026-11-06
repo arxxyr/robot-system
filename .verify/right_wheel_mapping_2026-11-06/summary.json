@@ -1,0 +1,52 @@
+{
+  "result": "PREPARED_NOT_EXECUTED",
+  "base_commit": "162a4a86fdfe0d8c49d4806055a3aa3d9571ddbe",
+  "scope": "继续基础核对；Docker仅询问可行性，本轮不实施容器化，不修改驱动、电机参数、停止判据或冻结硬件产物。",
+  "evidence": {
+    "three_run_comparison": "comparison.json",
+    "installed_sdk_source_review": "sdk-review.json",
+    "prior_wire_audit": "../front_wheel_name_2026-11-05/hardware/base-right-audit.json",
+    "preparation": "preparation.json",
+    "camera_visibility": {
+      "reviewed": [
+        "../position_return_2026-10-10_r9/selected-motion-frames/sonix-usb-2_1-before_enable.jpg",
+        "../position_return_2026-10-10_r9/selected-motion-frames/sonix-usb-2_2-before_enable.jpg",
+        "../position_return_2026-10-10_r9/selected-motion-frames/realsense-043323051347-rgb-before_enable.png"
+      ],
+      "conclusion": "历史三路视角不包含轮胎；本轮没有打开相机，当前机位是否改变未知。静止背景不能证明架空轮胎未转，前后照片也可能遗漏整圈旋转。"
+    }
+  },
+  "findings": [
+    "已核的三次右9累计9951相同，但只统计至第79组约19.75秒；新两轮反馈序列不同且位置衔接，未发现整段复制反馈的证据。",
+    "已安装SDK及pyserial四份源码与原绑定SHA一致，实际使用POSIX串口，不存在漏调openPort就无法打开连接的问题；没有发现所审链路包含模拟或回放分支。",
+    "软件指令、反馈和停止检查通过，仍不能覆盖用户两次轮胎未转的观察。ID9与实物右轮对应关系、机械传动及历史矛盾原因仍未确认。"
+  ],
+  "next_prepared": {
+    "existing_entry": "--right-wheel-feedback-only",
+    "remote_root": "/home/loosqk/robot-checks/right-wheel-mapping-20261106",
+    "steps": [
+      "取得新的供电、三轮架空、双臂空载支撑、区域空旷和持续看护事实后，执行before一次14读；先读TE/GV且必须为0，保留PP/PV原字。",
+      "仅第一段正常完成、无活动控制进程并确认TE/GV为0及现场静止后，通知轻转机器人自身右轮整个轮盘约四分之一圈并放手，不能只拨外围自由滚子；阻力大则不强扳并停止本项。两次之间保持业务服务停止，交接服务维持active/exited，不重启。原合作锁在每段结束后释放，不声称手转间隙仍持锁。",
+      "收到实际手转及放手回执、现场时效仍有效后，独立GO执行after一次原14读；不自动连跑、不复用已消费GO、不续期现场时间戳。",
+      "比较两段位置与现场所见；有对应变化支持地址映射，不变化不能单独断言接线或机械部件损坏。"
+    ],
+    "register_writes": 0,
+    "motor_enable": false,
+    "no_manual_turn_yet": true,
+    "go_created": false,
+    "approval_boundary": "prepare.py只做PLAN_ONLY、原引用/主机/USB/进程/锁检查和启动器语法检查，不打开UART。原600秒现场门、独占锁和失败处理保持。"
+  },
+  "verification": {
+    "software_source": "编译源码保持base_commit；本轮仅文档、诊断摘要和一次性准备脚本。",
+    "previous_functional_tests": "../foundation_errors_2026-11-06/summary.json",
+    "no_repeated_functional_suite": true,
+    "current_quality": "Orin nightly249c1e4e3实际cargo fmt --all后根cargo clippy --all --all-targets -- -D warnings通过，源码git diff为空。",
+    "quality_logs": "quality/",
+    "preparation_logs": "preparation/"
+  },
+  "cleanup": "cleanup.json",
+  "new_uart": false,
+  "new_hardware_actions": 0,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}
