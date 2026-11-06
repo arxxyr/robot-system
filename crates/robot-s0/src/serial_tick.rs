@@ -1434,6 +1434,25 @@ mod tests {
     }
 
     #[test]
+    fn nonfinite_full_position_never_reaches_adapter_write() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut target = command(ControlMode::Position);
+            target.positions[1] = value;
+            let mut fixture = Fixture::new(true);
+            fixture.set_policy(OutputPolicy::ActiveForward);
+            fixture.step(&target.as_view());
+            assert_eq!(fixture.adapter.write_attempts, 0);
+            // 停止策略仍直接跳过目标检查，不受非法旧目标阻碍。
+            for policy in [OutputPolicy::StopTorque, OutputPolicy::Disabled] {
+                assert_eq!(
+                    select_periodic_output(&target.as_view(), policy, MonoRawNs(100)),
+                    Ok(PeriodicOutput::Skip)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn active_velocity_accepts_stamp_and_rejects_deadline_boundaries() {
         let source = command(ControlMode::Velocity);
         for now in [100, 199] {

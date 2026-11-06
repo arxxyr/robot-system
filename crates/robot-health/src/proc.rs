@@ -1,7 +1,7 @@
 //! Linux `/proc` 解析（CPU / memory / loadavg）。
 //!
-//! 纯整数 / 字符串解析，零外部 crate 依赖。macOS stub 返回 Err 让上层 fallback
-//! 到 0（dev 机跑编译，生产走 Linux）。
+//! 纯整数 / 字符串解析，零外部 crate 依赖。缺少 `/proc` 时返回 Err，
+//! 上层报告采样不可用（dev 机跑编译，生产走 Linux）。
 
 use std::fs;
 use std::io;

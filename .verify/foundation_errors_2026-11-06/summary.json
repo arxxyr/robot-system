@@ -1,0 +1,91 @@
+{
+  "result": "SOFTWARE_PASS_HARDWARE_NOT_RUN",
+  "authorization": "用户：先把基础立牢了，后面测试才不烧心；继续当前修复，Docker仅询问可行性。",
+  "base_commit": "ce44b28617f6181f01e89843c9c2fb82fb36a9fc",
+  "prior_review": "../mixed_failure_diagnostic_2026-11-06/review/summary.json",
+  "fixes": [
+    {
+      "id": "R1",
+      "priority": "P1",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "Scripted在创建实例前拒绝非有限或超f32范围的航点/起点；All+Position写入前校验有限性。",
+      "proof": "原始payload拒绝、不产生动作或完成终态、不污染合法保持目标；SerialTick写调用为0；真实Feetech内存串口TX为空。",
+      "compatibility": "Mask/mixed未选字段、其它模式、原维度和时间合同保留。"
+    },
+    {
+      "id": "R2",
+      "priority": "P2",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "校准锚点错误沿固定DiagEvent保留motor/raw，维护error附具体值。",
+      "proof": "模拟ID6/raw1371拒绝、周期0、无TE1/GP/GV写入、原独立最终TE0及失败粘性保持。",
+      "compatibility": "RobotError分类不变；诊断不参与安全决定，RT路径无新增分配。"
+    },
+    {
+      "id": "R3",
+      "priority": "P2",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "empty_report初始化cycle_count=0，早期FAIL不再因该字段缺失遮蔽错误。",
+      "proof": "真实Rust入口使用expiry=0、有效模拟校准：返回GO已过期；Python严格解析仍保留该原错，strace确认零串口打开。"
+    },
+    {
+      "id": "R4",
+      "priority": "P2",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "观测报告/收尾失败附加到主错误，主错误保留为source。",
+      "proof": "真实目录写失败与主配置失败叠加仍保留二者；监督器失败回归同样通过。"
+    },
+    {
+      "id": "R5",
+      "priority": "P2",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "健康采样失败输出来源错误及available=false，省略无效数字；恢复后有效零值可见。",
+      "proof": "实际tracing事件捕获验证失败和恢复；保留best-effort及停机边界。"
+    },
+    {
+      "id": "R6",
+      "priority": "P3",
+      "status": "SOFTWARE_VERIFIED",
+      "change": "终态日志使用真实enqueued结果，不再无条件声称已转发。",
+      "proof": "静态独审及RPC305项既有/相关回归；不为文案另造镜像测试，队列策略不变。"
+    }
+  ],
+  "adjacent_numeric_fix": {
+    "change": "rad_to_raw中点加法饱和，防止大有限f32在校准夹紧前溢出。",
+    "proof": "正常12bit范围逐计数往返原回归保持；±f32::MAX有校准写正确上下限，无校准由原编码边界拒绝且TX为空。"
+  },
+  "verification": {
+    "environment": "Orin Linux ARM64，nightly 249c1e4e3；复用共享target，无硬件UART。",
+    "quality": "cargo fmt --all → cargo clippy --all --all-targets -- -D warnings，以及Feetech real-hw all-targets Clippy通过。",
+    "rust_lib_tests": {
+      "robot-adapter-feetech": 231,
+      "robot-core": 151,
+      "robot-health": 75,
+      "robot-rpc": 305,
+      "robot-s1": 290,
+      "robot-viz": 19
+    },
+    "s0_serial_tick_tests": 30,
+    "maintenance_example_tests": 20,
+    "rust_total": 1121,
+    "python_maintenance_tests": 30,
+    "cross_language_entry": "run2/early-parser-summary.json",
+    "local_health_tests": 4,
+    "count_note": "本机4项包含在原生health75项内，不重复计入1121。原维护模拟11场景包含于20个方法内。非完整workspace实机验收。",
+    "source_identity": "source.json及run2/source-before.log、source-after.log"
+  },
+  "first_failure": "run1保留2处新增测试assert_is_empty Clippy失败；仅改为空数组assert_eq断言后run2全过，不修改测试预期或生产边界。",
+  "independent_review": "R1、Feetech与数值、health/viz/RPC三组交叉只读评审均无阻断。",
+  "cleanup": "cleanup.json",
+  "preserved": [
+    "电机参数及既有停止规则",
+    "原失败及原帧",
+    "旧冻结硬件产物SHA",
+    "D15 OPEN/DEFERRED",
+    "deployable=false"
+  ],
+  "new_uart": false,
+  "new_go": false,
+  "new_motor_commands": 0,
+  "physical_boundary": "此前右9反馈变化但现场轮胎未动的根因仍UNKNOWN；混合校准越界及真实S0集成未闭环。断电重连已单独记录，本轮未据此追加动作。",
+  "next": "沿既有原版/执行入口核对右9实物与反馈矛盾及混合原位校准范围；准备完成后，实机动作前先通知并确认当次现场状态。"
+}

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use robot_core::time::{Deadline, DurationNs, RobotClock, SystemClock};
 
-use crate::invalid;
+use crate::{invalid, preserve_primary};
 
 static STOP: AtomicBool = AtomicBool::new(false);
 const PROGRESS: &[u8] = b"ROBOT_VIZ_PROGRESS ";
@@ -126,13 +126,11 @@ pub fn run(
             .map_err(|_| invalid("worker 管道读取任务 panic"))?;
     }
     if let Some(reason) = forced_failure {
-        write_failure(report, reason)?;
-        return Err(invalid(reason).into());
+        return worker_failure(report, reason);
     }
     if !status.success() {
         let reason = format!("观测 worker 失败：{status}");
-        write_failure(report, &reason)?;
-        return Err(invalid(reason).into());
+        return worker_failure(report, &reason);
     }
     if let Some(path) = report {
         let mut value: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
@@ -140,6 +138,14 @@ pub fn run(
         std::fs::write(path, serde_json::to_vec_pretty(&value)?)?;
     }
     Ok(())
+}
+
+fn worker_failure(path: Option<&Path>, reason: &str) -> Result<(), Box<dyn std::error::Error>> {
+    preserve_primary(
+        Err(invalid(reason).into()),
+        write_failure(path, reason),
+        "写入监督报告",
+    )
 }
 
 fn write_failure(path: Option<&Path>, reason: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -187,5 +193,34 @@ fn read_progress(
                 line.push(*byte);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_failure_survives_report_write_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        for reason in [
+            "worker 超过 15 秒无进展，已终止并回收",
+            "观测 worker 失败：exit status: 1",
+        ] {
+            let error = worker_failure(Some(dir.path()), reason).unwrap_err();
+            assert!(error.to_string().contains(reason));
+            assert!(error.to_string().contains("写入监督报告也失败"));
+            assert_eq!(
+                error.source().unwrap().to_string(),
+                invalid(reason).to_string()
+            );
+        }
+        let path = dir.path().join("report.json");
+        let error = worker_failure(Some(&path), "原始 worker 失败").unwrap_err();
+        assert!(error.downcast_ref::<crate::VizError>().is_some());
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(report["supervisor_error"], "原始 worker 失败");
+        assert_eq!(report["worker_reaped"], true);
     }
 }

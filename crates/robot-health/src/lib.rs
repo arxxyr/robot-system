@@ -8,11 +8,12 @@
 //! - **非 RT**：采样周期秒级（默认 5 s），普通优先级线程，允许 heap alloc /
 //!   文件 IO。不得挤占 `s0_rt_thread` 资源（用 `SCHED_OTHER` 默认即可）。
 //! - **Linux only**：Production 目标平台 Linux `x86_64` / `aarch64`；macOS 提供
-//!   stub 返回全 0 方便 dev 机编译。Windows 不支持（不是目标平台）。
+//!   编译支持，缺少 `/proc` 时明确报告不可用。Windows 不支持（不是目标平台）。
 //! - **纯 `/proc` 解析**：不依赖 `sysinfo` / `procfs` crate（减少依赖面）。
 //!   手写 parser + 全单测覆盖。
 //! - **输出走 tracing**（`docs/logging.md` 词汇表）：`info!(cpu_usage_pct,
 //!   mem_used_pct, load_1m, interested, top_by_cpu, "system health")`。
+//!   采样失败改为 warn，保留源错误与可用标志，不输出该来源的占位零。
 //! - **监控 ≠ supervisor**：本 crate 只**观察 + 报告**，**不**启动 / 重启
 //!   服务（§6.7 "systemd 是最外层看门狗"）。supervisor / 重启策略见 task-31
 //!   B'c 评估结果（`docs/CHANGELOG.md` 2026-04-25 task-31 B'a）。
@@ -196,8 +197,8 @@ mod runtime_health_tests {
     }
 
     impl tracing::Subscriber for CapturedEvents {
-        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            *metadata.level() == tracing::Level::ERROR
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
         }
         fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
             tracing::span::Id::from_u64(1)
@@ -304,6 +305,63 @@ mod runtime_health_tests {
         assert_eq!(events[1]["persist_pending"], "false");
         assert_eq!(events[1]["retire_refused"], "true");
         assert_eq!(events[1]["marker_lost"], "true");
+    }
+
+    #[test]
+    fn resource_sample_errors_are_unavailable_and_recovery_reports_real_zero() {
+        let captured = CapturedEvents::default();
+        let snapshot = SystemSnapshot {
+            sampled_mono_ns: 1,
+            cpu_usage_pct: 0.0,
+            load_1m: 0.0,
+            load_5m: 0.0,
+            load_15m: 0.0,
+            mem_total_kib: 0,
+            mem_available_kib: 0,
+            mem_used_pct: 0.0,
+            interested: Vec::new(),
+            top_by_cpu: Vec::new(),
+        };
+        let cpu_error = proc::parse_cpu_times("broken").unwrap_err();
+        let mem_error = proc::parse_meminfo("broken").unwrap_err();
+        let load_error = proc::parse_loadavg("broken").unwrap_err();
+        tracing::subscriber::with_default(captured.clone(), || {
+            emit_tracing(
+                &snapshot,
+                Some(&cpu_error),
+                Some(&mem_error),
+                Some(&load_error),
+            );
+            emit_tracing(&snapshot, None, None, None);
+        });
+        let events = captured.0.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        for source in ["cpu", "mem", "load"] {
+            assert_eq!(events[0][&format!("{source}_available")], "false");
+            assert_eq!(events[1][&format!("{source}_available")], "true");
+            assert!(!events[1].contains_key(&format!("{source}_error")));
+        }
+        assert_eq!(events[0]["cpu_error"], cpu_error.to_string());
+        assert_eq!(events[0]["mem_error"], mem_error.to_string());
+        assert_eq!(events[0]["load_error"], load_error.to_string());
+        for field in [
+            "cpu_usage_pct",
+            "load_1m",
+            "load_5m",
+            "load_15m",
+            "mem_total_kib",
+            "mem_available_kib",
+            "mem_used_pct",
+        ] {
+            assert!(
+                !events[0].contains_key(field),
+                "失败时不得输出伪零：{field}"
+            );
+            assert!(
+                events[1].contains_key(field),
+                "恢复后的真实零必须可见：{field}"
+            );
+        }
     }
 }
 
@@ -555,7 +613,12 @@ fn run_monitor(
             top_by_cpu,
         };
 
-        emit_tracing(&snapshot);
+        emit_tracing(
+            &snapshot,
+            now_cpu.as_ref().err(),
+            mem.as_ref().err(),
+            load.as_ref().err(),
+        );
 
         // check-then-sleep 粗粒度 stop 响应（最坏 interval 延时才退出）
         let deadline = Instant::now() + cfg.interval;
@@ -670,21 +733,42 @@ fn parse_cpu_online(text: &str) -> Option<u32> {
 /// per-process 数据量较大，`interested` / `top_by_cpu` 作为 Debug String 字段
 /// 打（一行内呈现，JSON 模式下是数组 embedded string）。后续如果需要单独
 /// 字段可扩 —— 先保证"一行看全貌"。
-fn emit_tracing(s: &SystemSnapshot) {
+fn emit_tracing(
+    s: &SystemSnapshot,
+    cpu_error: Option<&std::io::Error>,
+    mem_error: Option<&std::io::Error>,
+    load_error: Option<&std::io::Error>,
+) {
     let interested_dbg = summarize(&s.interested);
     let top_dbg = summarize(&s.top_by_cpu);
-    tracing::info!(
-        cpu_usage_pct = s.cpu_usage_pct,
-        load_1m = s.load_1m,
-        load_5m = s.load_5m,
-        load_15m = s.load_15m,
-        mem_total_kib = s.mem_total_kib,
-        mem_available_kib = s.mem_available_kib,
-        mem_used_pct = s.mem_used_pct,
-        interested = %interested_dbg,
-        top_by_cpu = %top_dbg,
-        "system health"
-    );
+    // 采样失败只影响观测；保留源错误，且不把内部占位零输出为有效测量。
+    macro_rules! emit {
+        ($level:ident) => {
+            tracing::$level!(
+                cpu_available = cpu_error.is_none(),
+                mem_available = mem_error.is_none(),
+                load_available = load_error.is_none(),
+                cpu_error = cpu_error.map(tracing::field::display),
+                mem_error = mem_error.map(tracing::field::display),
+                load_error = load_error.map(tracing::field::display),
+                cpu_usage_pct = cpu_error.is_none().then_some(s.cpu_usage_pct),
+                load_1m = load_error.is_none().then_some(s.load_1m),
+                load_5m = load_error.is_none().then_some(s.load_5m),
+                load_15m = load_error.is_none().then_some(s.load_15m),
+                mem_total_kib = mem_error.is_none().then_some(s.mem_total_kib),
+                mem_available_kib = mem_error.is_none().then_some(s.mem_available_kib),
+                mem_used_pct = mem_error.is_none().then_some(s.mem_used_pct),
+                interested = %interested_dbg,
+                top_by_cpu = %top_dbg,
+                "system health"
+            );
+        };
+    }
+    if cpu_error.is_some() || mem_error.is_some() || load_error.is_some() {
+        emit!(warn);
+    } else {
+        emit!(info);
+    }
 }
 
 /// 把 Vec<ProcessSnapshot> 压成一行 String。

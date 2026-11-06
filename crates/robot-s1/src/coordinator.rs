@@ -4328,6 +4328,49 @@ backends = 42
         }
 
         #[test]
+        fn scripted_invalid_positions_reject_before_execution_and_preserve_hold() {
+            let ch = MockChannel::<markers::JointState>::new();
+            let c = attach_cache(scripted_coordinator(), &ch);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            let pose = vec![0.0, 0.0];
+            publish_state(&ch, LAYOUT, &pose, clock.now().0);
+            wait_probe(&c, clock.now(), &pose);
+
+            // 先建立合法末点保持，拒绝后必须保留该目标而非非法输入或启动锚点。
+            let hold = vec![0.25, -0.25];
+            let _ticket = c
+                .submit(scripted_request(std::slice::from_ref(&hold)), &clock)
+                .expect("合法目标可提交");
+            assert_eq!(decode_target(&c.tick_action(&clock, 1).unwrap()), pose);
+            clock.advance(DurationNs::from_millis(100));
+            assert_eq!(decode_target(&c.tick_action(&clock, 2).unwrap()), hold);
+            clock.advance(DurationNs::from_millis(20));
+            assert!(c.tick_action(&clock, 3).is_none());
+            assert_eq!(c.idle_hold_target(), hold);
+
+            for invalid in [
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::MAX,
+                -f64::MAX,
+            ] {
+                let req = scripted_request(&[vec![invalid, 0.0]]);
+                let action_id = req.action_id;
+                let error = c.submit(req, &clock).expect_err("非法目标必须在启动前拒绝");
+                assert!(rejected_reason(&error).contains("waypoints[0].positions[0]"));
+                assert!(matches!(c.current_state(), CoordinatorState::Idle));
+                assert!(
+                    c.status(action_id).is_none(),
+                    "未执行不能记录成完成或失败终态"
+                );
+                assert!(c.tick_action(&clock, 4).is_none(), "拒绝后不能生成动作命令");
+                assert_eq!(c.idle_hold_target(), hold, "非法目标不能污染保持位置");
+            }
+            c.take_state_cache().unwrap().join().expect("回收采集线程");
+        }
+
+        #[test]
         fn scripted_stale_frame_is_rejected_without_fallback() {
             let ch = MockChannel::<markers::JointState>::new();
             let c = attach_cache(scripted_coordinator(), &ch);

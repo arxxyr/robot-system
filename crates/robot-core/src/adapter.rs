@@ -234,10 +234,11 @@ impl JointCommandBuf {
 }
 
 impl JointCommandView<'_> {
-    /// 校验内部部分位置或完整混合目标；旧 `All` 行为保持不变。
+    /// 校验位置目标有限性及内部部分位置、完整混合目标。
+    /// `All` 仅补 Position 目标有限性检查，维度和时间合同保持不变。
     ///
     /// # Errors
-    /// 非 Position、空/越界选择、维度、选中值或时间窗口无效。
+    /// Position 目标非有限；部分或混合选择的模式、维度、选中值或时间窗口无效。
     pub fn validate_selection(&self, joint_count: usize) -> Result<(), RobotError> {
         if let JointSelection::MixedPositionRawVelocity {
             position_mask,
@@ -279,6 +280,11 @@ impl JointCommandView<'_> {
             return Ok(());
         }
         let JointSelection::Mask(mask) = self.selection else {
+            if self.mode == ControlMode::Position
+                && self.positions.iter().any(|value| !value.is_finite())
+            {
+                return Err(RobotError::InvalidParameter("全选位置目标必须有限"));
+            }
             return Ok(());
         };
         if self.mode != ControlMode::Position {
@@ -644,6 +650,8 @@ mod tests {
         command.velocities[7] = f32::INFINITY;
         assert!(command.as_view().validate_selection(8).is_err());
         command.selection = JointSelection::All;
+        command.positions[0] = 0.0;
+        // 全选位置仅检查实际位置字段，原维度、时间及未使用的速度合同不变。
         assert!(command.as_view().validate_selection(7).is_ok());
         assert!(command.as_view().validate_selection_time(u64::MAX).is_ok());
 
@@ -665,6 +673,57 @@ mod tests {
     }
 
     #[test]
+    fn all_position_selection_rejects_nonfinite_positions() {
+        let mut command = JointCommandBuf {
+            mode: ControlModeRepr::Position,
+            joint_count: 2,
+            ..JointCommandBuf::default()
+        };
+        // S0 的 f64 位置窄化溢出也必须在任何 Position 写入前被拒绝。
+        #[allow(clippy::cast_possible_truncation)]
+        let narrowed_overflow = f64::MAX as f32;
+        for invalid in [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            narrowed_overflow,
+        ] {
+            for slot in 0..2 {
+                command.positions = [0.0; MAX_JOINTS];
+                command.positions[slot] = invalid;
+                assert_eq!(
+                    command.as_view().validate_selection(2),
+                    Err(RobotError::InvalidParameter("全选位置目标必须有限"))
+                );
+            }
+        }
+        command.positions = [0.0; MAX_JOINTS];
+        command.positions[2] = f32::NAN;
+        command.velocities[0] = f32::NAN;
+        command.torques[1] = f32::INFINITY;
+        command.raw_velocities[0] = i16::MIN;
+        assert!(command.as_view().validate_selection(2).is_ok());
+    }
+
+    #[test]
+    fn all_other_modes_preserve_their_own_value_validation() {
+        for mode in [
+            ControlModeRepr::Stop,
+            ControlModeRepr::Velocity,
+            ControlModeRepr::Torque,
+            ControlModeRepr::ServoPosition,
+        ] {
+            let command = JointCommandBuf {
+                mode,
+                joint_count: 1,
+                positions: [f32::NAN; MAX_JOINTS],
+                ..JointCommandBuf::default()
+            };
+            assert!(command.as_view().validate_selection(1).is_ok());
+        }
+    }
+
+    #[test]
     fn mixed_selection_requires_complete_disjoint_masks_and_typed_raw_values() {
         let valid = JointCommandBuf {
             mode: ControlModeRepr::Position,
@@ -678,6 +737,12 @@ mod tests {
             ..JointCommandBuf::default()
         };
         assert!(valid.as_view().validate_selection(9).is_ok());
+        let mut ignored_fields = valid;
+        ignored_fields.positions[6] = f32::NAN;
+        ignored_fields.velocities[0] = f32::INFINITY;
+        ignored_fields.torques[0] = f32::NAN;
+        ignored_fields.raw_velocities[0] = i16::MIN;
+        assert!(ignored_fields.as_view().validate_selection(9).is_ok());
         for (positions, velocities) in [
             (0, 0x1ff),
             (0x3f, 0),

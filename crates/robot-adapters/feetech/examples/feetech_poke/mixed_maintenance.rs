@@ -23,6 +23,8 @@ use robot_core::control_authority::{
     AuthorityInit, ControlAuthority, EnableExecutionView, EnableResult, InhibitSet, NormalIoIntent,
     SafetyOperation,
 };
+use robot_core::diag::{DiagEvent, DiagSink};
+use robot_core::error::RobotError;
 use robot_core::executor_ctrl::{OutputSafetyProbe, OutputSafetyState};
 use robot_core::serial_services::{
     AbortReason, BusLease, BusOpClass, CommErrorKind, LeasedPreemptProbe, PreemptProbe,
@@ -106,6 +108,7 @@ struct Guard {
     enable_view: Mutex<Option<EnableExecutionView>>,
     enable_attempt: AtomicU64,
     nonzero_attempt: AtomicU64,
+    calibration_failure: AtomicU64,
     pv_words: Mutex<Option<[u16; 9]>>,
 }
 impl Guard {
@@ -147,6 +150,7 @@ impl Guard {
             enable_view: Mutex::new(None),
             enable_attempt: AtomicU64::new(0),
             nonzero_attempt: AtomicU64::new(0),
+            calibration_failure: AtomicU64::new(0),
             pv_words: Mutex::new(None),
         })
     }
@@ -190,6 +194,30 @@ impl Guard {
         self.failed.store(true, Ordering::SeqCst);
         let _ = self.authority.disable();
         error
+    }
+
+    fn adapter_error(&self, error: RobotError) -> String {
+        let diagnostic = self.calibration_failure.load(Ordering::Relaxed);
+        if matches!(error, RobotError::InvalidParameter("feetech calibration")) && diagnostic != 0 {
+            let bytes = diagnostic.to_le_bytes();
+            let raw = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            return format!("{error}: motor={}, raw={raw}", bytes[4]);
+        }
+        error.to_string()
+    }
+}
+impl DiagSink for Guard {
+    fn record(&self, event: DiagEvent) {
+        // 仅保存首次启用校准拒绝；诊断不参与授权、停止或重试决策。
+        if (event.site, event.kind, event.a) == (3, 8, 3) && event.b != 0 {
+            let diagnostic = (u64::from(event.b) << 32) | u64::from(event.seq_lo);
+            let _ = self.calibration_failure.compare_exchange(
+                0,
+                diagnostic,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
     }
 }
 impl PreemptProbe for Guard {
@@ -485,7 +513,7 @@ fn run<T: SerialTransport + 'static>(
     let config = FeetechAdapterConfig {
         clock: guard.clock.clone(),
         preempt: Some(guard.clone()),
-        diag: None,
+        diag: Some(guard.clone()),
         call_deadline: Duration::from_millis(50),
         adapter_name: "mixed-right9-maintenance",
         joint_names: NAMES.iter().map(ToString::to_string).collect(),
@@ -554,7 +582,7 @@ fn run<T: SerialTransport + 'static>(
                 },
             )
             .map_err(|e| format!("Enable完成拒绝:{e:?}"))?;
-        enabled.map_err(|e| e.to_string())?;
+        enabled.map_err(|e| guard.adapter_error(e))?;
         guard
             .authority
             .commit_enable(owner)
@@ -804,7 +832,7 @@ fn run<T: SerialTransport + 'static>(
 }
 
 fn empty_report(args: &[String]) -> Value {
-    json!({"schema":"FEETECH_MIXED_RIGHT9_V1","operation":"mixed-hold-right9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":IDS,"wheel_ids":[8,7,9],"wheel_raw_goal":[0,0,500],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
+    json!({"schema":"FEETECH_MIXED_RIGHT9_V1","operation":"mixed-hold-right9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":IDS,"wheel_ids":[8,7,9],"wheel_raw_goal":[0,0,500],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
 }
 
 pub(super) fn main(args: &[String]) -> ExitCode {
@@ -1063,6 +1091,33 @@ mod tests {
     }
 
     #[test]
+    fn mixed_failure_before_run_retains_zero_cycles_and_no_effects() {
+        let error = Guard::new(Arc::new(MockClock::default()), 0)
+            .err()
+            .expect("过期GO在run和串口打开之前拒绝");
+        let mut report = empty_report(&[]);
+        report["error"] = json!(error);
+        let encoded = serde_json::to_string(&report).unwrap();
+        let decoded: Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded["result"], "FAIL");
+        assert_eq!(decoded["error"], "GO已过期");
+        assert_eq!(decoded["cycle_count"], 0);
+        assert!(decoded["cycles"].as_array().unwrap().is_empty());
+        assert!(
+            decoded["timing"]
+                .as_object()
+                .unwrap()
+                .values()
+                .all(Value::is_null)
+        );
+        assert_eq!(
+            decoded["cleanup"],
+            json!({"zero_attempted":false,"zero_ok":false,
+            "disable_attempted":false,"disable_ok":false,"torque_enable_after":null})
+        );
+    }
+
+    #[test]
     fn fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop() {
         assert!(Guard::new(Arc::new(MockClock::default()), 0).is_err());
         for scenario in 0..=10 {
@@ -1107,6 +1162,15 @@ mod tests {
                 scenario == 0,
                 "scenario={scenario} {result:?}"
             );
+            if scenario == 3 {
+                assert_eq!(
+                    result.as_ref().err().map(String::as_str),
+                    Some("invalid parameter: feetech calibration: motor=6, raw=1371")
+                );
+                assert_eq!(report["cycle_count"], 0);
+                assert!(report["timing"]["enable_attempt_ns"].is_null());
+                assert!(report["cleanup"]["torque_enable_after"].is_null());
+            }
             let frames = frames.lock().unwrap();
             let stop = frames
                 .iter()

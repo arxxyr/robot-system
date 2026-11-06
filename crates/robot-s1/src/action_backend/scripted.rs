@@ -185,8 +185,8 @@ impl ActionBackend for ScriptedBackend {
             ));
         }
 
-        // (4) 每段 positions.len() == hardware.joints.len() +
-        // segment_duration_ms > 0。decode 期一次性 owned 拷贝到
+        // (4) 每段位置维度匹配、有限且可表示为 S0 的 f32，时长 > 0。
+        // decode 期一次性 owned 拷贝到
         // Vec<DecodedWaypoint>；tick 期不再解 fbs（Q11 拍板）。
         let expected_joints = ctx.hardware.joints.len();
         let mut decoded_waypoints: Vec<DecodedWaypoint> = Vec::with_capacity(fb_wps.len());
@@ -197,6 +197,15 @@ impl ActionBackend for ScriptedBackend {
                     "ScriptedPayload.waypoints[{idx}].positions length {} != \
                      hardware.joints.len() {expected_joints}",
                     positions.len()
+                )));
+            }
+            if let Some((joint, value)) = positions
+                .iter()
+                .enumerate()
+                .find(|(_, value)| !value.is_finite() || value.abs() > f64::from(f32::MAX))
+            {
+                return Err(ActionStartError::Rejected(format!(
+                    "ScriptedPayload.waypoints[{idx}].positions[{joint}] must be finite and fit f32, got {value}"
                 )));
             }
             let segment_duration_ms = wp.segment_duration_ms();
@@ -229,6 +238,15 @@ impl ActionBackend for ScriptedBackend {
             return Err(ActionStartError::Rejected(format!(
                 "ScriptedBackend: ctx.scripted_start_pose length {} != hardware.joints.len() {expected_joints}",
                 start_pose.len()
+            )));
+        }
+        if let Some((joint, value)) = start_pose
+            .iter()
+            .enumerate()
+            .find(|(_, value)| !value.is_finite() || value.abs() > f64::from(f32::MAX))
+        {
+            return Err(ActionStartError::Rejected(format!(
+                "ScriptedBackend: ctx.scripted_start_pose[{joint}] must be finite and fit f32, got {value}"
             )));
         }
         let initial_pose: Vec<f64> = start_pose.to_vec();
@@ -872,6 +890,73 @@ mod tests {
                 if s.contains("positions length") && s.contains("hardware.joints.len()")),
             "got {err:?}"
         );
+    }
+
+    fn assert_position_rejected(target: f64, start: f64, field: &str) {
+        let backend = ScriptedBackend;
+        let cfg = CoordinatorConfig::default();
+        let hardware = sample_hardware();
+        let anchor_bias = [0.0; 3];
+        let start_pose = [0.0, start, 0.0];
+        let clock = MockClock::new(MonoRawNs(1_000_000_000));
+        let req = ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::Scripted,
+            deadline_ns: u64::MAX,
+            priority: 10,
+            payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+            // 第一段合法，第二段的错误也必须在生成任何实例前拒绝。
+            payload: build_scripted_payload_bytes(&[
+                (vec![0.0; 3], 0, 1),
+                (vec![0.0, target, 0.0], 10, 1),
+            ]),
+            idempotency_key: "test-invalid-position".into(),
+            source: ActionSource::Internal,
+        };
+        let ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor_bias,
+            command_seq: 0,
+            scripted_start_pose: Some(&start_pose),
+            solver: None,
+        };
+        let Err(error) = backend.start(&req, &ctx) else {
+            panic!("非法位置不能创建可运行或保存保持目标的实例");
+        };
+        assert!(
+            matches!(error, ActionStartError::Rejected(ref reason)
+                if reason.contains(field) && reason.contains("finite and fit f32")),
+            "拒绝应保留错误位置及原因：{error:?}"
+        );
+    }
+
+    #[test]
+    fn start_rejects_nonfinite_and_unrepresentable_waypoint_positions() {
+        for invalid in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            -f64::MAX,
+        ] {
+            assert_position_rejected(invalid, 0.0, "waypoints[1].positions[1]");
+        }
+    }
+
+    #[test]
+    fn start_rejects_nonfinite_and_unrepresentable_start_positions() {
+        for invalid in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            -f64::MAX,
+        ] {
+            assert_position_rejected(0.0, invalid, "scripted_start_pose[1]");
+        }
     }
 
     // ----- 5c. start_rejects_zero_segment_duration -----

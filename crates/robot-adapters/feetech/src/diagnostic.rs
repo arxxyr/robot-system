@@ -19,6 +19,7 @@ pub(super) enum FeetechDiagnostic {
     Communication(CommErrorKind),
     Aborted(AbortReason),
     DeviceStatus { motor_id: u8, status: u8 },
+    CalibrationAnchorChanged { motor_id: u8, raw: i32 },
     InvalidParameter(ParameterReason),
     GoalReadbackMismatch,
     AlreadyConnected,
@@ -57,6 +58,10 @@ impl FeetechDiagnostic {
                 motor_id: status_motor,
                 status: *status,
             },
+            F::CalibrationAnchorChanged { motor_id, raw } => Self::CalibrationAnchorChanged {
+                motor_id: *motor_id,
+                raw: *raw,
+            },
             F::UnknownRegister(_)
             | F::DiagnosticRegisterWriteForbidden(_)
             | F::ReadOnlyRegisterWriteForbidden(_)
@@ -72,7 +77,6 @@ impl FeetechDiagnostic {
             | F::CalibrationMinOutOfRange(_)
             | F::CalibrationMaxOutOfRange(_)
             | F::CalibrationMotorIdMismatch { .. }
-            | F::CalibrationAnchorChanged { .. }
             | F::CalibrationEntryInvalid { .. }
             | F::CalibrationDuplicateMotor { .. } => Self::InvalidParameter(P::Calibration),
             F::CalibrationIo { .. } | F::CalibrationParse { .. } => {
@@ -86,12 +90,13 @@ impl FeetechDiagnostic {
         }
     }
 
-    /// 固定日志编码 (kind, a, b)；序号字段由调用方继续置零。
+    /// 固定日志编码 (kind, a, b)；校准锚点错误的 b 保留电机 ID。
     /// kind8 的 a：1参数、2编码值、3校准、4校准文件、5型号、6目标读回、7重复连接。
     pub(super) const fn encode(self) -> (u8, u8, u8) {
         match self {
             Self::Communication(kind) => (0, kind.to_u8(), 0),
             Self::DeviceStatus { motor_id, status } => (5, motor_id, status),
+            Self::CalibrationAnchorChanged { motor_id, .. } => (8, 3, motor_id),
             Self::Aborted(reason) => (
                 7,
                 match reason {
@@ -117,6 +122,14 @@ impl FeetechDiagnostic {
             Self::AbsoluteWrite { reason, progress } => (9, reason, progress),
         }
     }
+
+    /// 复用固定记录的 `seq_lo` 保存有符号 raw 位模式，其余错误保持零。
+    pub(super) const fn detail(self) -> u32 {
+        match self {
+            Self::CalibrationAnchorChanged { raw, .. } => u32::from_ne_bytes(raw.to_ne_bytes()),
+            _ => 0,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -129,6 +142,21 @@ mod tests {
     use robot_core::serial_services::{AbortReason, CommErrorKind as C};
     use robot_core::time::{Deadline, MonoRawNs};
     use std::io;
+
+    #[test]
+    fn calibration_anchor_diagnostic_retains_motor_and_signed_raw() {
+        for (motor_id, raw) in [(3, 2992), (6, 1371), (1, -1), (2, i32::MIN)] {
+            let error = F::CalibrationAnchorChanged { motor_id, raw };
+            let diagnostic = D::classify(&error, 9);
+            assert_eq!(diagnostic.encode(), (8, 3, motor_id));
+            assert_eq!(i32::from_ne_bytes(diagnostic.detail().to_ne_bytes()), raw);
+            assert_eq!(
+                RobotError::from(error),
+                RobotError::InvalidParameter("feetech calibration")
+            );
+        }
+        assert_eq!(D::classify(&F::CalibrationMinOutOfRange(-1), 3).detail(), 0);
+    }
 
     #[test]
     fn typed_classes_keep_literal_diagnostic_codes() {

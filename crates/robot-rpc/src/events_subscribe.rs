@@ -36,7 +36,7 @@
 //!    subscribe thread break + 退出 + iceoryx2 subscriber 自然 drop（→
 //!    服务侧 reference count 降低，但**不**通知 s1）。
 //! 3. **terminal event**（envelope kind = Completed / Failed / Cancelled）
-//!    publish 完后 thread break + 退出。本模块不再继续 poll（与 s1
+//!    尝试入队后 thread break + 退出；队列满仍按第 1 条丢弃。本模块不再继续 poll（与 s1
 //!    `events_drain` `terminal_grace` 100 ms 配对）。
 //! 4. **gateway shutdown**：handler 入口 `shutdown_gate` 拒新 stream；已
 //!    in-flight stream 由 `EventsSubscribeStream::drop` → `request_stop` →
@@ -339,9 +339,10 @@ fn run_subscribe_loop(
             ActionEventKindFb::Completed | ActionEventKindFb::Failed | ActionEventKindFb::Cancelled
         );
 
-        match tx.try_send(Ok(task_event)) {
+        let enqueued = match tx.try_send(Ok(task_event)) {
             Ok(()) => {
                 metrics.events_forwarded.fetch_add(1, Ordering::Relaxed);
+                true
             }
             Err(TrySendError::Full(_dropped)) => {
                 metrics.channel_full_drops.fetch_add(1, Ordering::Relaxed);
@@ -350,6 +351,7 @@ fn run_subscribe_loop(
                     "events_subscribe_thread: tonic stream channel full; dropped event \
                      (client should catch up via GetTaskStatus snapshot)"
                 );
+                false
             }
             Err(TrySendError::Closed(_dropped)) => {
                 // client drop response stream → mpsc::Receiver dropped。
@@ -361,18 +363,17 @@ fn run_subscribe_loop(
                 );
                 return;
             }
-        }
+        };
 
         if is_terminal {
-            // 终态事件已 forward；s1 端 `events_drain` `terminal_grace`
-            // 100 ms 后会 drop publisher，但 gateway 端无须等 grace（已经
-            // 把 terminal event 推给 client）。直接 break 让 subscriber +
-            // node 在线程退出时 drop。
+            // 已收到终态；入队是否成功单独记录，满队列仍由客户端快照补齐。
+            // 无须等待 s1 的 terminal_grace，直接退出释放 subscriber 和 node。
             metrics.stopped_by_terminal.store(1, Ordering::Release);
             tracing::debug!(
                 topic = %format_topic(cfg),
                 ?kind_fb,
-                "events_subscribe_thread: terminal event forwarded; exiting"
+                enqueued,
+                "events_subscribe_thread: terminal event received; exiting"
             );
             return;
         }

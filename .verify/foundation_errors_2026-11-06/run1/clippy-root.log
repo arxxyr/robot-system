@@ -1,0 +1,41 @@
+    Checking robot-core v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-core)
+   Compiling robot-msg v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-msg)
+    Checking iceoryx2-cal v0.9.3 (/home/loosqk/robot-checks/foundation-errors-20261106/source/3rd-party/iceoryx2-cal)
+    Checking robot-logging v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-logging)
+    Checking robot-health v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-health)
+   Compiling robot-rpc v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-rpc)
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-adapters/feetech)
+    Checking robot-adapter-mock v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-adapters/mock)
+    Checking robot-kinematics v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-kinematics)
+    Checking robot-kinematics-xlerobot v0.1.2 (/home/loosqk/robot-checks/foundation-errors-20261106/source/crates/robot-kinematics-xlerobot)
+    Checking iceoryx2 v0.9.3 (/home/loosqk/robot-checks/foundation-errors-20261106/source/3rd-party/iceoryx2)
+error: used `assert!` to check that a value is empty
+    --> crates/robot-adapters/feetech/src/adapter.rs:1295:17
+     |
+1295 |                 assert!(handle.drain_tx().is_empty());
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://clippy.rust-lang.org/main/index.html#assert_is_empty
+     = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+     |
+1295 -                 assert!(handle.drain_tx().is_empty());
+1295 +                 assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+     |
+
+error: used `assert!` to check that a value is empty
+    --> crates/robot-adapters/feetech/src/adapter.rs:1326:13
+     |
+1326 |             assert!(handle.drain_tx().is_empty());
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://clippy.rust-lang.org/main/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+     |
+1326 -             assert!(handle.drain_tx().is_empty());
+1326 +             assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+     |
+
+error: could not compile `robot-adapter-feetech` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

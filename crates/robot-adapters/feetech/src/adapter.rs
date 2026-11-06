@@ -288,7 +288,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// site 标记入口；kind：0错误、1重试、2恢复、3不支持模式、4接收清理、
     /// 5设备状态（a=motor、b=状态字节）、6扭矩使能写失败（a=motor、b=通信分类）、
     /// 7事务中止（a：1急停、2超时、3权限撤销）、8非通信错误（a 见诊断分类）；
-    /// 7/8 的 b/detail=0。诊断分类不改变原始错误或安全处理。
+    /// 校准锚点错误使用 kind8/a3/b=motor/detail=raw 位模式，其余 7/8 的 b/detail=0。
+    /// 诊断分类不改变原始错误或安全处理。
     fn record(&self, site: u8, kind: u8, a: u8, b: u8, detail: u32) {
         if let Some(diag) = self.diag.as_ref() {
             diag.record(DiagEvent {
@@ -303,9 +304,9 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     }
 
     fn record_error(&self, site: u8, error: &FeetechError) {
-        let (kind, a, b) =
-            FeetechDiagnostic::classify(error, self.bus.device_status_motor()).encode();
-        self.record(site, kind, a, b, 0);
+        let diagnostic = FeetechDiagnostic::classify(error, self.bus.device_status_motor());
+        let (kind, a, b) = diagnostic.encode();
+        self.record(site, kind, a, b, diagnostic.detail());
     }
 
     fn sleep_or_abort(&self, duration: Duration) -> Result<(), FeetechError> {
@@ -1266,6 +1267,63 @@ mod tests {
             }
             Ok(()) => panic!("expected SyncGoalReadbackMismatch"),
             Err(e) => panic!("expected SyncGoalReadbackMismatch, got {e:?}"),
+        }
+    }
+
+    #[test]
+    fn all_position_nonfinite_targets_are_rejected_without_writes() {
+        use robot_core::adapter::{ControlModeRepr, JointCommandBuf, JointSelection};
+        for calibrated in [false, true] {
+            let calibrations = if calibrated {
+                vec![MotorCalibration::new(1, 0, 0, 1000, 3000).unwrap()]
+            } else {
+                Vec::new()
+            };
+            let (mut adapter, handle) = make_adapter_with_calibration(&[("j1", 1)], calibrations);
+            let mut command = JointCommandBuf {
+                joint_count: 1,
+                mode: ControlModeRepr::Position,
+                selection: JointSelection::All,
+                ..JointCommandBuf::default()
+            };
+            for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                command.positions[0] = invalid;
+                assert!(matches!(
+                    adapter.write_command(&command.as_view()),
+                    Err(RobotError::InvalidParameter(_))
+                ));
+                assert_eq!(handle.drain_tx(), [0_u8; 0]);
+            }
+        }
+    }
+
+    #[test]
+    fn all_position_large_finite_targets_keep_calibration_clamp() {
+        use robot_core::adapter::{ControlModeRepr, JointCommandBuf, JointSelection};
+        let cal = MotorCalibration::new(1, 0, 0, 1000, 3000).unwrap();
+        let (mut adapter, handle) = make_adapter_with_calibration(&[("j1", 1)], vec![cal]);
+        let mut command = JointCommandBuf {
+            joint_count: 1,
+            mode: ControlModeRepr::Position,
+            selection: JointSelection::All,
+            ..JointCommandBuf::default()
+        };
+        for (target, raw) in [(f32::MAX, 3000_u16), (-f32::MAX, 1000)] {
+            command.positions[0] = target;
+            adapter.write_command(&command.as_view()).unwrap();
+            let [low, high] = raw.to_le_bytes();
+            let mut expected = vec![0xff, 0xff, 0xfe, 0x07, 0x83, 0x2a, 0x02, 0x01, low, high];
+            expected.push(checksum(&expected[2..]));
+            assert_eq!(handle.drain_tx(), expected);
+        }
+        let (mut uncalibrated, handle) = make_adapter(&[("j1", 1)]);
+        for target in [f32::MAX, -f32::MAX] {
+            command.positions[0] = target;
+            assert!(matches!(
+                uncalibrated.write_command(&command.as_view()),
+                Err(RobotError::InvalidParameter(_))
+            ));
+            assert_eq!(handle.drain_tx(), [0_u8; 0]);
         }
     }
 

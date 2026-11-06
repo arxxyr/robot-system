@@ -42,11 +42,12 @@ pub fn raw_to_rad(raw: i32) -> f32 {
 
 /// rad → `raw_position`（带符号；写到 sync_write 前由 bus 自动 sign-magnitude
 /// 编码）。四舍五入到最近 tick（`f32::round`，半数远离零）。
+/// 超出整数范围时饱和，交由既有校准夹紧或协议编码边界处理；调用方须先拒绝非有限值。
 #[inline]
 #[must_use]
 pub fn rad_to_raw(rad: f32) -> i32 {
     let tick = rad_to_tick_offset(rad).round() as i32;
-    tick + i32::from(STS3215_MAX_POSITION)
+    tick.saturating_add(i32::from(STS3215_MAX_POSITION))
 }
 
 #[cfg(test)]
@@ -104,5 +105,14 @@ mod tests {
         // +π → 2047 + 2048 = 4095（12-bit 顶）；−π → −1（越过 0，由标定 clamp 兜）。
         assert_eq!(rad_to_raw(PI), 4095);
         assert_eq!(rad_to_raw(-PI), -1);
+    }
+
+    #[test]
+    fn finite_extreme_targets_do_not_overflow_before_calibration_clamp() {
+        assert_eq!(rad_to_raw(f32::MAX), i32::MAX);
+        assert_eq!(rad_to_raw(-f32::MAX), i32::MIN + 2047);
+        // 原先正向整数转换饱和后再加中点会溢出；超过边界前后保持单调。
+        let near_limit = (i32::MAX as f32 - 4096.0) * RAD_PER_TICK;
+        assert!(rad_to_raw(near_limit) <= rad_to_raw(near_limit + TAU));
     }
 }

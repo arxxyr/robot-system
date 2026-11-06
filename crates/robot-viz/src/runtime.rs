@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service;
@@ -14,7 +14,7 @@ use crate::config::Layouts;
 use crate::decode::PUBSUB_SCHEMAS;
 use crate::input::{self, Source};
 use crate::output::Output;
-use crate::{invalid, supervisor};
+use crate::{invalid, preserve_primary, supervisor};
 
 type Error = Box<dyn std::error::Error>;
 const MAX_TOPICS: usize = 64;
@@ -162,9 +162,14 @@ pub fn run(options: &Options) -> Result<(), Error> {
         }
     }
     if let Some(path) = &options.report {
-        std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
+        return preserve_primary(result, write_report(path, &report), "写入观测报告");
     }
     result
+}
+
+fn write_report(path: &Path, report: &Report) -> Result<(), Error> {
+    std::fs::write(path, serde_json::to_vec_pretty(report)?)?;
+    Ok(())
 }
 
 fn run_inner(options: &Options, report: &mut Report) -> Result<(), Error> {
@@ -190,7 +195,7 @@ fn run_inner(options: &Options, report: &mut Report) -> Result<(), Error> {
     let started = clock.now().0;
     let duration_ns = options.duration_ms.map(|value| value * 1_000_000);
     let mut next_health = 0;
-    let result: Result<(), Error> = (|| {
+    let mut result: Result<(), Error> = (|| {
         loop {
             let now = clock.now().0;
             if supervisor::stopping()
@@ -224,10 +229,14 @@ fn run_inner(options: &Options, report: &mut Report) -> Result<(), Error> {
         report.output_status = "error".into();
         report.error = Some(error.to_string());
         if let Some(path) = &options.report {
-            std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
+            result = preserve_primary(result, write_report(path, report), "写入观测报告");
         }
     }
-    supervisor::progress("stopping")?;
+    let result = preserve_primary(
+        result,
+        supervisor::progress("stopping").map_err(Into::into),
+        "发送收尾进度",
+    );
     drop(slots);
     result?;
     output.finish()?;
@@ -469,6 +478,54 @@ fn track_instance<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_failure_survives_report_write_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut options = Options {
+            configs: vec![dir.path().join("missing.toml")],
+            save: Some(dir.path().join("unused.rrd")),
+            connect: None,
+            duration_ms: None,
+            max_frames: None,
+            report: Some(dir.path().join("report.json")),
+        };
+        // 配置读取先失败，不启动 SDK、IPC 或 worker。
+        let original = run(&options).unwrap_err();
+        assert_eq!(
+            original.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(options.report.as_ref().unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(report["output_status"], "error");
+        assert_eq!(report["error"], original.to_string());
+
+        options.report = Some(dir.path().to_owned());
+        let combined = run(&options).unwrap_err();
+        assert!(combined.to_string().starts_with(&original.to_string()));
+        assert!(combined.to_string().contains("写入观测报告也失败"));
+        assert_eq!(
+            combined
+                .source()
+                .unwrap()
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+
+        // 原操作成功时，报告失败仍须返回错误。
+        assert!(
+            preserve_primary(
+                Ok(()),
+                write_report(dir.path(), &Report::default()),
+                "写入观测报告"
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn readable_health_becomes_stale_without_any_new_frame() {

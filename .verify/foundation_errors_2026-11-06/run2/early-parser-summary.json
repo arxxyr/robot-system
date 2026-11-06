@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "binary_sha256": "180d5eabbda1ab02aaf769f8b5dd0f844515b24b555616150b2e2769e32528b7",
+  "child_exit_code": 1,
+  "child_error": "GO已过期",
+  "parser_error": "混合child失败: GO已过期",
+  "cycle_count": 0,
+  "serial_open_calls": 0,
+  "new_go": false,
+  "new_motor_commands": 0
+}

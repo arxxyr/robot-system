@@ -27,3 +27,29 @@ pub enum VizError {
 pub(crate) fn invalid(reason: impl Into<String>) -> VizError {
     VizError::Invalid(reason.into())
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("{primary}；{stage}也失败：{secondary}")]
+struct SecondaryFailure {
+    #[source]
+    primary: Box<dyn std::error::Error>,
+    secondary: Box<dyn std::error::Error>,
+    stage: &'static str,
+}
+
+/// 收尾失败附加到主错误，不覆盖最初的失败及其错误链。
+pub(crate) fn preserve_primary(
+    primary: Result<(), Box<dyn std::error::Error>>,
+    secondary: Result<(), Box<dyn std::error::Error>>,
+    stage: &'static str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match (primary, secondary) {
+        (Ok(()), secondary) => secondary,
+        (Err(primary), Ok(())) => Err(primary),
+        (Err(primary), Err(secondary)) => Err(Box::new(SecondaryFailure {
+            primary,
+            secondary,
+            stage,
+        })),
+    }
+}
