@@ -1,0 +1,120 @@
+{
+  "stage": "2026-11-05现场维护，UTC跨至11-06",
+  "source_commit": "a4873ce95e923a7122dc115932b664f7e34bfdc1",
+  "handoff": {
+    "result": "PASS",
+    "motors": 17,
+    "writes": 20,
+    "service": "success/active/exited",
+    "evidence": "handoff"
+  },
+  "mixed": {
+    "evidence": "mixed-summary.json",
+    "result": "NOT_RUN_BEFORE_ENABLE",
+    "historical_failure": "NEEDS_MANUAL_POWER_CUT",
+    "manual_power_cut_reply": "不切断，直接执行测试",
+    "manual_power_cut_confirmed": false,
+    "blockers": [
+      {
+        "motor": "right3",
+        "position": 2992,
+        "upper": 2991
+      },
+      {
+        "motor": "right6",
+        "position": 1371,
+        "lower": 1384
+      }
+    ]
+  },
+  "base_wheel_runs": [
+    {
+      "round": "r1",
+      "run": "base-right/run.json",
+      "run_sha256": "cb1778469e53374f32e0f89f886b83472019f149c52af9eddda61da3ced50118",
+      "raw_result_unchanged": "FAIL",
+      "raw_error_unchanged": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+      "telemetry_diagnostic": "PASS",
+      "nonzero_sync_writes": 400,
+      "samples": 79,
+      "cumulative_encoder_counts": 9951,
+      "zero_velocity_feedback": [
+        200,
+        0,
+        0
+      ],
+      "stop_readback": "PASS",
+      "position_readback": "PASS",
+      "identity": "PASS",
+      "manual_power_cut_required": false,
+      "sdk_closed": true,
+      "children_reaped": 366,
+      "physical_observation": {
+        "source": "call_ca39d670d09a4ad9bdef8444546fea7f",
+        "answer": "右轮轮胎本身完全没转",
+        "acceptance": "NOT_PASSED",
+        "cause": "UNKNOWN"
+      },
+      "wire_sha256": "eb580382e5ce29b9d2cc5401221810954415ea1523f3c79ba558a715fa553923"
+    },
+    {
+      "round": "r2",
+      "run": "base-right-r2/run.json",
+      "run_sha256": "9a18bd87996f0a950c09cd998fca330f7e8b1d0f6bac514a67939760020f4e12",
+      "raw_result_unchanged": "FAIL",
+      "raw_error_unchanged": "ValueError('BASE_FIRMWARE_CONTRACT_UNVERIFIED：底盘三项DEFERRED，未调用wheel/pulse')",
+      "telemetry_diagnostic": "PASS",
+      "nonzero_sync_writes": 400,
+      "samples": 79,
+      "cumulative_encoder_counts": 9951,
+      "zero_velocity_feedback": [
+        350,
+        0,
+        0
+      ],
+      "stop_readback": "PASS",
+      "position_readback": "PASS",
+      "identity": "PASS",
+      "manual_power_cut_required": false,
+      "sdk_closed": true,
+      "children_reaped": 366,
+      "physical_observation": {
+        "source": "call_732d3377bcdb4ef28eab8f83cd365861",
+        "answer": "完全没有动，速度大一点",
+        "acceptance": "NOT_PASSED",
+        "cause": "UNKNOWN"
+      },
+      "wire_sha256": "68745979503ee6610d4a0e873dd1b9cc8c8706956117f8b540325737ba15be7f"
+    }
+  ],
+  "reference_and_wire_audit": "base-right-audit.json",
+  "observation_orientation": {
+    "source": "call_0f0d91b860f545fdbf772ec1c683199f",
+    "answer": "机器人自身右侧（面对它时在我的左手边）",
+    "conclusion": "不能归因于机器人左右与观察者左右的概念混淆；协议ID与实物接线对应仍需证实"
+  },
+  "latest_user_reset_proposal": {
+    "answer": "我拔一下电源再插上吧",
+    "actual_power_cut_or_recovery_confirmed": false,
+    "orin_reboot_requested": false,
+    "note": "随后询问重启Orin是否可行；未执行重启或追加UART"
+  },
+  "software_changes_this_closeout": false,
+  "higher_speed_implemented_or_executed": false,
+  "quality": {
+    "source_commit": "a4873ce95e923a7122dc115932b664f7e34bfdc1",
+    "commands": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "result": "PASS",
+    "evidence": "quality",
+    "tests_repeated": false
+  },
+  "cleanup": "closeout-r2/summary.json",
+  "transfer_verification": "transfer-verification.json",
+  "next": "先确认用户实际电源重置结果；若继续动作，准备完整启动入口后再取当次现场状态，复用原raw+500路径核对反馈与轮胎动作。不自动加速、改参数或放宽校准。",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "resource_cleanup": "resource-cleanup.json"
+}

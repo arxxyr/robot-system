@@ -1,0 +1,16 @@
+{
+  "checked_at_ns": 1793949852201983799,
+  "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b",
+  "uart_access": false,
+  "owned_prior_children_reaped": 967,
+  "prior_pids_checked": 974,
+  "prior_pids_remaining": [],
+  "idle_services_and_serial_holders": "PASS",
+  "four_lock_holders": "PASS",
+  "references_unchanged": 77,
+  "control_processes_clean": true,
+  "os_commands": 24,
+  "os_commands_reaped": true,
+  "handoff": "active/exited",
+  "motor_power_off_confirmed": false
+}

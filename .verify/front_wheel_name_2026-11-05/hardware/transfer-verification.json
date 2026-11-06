@@ -1,0 +1,36 @@
+{
+  "result": "PASS",
+  "files_compared": 2246,
+  "bytes_compared": 5436584,
+  "sorted_inventory_sha256": "95aa8e8a8048cf728d0435fcf8d7192a65b21f55a6493bcf7c7a98a77ec7821c",
+  "method": "逐文件比较Orin与本机字节数及SHA256；原件不修改",
+  "directories": {
+    "handoff-hardware-r1": "handoff",
+    "mixed-hardware-r1": "attempt1",
+    "mixed-hardware-r2": "attempt2",
+    "launch-hardware-r1": "launch1",
+    "launch-hardware-r2": "launch2",
+    "base-right-hardware-r1": "base-right",
+    "base-right-launch-r1": "base-right-launch",
+    "base-right-hardware-r2": "base-right-r2",
+    "base-right-launch-r2": "base-right-launch-r2",
+    "base-right-preparation-r2": "base-right-preparation-r2",
+    "hardware-closeout": "closeout",
+    "hardware-closeout-r2": "closeout-r2",
+    "closeout-quality": "quality"
+  },
+  "extra_files": {
+    "robot-mixed-run.sh": "launch1/launcher.sh",
+    "robot-mixed-run-r2.sh": "launch2/launcher.sh",
+    "robot-base-run.sh": "base-right-launch/launcher.sh",
+    "robot-base-run-r2.sh": "base-right-launch-r2/launcher.sh",
+    "robot-mixed-handoff.sh": "handoff/launcher.sh",
+    "mixed-go-r1.json.consumed": "attempt1/go-consumed.json",
+    "mixed-go-r2.json.consumed": "attempt2/go-consumed.json",
+    "base-right-go-r1.json.consumed": "base-right/go-consumed.json",
+    "base-right-go-r2.json.consumed": "base-right-r2/go-consumed.json",
+    "robot-mixed-field-20261105.json": "field.json",
+    "base-right-field-r1.json": "base-right-field.json",
+    "base-right-field-r2.json": "base-right-field-r2.json"
+  }
+}

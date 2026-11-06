@@ -1,0 +1,12 @@
+{
+  "result": "PREPARED_NOT_EXECUTED",
+  "plan_sha256": "acc8becb3ba53cc30231a96fed4876ae300a2e07c7572771e2d8e7674afffb6b",
+  "interpreter": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+  "launcher": "/home/loosqk/robot-checks/front-wheel-name-20261105/robot-base-run-r2.sh",
+  "bash_syntax": "PASS",
+  "processes_usb_holders_refs": "PASS",
+  "commands": 26,
+  "uart_access": false,
+  "actions_started": 0,
+  "approval_created": false
+}
