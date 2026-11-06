@@ -1,0 +1,15 @@
+WARN `--no-project` was provided, but no project was found
+test_mixed_bad_receipt_stickily_blocks_all_later_uart_and_never_retries (__main__.MixedRawTests.test_mixed_bad_receipt_stickily_blocks_all_later_uart_and_never_retries) ... ok
+test_mixed_failed_child_keeps_original_error_and_sticky_uart_block (__main__.MixedRawTests.test_mixed_failed_child_keeps_original_error_and_sticky_uart_block) ... ok
+test_mixed_failed_receipt_preserves_original_error_before_success_validation (__main__.MixedRawTests.test_mixed_failed_receipt_preserves_original_error_before_success_validation) ... ok
+test_mixed_go_requires_original_ten_minute_scope_and_current_wheel_facts (__main__.MixedRawTests.test_mixed_go_requires_original_ten_minute_scope_and_current_wheel_facts) ... ok
+test_mixed_plan_binds_new_refs_exact_targets_and_rejects_all_old_mode_combinations (__main__.MixedRawTests.test_mixed_plan_binds_new_refs_exact_targets_and_rejects_all_old_mode_combinations) ... ok
+test_mixed_raw_receipt_preserves_words_wraps_and_each_original_zero_case (__main__.MixedRawTests.test_mixed_raw_receipt_preserves_words_wraps_and_each_original_zero_case) ... ok
+test_mixed_receipt_rejects_forged_targets_timing_calibration_motion_and_cleanup (__main__.MixedRawTests.test_mixed_receipt_rejects_forged_targets_timing_calibration_motion_and_cleanup) ... ok
+test_mixed_result_branch_keeps_identity_and_pass_checks_strict (__main__.MixedRawTests.test_mixed_result_branch_keeps_identity_and_pass_checks_strict) ... ok
+test_mixed_run_uses_one_traced_child_and_original_position_stop_identity_gates (__main__.MixedRawTests.test_mixed_run_uses_one_traced_child_and_original_position_stop_identity_gates) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.032s
+
+OK

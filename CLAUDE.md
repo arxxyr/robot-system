@@ -69,6 +69,13 @@
 ```
 设计版本:  v0.1.2（冻结）
 
+当前软件:  UTC2026-11-06仅修混合回执错误遮蔽：合法FAIL先保留原错误，PASS仍执行原400周期及停止验收。
+           旧实机原件离线重放由“周期数变化”变为原校准错误；本机/Orin各30项相关测试通过，fmt→根Clippy通过。
+           定向评审另确认1项P1、4项P2、1项P3，均尚未修复：首要是Position/All未拒NaN，可编为raw2047。
+           Orin真实S1及Feetech内存串口各1项复现证明缺陷存在，不是动作验收；未访问实机UART。
+           用户随后报告“我已经断电重连了”；记录为新电源回执，未执行新的现场测试或回填旧失败。
+           结果及评审见mixed_failure_diagnostic_2026-11-06/summary.json；D15/deployable保持。
+
 当前实机:  2026-11-05原handoff全17电机交接通过，service为success/active/exited；不代替后续失败收尾。
            混合r1被uv父进程身份门拒绝，UART为0；改用既有Python直启后，r2在Enable前拒绝校准越界。
            右3 PP2992高于上限2991，右6 PP1371低于下限1384；周期0、TE1/GP/GV写入0，原位保持NOT_RUN。

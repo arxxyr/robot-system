@@ -293,8 +293,15 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
             and integer(row['go_expires_at_unix_ns'])==expiry,'混合原件目标/校准/GO错误')
     for key,count in (('motor_ids',9),('wheel_ids',3),('wheel_raw_goal',3)):
         require(array(row[key],count,0,500)==contract[key],'混合原件固定目标变化')
-    for key in ('pulse_duration_ns','zero_window_ns','enable_budget_ns','cycle_count'):
+    for key in ('pulse_duration_ns','zero_window_ns','enable_budget_ns'):
         require(integer(row[key])==contract[key],'混合原件固定预算/周期数变化')
+    require(row['result'] in ('PASS','FAIL'),'混合child结果类型错误')
+    if row['result']=='FAIL':
+        require(type(row['error']) is str and row['error'].strip(),'混合child失败缺少原始错误')
+        raise ValueError('混合child失败: '+row['error'])
+    require(row['error'] is None,'混合child失败原件不得变成PASS')
+    # 周期、时间及收尾字段属于成功验收；失败原件只报告错误，不据其推断执行阶段。
+    require(integer(row['cycle_count'])==contract['cycle_count'],'混合原件固定预算/周期数变化')
     expected=mixed_calibration_rows(calibration)
     require(row['loaded_calibration']==expected
             and all(type(value) is int for item in row['loaded_calibration'] for value in item.values()),
@@ -390,7 +397,6 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
                 'disable_ok','torque_enable_after'} and all(cleanup.get(key) is True for key in
                 ('zero_attempted','zero_ok','disable_attempted','disable_ok'))
             and array(cleanup['torque_enable_after'],9,0,1)==[0]*9,'九电机独立收尾未确认')
-    require(row['result']=='PASS' and row['error'] is None,'混合child失败原件不得变成PASS')
     return row
 
 

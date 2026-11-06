@@ -2988,14 +2988,27 @@ class MixedRawTests(unittest.TestCase):
     def parse(self,row):
         return m.parse_mixed_raw_result(json.dumps(row)+'\n',self.plan,self.expiry,self.calibration)
 
+    def failed_receipt(self):
+        # 对应启用前校准拒绝的真实回执形状；没有成功周期或启用时间戳。
+        row=self.receipt();row.update(result='FAIL',error='invalid parameter: feetech calibration',cycle_count=0)
+        for key in ('arm_anchors','arm_final','wheel_anchors','cycles','wheel_samples','zero_samples'):
+            row[key]=[]
+        row['timing']={'enable_attempt_ns':None,'first_nonzero_ns':None,'zero_started_ns':None,
+            'zero_finished_ns':None,'disable_attempt_ns':2_000_000_000,
+            'disable_finished_ns':2_001_000_000,'finished_ns':2_002_000_000}
+        row['cleanup']={'zero_attempted':False,'zero_ok':False,'disable_attempted':True,
+                        'disable_ok':True,'torque_enable_after':None}
+        return row
+
     def perform(self,row=None,*,fail=False):
         executor=RightPulseIO();executor.output=self.directory
         data=row if row is not None else self.receipt()
         def command(argv,**kwargs):
             kwargs['mixed_stop_check']();executor.sequence+=1
-            executor.commands.append({'argv':list(argv),'reaped':True,'exit_code':0})
+            exit_code=0 if data['result']=='PASS' else 1
+            executor.commands.append({'argv':list(argv),'reaped':True,'exit_code':exit_code})
             executor.calls.append(list(argv))
-            Path(argv[argv.index('-o')+1]).write_bytes(b'fixture only\n+++ exited with 0 +++\n')
+            Path(argv[argv.index('-o')+1]).write_text(f'fixture only\n+++ exited with {exit_code} +++\n')
             return json.dumps(data)+'\n'
         executor.command=command
         engine=m.ProbeEngine(executor,self.plan)
@@ -3118,6 +3131,35 @@ class MixedRawTests(unittest.TestCase):
         self.assertTrue(engine.manual_cut);self.assertTrue(engine.right_pulse['uart_blocked'])
         with self.assertRaises(ValueError):engine.io.command(list(engine.mixed_trace_argv),allowed=(0,1),mixed_stop_check=engine.mixed_stop_check)
         self.assertEqual(len(engine.io.calls),1)
+
+    def test_mixed_failed_receipt_preserves_original_error_before_success_validation(self):
+        row=self.failed_receipt()
+        with self.assertRaises(ValueError) as caught:self.parse(row)
+        self.assertEqual(str(caught.exception),'混合child失败: '+row['error'])
+
+    def test_mixed_failed_child_keeps_original_error_and_sticky_uart_block(self):
+        row=self.failed_receipt();engine=self.perform(row,fail=True)
+        self.assertEqual(engine.mixed_raw_result,row)
+        self.assertEqual(engine.rows[-1]['error'],repr(ValueError('混合child失败: '+row['error'])))
+        self.assertTrue(all(probe['status']=='FAIL' for probe in engine.rows))
+        self.assertTrue(engine.manual_cut);self.assertTrue(engine.right_pulse['uart_blocked'])
+        self.assertEqual(len(engine.io.calls),1);self.assertEqual(len(engine.io.commands),1)
+        self.assertEqual(engine.io.commands[0]['exit_code'],1);self.assertTrue(engine.io.commands[0]['reaped'])
+        with self.assertRaises(ValueError):
+            engine.io.command(list(engine.mixed_trace_argv),allowed=(0,1),mixed_stop_check=engine.mixed_stop_check)
+        self.assertEqual(len(engine.io.calls),1)
+
+    def test_mixed_result_branch_keeps_identity_and_pass_checks_strict(self):
+        for field,value in (('schema','OTHER'),('operation','other'),('serial_device',m.DEVICES['left']),
+                            ('arm_calibration_path','/other.json'),('go_expires_at_unix_ns',self.expiry+1),
+                            ('wheel_raw_goal',[0,500,0]),('pulse_duration_ns',1),
+                            ('result','UNKNOWN'),('error',None),('error',''),('error',{'message':'失败'})):
+            row=self.failed_receipt();row[field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError) as caught:self.parse(row)
+            self.assertNotEqual(str(caught.exception),'混合child失败: '+str(row['error']))
+        for field,value in (('error','伪成功携带错误'),('result','UNKNOWN'),('cycle_count',399)):
+            row=self.receipt();row[field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.parse(row)
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

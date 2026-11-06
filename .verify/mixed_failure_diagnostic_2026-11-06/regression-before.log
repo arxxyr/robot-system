@@ -1,0 +1,31 @@
+WARN `--no-project` was provided, but no project was found
+test_mixed_failed_receipt_preserves_original_error_before_success_validation (__main__.MixedRawTests.test_mixed_failed_receipt_preserves_original_error_before_success_validation) ... FAIL
+test_mixed_failed_child_keeps_original_error_and_sticky_uart_block (__main__.MixedRawTests.test_mixed_failed_child_keeps_original_error_and_sticky_uart_block) ... FAIL
+test_mixed_result_branch_keeps_identity_and_pass_checks_strict (__main__.MixedRawTests.test_mixed_result_branch_keeps_identity_and_pass_checks_strict) ... ok
+
+======================================================================
+FAIL: test_mixed_failed_receipt_preserves_original_error_before_success_validation (__main__.MixedRawTests.test_mixed_failed_receipt_preserves_original_error_before_success_validation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/loosqk/repo/rust/robot-system/scripts/tests/test_hardware_maintenance.py", line 3138, in test_mixed_failed_receipt_preserves_original_error_before_success_validation
+    self.assertEqual(str(caught.exception),'混合child失败: '+row['error'])
+AssertionError: '混合原件固定预算/周期数变化' != '混合child失败: invalid parameter: feetech calibration'
+- 混合原件固定预算/周期数变化
++ 混合child失败: invalid parameter: feetech calibration
+
+
+======================================================================
+FAIL: test_mixed_failed_child_keeps_original_error_and_sticky_uart_block (__main__.MixedRawTests.test_mixed_failed_child_keeps_original_error_and_sticky_uart_block)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/loosqk/repo/rust/robot-system/scripts/tests/test_hardware_maintenance.py", line 3143, in test_mixed_failed_child_keeps_original_error_and_sticky_uart_block
+    self.assertEqual(engine.rows[-1]['error'],repr(ValueError('混合child失败: '+row['error'])))
+AssertionError: "ValueError('混合原件固定预算/周期数变化')" != "ValueError('混合child失败: invalid parameter: feetech calibration')"
+- ValueError('混合原件固定预算/周期数变化')
++ ValueError('混合child失败: invalid parameter: feetech calibration')
+
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.007s
+
+FAILED (failures=2)
