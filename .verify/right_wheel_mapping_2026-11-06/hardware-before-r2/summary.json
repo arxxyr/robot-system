@@ -1,0 +1,97 @@
+{
+  "result": "BEFORE_R2_DIAGNOSTIC_CAPTURED_AND_ORIGINALS_RECOVERED",
+  "remote_root": "/home/loosqk/robot-checks/right-wheel-mapping-20261106",
+  "scope": "仅回收已终态before-r2的现场回执、已消费GO、采集原日志/原帧及启动日志；没有运行采集程序、访问after、创建GO、打开UART、参数写或服务变化。",
+  "before_r2": {
+    "raw_result": "DIAGNOSTIC_CAPTURED",
+    "launch_exit_code": 0,
+    "launch_started_at": "2026-11-06T11:24:52.263653230Z",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "read_count": 14,
+    "raw_command_sequences": [
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56
+    ],
+    "register_values": {
+      "Torque_Enable": [
+        0,
+        0
+      ],
+      "Goal_Velocity": [
+        0,
+        0
+      ],
+      "Present_Position": [
+        2583,
+        2583,
+        2583,
+        2583,
+        2583
+      ],
+      "Present_Velocity": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "position_span_raw": 0,
+    "register_writes": 0,
+    "motor_enable": false,
+    "capture_ms": 1098.210602,
+    "stop_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "position_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "identity": "PASS",
+    "identity_checks": 108,
+    "manual_power_cut_required": false,
+    "child_active_at_finish": false,
+    "commands_reaped": 74,
+    "raw_frame_sources": "before-r2-capture/command_0043.stdout至command_0056.stdout及run.json probes[0].samples"
+  },
+  "receipt": {
+    "source": "用户对call_c3e7b4fac173409f94821d3e86a0c2a9的当前回复，收到后立即执行；本时戳为回执接收处理时刻",
+    "answer": "现场全部就绪，先执行新的右9只读",
+    "confirmed_at_ns": 1793964292232866685,
+    "go_consumed_at_ns": 1793964292388415997,
+    "go_expires_at_ns": 1793964892232866685,
+    "within_original_600_seconds_at_consumption": true,
+    "go_consumed_once": true,
+    "time_not_extended": true
+  },
+  "limitations": [
+    "本段只记录协议ID9在固定窗口的TE/GV/PV为0、PP2583稳定，不是整机停止验收或独立断电确认。",
+    "手转通知、现场回执及after由root另行处理；本次未访问after，不能从第一段原件推断现场是否手转或轮胎是否移动。",
+    "实际轮盘与ID9映射仍需前后证据及现场观察，旧轮次反馈/轮胎矛盾未因本段通过而解决。",
+    "108项身份及74child回收是本轮采集收尾记录，本次仅回收文件，没有重新执行硬件预检。"
+  ],
+  "recovery": {
+    "original_files": 158,
+    "original_bytes": 293750,
+    "sha_check": "PASS",
+    "sha_manifest": "recovery-inventory.json",
+    "verification": "recovery-verification.json",
+    "source_files_unchanged": true,
+    "archives_created": false,
+    "binding_sources_copied": false
+  },
+  "old_summary_wording_corrected": "hardware-before/summary.json已明确未通知手转、未收到手转回执；暂停期间现场是否移动未知。",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

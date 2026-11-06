@@ -1,0 +1,101 @@
+{
+  "result": "BEFORE_DIAGNOSTIC_CAPTURED_AND_ORIGINALS_RECOVERED",
+  "remote_root": "/home/loosqk/robot-checks/right-wheel-mapping-20261106",
+  "scope": "仅回收已完成第一段只读原件并离线审查；本次回收没有新UART、GO、参数写、动作或服务变化。",
+  "before": {
+    "raw_result": "DIAGNOSTIC_CAPTURED",
+    "launch_exit_code": 0,
+    "launch_started_at": "2026-11-06T09:40:53.102969990Z",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "read_count": 14,
+    "command_sequences": [
+      43,
+      56
+    ],
+    "register_values": {
+      "Torque_Enable": [
+        0,
+        0
+      ],
+      "Goal_Velocity": [
+        0,
+        0
+      ],
+      "Present_Position": [
+        2583,
+        2583,
+        2583,
+        2583,
+        2583
+      ],
+      "Present_Velocity": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "position_span_raw": 0,
+    "register_writes": 0,
+    "motor_enable": false,
+    "capture_ms": 1082.47344,
+    "stop_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "position_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "identity": "PASS",
+    "identity_checks": 108,
+    "manual_power_cut_required": false,
+    "child_active_at_finish": false,
+    "commands_reaped": 74,
+    "raw_frame_sources": "before-capture/command_0043.stdout至command_0056.stdout；相同帧同时保留于run.json probes[0].samples。"
+  },
+  "receipt": {
+    "source": "用户对call_195f9dbf731f4ff8acbf2ec11d4a0e25第0项的现场回执",
+    "confirmed_at_ns": 1793957997000000000,
+    "confirmed_at_utc": "2026-11-06T09:39:57+00:00",
+    "go_expires_at_ns": 1793958597000000000,
+    "go_expires_at_utc": "2026-11-06T09:49:57+00:00",
+    "expired_at_recovery": true,
+    "recovery_observed_at_utc": "2026-11-06T11:24:01.911860+00:00",
+    "consumed": true,
+    "time_not_extended": true
+  },
+  "pause_boundary": {
+    "state": "第一段后暂停，仅网络恢复后的原件回收",
+    "manual_turn_per_task_context": "截至旧轮暂停，未通知手转、未收到手转回执；暂停期间现场是否移动未知，不能写为现场绝对未动。",
+    "after_not_started": true,
+    "remote_absence_checked": [
+      "after-go.json",
+      "after-go.json.consumed",
+      "after-capture",
+      "after-launch/pid",
+      "after-launch/started-at",
+      "after-launch/exit-code"
+    ],
+    "new_go_created": false,
+    "new_uart": false,
+    "new_hardware_actions": 0
+  },
+  "limitations": [
+    "本段仅确认固定窗口内协议ID9的TE/GV/PV原字为0及PP稳定，不是整机停止验收或独立断电确认。",
+    "没有手转后的第二段，仍不能确认协议ID9与实际右轮的映射，也不能解释旧轮次反馈变化而轮胎未动。",
+    "run中的身份、串口占用与子进程回收是该次收尾记录；本次未重新运行硬件预检，历史现场事实已过600秒，不能用于新采集。",
+    "原历史FAIL和D15 OPEN/DEFERRED保留，deployable=false。"
+  ],
+  "recovery": {
+    "original_files": 158,
+    "original_bytes": 292737,
+    "sha_check": "PASS",
+    "sha_manifest": "recovery-inventory.json",
+    "verification": "recovery-verification.json",
+    "source_files_unchanged": true,
+    "archives_created": false,
+    "binding_sources_copied": false
+  },
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

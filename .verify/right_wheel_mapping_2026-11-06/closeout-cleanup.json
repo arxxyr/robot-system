@@ -1,0 +1,11 @@
+{
+  "temporary_quality_source_removed": true,
+  "quality_tmux_absent": true,
+  "quality_exit_code": 0,
+  "shared_target_reused": true,
+  "after_not_started_at_cleanup": true,
+  "after_go_not_created_at_cleanup": true,
+  "uart_access_by_cleanup": false,
+  "service_changes": false,
+  "prepared_after_launcher_retained": true
+}

@@ -1,0 +1,22 @@
+{
+  "result": "PASS",
+  "method": "SSH robot只读原件清单 → rsync指定文件 → 远端再次SHA与本地逐文件SHA；未生成压缩包或复制绑定源码。",
+  "observed_at_unix_ns": 1793964241911859559,
+  "original_file_count": 158,
+  "original_total_bytes": 292737,
+  "remote_pre_post_equal": true,
+  "local_all_sha_and_bytes_equal": true,
+  "command_stream_sha_matches": 148,
+  "raw_stdout_matches_samples": 14,
+  "uart_command_classification": "仅feetech_poke实际入口14条，均ID9/read-raw；fuser/udevadm只查询占用/USB，不能按含设备路径计为UART操作。",
+  "offline_review_correction": "首轮离线统计误将含串口路径的fuser/udevadm计入，断言失败；按实际入口纠正后通过，原件未改。",
+  "manifest": "recovery-inventory.json",
+  "second_capture_state": {
+    "after-go.json": false,
+    "after-go.json.consumed": false,
+    "after-capture": false,
+    "after-launch/pid": false,
+    "after-launch/started-at": false,
+    "after-launch/exit-code": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "result": "PASS",
+  "method": "仅SSH只读指定原件清单，rsync精确文件集合，远端前后及本地逐文件SHA/字节数一致；未访问after或创建压缩包。",
+  "observed_at_unix_ns": 1793964471834333176,
+  "original_file_count": 158,
+  "original_total_bytes": 293750,
+  "remote_pre_post_equal": true,
+  "local_all_sha_and_bytes_equal": true,
+  "command_stream_sha_matches": 148,
+  "raw_stdout_matches_samples": 14,
+  "uart_operations": "原运行仅14条ID9/read-raw，指令0x82；本次回收无UART。",
+  "manifest": "recovery-inventory.json"
+}
