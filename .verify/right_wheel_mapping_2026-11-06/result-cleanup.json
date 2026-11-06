@@ -1,0 +1,19 @@
+{
+  "scope": "本轮after诊断及结果整理的资源收尾；不重新打开UART。",
+  "checked_at_utc": "2026-11-06T12:10:34.634932+00:00",
+  "orin_boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b",
+  "hardware_pid_53909": "NOT_PRESENT",
+  "quality_pid_54251": "NOT_PRESENT",
+  "quality_tmux_right9_map_result_20261106": "NOT_PRESENT",
+  "temporary_worktree": "/home/loosqk/robot-checks/right-wheel-mapping-20261106/source-result",
+  "temporary_worktree_state": "REMOVED_AFTER_EXIT_0_AND_CLEAN_GIT_STATUS",
+  "quality_source_commit": "b8dfb0e240f80e48e9fa9c8f41ad3d7fe4455033",
+  "quality_logs": "result-quality/",
+  "deployed_checkout": "/home/loosqk/repo/robot/robot-system",
+  "deployed_checkout_preserved": "ca14f0e6cf6df8ecc6baaaa8dff2dddb64abbd0a",
+  "shared_target": "复用现有build目录，未新建target或删除共享产物。",
+  "hardware_cleanup_evidence": "hardware-after/after-capture/run.json",
+  "hardware_cleanup_note": "原诊断记录74个子进程全部回收；不将只读DIAGNOSTIC_CAPTURED当成整机停止验收。",
+  "uart_during_result_cleanup": false,
+  "user_untracked_archify_preserved": true
+}

@@ -1,0 +1,136 @@
+{
+  "result": "AFTER_DIAGNOSTIC_CAPTURED_MAPPING_INCONCLUSIVE",
+  "remote_root": "/home/loosqk/robot-checks/right-wheel-mapping-20261106",
+  "scope": "仅right9手转后14项只读采集及与hardware-before-r2的离线对照；不启用、不写参数。后续原件回收和资料核查未追加UART或硬件动作。",
+  "after": {
+    "raw_result": "DIAGNOSTIC_CAPTURED",
+    "launch_exit_code": 0,
+    "launch_started_at": "2026-11-06T11:54:47.004601409Z",
+    "target": [
+      "right",
+      9,
+      "base_right_wheel"
+    ],
+    "read_count": 14,
+    "raw_command_sequences": [
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56
+    ],
+    "register_values": {
+      "Torque_Enable": [
+        0,
+        0
+      ],
+      "Goal_Velocity": [
+        0,
+        0
+      ],
+      "Present_Position": [
+        2583,
+        2583,
+        2583,
+        2583,
+        2583
+      ],
+      "Present_Velocity": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "position_span_raw": 0,
+    "register_writes": 0,
+    "motor_enable": false,
+    "capture_ms": 1081.962444,
+    "stop_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "position_verification": "NOT_EVALUATED_DIAGNOSTIC_ONLY",
+    "identity": "PASS",
+    "identity_checks": 108,
+    "manual_power_cut_required": false,
+    "child_active_at_finish": false,
+    "commands_reaped": 74,
+    "raw_frame_sources": "after-capture/command_0043.stdout至command_0056.stdout及run.json probes[0].samples"
+  },
+  "manual_turn": {
+    "source": "用户对call_c5ce37a6d1c44a15aad4a1961f17c569的答复",
+    "answer": "整个轮盘已轻转约四分之一圈，已放手静止",
+    "direction": "NOT_REPORTED",
+    "manual_turn_time": "NOT_SEPARATELY_REPORTED",
+    "evidence_type": "用户回执；不是独立图像或传动测量",
+    "original": "manual-turn-receipt.json",
+    "existing_local_file_sha_equal_preserved": true,
+    "return_observation": "manual-return-observation.json",
+    "final_physical_angle": "UNKNOWN：用户没有看清是否回到原角度"
+  },
+  "comparison": {
+    "before_run": {
+      "path": ".verify/right_wheel_mapping_2026-11-06/hardware-before-r2/before-r2-capture/run.json",
+      "sha256": "39aecfe2f5108124bd5a0197fdc4aab6abeb72924cebee31e385ee682c38e120",
+      "bytes": 205496
+    },
+    "before_position_raw": [
+      2583,
+      2583,
+      2583,
+      2583,
+      2583
+    ],
+    "after_position_raw": [
+      2583,
+      2583,
+      2583,
+      2583,
+      2583
+    ],
+    "signed_mod4096_delta_raw": 0,
+    "before_after_te_gv_pv_raw": 0,
+    "conclusion": "前后PP均2583、差值0；用户没有看清轮盘是否回到原角度，不能确认后段采样时保持了新的物理角度。因此本次映射对照不可判定。",
+    "not_concluded": [
+      "不直接判接线错误或机械损坏",
+      "不直接判假反馈或软件回放",
+      "不把没有位置差解释为用户没有手转"
+    ]
+  },
+  "receipt": {
+    "source": "用户对call_f9c4468eb97e47a6bbde1bf032fd8634的当前回复，收到后立即处理",
+    "answer": "条件仍保持，可执行第二段只读",
+    "confirmed_at_ns": 1793966086973074294,
+    "go_consumed_at_ns": 1793966087136594915,
+    "go_expires_at_ns": 1793966686973074294,
+    "within_original_600_seconds_at_consumption": true,
+    "go_consumed_once": true,
+    "time_not_extended": true
+  },
+  "limitations": [
+    "两段均仅为固定窗口的只读诊断，stop_verified=false；不替代整机停止验收、独立断电确认或电动运动闭环。",
+    "用户报告整个轮盘轻转约四分之一圈后放手静止，但没有看清是否回到原角度；方向及独立手转时刻未报告，现有证据不能单独定位传动、接线或反馈链问题。",
+    "两段TE/GV/PV为0、PP一致是各自采样窗口的寄存器事实，不证明两个窗口之间现场完全未动。",
+    "身份及child回收是采集时的终态记录；本次只回收文件，未重新运行硬件预检。"
+  ],
+  "recovery": {
+    "original_files": 159,
+    "original_bytes": 292720,
+    "sha_check": "PASS",
+    "sha_manifest": "recovery-inventory.json",
+    "verification": "recovery-verification.json",
+    "source_files_unchanged": true,
+    "archives_created": false,
+    "binding_sources_copied": false
+  },
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}
