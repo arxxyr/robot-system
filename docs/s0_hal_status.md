@@ -1,88 +1,44 @@
-# S0 全身硬件统一抽象层：当前边界与下一步
+# S0 HAL 当前状态
 
-更新：2026-11-09。对照 2026-10-26 架构图和当前源码；冻结设计仍以 [00_design.md](00_design.md) 为准。
+更新：2026-11-09。本页集中记录当前边界与下一步；架构以 [冻结设计](00_design.md) 为准，过往轮次从 [历史索引](handoffs/README.md) 按需查阅。
 
-当前已具备执行器侧的公共契约、总线内分组和混合目标，尚未完成全身硬件统一入口及相机采集。代码存在、离线验证通过、实机动作通过分别记录。
+执行器契约、总线内分组和 raw 混合目标已有软件实现；默认混合入口与相机采集尚未接通，不能称全身 HAL 已完成。**D15 `OPEN/DEFERRED`，`deployable=false`。**
 
-轮位配置只维护 [xlerobot_bus2_full.toml](../configs/xlerobot_bus2_full.toml) 中同一 `[[hardware]]` 的 `joints` 与 `motor_ids`：相同下标表示一个逻辑关节及其物理电机。当前轮位如下。
+## 完成边界
 
-| 逻辑关节 | 电机 ID |
-|---|---|
-| `base_front_wheel` | 8 |
-| `base_left_wheel` | 9 |
-| `base_right_wheel` | 7 |
-
-在现有三轮 ID7/8/9 内交换接线对应时，只改这份表的对应项，再重新启动入口读取配置；不再修改 S0 分组、驱动 profile、运动学和维护脚本中的轮位常量。三轮校准按物理 ID 取原记录，轮名变化不改变校准数值。运动学只输出前、左、右三项，由硬件边界映射到 ID。
-
-维护入口通过 `--bus-config` 读取同份 TOML，并把配置身份纳入计划；修改配置后需要重新生成计划，旧 GO 不适用于新映射。既有混合试验仍只给物理 ID9 发送非零速度，入口名为 `mixed-hold-wheel9`，配置决定它对应哪只轮子。此 TOML 的历史全 Position 启动方式仍不能直接当作混合模式部署；本次仅收敛映射来源，不新增默认 S0 混合接线或实机动作。
-
-本次配置收敛已通过 Orin 上319项不同 Rust 测试、153项 Python 测试及 fmt/Clippy；mock-only 另复验同8项，不重复计数。六种轮ID排列、配置变更使旧GO失效，以及实际Rust内存串口回执的Python解析均通过。未执行实机动作或服务部署，详见[配置映射的软件验证](../.verify/wheel_config_mapping_2026-11-09/summary.json)。
-
-2026-11-05 曾按现场描述将底盘记为左轮 ID7、前轮 ID8、右轮 ID9，并将 ID8 的“后轮”名称改为 `base_front_wheel`。当时配置、S0 布局和混合驱动采用这一名义映射；本轮纠正见下段，方向与运动学公式保持。当时旧 `base.json` 的 `base_back_wheel` 仅按前轮 ID8 兼容；当前轮校准改为受限轮条目内按 ID 唯一匹配，重复或缺失均拒绝，历史日志和原帧保持原文。
-
-2026-11-09 分别仅给ID9、仅给ID7发送非零速度，各执行一次20秒，现场明确确认前者驱动机器人自身左轮、后者驱动自身右轮，结束后三轮均完全停止。当前映射统一为 **前8、左9、右7**，逻辑轮序 `[8,9,7]`。该轮曾逐处同步配置、S0布局、profile、运动学电机序与维护源码；混合维护保持物理目标ID9，当时入口名为 `mixed-hold-left9`，没有把既有动作转移到ID7。随后按用户要求收敛为上文的单份配置。新校准文件只按ID改标签，数值逐条相同；旧校准与冻结实机工具保留，未重载服务。原件和当前验证见[ID7核对及映射修正](../.verify/wheel_id7_mapping_2026-11-09/summary.json)，此前ID9证据见[上轮对应关系核对](../.verify/right_wheel_mapping_2026-11-09/summary.json)。
-
-上述2026-11-05名称修正在 Orin 当时的 nightly `249c1e4e3` 上通过 fmt、两级 Clippy、32项定向测试和维护工具构建；77项文件引用核验通过。连接、主机预检和混合维护计划已恢复；“无 UART、GO 或动作”仅指这一软件准备阶段，详见[验证与准备记录](../.verify/front_wheel_name_2026-11-05/summary.json)。
-
-随后原 `xlerobot-handoff.service` 完成全17电机交接，状态为 `success/active/exited`。混合 r1 因启动器的 uv 父进程被身份门拒绝，未进入 UART；改用既有 Python 直接启动后，r2 在启用前因右3位置2992高于上限2991而拒绝，同次右6位置1371也低于下限1384。混合周期为0，没有 TE1、位置或速度目标写入；最终仅发送全九 TE0，未完成停止读回。用户拒绝断电，原 `NEEDS_MANUAL_POWER_CUT` 保留，不能记录为已断电。
-
-之后独立授权的右9单轮测试完成400次 raw +500、20秒和79组反馈，累计位置变化9951计数；零速反馈200→0→0，初始和最终停止检查通过。但用户明确报告“右轮轮胎本身完全没转”，因此本次实际动作验收未通过，反馈与实物观察的矛盾仍待排查。历史三轮通过结论不回写，详见[本次硬件摘要](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)及[混合失败原件摘要](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)。
-
-新 GO 下按同一路径复测右9的单轮 r2，仍为400次 +500、20秒、79组反馈及累计9951计数，零速350→0→0；停止、位置和身份检查通过，`manual=false`。用户第二次仍报告“完全没有动，速度大一点”，并确认观察机器人自身右侧（面对时在用户左手边），因此不能归因为左右概念误解，原因仍 `UNKNOWN`，两次目视结论分别保留。当时拔插电源仅为计划；用户随后已明确报告“我已经断电重连了”，该回执不回填旧轮次，也不代替新的现场就绪和动作授权。
-
-## 对照架构图
-
-| 图中部分 | 已完成 | 尚缺 / 适用边界 |
+| 部分 | 已有能力 | 未完成或限制 |
 |---|---|---|
-| S0 执行器契约 | `ManipulatorAdapter` 提供连接、命令、状态、模式、启停及限位；`SerialRtAdapter` 要求停止读回能力 | `BaseAdapter`、`SensorAdapter` 目前只有设计契约，未成为当前生产接口；不能称全身 HAL 已完成 |
-| 两条总线及分组 | 左总线：左臂1–6、头7/8的 Position 分组；右总线：右臂1–6位置＋ID7/8/9 raw轮速的完整混合目标 | 是总线内能力，轮位已统一前8/左9/右7。每个 `s0_daemon --hardware-id` 选择一个硬件配置、一个 adapter 和 executor；现有双总线采用两个实例，图中 S0 框是职责归纳 |
-| 唯一执行者与安全链 | 命令槽、SerialRT worker、控制权、超时、持久故障、停止与读回链已实现；每条总线共用控制权和停止域 | 不增加独立分组会话；D15 独立硬件保护仍 `OPEN/DEFERRED`，`deployable=false` |
-| Feetech 混合驱动 | 六臂 Position＋三轮 raw Velocity；实证的 Model777/FW3.10/Mode1/Phase12 只允许 raw `0/+500`；原位保持拒绝校准越界 | raw不是已标定的物理速度。默认 factory 仍构造普通 adapter，wire固定 `JointSelection::All`；默认 S0/S1 混合入口未接通 |
-| 已有执行器验证 | 历史三轮分别完成受监督20秒运行、零速、断扭及停止检查；混合维护入口软件通过；真实 FeetechAdapter 已经过内存串口的 `SerialTick` 验证；11月9日分别确认ID9为实物左轮、ID7为实物右轮并停止 | 混合仍被校准范围阻塞；新证据只闭合本轮ID7/ID9的实物对应，不回写历史验收。单轮结果不能代替混合、默认入口或整车联动验收 |
-| 状态发布 | 执行线程写 `RtSnapshot`，Pub读取并发布 `JointState`、`Heartbeat`；观测桥只读 | 当前 Pub 没有相机图像发布接线 |
-| 相机 / SoftRT | `ImageHeader + blob` 消息及传输、观测测试基础已有；IO线程有启停骨架 | `io_thread` 仍为空轮询，缺少 `SensorAdapter` 实现、真实采集、帧资源所有权与S0发布接线；此前拍照不算接入HAL |
-| S1 / RPC / S2 | 已有上层命令和观测入口，可作为后续接入方 | RPC 在 S0 之外；S2、策略、其他机器人与CAN-FD不属于当前增量 |
+| 执行器契约 | `ManipulatorAdapter` 的连接、命令、状态、模式、启停和限位；`SerialRtAdapter` 停止读回 | `BaseAdapter`、`SensorAdapter` 仍是设计契约；RPC、CLI、上层聚合不属本轮 HAL |
+| 总线内分组 | 左臂1–6＋头7/8的 Position 分组；右臂1–6位置＋三轮 raw 速度混合目标 | 17电机由两个 daemon 各管一条总线；各自唯一串口所有者、SerialRT writer、命令流、控制权和停止域，无独立组会话 |
+| 混合接线 | 显式维护入口复用真实 FeetechAdapter | 默认 factory/wire 未接混合，wire 仍为 `JointSelection::All`；未标定速度、未测量力矩不提供 SI 值 |
+| 软件链路 | 内存串口已覆盖命令槽→真实 SerialRT worker→SerialTick→FeetechAdapter→快照，以及保持、全九停止与退出 | 不证明真实调度、UART、机械动作或默认入口；混合维护实机未验收 |
+| 发布与观测 | `RtSnapshot`→`JointState`/`Heartbeat`；观测桥只读 | Pub 无相机接线；画面不等于物理动作或安全确认 |
+| 相机 | `ImageHeader + blob` 消息、传输与观测测试基础已有 | SoftRT IO 仍为空轮询；缺 `SensorAdapter` 实现、采集、帧资源所有权及发布接线；图像保留独立帧接口，不阻塞执行器 |
 
-## 此前最小离线增量（2026-11-03）
+## 轮位与阻塞
 
-先验证现有实际工作线程：`LatestCommandSlot → spawn_serial_io_thread → SerialTick → FeetechAdapter → RtSnapshotPublisher`。复用内存串口、独立黄金请求和 `MockClock`，通过握手推进周期；所有设备字节均在内存中。
+轮位唯一来源为 [xlerobot_bus2_full.toml](../configs/xlerobot_bus2_full.toml) 同一硬件项的 `joints`/`motor_ids`：同下标对应逻辑关节和物理 ID，当前前/左/右为 **`[8,9,7]`**。仅支持既有 ID7/8/9 的排列，不向驱动、profile、运动学或脚本复制映射。
 
-一个完整用例覆盖启动收敛、真实 pending Enable 和控制权提交、混合目标投递与反馈快照、保持时三轮零速、全九电机停止读回，以及睡眠中请求退出后不再执行IO或发布快照。此前三个 `SerialTick` 用例继续保留，避免再造同类驱动或扩大失败矩阵。
+轮校准按物理 ID 取原值；`base_left9_right7.json` 只按 ID 改标签，数值和电机参数未改。维护入口 `--bus-config` 读取同份 TOML；改配置须重建计划，旧 GO 对新映射无效。`mixed-hold-wheel9` 固定驱动物理 ID9，当前为左轮；历史全 Position 配置不能直接作为混合部署入口。
 
-新增用例及原三个真实驱动用例通过，已有工作线程回归16项通过，共20个S0方法；另1项既有符号解码回归通过。验证环境为已有 Lima Linux ARM64 虚拟机，浮动 nightly `708c94ef0`；实际 `cargo fmt --all` 后根 Clippy 零警告。当时 Orin 的两条SSH路径不可达，该轮未进行Orin复验。
+2026-11-09 分别仅 ID9、仅 ID7 的20秒测试及现场确认，证明其对应自身左、右轮，结束后三轮完全停止。配置收敛提交 `36e663f` 在 Orin 通过319项不同 Rust、153项 Python 测试及 fmt/Clippy；此软件候选未部署、未做新实机动作。单轮通过不代替混合、默认 S0 或整车联动验收；原 run 因固件合同 `DEFERRED` 的整体 FAIL 保留。
 
-本轮只补测试夹具与文档，并将旧解码函数的 `map_or_else` 改为等价 `map_or` 以通过新版Clippy；首轮lint失败保留。该用例不经过默认 factory/wire，也不测量真实串口、线程实时性、机械动作或全部 S0 worker 的联合运行。日志与最终结果见[本轮软件验证](../.verify/s0_hal_worker_2026-11-03/summary.json)。
+混合维护曾在启用前发现右3 `PP2992 > 2991`、右6 `PP1371 < 1384`；这是历史读数，下轮须核新鲜锚点和范围，不能 clamp、自动挪位置或放宽限位来冒充原位保持。该次未完成停止读回，原 `NEEDS_MANUAL_POWER_CUT` 与失败保留；后续断电重连回执不回填旧轮次，也不代替新现场就绪。左腕 `I=1`、头部 `P=32` 仍是临时已测候选，左1偶发根因 `UNKNOWN`。
 
-## 接下来的顺序
+## 实机合同与近期顺序
 
-UTC2026-11-06 按用户“先把基础立牢”完成本轮六项定向修复：Scripted 与全选 Position 拒绝非法位置；校准锚点诊断保留 motor/raw；混合早期失败回执字段完整；观测报告保留主错误；健康采样失败明确不可用；终态日志记录实际入队。相邻的有限极值换算溢出也已修正，保留既有校准夹紧。原[定向评审](../.verify/mixed_failure_diagnostic_2026-11-06/review/summary.json)保留为修复前快照，当前结果见[基础修复验证](../.verify/foundation_errors_2026-11-06/summary.json)。
+raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无 SI 换算，不放行名义 profile。三轮停止快照14读要求首末 TE/GV0、PV仅0/±50、1秒五组 PP 跨度≤1且包含快照位置，总预算1.5秒，原字保留。20秒动作、21秒启用上限、500毫秒零速观察及各阶段原判据不放宽，不向其他电机或未批准阶段推广。TE1零速前两组沿原0..1000及−50观察，末组只接受0/±50；SDK初始/断扭后仅±50同连接触发一次新14读，0沿原路径，断扭后保留原1秒观察，不续GO/21秒预算，失败不重试。见[SDK停止复核合同](../.verify/sdk_wheel_stop_stability_2026-10-22_r1/summary.json)。
 
-此前 Python 混合失败解析修复也已保留，原校准错误不再被400周期成功断言遮蔽。本轮 Orin 1121项Rust、30项维护脚本及真实Rust→Python早期失败验证通过，fmt→根/real-hw Clippy通过；早期入口验证使用过期GO，串口打开及新动作均为0。临时资源已清理，原冻结硬件产物未变，停止规则和电机参数未改。用户已报告电源断电重连；旧两轮“反馈变化、轮胎未动”的原因仍未知，不据软件通过宣称实机已闭环。
+1. 仅处理右3/右6原位范围阻塞。先备好既有入口、固定 Python、进程检查及 `PLAN_ONLY`，再通知动作并确认当次现场条件；不以旧 GO 续期。硬件入口不用 `uv run` 增加维护父进程。
+2. 条件满足后，只验六臂固定原位＋ID9 `+500/20秒`、另两轮零速，再执行既有零速、断扭和全总线停止检查；原时效、失败粘性及停止规则保持。
+3. 维护实机通过后，按实际授权接默认 S0 入口并独立验收；随后沿 SoftRT 与 `ImageHeader + blob` 接单条相机流，验证采集、发布、退出、不阻塞执行器及连续采集。
 
-随后对照旧目视通过轮次与本次两轮右9原件：三轮累计均为9951，但仅统计至第79组约19.75秒；新两轮79组速度有48组不同、位置增量有57组不同，位置前后衔接，没有发现整段复制反馈的证据。Orin安装的SDK/pyserial四文件哈希与原绑定相同，实际调用到系统串口`open/read/write`；现有记录仍不能独立证明ID9就是现场观察的轮胎。历史三路机载相机均看不到轮胎，不能用房间背景静止代替轮动观察。核对结果及准备见[右轮对应关系诊断](../.verify/right_wheel_mapping_2026-11-06/summary.json)。
+当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
-右9首次14读已正常完成，随后按用户要求暂停；网络恢复后，因暂停超过600秒，在新的现场回执下完成第二次手转前14读。两段首末使能和目标速度均为0，五组位置均2583、速度均0；各自108项身份检查通过、74个子进程回收，没有寄存器写入。它们是两次前置诊断，不是“手转前后”对照，也不代表整机停止或映射验收。原件分别见[暂停前采集](../.verify/right_wheel_mapping_2026-11-06/hardware-before/summary.json)和[恢复后前置采集](../.verify/right_wheel_mapping_2026-11-06/hardware-before-r2/summary.json)。
+## 按需证据与源码
 
-随后用户报告整个右轮盘轻转约四分之一圈、放手静止；因原现场时效已过，收到新的现场回执后才执行第二段14读。后段正常退出，五组位置仍全部2583、速度均0，首末使能和目标速度均0，108项身份检查通过、74个子进程回收，无寄存器写入。用户进一步说明没有看清轮盘是否回到原角度，因此本次映射对照为不可判定，不能把零差值归因为接线错误、机械损坏、假反馈或用户未操作；也不能外推固件在Mode1/TE0下的位置反馈机制。原帧及现场回执见[手转后诊断](../.verify/right_wheel_mapping_2026-11-06/hardware-after/summary.json)。
-
-限定查阅原厂STS内存表、STS3215规格书、飞特SDK和原版XLeRobot后，尚未找到本机FW3.10/Mode1/Phase12/TE0组合下的外力手转位置更新保证；同样没有厂家依据证明它会冻结或采用速度积分。通用表的“当前绝对位置”、另一模式的校准流程和SDK缓存接口不能代替本机合同，详见[反馈语义核查](../.verify/right_wheel_mapping_2026-11-06/feedback-contract-review.json)。
-
-2026-11-09 复用原入口完成一次右9前段14次SYNC_READ，首末TE/GV均0、五组PP均2583、PV均0。用户随后要求程序持续转动，手转与新角度保持未确认，原after保持NOT_RUN；另准备既有 `+500/20秒` 及零速停止入口，17项额外引用核验通过，取得覆盖动作和立即断电人员的新现场回执后只执行一次。400次非零指令全部仅发给ID9、79组反馈，零速PV250→0→0，断扭后TE/GV/PV均0；停止、位置及109项身份核验通过，现场确认实际左轮转动且三轮最终停止。原run整体FAIL仅因既有固件合同DEFERRED，原错误保留；不宣称固件物理单位、默认S0或完整HAL通过。Orin新版nightly `ac8310ba6` 的fmt→根Clippy通过，详见[本轮核对](../.verify/right_wheel_mapping_2026-11-09/summary.json)。
-
-本轮ID7同一路径400次+500、79组反馈，零速350→0→0，断扭后TE/GV/PV均0；停止、位置与109项身份检查通过，现场确认自身右轮转动及三轮全停。原run固件合同整体FAIL保留。新映射仅做相关软件验证，尚未运行新源码的实机混合动作。
-
-1. 本次线程链路离线验证及相关回归已完成；保留精简日志与摘要，不重复叠加同类测试。
-2. 当前前8/左9/右7映射已确认并完成软件修正。下一步仅核对并处理右3/右6原位超出校准范围的阻塞，不自动修正位置或放宽限位；准备好新版已有维护入口、动作前先通知并确认条件后，才验六臂原位保持＋左轮ID9一次20秒＋全总线停止。此前手转零差值仍为不可判定，本机断扭反馈合同保持未确认。
-3. 维护实机通过后再接默认 S0 配置/命令路径，并单独验收。相机随后沿既有 SoftRT 与 `ImageHeader + blob` 接一条采集流，先证明采集、发布、退出及不阻塞执行器，再做连续实机采集。
-
-具体启动脚本、固定解释器、进程检查和 `PLAN_ONLY` 必须在询问现场状态前准备完成；确认后仅做必要实时预检，随即启动。硬件入口直接使用既有固定 Python，不用 `uv run` 增加一个会被身份门识别为维护进程的父进程。
-
-现场缺席时止于可证的软件边界，不通过新增框架、RPC、插件或传感器空实现填充进度。
-
-## 源码与已有证据
-
-- [执行器接口](../crates/robot-core/src/adapter.rs)、[分组与混合目标](../crates/robot-s0/src/grouped_position.rs)、[混合raw驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)。
-- [默认工厂](../crates/robot-adapters/feetech/src/factory.rs)、[IPC命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon构造与线程接线](../crates/robot-s0/src/bin/s0_daemon.rs)。
-- [SerialRT工作线程](../crates/robot-s0/src/serial_io_thread.rs)、[真实驱动离线夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)。
-- [SoftRT空轮询](../crates/robot-s0/src/io_thread.rs)、[当前状态发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。
-- [既有三轮实机原件](../.verify/sdk_wheel_stop_stability_2026-10-22_r1/hardware-validation/summary.json)、[混合维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[既有SerialTick验证](../.verify/s0_bus2_raw_serial_tick_2026-10-25_r1/summary.json)。
+- 当前映射：[配置软件验证](../.verify/wheel_config_mapping_2026-11-09/summary.json)、[ID9左轮实机](../.verify/right_wheel_mapping_2026-11-09/summary.json)、[ID7右轮实机](../.verify/wheel_id7_mapping_2026-11-09/summary.json)。
+- 混合与停止：[维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[工作线程离线验证](../.verify/s0_hal_worker_2026-11-03/summary.json)、[历史混合失败](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)、[历史反馈与目视矛盾](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)。后续结果不回写旧失败或未知归因。
+- 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
+- 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。
+- 线程与图像：[SerialRT](../crates/robot-s0/src/serial_io_thread.rs)、[驱动夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)、[SoftRT IO](../crates/robot-s0/src/io_thread.rs)、[发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。
