@@ -1,0 +1,8 @@
+{
+  "result": "PULSE_PREPARED_NOT_EXECUTED",
+  "reference_checks": 17,
+  "reference_status": "PASS",
+  "scope": "right9 +500 once 20 seconds then zero/disable/original stop",
+  "uart_access": false,
+  "go_created": false
+}

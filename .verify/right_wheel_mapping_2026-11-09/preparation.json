@@ -1,0 +1,22 @@
+{
+  "result": "PREPARED_NOT_EXECUTED",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b"
+  },
+  "plans": {
+    "before": "7e2c8e517c264e0beb7aad65f0612e5c0b01fe16cbd33920bdd252ea5e94f3b4",
+    "after": "7f989995457749cf12707a4667a187601a4e43e9cacb9f9c4662364820d1b743"
+  },
+  "script_sha256": "1c2ad1d904074d2d9cc9731dea066768ee00a424398749d4415c35292d41a490",
+  "interpreter": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3",
+  "checks": 26,
+  "identity": "PASS",
+  "launch_syntax": "PASS",
+  "uart_access": false,
+  "go_created": false,
+  "register_writes": 0,
+  "next": "新的现场确认后先before；14读完整、TE/GV0且正常收尾后才通知轻转整个右轮盘；明确确认放手后仍保持在新角度，再独立after。手转回执不续期现场事实；不自动连接两次执行。"
+}

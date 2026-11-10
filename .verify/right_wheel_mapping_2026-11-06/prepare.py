@@ -1,4 +1,5 @@
 """复用维护入口准备两次右9只读；本脚本不打开UART、不创建GO。"""
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -7,7 +8,11 @@ from pathlib import Path
 import shlex
 import subprocess
 
-ROOT = Path('/home/loosqk/robot-checks/right-wheel-mapping-20261106')
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--artifact-root', type=Path,
+                    default=Path('/home/loosqk/robot-checks/right-wheel-mapping-20261106'),
+                    help='本轮独立产物目录；已有准备文件拒绝覆盖')
+ROOT = parser.parse_args().artifact_root
 SCRIPT = Path('/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software/scripts/run_hardware_maintenance.py')
 BINDINGS = Path('/home/loosqk/robot-checks/front-wheel-name-20261105/mixed-bindings.json')
 PYTHON = '/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3'
@@ -21,6 +26,7 @@ def load(name, path):
 
 
 module = load('maintenance_prepare', SCRIPT)
+module.validate_artifact_root(ROOT, filesystem=True)
 bindings = module.strict_json(BINDINGS.read_text())
 host = bindings['host']
 module.require(os.uname().nodename == host['hostname']
@@ -76,5 +82,6 @@ module.write_new(ROOT / 'preparation.json', {
     'interpreter': PYTHON, 'checks': len(io.commands), 'identity': 'PASS',
     'launch_syntax': 'PASS', 'uart_access': False, 'go_created': False,
     'register_writes': 0,
-    'next': '新的现场确认后先before；TE/GV0且正常收尾后通知人工轻转，放手后再after；不自动连接两次执行。'})
+    'next': '新的现场确认后先before；14读完整、TE/GV0且正常收尾后才通知轻转整个右轮盘；'
+            '明确确认放手后仍保持在新角度，再独立after。手转回执不续期现场事实；不自动连接两次执行。'})
 print(json.dumps({'result': 'PREPARED_NOT_EXECUTED', 'plans': plans, 'uart_access': False}))
