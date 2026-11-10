@@ -17,7 +17,7 @@
 //! ## 用法
 //!
 //! ```bash
-//! feetech_poke <right-device> 9 mixed-hold-right9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒>
+//! feetech_poke <right-device> 9 mixed-hold-left9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒>
 //! feetech_poke <address> <motor_id> ping
 //! feetech_poke <address> <motor_id> sync-zero
 //! feetech_poke <address> <motor_id> sync-velocity <value>
@@ -60,7 +60,7 @@
 //!
 //! ## 安全警告
 //!
-//! - `mixed-hold-right9`是显式受维护入口控制的真实adapter路径，固定六臂锚点+右9原始500，非daemon验收；仅此模式输出单JSON并遵守GO/信号与独立全九断扭。
+//! - `mixed-hold-left9`是显式受维护入口控制的真实adapter路径，固定六臂锚点+左9原始500，非daemon验收；仅此模式输出单JSON并遵守GO/信号与独立全九断扭。
 //! - 其余模式本工具是**裸 wire**，不走 `FeetechAdapter` 的防飞序列（`sync Goal=Present →
 //!   sleep 50ms → Torque_Enable=1`）。手动 `write Torque_Enable 1` 前一定要先
 //!   `write Goal_Position <当前 Present>`，否则 motor 会追寄存器里残留的旧 Goal。
@@ -337,8 +337,12 @@ fn do_write<T: robot_adapter_feetech::SerialTransport>(
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(3).map(String::as_str) == Some("mixed-hold-right9") {
+    if args.get(3).map(String::as_str) == Some("mixed-hold-left9") {
         return mixed_maintenance::main(&args);
+    }
+    if args.get(3).map(String::as_str) == Some("mixed-hold-right9") {
+        eprintln!("error: 旧轮位维护入口已停用；ID9为左轮，请重新生成当前计划");
+        return ExitCode::from(2);
     }
     // 原裸wire入口继续使用原日志初始化，固定维护stdout只输出一份JSON。
     let _ = robot_logging::init();

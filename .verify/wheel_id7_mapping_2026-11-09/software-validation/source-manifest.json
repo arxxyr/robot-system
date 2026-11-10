@@ -1,0 +1,57 @@
+[
+  {
+    "path": "configs/xlerobot_bus2_full.toml",
+    "bytes": 6942,
+    "sha256": "956dd5394b0010a04ec8c1a4a772876c61d85eb84e17455b56b3b20e39ea17b3"
+  },
+  {
+    "path": "crates/robot-adapters/feetech/examples/feetech_poke.rs",
+    "bytes": 34510,
+    "sha256": "175f0da161d3212610c678a5f636862a75440b4a15c6b336345dbaf125458968"
+  },
+  {
+    "path": "crates/robot-adapters/feetech/examples/feetech_poke/mixed_maintenance.rs",
+    "bytes": 49063,
+    "sha256": "281de3b5920c1c52df854cebf32fbc9f2e47093f71e6b526bcb7bef57567b2bd"
+  },
+  {
+    "path": "crates/robot-adapters/feetech/src/factory.rs",
+    "bytes": 12427,
+    "sha256": "4e403d4c77b5016fac25ea3fc8b54b6b294dd025d54205332719246476a4dc50"
+  },
+  {
+    "path": "crates/robot-adapters/feetech/src/mixed_bus.rs",
+    "bytes": 36340,
+    "sha256": "4b7b08237829301b89be4e2d2573961a067e55869c29caec767d19c3ab69dc17"
+  },
+  {
+    "path": "crates/robot-adapters/feetech/src/velocity_profile.rs",
+    "bytes": 22179,
+    "sha256": "6cd6ec2c961aa9b8bb001104adff32720929a647f61e96337dbd323584ba4baf"
+  },
+  {
+    "path": "crates/robot-kinematics-xlerobot/src/base.rs",
+    "bytes": 24407,
+    "sha256": "e0018be6b9133fa8d7dd012075d98b61d2b0bf64d6c9346eb75db984250dab76"
+  },
+  {
+    "path": "crates/robot-s0/src/grouped_position.rs",
+    "bytes": 11953,
+    "sha256": "96eca1086d89fb0261dec3ad34e3eed9ee8d9dc282069a5df4fad0a02323076b"
+  },
+  {
+    "path": "crates/robot-s0/src/serial_tick_feetech_tests.rs",
+    "bytes": 24842,
+    "sha256": "f00804d44ff95403a9901558ae3b76bfedddc3f8a1cf143f4e74fe29f116ef2b"
+  },
+  {
+    "path": "scripts/run_hardware_maintenance.py",
+    "bytes": 153175,
+    "sha256": "82cfba91c79e07d40746ea24ad5baed8e923772901e22c897ab3b6530d29ae04"
+  },
+  {
+    "path": "scripts/tests/test_hardware_maintenance.py",
+    "bytes": 216589,
+    "sha256": "1a969377b45ead0fac4ff44b7b5c7f346c40050ac26e67ad23e4db60fc52bfde"
+  }
+]

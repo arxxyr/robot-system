@@ -39,8 +39,8 @@ const BUS2_JOINTS: [(&str, u8); 9] = [
     ("right_arm_wrist_roll", 5),
     ("right_arm_gripper", 6),
     ("base_front_wheel", 8),
-    ("base_left_wheel", 7),
-    ("base_right_wheel", 9),
+    ("base_left_wheel", 9),
+    ("base_right_wheel", 7),
 ];
 
 /// 右总线同一完整目标：右臂位置与三轮 raw 速度共享一个来源期限。
@@ -81,7 +81,7 @@ impl XleRobotBus2Layout {
         Ok(Self { slots })
     }
 
-    /// 臂位置按 ID1..6、轮 raw 按前8/左7/右9；不混同为 rad/s。
+    /// 臂位置按 ID1..6、轮 raw 按前8/左9/右7；不混同为 rad/s。
     /// 三轮上限另由显式 Feetech profile 在首个动作写入前统一验证。
     /// # Errors
     /// 位置不有限、raw 为 `i16::MIN` 或时间窗口无效。
@@ -206,19 +206,21 @@ mod tests {
     fn mixed_bus2_mapping_preserves_front_left_right_raw_order_after_config_reorder() {
         let mut config: crate::config_loader::RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
-        let hardware = &mut config.hardware[0];
+        let hardware = config.hardware.remove(0);
+        assert_eq!(hardware.motor_ids, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
         assert_eq!(
-            hardware
-                .joints
-                .iter()
-                .zip(&hardware.motor_ids)
-                .find(|(_, id)| **id == 8)
-                .map(|(name, id)| (name.as_str(), *id)),
-            Some(("base_front_wheel", 8))
+            &hardware.joints[6..],
+            &["base_right_wheel", "base_front_wheel", "base_left_wheel"]
         );
-        hardware.joints.reverse();
-        hardware.motor_ids.reverse();
-        let layout = XleRobotBus2Layout::from_hardware(hardware).unwrap();
+        let normal = XleRobotBus2Layout::from_hardware(&hardware)
+            .unwrap()
+            .command([1., 2., 3., 4., 5., 6.], [100, -200, 300], 81, 100, 200)
+            .unwrap();
+        assert_eq!(&normal.raw_velocities[6..9], &[300, 100, -200]);
+        let mut reordered = hardware.clone();
+        reordered.joints.reverse();
+        reordered.motor_ids.reverse();
+        let layout = XleRobotBus2Layout::from_hardware(&reordered).unwrap();
         let command = layout
             .command([1., 2., 3., 4., 5., 6.], [100, -200, 300], 81, 100, 200)
             .unwrap();
@@ -230,13 +232,13 @@ mod tests {
             }
         );
         assert_eq!(&command.positions[3..9], &[6., 5., 4., 3., 2., 1.]);
-        assert_eq!(&command.raw_velocities[..3], &[300, 100, -200]);
+        assert_eq!(&command.raw_velocities[..3], &[-200, 100, 300]);
         assert_eq!(
             (command.seq, command.stamp_ns, command.deadline_ns),
             (81, 100, 200)
         );
         for variant in 0..4 {
-            let mut invalid = hardware.clone();
+            let mut invalid = reordered.clone();
             match variant {
                 0 => invalid.id = "left_arm_full_with_head".into(),
                 1 => invalid.joints[0] = "head_motor_2".into(),
@@ -253,6 +255,9 @@ mod tests {
                 .command([0.; 6], [0, i16::MIN, 0], 1, 100, 200)
                 .is_err()
         );
+        let mut legacy = hardware;
+        legacy.joints.swap(6, 8);
+        assert!(XleRobotBus2Layout::from_hardware(&legacy).is_err());
     }
 
     #[test]

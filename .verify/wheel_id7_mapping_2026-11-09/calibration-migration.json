@@ -1,0 +1,17 @@
+{
+  "source": "base-original.json",
+  "source_sha256": "c35a8c47615293628fb88e28f0c90deb0b9cff6e3634e21f7de32790a7b4d671",
+  "new": "base_left9_right7.json",
+  "new_sha256": "d191641931de5526b56050be894bf69101b8e43f1101df68e057a54cbe3657d9",
+  "new_names": {
+    "base_front_wheel": 8,
+    "base_left_wheel": 9,
+    "base_right_wheel": 7
+  },
+  "records_equal_by_motor_id": true,
+  "numeric_values_changed": false,
+  "original_file_unchanged": true,
+  "remote_new_file": "/home/loosqk/repo/dimensional-applications/calibration/base_left9_right7.json",
+  "service_reload": false,
+  "motor_parameter_writes": 0
+}

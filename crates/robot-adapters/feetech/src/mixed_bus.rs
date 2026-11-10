@@ -21,8 +21,8 @@ pub(super) const JOINTS: [(&str, u8); 9] = [
     ("right_arm_wrist_roll", 5),
     ("right_arm_gripper", 6),
     ("base_front_wheel", 8),
-    ("base_left_wheel", 7),
-    ("base_right_wheel", 9),
+    ("base_left_wheel", 9),
+    ("base_right_wheel", 7),
 ];
 
 #[derive(Clone, Copy)]
@@ -93,13 +93,13 @@ impl MixedBus2 {
         {
             if profiles.role(index) != role {
                 return Err(RobotError::InvalidParameter(
-                    "三轮profile顺序必须为前8、左7、右9",
+                    "三轮profile顺序必须为前8、左9、右7",
                 ));
             }
         }
         Ok(Self {
             arm_ids: [1, 2, 3, 4, 5, 6],
-            wheel_ids: [8, 7, 9],
+            wheel_ids: [8, 9, 7],
             arm_slots: slots[..6].try_into().unwrap(),
             wheel_slots: slots[6..].try_into().unwrap(),
             position_mask: slots[..6].iter().fold(0, |mask, slot| mask | (1 << slot)),
@@ -111,7 +111,7 @@ impl MixedBus2 {
 
 impl<T: SerialTransport> FeetechAdapter<T> {
     /// 显式软件入口；只复用一条总线连接，默认 factory 不调用。
-    /// profile 顺序固定为前8、左7、右9；raw 目标不进行 SI 换算。
+    /// profile 顺序固定为前8、左9、右7；raw 目标不进行 SI 换算。
     /// # Errors
     /// 原构造错误、九关节映射或profile角色错误。Phase12无法构造合法profile。
     pub fn new_bus2_mixed(
@@ -576,7 +576,7 @@ mod tests {
                 }
             }
             if !bad_mode {
-                for id in [8, 7, 9] {
+                for id in [8, 9, 7] {
                     for byte in [phase, 3, 10] {
                         handle.push_rx(&read_status(id, &[byte]));
                     }
@@ -630,6 +630,28 @@ mod tests {
             remaining = &remaining[size..];
         }
         output
+    }
+
+    #[test]
+    fn mixed_layout_accepts_left_nine_right_seven_and_rejects_legacy_labels() {
+        let mut names = [
+            "right_arm_shoulder_pan",
+            "right_arm_shoulder_lift",
+            "right_arm_elbow_flex",
+            "right_arm_wrist_flex",
+            "right_arm_wrist_roll",
+            "right_arm_gripper",
+            "base_right_wheel",
+            "base_front_wheel",
+            "base_left_wheel",
+        ]
+        .map(str::to_owned);
+        let ids = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let layout = MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles())).unwrap();
+        assert_eq!(layout.wheel_ids, [8, 9, 7]);
+        assert_eq!(layout.wheel_slots, [7, 8, 6]);
+        names.swap(6, 8);
+        assert!(MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles())).is_err());
     }
 
     #[test]
@@ -687,11 +709,19 @@ mod tests {
             assert!(f.adapter.write_command(&command.as_view()).is_err());
             assert_eq!(f.handle.drain_tx(), [] as [u8; 0]);
             f.adapter.calibrations[arm].range_min = 0;
-            f.adapter.write_command(&command.as_view()).unwrap();
-            assert_eq!(
-                &frames(&f.handle.drain_tx())[0][7..16],
-                &[8, 0, 0, 7, 0, 0, 9, 244, 1]
-            );
+            for (index, expected) in [
+                [8, 244, 1, 9, 0, 0, 7, 0, 0],
+                [8, 0, 0, 9, 244, 1, 7, 0, 0],
+                [8, 0, 0, 9, 0, 0, 7, 244, 1],
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                command.raw_velocities.fill(0);
+                command.raw_velocities[f.adapter.mixed_bus2.unwrap().wheel_slots[index]] = 500;
+                f.adapter.write_command(&command.as_view()).unwrap();
+                assert_eq!(&frames(&f.handle.drain_tx())[0][7..16], &expected);
+            }
             for (min, max, raw) in [
                 (2000, 1000, 1000),
                 (0, 4096, 2047),
@@ -710,7 +740,11 @@ mod tests {
 
     #[test]
     fn mixed_wire_targets_exact_groups_raw_sign_and_legacy_stop_has_no_transaction() {
-        for ids in [[1, 2, 3, 4, 5, 6, 7, 8, 9], [9, 3, 6, 1, 8, 4, 2, 7, 5]] {
+        for ids in [
+            [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [9, 3, 6, 1, 8, 4, 2, 7, 5],
+            [9, 8, 7, 6, 5, 4, 3, 2, 1],
+        ] {
             let (mut f, connected) = Fixture::new(ids, 0, 4, false);
             connected.unwrap();
             let _ = f.handle.drain_tx();
@@ -736,7 +770,7 @@ mod tests {
             assert_eq!(output.len(), 2);
             assert_eq!(
                 &output[0][4..16],
-                &[0x83, 46, 2, 8, 0xf4, 1, 7, 0xf4, 0x81, 9, 0, 0]
+                &[0x83, 46, 2, 8, 0xf4, 1, 9, 0xf4, 0x81, 7, 0, 0]
             );
             assert_eq!(&output[1][4..7], &[0x83, 42, 2]);
             assert_eq!(
@@ -878,7 +912,7 @@ mod tests {
             .iter()
             .position(|frame| frame[4] == 0x83 && frame[5] == 46)
             .unwrap();
-        assert_eq!(&output[zero][7..16], &[8, 0, 0, 7, 0, 0, 9, 0, 0]);
+        assert_eq!(&output[zero][7..16], &[8, 0, 0, 9, 0, 0, 7, 0, 0]);
         let enables: Vec<_> = output
             .iter()
             .enumerate()

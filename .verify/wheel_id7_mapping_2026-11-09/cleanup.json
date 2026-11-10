@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "scope": "仅移除本轮自有临时软件工作树；已核本地暂存源码与测试源码SHA相同，实际改动仅11个任务文件，无额外未跟踪内容。",
+  "software_worktree_removed": "/home/loosqk/robot-checks/wheel-id7-mapping-20261109/software-source",
+  "software_tmux_sessions_absent": true,
+  "validation_logs_preserved": "software-validation/",
+  "hardware_cleanup": "hardware-cleanup.json",
+  "shared_target": "复用既有共享target，未新建或删除他人缓存。",
+  "original_deployed_checkout": "未切换或重启原部署服务；冻结实机工具保持原SHA。",
+  "new_motor_action": false
+}

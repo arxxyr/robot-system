@@ -1,4 +1,4 @@
-"""复用维护入口准备两次右9只读；本脚本不打开UART、不创建GO。"""
+"""复用维护入口准备右9只读对照或ID7单轮测试；不打开UART、不创建GO。"""
 import argparse
 import hashlib
 import importlib.util
@@ -12,7 +12,10 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--artifact-root', type=Path,
                     default=Path('/home/loosqk/robot-checks/right-wheel-mapping-20261106'),
                     help='本轮独立产物目录；已有准备文件拒绝覆盖')
-ROOT = parser.parse_args().artifact_root
+parser.add_argument('--wheel-pulse', choices=('left',),
+                    help='复用旧名义left入口，仅准备ID7一次+500/20秒及零速停止检查')
+options = parser.parse_args()
+ROOT = options.artifact_root
 SCRIPT = Path('/home/loosqk/robot-checks/s0-bus2-raw-maintenance-20261023-r1/software/scripts/run_hardware_maintenance.py')
 BINDINGS = Path('/home/loosqk/robot-checks/front-wheel-name-20261105/mixed-bindings.json')
 PYTHON = '/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3'
@@ -51,14 +54,28 @@ finally:
     io.journal.close()
 
 plans = {}
-for phase in ('before', 'after'):
+reference_checks = 0
+for phase in (('pulse',) if options.wheel_pulse else ('before', 'after')):
+    run_id = 'wheel-id7-mapping-pulse' if options.wheel_pulse else f'right9-mapping-{phase}'
     argv = [PYTHON, '-I', '-S', str(SCRIPT), '--bindings', str(BINDINGS),
-            '--output', str(ROOT / f'{phase}-capture'), '--run-id', f'right9-mapping-{phase}',
-            '--artifact-root', str(ROOT), '--right-wheel-feedback-only']
+            '--output', str(ROOT / f'{phase}-capture'), '--run-id', run_id,
+            '--artifact-root', str(ROOT)]
+    argv += (['--wheel-pulse', options.wheel_pulse, '--zero-stop-check']
+             if options.wheel_pulse else ['--right-wheel-feedback-only'])
     result = subprocess.run(argv, check=True, capture_output=True, text=True)
     document = module.strict_json(result.stdout)
     module.require(document['result'] == 'PLAN_ONLY' and document['actions_started'] == 0,
                    '只允许PLAN_ONLY准备')
+    if options.wheel_pulse:
+        contract = document['plan']['right_wheel_pulse']
+        module.require(contract['target'][1] == 7 and contract['raw_velocity'] == 500
+                       and contract['observation_ns'] == 20_000_000_000,
+                       '本轮仅准备ID7固定+500/20秒')
+        references = contract['sdk']['refs'] + [contract[key] for key in
+                    ('raw_tool', 'raw_helper', 'strace', 'write_tool', 'sync_tool')]
+        for reference in references:
+            module.verify_ref(reference)
+        reference_checks = len(references)
     module.write_new(ROOT / f'{phase}-plan.json', document)
     plans[phase] = document['plan_sha256']
     launch = ROOT / f'{phase}-launch'
@@ -80,8 +97,12 @@ module.write_new(ROOT / 'preparation.json', {
     'result': 'PREPARED_NOT_EXECUTED', 'host': host, 'plans': plans,
     'script_sha256': hashlib.sha256(SCRIPT.read_bytes()).hexdigest(),
     'interpreter': PYTHON, 'checks': len(io.commands), 'identity': 'PASS',
+    'pulse_reference_checks': reference_checks,
     'launch_syntax': 'PASS', 'uart_access': False, 'go_created': False,
     'register_writes': 0,
-    'next': '新的现场确认后先before；14读完整、TE/GV0且正常收尾后才通知轻转整个右轮盘；'
-            '明确确认放手后仍保持在新角度，再独立after。手转回执不续期现场事实；不自动连接两次执行。'})
+    'next': ('新的现场动作确认后仅执行一次ID7 +500/20秒，零速、断扭及原停止检查；'
+             '观察机器人自身哪只轮盘转动及最终是否全部停止，不预设实物轮位。'
+             if options.wheel_pulse else
+             '新的现场确认后先before；14读完整、TE/GV0且正常收尾后才通知轻转整个右轮盘；'
+             '明确确认放手后仍保持在新角度，再独立after。手转回执不续期现场事实；不自动连接两次执行。')})
 print(json.dumps({'result': 'PREPARED_NOT_EXECUTED', 'plans': plans, 'uart_access': False}))

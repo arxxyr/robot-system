@@ -1,6 +1,6 @@
 //! `XLeRobot` 三轮全向底盘的纯 SI 运动学。
 //!
-//! 机身坐标为前进 `vx`、左移 `vy`、逆时针 `wz`；轮序固定为前轮8、左轮7、右轮9。
+//! 机身坐标为前进 `vx`、左移 `vy`、逆时针 `wz`；轮序固定为前轮8、左轮9、右轮7。
 //! 设轮半径为 `r`，底盘中心到轮的半径为 `L`，`a = sqrt(3)/2`：
 //!
 //! ```text
@@ -18,8 +18,8 @@
 
 use std::fmt;
 
-/// 数组轮速的唯一合法电机顺序：前轮8、左轮7、右轮9。
-pub const XLEROBOT_WHEEL_IDS: [u8; 3] = [8, 7, 9];
+/// 数组轮速的唯一合法电机顺序：前轮8、左轮9、右轮7。
+pub const XLEROBOT_WHEEL_IDS: [u8; 3] = [8, 9, 7];
 
 /// 机身平面速度；字段分别使用米/秒、米/秒、弧度/秒。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,9 +39,9 @@ pub struct PlanarBodyVelocity {
 pub struct XLeRobotWheelVelocities {
     /// 前轮，电机8。
     pub front_rad_s: f64,
-    /// 左轮，电机7。
+    /// 左轮，电机9。
     pub left_rad_s: f64,
-    /// 右轮，电机9。
+    /// 右轮，电机7。
     pub right_rad_s: f64,
 }
 
@@ -64,7 +64,7 @@ impl XLeRobotWheelVelocities {
         Ok(wheels)
     }
 
-    /// 重检有限值后，按前8、左7、右9顺序输出弧度/秒数组。
+    /// 重检有限值后，按前8、左9、右7顺序输出弧度/秒数组。
     pub fn to_motor_order(self) -> Result<[f64; 3], BaseKinematicsError> {
         let values = [self.front_rad_s, self.left_rad_s, self.right_rad_s];
         if values.iter().any(|value| !value.is_finite()) {
@@ -96,7 +96,7 @@ pub enum BaseKinematicsError {
     NonFiniteBodyVelocity,
     /// 至少一个轮速输入分量为 NaN/无穷大。
     NonFiniteWheelVelocity,
-    /// 电机 ID 必须精确为前8、左7、右9。
+    /// 电机 ID 必须精确为前8、左9、右7。
     InvalidWheelIds {
         /// 收到的完整顺序，保留错序/重复 ID 证据。
         received: [u8; 3],
@@ -114,7 +114,7 @@ impl fmt::Display for BaseKinematicsError {
             Self::NonFiniteBodyVelocity => formatter.write_str("机身速度含非有限值"),
             Self::NonFiniteWheelVelocity => formatter.write_str("轮角速度含非有限值"),
             Self::InvalidWheelIds { received } => {
-                write!(formatter, "轮电机顺序必须为[8,7,9]，收到{received:?}")
+                write!(formatter, "轮电机顺序必须为[8,9,7]，收到{received:?}")
             }
             Self::UnrepresentableCalculation => {
                 formatter.write_str("计算结果无法有限表示或满足轮速上限")
@@ -320,13 +320,16 @@ mod tests {
 
     #[test]
     fn strict_motor_order_and_named_array_mapping() {
-        assert_eq!(XLEROBOT_WHEEL_IDS, [8, 7, 9]);
-        let value = XLeRobotWheelVelocities::from_motor_order([8, 7, 9], [1.0, 2.0, 3.0]).unwrap();
+        assert_eq!(XLEROBOT_WHEEL_IDS, [8, 9, 7]);
+        let value = XLeRobotWheelVelocities::from_motor_order([8, 9, 7], [1.0, 2.0, 3.0]).unwrap();
+        assert_close(value.front_rad_s, 1.0);
+        assert_close(value.left_rad_s, 2.0);
+        assert_close(value.right_rad_s, 3.0);
         assert_eq!(value, wheels([1.0, 2.0, 3.0]));
         assert_wheels(value, [1.0, 2.0, 3.0]);
         for ids in [
             [7, 8, 9],
-            [8, 9, 7],
+            [8, 7, 9],
             [9, 7, 8],
             [7, 9, 8],
             [9, 8, 7],

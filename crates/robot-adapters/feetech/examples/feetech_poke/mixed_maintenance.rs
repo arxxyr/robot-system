@@ -33,7 +33,7 @@ use robot_core::time::{DurationNs, RobotClock, SystemClock};
 use serde_json::{Value, json};
 
 const DEVICE: &str = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00";
-const IDS: [u8; 9] = [1, 2, 3, 4, 5, 6, 8, 7, 9];
+const IDS: [u8; 9] = [1, 2, 3, 4, 5, 6, 8, 9, 7];
 const NAMES: [&str; 9] = [
     "right_arm_shoulder_pan",
     "right_arm_shoulder_lift",
@@ -325,7 +325,7 @@ impl<T: SerialTransport> Port<T> {
             // 安全收尾只接受已固定三轮GV0或完整九TE0，不能借cleanup写GP/TE1。
             let zero = bytes.len() == 17
                 && bytes[2..7] == [254, 13, 131, 46, 2]
-                && bytes[7..16] == [8, 0, 0, 7, 0, 0, 9, 0, 0];
+                && bytes[7..16] == [8, 0, 0, 9, 0, 0, 7, 0, 0];
             let off = bytes.len() == 26
                 && bytes[2..7] == [254, 22, 131, 40, 1]
                 && IDS
@@ -354,7 +354,7 @@ impl<T: SerialTransport> Port<T> {
         }
         if bytes.len() == 17
             && bytes[4..7] == [131, 46, 2]
-            && bytes[7..16] == [8, 0, 0, 7, 0, 0, 9, 244, 1]
+            && bytes[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0]
         {
             let _ = self.guard.nonzero_attempt.compare_exchange(
                 0,
@@ -483,7 +483,7 @@ fn write_cycle<T: SerialTransport + 'static>(
     for (index, anchor) in anchors.into_iter().enumerate() {
         command.positions[index] = raw_to_rad(anchor);
     }
-    command.raw_velocities[8] = raw;
+    command.raw_velocities[7] = raw;
     adapter
         .write_command(&command.as_view())
         .map_err(|e| e.to_string())
@@ -515,7 +515,7 @@ fn run<T: SerialTransport + 'static>(
         preempt: Some(guard.clone()),
         diag: Some(guard.clone()),
         call_deadline: Duration::from_millis(50),
-        adapter_name: "mixed-right9-maintenance",
+        adapter_name: "mixed-left9-maintenance",
         joint_names: NAMES.iter().map(ToString::to_string).collect(),
         calibrations: calibrations.to_owned(),
     };
@@ -657,25 +657,25 @@ fn run<T: SerialTransport + 'static>(
                         return Err("六臂偏离固定锚点超过4计数".into());
                     }
                 }
-                if raw.iter().any(|r| !(0..=4095).contains(r)) || words[8] > 1000 {
+                if raw.iter().any(|r| !(0..=4095).contains(r)) || words[7] > 1000 {
                     return Err("运动反馈原值越界或方向异常".into());
                 }
-                for index in 0..2 {
-                    if !matches!(words[index + 6], 0 | 50 | 0x8032)
-                        || (raw[index + 6] - wheel_anchors[index]).abs() > 4
+                for (index, slot) in [6, 8].into_iter().enumerate() {
+                    if !matches!(words[slot], 0 | 50 | 0x8032)
+                        || (raw[slot] - wheel_anchors[index]).abs() > 4
                     {
                         return Err("未驱动轮反馈超出原非目标范围".into());
                     }
                 }
-                positive_pv |= words[8] > 0;
+                positive_pv |= words[7] > 0;
                 if let Some(last) = previous {
-                    let step = (raw[8] - last).rem_euclid(4096);
+                    let step = (raw[7] - last).rem_euclid(4096);
                     if step > 512 {
-                        return Err("右轮相邻位移越界或逆向".into());
+                        return Err("左轮相邻位移越界或逆向".into());
                     }
                     travel += step;
                 }
-                previous = Some(raw[8]);
+                previous = Some(raw[7]);
             }
             let finished = guard.clock.now().0;
             report["cycles"].as_array_mut().unwrap().push(
@@ -689,7 +689,7 @@ fn run<T: SerialTransport + 'static>(
         );
         guard.wait(first.checked_add(PULSE).ok_or("20秒期限溢出")?)?;
         if travel <= 0 || !positive_pv {
-            return Err("右轮20秒未得到正向位置变化".into());
+            return Err("左轮20秒未得到正向位置变化".into());
         }
         let zero_started = guard.clock.now().0;
         report["timing"]["zero_started_ns"] = json!(zero_started);
@@ -699,7 +699,7 @@ fn run<T: SerialTransport + 'static>(
         adapter.bus().set_op_class(BusOpClass::PeriodicWrite);
         adapter
             .bus()
-            .sync_write_by_id("Goal_Velocity", &[(8, 0), (7, 0), (9, 0)])
+            .sync_write_by_id("Goal_Velocity", &[(8, 0), (9, 0), (7, 0)])
             .map_err(|e| e.to_string())?;
         let zero_finished = guard.clock.now().0;
         report["timing"]["zero_finished_ns"] = json!(zero_finished);
@@ -749,7 +749,7 @@ fn run<T: SerialTransport + 'static>(
         report["cleanup"]["zero_attempted"] = json!(true);
         let zero = adapter
             .bus()
-            .sync_write_by_id("Goal_Velocity", &[(8, 0), (7, 0), (9, 0)]);
+            .sync_write_by_id("Goal_Velocity", &[(8, 0), (9, 0), (7, 0)]);
         report["cleanup"]["zero_ok"] = json!(zero.is_ok());
         if let Err(failed) = zero {
             error.get_or_insert_with(|| failed.to_string());
@@ -832,7 +832,7 @@ fn run<T: SerialTransport + 'static>(
 }
 
 fn empty_report(args: &[String]) -> Value {
-    json!({"schema":"FEETECH_MIXED_RIGHT9_V1","operation":"mixed-hold-right9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":IDS,"wheel_ids":[8,7,9],"wheel_raw_goal":[0,0,500],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
+    json!({"schema":"FEETECH_MIXED_LEFT9_V1","operation":"mixed-hold-left9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":IDS,"wheel_ids":[8,9,7],"wheel_raw_goal":[0,500,0],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
 }
 
 pub(super) fn main(args: &[String]) -> ExitCode {
@@ -1181,6 +1181,21 @@ mod tests {
                 IDS.into_iter().flat_map(|id| [id, 0]).collect::<Vec<_>>()
             );
             if scenario == 0 {
+                assert_eq!(report["wheel_ids"], json!([8, 9, 7]));
+                assert_eq!(report["wheel_raw_goal"], json!([0, 500, 0]));
+                let velocity_frames = frames
+                    .iter()
+                    .filter(|frame| frame.len() == 17 && frame[4..7] == [131, 46, 2])
+                    .collect::<Vec<_>>();
+                assert!(
+                    velocity_frames
+                        .iter()
+                        .any(|frame| { frame[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0] })
+                );
+                assert!(velocity_frames.iter().all(|frame| {
+                    frame[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0]
+                        || frame[7..16] == [8, 0, 0, 9, 0, 0, 7, 0, 0]
+                }));
                 let actual_first = report["timing"]["first_nonzero_ns"].as_u64().unwrap();
                 assert!(report["cycles"][0]["started_ns"].as_u64().unwrap() < actual_first);
                 assert_eq!(

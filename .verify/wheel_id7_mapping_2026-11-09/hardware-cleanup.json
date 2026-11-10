@@ -1,0 +1,82 @@
+{
+  "child_commands": 366,
+  "all_reaped": true,
+  "related_pids_absent": true,
+  "serial_and_lock_checks": [
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "elevated": false,
+      "exit_code": 1,
+      "no_holder": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "elevated": true,
+      "exit_code": 1,
+      "no_holder": true
+    }
+  ],
+  "hardware_tmux": "SESSION_ABSENT",
+  "sdk_connection_closed": true,
+  "uart_access_during_cleanup": false
+}

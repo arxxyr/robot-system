@@ -29,7 +29,7 @@ use crate::serial_io_thread::{SerialIoThreadConfig, SerialIoThreadHandle, spawn_
 
 const IDS: [u8; 9] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ARMS: [u8; 6] = [1, 2, 3, 4, 5, 6];
-const WHEELS: [u8; 3] = [8, 7, 9];
+const WHEELS: [u8; 3] = [8, 9, 7];
 const ANCHOR: [u16; 6] = [2010, 2020, 2030, 2040, 2050, 2060];
 
 type Exchanges = Arc<Mutex<VecDeque<(Vec<u8>, Vec<u8>)>>>;
@@ -265,7 +265,7 @@ impl Fixture {
         let mut positions = [3007, 3008, 3009, 0, 0, 0, 3007, 3008, 3009];
         positions[..6].copy_from_slice(&arm);
         self.sync_read(56, 2, &IDS, &positions);
-        self.sync_read(58, 2, &IDS, &[0, 0, 0, 0, 0, 0, 0, 0, wheel_velocity]);
+        self.sync_read(58, 2, &IDS, &[0, 0, 0, 0, 0, 0, wheel_velocity, 0, 0]);
         positions
     }
 
@@ -394,7 +394,7 @@ fn raw_enable_forward_hold_and_estop_use_real_serial_tick_and_all_nine() {
     let client = SerialIoCtrlClient::new(fixture.ctrl.clone());
     client.set_policy(OutputPolicy::ActiveForward);
     let command = fixture.command(500);
-    fixture.writes(46, 2, &WHEELS, &[0, 0, 500]);
+    fixture.writes(46, 2, &[8, 9, 7], &[0, 0, 500]);
     fixture.writes(42, 2, &ARMS, &ANCHOR);
     let positions = fixture.feedback(ANCHOR.map(|raw| raw + 1), 500);
     fixture.step(&command);
@@ -412,7 +412,7 @@ fn raw_enable_forward_hold_and_estop_use_real_serial_tick_and_all_nine() {
             .iter()
             .map(|v| v.to_bits())
             .collect::<Vec<_>>(),
-        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0].map(f32::to_bits)
+        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 0.0, 0.0].map(f32::to_bits)
     );
 
     // 真实保持使用刚成功的反馈，轮速先归零，独立预算不改来源目标。
@@ -423,7 +423,7 @@ fn raw_enable_forward_hold_and_estop_use_real_serial_tick_and_all_nine() {
     fixture.feedback(ANCHOR.map(|raw| raw + 1), 0);
     fixture.step(&command);
     fixture.assert_consumed();
-    assert_eq!(command.raw_velocities[8], 500);
+    assert_eq!(command.raw_velocities[6], 500);
     assert_eq!(fixture.metrics.write_errors.load(Ordering::Relaxed), 0);
     assert_eq!(fixture.metrics.read_errors.load(Ordering::Relaxed), 0);
     client.safety_stop();
@@ -440,7 +440,7 @@ fn raw_expiry_between_gv_and_gp_omits_gp_read_and_retry_then_stops_all_nine() {
     let mut fixture = Fixture::new();
     SerialIoCtrlClient::new(fixture.ctrl.clone()).set_policy(OutputPolicy::ActiveForward);
     let command = fixture.command(500);
-    let gv = sync_write(46, 2, &WHEELS, &[0, 0, 500]);
+    let gv = sync_write(46, 2, &[8, 9, 7], &[0, 0, 500]);
     fixture.enqueue(gv.clone(), Vec::new());
     fixture.expire_after_write.store(true, Ordering::Release);
     fixture.step(&command);
@@ -631,7 +631,7 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
 
     client.set_policy(OutputPolicy::ActiveForward);
     worker.commands.store(fixture.command(500));
-    fixture.writes(46, 2, &WHEELS, &[0, 0, 500]);
+    fixture.writes(46, 2, &[8, 9, 7], &[0, 0, 500]);
     fixture.writes(42, 2, &ARMS, &ANCHOR);
     let positions = fixture.feedback(ANCHOR.map(|raw| raw + 1), 500);
     let moving = worker.step();
@@ -649,7 +649,7 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
             .iter()
             .map(|value| value.to_bits())
             .collect::<Vec<_>>(),
-        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0].map(f32::to_bits),
+        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 0.0, 0.0].map(f32::to_bits),
     );
     fixture.assert_consumed();
 

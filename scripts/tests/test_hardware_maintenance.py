@@ -605,7 +605,8 @@ class ClassificationTests(unittest.TestCase):
                   'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
                   'base_contract_verified':True,'firmware_contract_verified':True}
         plan=m.make_plan(bindings,'/home/loosqk/robot-checks/approved/run','run','/home/loosqk/robot-checks/approved')
-        self.assertEqual([t['motor'] for t in plan['base_targets']],[8,7,9])
+        self.assertEqual(plan['base_order'],[8,9,7])
+        self.assertEqual([t['motor'] for t in plan['base_targets']],[8,9,7])
         self.assertTrue(all(t['decision']=='DEFERRED' and t['reason_code']=='BASE_FIRMWARE_CONTRACT_UNVERIFIED' for t in plan['base_targets']))
         report={'plan':plan,'stop_verification':{'status':'PASS'},'identity_verification':{'status':'PASS'},
                 'position_verification':{'status':'PASS'},'probes':[{'status':'PASS'}]*7}
@@ -639,7 +640,7 @@ class ClassificationTests(unittest.TestCase):
                          ['--position-target','unknown'],['--position-target',''],['--position-target']):
                 with self.subTest(args=args),contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises((ValueError,SystemExit)):m.main(args)
-            for targets in ([],[m.TARGETS[0],m.TARGETS[0]],[('right',9,'base_right_wheel')],
+            for targets in ([],[m.TARGETS[0],m.TARGETS[0]],[('right',9,'base_left_wheel')],
                             [('left',5,'head_motor_1')],[('left',False,'left_arm_wrist_roll')]):
                 plan={'schema':'MAINTENANCE_PLAN_V2','position_targets':targets}
                 called=[];engine=SimpleNamespace(rows=[],position=lambda *a:called.append(a))
@@ -753,11 +754,11 @@ class ClassificationTests(unittest.TestCase):
             self.assertEqual(report['result'],'FAIL');self.assertFalse(report['manual_power_cut_required'])
             self.assertEqual(report['stop_verification']['status'],'PASS');self.assertEqual(report['identity_verification']['status'],'PASS')
             self.assertEqual(len(executor.feedback.calls),84)
-            self.assertTrue(report['stop_verification']['left7_stability_used'])
-            self.assertTrue(report['stop_verification']['right9_stability_used'])
+            self.assertTrue(report['stop_verification']['right7_stability_used'])
+            self.assertTrue(report['stop_verification']['left9_stability_used'])
             self.assertTrue(report['stop_verification']['front8_stability_used'])
-            self.assertNotEqual(report['before_left7_stability']['started_ns'],report['after_left7_stability']['started_ns'])
-            self.assertNotEqual(report['before_right9_stability']['started_ns'],report['after_right9_stability']['started_ns'])
+            self.assertNotEqual(report['before_right7_stability']['started_ns'],report['after_right7_stability']['started_ns'])
+            self.assertNotEqual(report['before_left9_stability']['started_ns'],report['after_left9_stability']['started_ns'])
             json.dumps(report)
             self.assertEqual(sum(len(row) for phase in ('before','after') for row in report[phase].values()),204)
             for motor in (7,8,9):
@@ -1140,9 +1141,10 @@ class RightPulseTests(unittest.TestCase):
         executor.value=value
         return executor,engine
 
-    def test_same_connection_twenty_seconds_repeats_only_right9_fixed_goal(self):
+    def test_same_connection_twenty_seconds_repeats_only_right7_fixed_goal(self):
         executor,engine=self.engine()
         row=self.perform(executor,engine)
+        self.assertEqual(engine.plan['right_wheel_pulse']['target'],['right',7,'base_right_wheel'])
         self.assertNotIn('zero_stop_check',engine.plan['right_wheel_pulse'])
         self.assertNotIn('zero_stop_check',row)
         self.assertEqual(row['status'],'PASS');self.assertFalse(engine.manual_cut)
@@ -1157,16 +1159,16 @@ class RightPulseTests(unittest.TestCase):
         self.assertEqual([w['value'] for w in row['writes'][:3]],[0,1,500])
         self.assertEqual([(w['register'],w['value']) for w in row['writes'][-2:]],
                          [('Goal_Velocity',0),('Torque_Enable',0)])
-        self.assertTrue(all(w['motor']==9 for w in row['writes']))
+        self.assertTrue(all(w['motor']==7 for w in row['writes']))
         self.assertTrue(row['stopped_confirmed']);self.assertEqual((executor.goal,executor.torque),(0,0))
 
     def test_zero_stop_option_is_pulse_only_and_binds_target_scope_plan_and_go(self):
         root='/home/loosqk/robot-checks/pulse-fixture'
-        for options in ({'zero_stop_check':True},{'zero_stop_check':True,'left_wheel_feedback_only':True},
+        for options in ({'zero_stop_check':True},{'zero_stop_check':True,'right_wheel_feedback_only':True},
                         {'zero_stop_check':1,'right_wheel_pulse':True}):
             with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,**options)
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不得child')) as child:
-            for args in (['--zero-stop-check'],['--left-wheel-feedback-only','--zero-stop-check'],
+            for args in (['--zero-stop-check'],['--right-wheel-feedback-only','--zero-stop-check'],
                          ['--right-wheel-pulse','--zero-stop-check','--position-target','head-1']):
                 with self.assertRaises(ValueError):m.main(args)
             for args in (['--right-wheel-pulse','--zero-stop-check'],['--wheel-pulse','front','--zero-stop-check'],
@@ -1189,7 +1191,7 @@ class RightPulseTests(unittest.TestCase):
             m.validate_go(go,plan,200)
             self.assertIn('三轮各按同一获准稳定性判据',plan['scope'])
             old=copy.deepcopy(plan)
-            old['scope']=old['scope'].replace('三轮各按同一获准稳定性判据','仅左7和右9各按获准稳定性判据')
+            old['scope']=old['scope'].replace('三轮各按同一获准稳定性判据','仅右7和左9各按获准稳定性判据')
             old['right_wheel_pulse']['scope']=old['scope']
             with self.assertRaises(ValueError):m.position_targets_from_plan(old)
             old_go=copy.deepcopy(go);old_go['plan_sha256']=m.digest(old)
@@ -1513,7 +1515,7 @@ class RightPulseTests(unittest.TestCase):
         executor,engine=self.engine(zero_stop_check=True);original=Path.open
         def opening(path,*args,**kwargs):
             stream=original(path,*args,**kwargs)
-            if path.name!='right9-sdk-wire.jsonl' or not args or args[0]!='x':return stream
+            if path.name!='right7-sdk-wire.jsonl' or not args or args[0]!='x':return stream
             def write(value):
                 if 'zero_stop_check' in engine.right_pulse:raise OSError('零速阶段原帧日志失败')
                 return stream.write(value)
@@ -1526,7 +1528,7 @@ class RightPulseTests(unittest.TestCase):
         self.assertTrue(row['connection']['closed']);self.assertTrue(engine.manual_cut)
 
     def test_front_and_left_select_only_one_fixed_motor_in_all_sdk_packets(self):
-        for wheel,motor in (('front',8),('left',7)):
+        for wheel,motor in (('front',8),('left',9)):
             executor,engine=self.engine(wheel)
             row=self.perform(executor,engine)
             self.assertEqual((row['side'],row['motor'],row['name']),m.WHEEL_PULSE_TARGETS[wheel])
@@ -1692,7 +1694,7 @@ class RightPulseTests(unittest.TestCase):
                          ['--wheel-pulse','front','--right-wheel-pulse'],
                          ['--wheel-pulse','front','--wheel-pulse','left'],
                          ['--wheel-pulse','front','--position-target','head-1'],
-                         ['--wheel-pulse','left','--left-wheel-feedback-only']):
+                         ['--wheel-pulse','left','--right-wheel-feedback-only']):
                 with contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):m.main(args)
             child.assert_not_called()
         root='/home/loosqk/robot-checks/pulse-fixture'
@@ -1704,7 +1706,7 @@ class RightPulseTests(unittest.TestCase):
             plan=self.plan(wheel)
             self.assertEqual(m.position_targets_from_plan(json.loads(json.dumps(plan))),[])
             for target in (['right',6,'right_arm_gripper'],['left',7,'head_motor_1'],
-                           ['right',8,'base_left_wheel'],['right',7,'base_front_wheel']):
+                           ['right',8,'base_right_wheel'],['right',7,'base_front_wheel']):
                 bad=copy.deepcopy(plan);bad['right_wheel_pulse']['target']=target
                 with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
 
@@ -1726,14 +1728,14 @@ class RightPulseTests(unittest.TestCase):
                 bad=copy.deepcopy(go);bad['plan_sha256']=m.digest(plans[other])
                 with self.assertRaises(ValueError):m.validate_go(bad,plans[other],200)
 
-    def test_selected_torque_read_trace_and_sdk_status_cannot_be_mislabeled_as_right9(self):
-        for wheel,motor in (('front',8),('left',7)):
+    def test_selected_torque_read_trace_and_sdk_status_reject_other_wheel_ids(self):
+        for wheel,motor in (('front',8),('left',9)):
             executor,engine=self.engine(wheel)
             self.assertEqual(executor.poke('right',motor,'read','Torque_Enable'),0)
             trace=executor.commands[-1]['ordinary_read_trace']
             self.assertEqual(trace['motor_ids'],[motor])
             self.assertTrue(Path(trace['path']).name.startswith(f'right{motor}-pulse-read-'))
-            executor,engine=self.engine(wheel);executor.sdk_reply_id=9
+            executor,engine=self.engine(wheel);executor.sdk_reply_id=7
             row=self.perform(executor,engine,False)
             self.assertEqual(row['writes'],[]);self.assertTrue(engine.manual_cut)
 
@@ -1744,7 +1746,7 @@ class RightPulseTests(unittest.TestCase):
         events=[json.loads(line) for line in raw.splitlines()]
         actual=[event['bytes'] for event in events if event['direction']=='tx']
         self.assertEqual(actual,executor.sdk_packets)
-        self.assertIn([255,255,254,7,131,46,2,9,244,1,73],actual)
+        self.assertIn([255,255,254,7,131,46,2,7,244,1,75],actual)
         self.assertTrue(all(entry['comm']==0 and entry['tx_attempts']==1 for entry in row['sdk_operations']))
         self.assertFalse(any('argv' in entry or 'pid' in entry for entry in row['sdk_operations']))
         self.assertTrue(any(event['direction']=='rx' for event in events))
@@ -1997,7 +1999,7 @@ class RightPulseTests(unittest.TestCase):
         executor,engine=self.engine();original=Path.open
         def opening(path,*args,**kwargs):
             stream=original(path,*args,**kwargs)
-            if path.name!='right9-sdk-wire.jsonl' or not args or args[0]!='x':return stream
+            if path.name!='right7-sdk-wire.jsonl' or not args or args[0]!='x':return stream
             def write(value):
                 if engine.right_pulse['velocity_attempted']:raise OSError('原帧日志写失败')
                 return stream.write(value)
@@ -2036,7 +2038,7 @@ class RightPulseTests(unittest.TestCase):
                 ValueError,'BASE_FIRMWARE_CONTRACT_UNVERIFIED'):
             m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
         self.assertEqual(engine.rows[0]['status'],'PASS')
-        before=idle_rows();after=copy.deepcopy(before);after['right:9']['Present_Position']=executor.position
+        before=idle_rows();after=copy.deepcopy(before);after['right:7']['Present_Position']=executor.position
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
         after['right:8']['Present_Position']+=5
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
@@ -2059,7 +2061,7 @@ class RightPulseTests(unittest.TestCase):
             sdk=m.importlib.import_module('scservo_sdk');serial=m.importlib.import_module('serial')
             self.assertEqual(serial.VERSION,'3.5')
             original=sdk.PortHandler
-            for wheel,motor in (('right',9),('front',8),('left',7)):
+            for wheel,motor in (('right',7),('front',8),('left',9)):
                 cases=[(False,[250,50,0],None,0),(True,[250,-50,-50],None,0),(True,[300,0,50],None,0)]
                 cases += [(False,[250,50,0],phase,trigger) for phase in ('initial','post_disable') for trigger in (50,-50)]
                 for zero_stop,speeds,phase,trigger in cases:
@@ -2102,7 +2104,7 @@ class RightPulseTests(unittest.TestCase):
             sys.modules.update(saved)
 
 
-class LeftFeedbackTests(unittest.TestCase):
+class WheelFeedbackTests(unittest.TestCase):
     def setUp(self):
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         self.root=Path(directory.name).resolve()
@@ -2123,11 +2125,11 @@ class LeftFeedbackTests(unittest.TestCase):
                 'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
                 'refs':[dict(self.reference)],'binary_paths':[self.reference['path']]}
 
-    def plan(self,*,front=False,right=False):
+    def plan(self,*,front=False,left=False):
         root='/home/loosqk/robot-checks/feedback'
         return m.make_plan(self.bindings(),root+'/run','feedback',root,
-                           left_wheel_feedback_only=not (front or right),front_wheel_feedback_only=front,
-                           right_wheel_feedback_only=right)
+                           right_wheel_feedback_only=not (front or left),front_wheel_feedback_only=front,
+                           left_wheel_feedback_only=left)
 
     def go(self,plan,now):
         facts={**{k:True for k in m.FACTS},'confirmed_at_ns':now}
@@ -2139,8 +2141,8 @@ class LeftFeedbackTests(unittest.TestCase):
                 'base_confirmation_kind':'CURRENT_SETUP_READY','base_confirmation_scope':plan['scope'],
                 'base_confirmation_answer':'夹具只读'}}}
 
-    def engine(self,*,front=False,right=False):
-        return m.ProbeEngine(FeedbackIO(motor=9 if right else 8 if front else 7),self.plan(front=front,right=right))
+    def engine(self,*,front=False,left=False):
+        return m.ProbeEngine(FeedbackIO(motor=9 if left else 8 if front else 7),self.plan(front=front,left=left))
 
     def snapshot_engine(self,pv=0,guard=False,*,wheel_pv=None):
         rows=idle_rows();rows['right:7']['Present_Velocity']=pv
@@ -2182,7 +2184,7 @@ class LeftFeedbackTests(unittest.TestCase):
         return stack
 
     def test_fixed_fourteen_reads_record_fifty_without_whole_stop_pass(self):
-        engine=self.engine();m.run_left_wheel_feedback(engine,lambda:None)
+        engine=self.engine();m.run_right_wheel_feedback(engine,lambda:None)
         row=engine.rows[0]
         self.assertEqual(row['status'],'PASS')
         self.assertFalse(row['stop_verified']);self.assertFalse(row['same_frame'])
@@ -2196,7 +2198,7 @@ class LeftFeedbackTests(unittest.TestCase):
                           if s['register']=='Present_Position'],[0,250_000_000,500_000_000,750_000_000,1_000_000_000])
         self.assertTrue(all(s['finished_ns']>s['started_ns'] for s in row['samples']))
         self.assertFalse(engine.manual_cut)
-        with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+        with self.assertRaises(ValueError):m.run_right_wheel_feedback(engine,lambda:None)
         self.assertEqual(len(engine.io.calls),14)
 
     def test_every_read_fault_stops_without_retry_or_final_torque_read(self):
@@ -2204,18 +2206,18 @@ class LeftFeedbackTests(unittest.TestCase):
             for index in range(1,15):
                 engine=self.engine();setattr(engine.io,fault,index)
                 with self.subTest(fault=fault,index=index),self.assertRaises((ValueError,OSError)):
-                    m.run_left_wheel_feedback(engine,lambda:None)
+                    m.run_right_wheel_feedback(engine,lambda:None)
                 self.assertEqual(len(engine.io.calls),index)
                 self.assertTrue(engine.rows[0]['uart_blocked']);self.assertTrue(engine.manual_cut)
                 self.assertEqual(engine.rows[0]['status'],'FAIL')
         for index in (1,14):
             engine=self.engine();engine.io.torque_at=index
-            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+            with self.assertRaises(ValueError):m.run_right_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),index)
             self.assertEqual(engine.rows[0]['samples'][-1]['raw']['raw_unsigned'],1)
         for index in (2,13):
             engine=self.engine();engine.io.goal_at=index
-            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+            with self.assertRaises(ValueError):m.run_right_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),index)
             self.assertTrue(engine.manual_cut)
 
@@ -2224,13 +2226,13 @@ class LeftFeedbackTests(unittest.TestCase):
                           [4095,0,0,0,0],[-1]*5,[4096]*5):
             engine=self.engine();engine.io.positions=positions
             with self.subTest(positions=positions),self.assertRaises((ValueError,OverflowError)):
-                m.run_left_wheel_feedback(engine,lambda:None)
+                m.run_right_wheel_feedback(engine,lambda:None)
             self.assertTrue(engine.manual_cut)
         for velocity in (49,51,-49,-51,0x8000):
             for index in range(5):
                 engine=self.engine();engine.io.velocities=[0]*5;engine.io.velocities[index]=velocity
                 with self.subTest(velocity=velocity,index=index),self.assertRaises(ValueError):
-                    m.run_left_wheel_feedback(engine,lambda:None)
+                    m.run_right_wheel_feedback(engine,lambda:None)
                 self.assertEqual(len(engine.io.calls),4+index*2)
                 self.assertTrue(engine.manual_cut)
 
@@ -2243,20 +2245,20 @@ class LeftFeedbackTests(unittest.TestCase):
             m.validate_snapshot(values,engine=engine)
             result=m.classify_stop_snapshot(values,engine=engine)
             self.assertEqual(result['status'],'PASS')
-            self.assertTrue(result['left7_stability_used'])
+            self.assertTrue(result['right7_stability_used'])
             self.assertEqual(result['observed']['right:7']['Present_Velocity'],pv)
             if pv:
                 with self.assertRaises(ValueError):m.validate_snapshot(values)
                 self.assertEqual(m.classify_stop_snapshot(values)['status'],'FAIL')
-            original_evidence=engine.left_stop_evidence
+            original_evidence=engine.right_stop_evidence
             next_values,next_errors=m.snapshot(engine.io,engine=engine)
             self.assertEqual(next_errors,[]);self.assertEqual(len(engine.io.calls),84)
-            self.assertIsNot(original_evidence,engine.left_stop_evidence)
+            self.assertIsNot(original_evidence,engine.right_stop_evidence)
             with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
             self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
             m.validate_snapshot(next_values,engine=engine)
             json.dumps({'before':values,'before_window':original_evidence,
-                        'after':next_values,'after_window':engine.left_stop_evidence})
+                        'after':next_values,'after_window':engine.right_stop_evidence})
 
     def test_missing_old_json_or_failed_next_window_cannot_supply_receipt(self):
         for pv in (0,50,-50):
@@ -2265,7 +2267,7 @@ class LeftFeedbackTests(unittest.TestCase):
             with self.assertRaises(ValueError):m.validate_snapshot(copied,engine=engine)
             self.assertEqual(m.classify_stop_snapshot(copied,engine=engine)['status'],'UNKNOWN')
             receipt=engine.left_stop_receipt
-            for invalid in (None,{'status':'PASS','values':values,'evidence':engine.left_stop_evidence}):
+            for invalid in (None,{'status':'PASS','values':values,'evidence':engine.right_stop_evidence}):
                 engine.left_stop_receipt=invalid
                 with self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
                 self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
@@ -2281,7 +2283,7 @@ class LeftFeedbackTests(unittest.TestCase):
         engine=self.snapshot_engine(50);engine.io.positions=[1002]*5
         values,errors=m.snapshot(engine.io,engine=engine)
         self.assertTrue(errors);self.assertEqual(len(engine.io.calls),3)
-        self.assertEqual(engine.left_stop_evidence['anchor_raw'],1000)
+        self.assertEqual(engine.right_stop_evidence['anchor_raw'],1000)
         self.assertEqual(m.classify_stop_snapshot(values,errors,engine=engine)['status'],'UNKNOWN')
         for register,value in (('Operating_Mode',0),('Torque_Enable',1),('Goal_Velocity',1),
                                ('Present_Velocity',49),('Present_Position',4096)):
@@ -2293,7 +2295,7 @@ class LeftFeedbackTests(unittest.TestCase):
     def test_recompute_raw_evidence_instead_of_status_or_pass_boolean(self):
         for change in ('missing','bad_frame','bad_time','bad_offset','wrong_plan','wrong_anchor','error'):
             engine=self.snapshot_engine(50);values,_=m.snapshot(engine.io,engine=engine)
-            evidence=engine.left_stop_evidence
+            evidence=engine.right_stop_evidence
             evidence['status']='PASS';evidence['pass']=True
             if change=='missing':evidence['samples'].pop()
             if change=='bad_frame':evidence['samples'][3]['raw']['rx'][-1]^=1
@@ -2379,20 +2381,20 @@ class LeftFeedbackTests(unittest.TestCase):
         plan=self.plan();go=self.go(plan,100)
         for mutation in ('missing','old12','span','velocity','budget'):
             bad=copy.deepcopy(plan)
-            if mutation=='missing':del bad['left7_stop_contract']
-            if mutation=='old12':bad['left7_stop_contract']['reads']=12
-            if mutation=='span':bad['left7_stop_contract']['position_span_max']=2
-            if mutation=='velocity':bad['left7_stop_contract']['present_velocity_raw_unsigned'].append(51)
-            if mutation=='budget':bad['left7_stop_contract']['capture_budget_ns']+=1
+            if mutation=='missing':del bad['right7_stop_contract']
+            if mutation=='old12':bad['right7_stop_contract']['reads']=12
+            if mutation=='span':bad['right7_stop_contract']['position_span_max']=2
+            if mutation=='velocity':bad['right7_stop_contract']['present_velocity_raw_unsigned'].append(51)
+            if mutation=='budget':bad['right7_stop_contract']['capture_budget_ns']+=1
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):
                 m.validate_go(go,bad,200)
-        old=copy.deepcopy(plan);del old['left7_stop_contract']
+        old=copy.deepcopy(plan);del old['right7_stop_contract']
         old_go=self.go(old,100)
         with self.assertRaises(ValueError):m.validate_go(old_go,plan,200)
 
     def test_wheel_stop_fixed_contract_and_old_or_tampered_plan_go_rejected(self):
         plan=self.plan();go=self.go(plan,100)
-        for motor,prefix in ((7,'left'),(8,'front'),(9,'right')):
+        for motor,prefix in ((7,'right'),(8,'front'),(9,'left')):
             key=f'{prefix}{motor}_stop_contract'
             expected=m.left_stop_contract();expected.update(version=f'RIGHT{motor}_STABILITY_V1',
                 target=['right',motor,f'base_{prefix}_wheel'])
@@ -2442,7 +2444,7 @@ class LeftFeedbackTests(unittest.TestCase):
                              'wrong_plan','late','wrong_kind'):
                 engine=self.snapshot_engine(wheel_pv={motor:50});values,errors=m.snapshot(engine.io,engine=engine)
                 self.assertEqual(errors,[])
-                evidence=getattr(engine,prefix+'_stop_evidence');other='front' if motor==7 else 'left'
+                evidence=getattr(engine,prefix+'_stop_evidence');other='front' if motor==7 else 'right'
                 if mutation=='json_values':values=json.loads(json.dumps(values))
                 if mutation=='json_receipt':setattr(engine,prefix+'_stop_receipt',{'values':values,'evidence':evidence,'status':'PASS'})
                 if mutation=='cross_receipt':setattr(engine,prefix+'_stop_receipt',getattr(engine,other+'_stop_receipt'))
@@ -2454,7 +2456,7 @@ class LeftFeedbackTests(unittest.TestCase):
                 if mutation=='wrong_anchor':evidence['anchor_raw']+=1
                 if mutation=='wrong_plan':evidence['plan_sha256']='0'*64
                 if mutation=='late':evidence['finished_ns']=evidence['deadline_ns']+1
-                if mutation=='wrong_kind':evidence['kind']='right9_feedback_diagnostic'
+                if mutation=='wrong_kind':evidence['kind']='left9_feedback_diagnostic'
                 with self.subTest(motor=motor,mutation=mutation),self.assertRaises(ValueError):m.validate_snapshot(values,engine=engine)
                 self.assertEqual(m.classify_stop_snapshot(values,engine=engine)['status'],'UNKNOWN')
 
@@ -2532,11 +2534,11 @@ class LeftFeedbackTests(unittest.TestCase):
                 self.assertEqual(engine.io.calls,[]);self.assertTrue(getattr(engine,prefix+'_stop_blocked'))
                 self.assertTrue(engine.right_pulse['uart_blocked'])
 
-    def test_front_right_diagnostic_remains_record_only_and_cannot_supply_stop_receipt(self):
+    def test_front_left_diagnostic_remains_record_only_and_cannot_supply_stop_receipt(self):
         for motor in (8,9):
-            engine=self.engine(front=motor==8,right=motor==9);engine.io.positions=[1000,1004,1008,1012,1016]
+            engine=self.engine(front=motor==8,left=motor==9);engine.io.positions=[1000,1004,1008,1012,1016]
             engine.io.velocities=[50,-50,51,-51,0]
-            key='front_wheel_feedback_only' if motor==8 else 'right_wheel_feedback_only'
+            key='front_wheel_feedback_only' if motor==8 else 'left_wheel_feedback_only'
             contract=copy.deepcopy(engine.plan[key]);scope=engine.plan['scope']
             m.run_front_wheel_feedback(engine,lambda:None,motor=motor)
             row=engine.rows[0]
@@ -2550,12 +2552,12 @@ class LeftFeedbackTests(unittest.TestCase):
     def test_deadline_and_go_expiry_keep_last_frame_then_stop(self):
         for index in (1,5,14):
             engine=self.engine();engine.io.slow_at=index;engine.io.slow_ns=1_500_000_000
-            with self.assertRaisesRegex(ValueError,'超窗'):m.run_left_wheel_feedback(engine,lambda:None)
+            with self.assertRaisesRegex(ValueError,'超窗'):m.run_right_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),index)
             self.assertIn('raw',engine.rows[0]['samples'][-1])
         engine=self.engine()
         with self.assertRaisesRegex(ValueError,'GO'):
-            m.run_left_wheel_feedback(engine,lambda:m.require(engine.io.now()<1_055_000_000,'夹具GO到期'))
+            m.run_right_wheel_feedback(engine,lambda:m.require(engine.io.now()<1_055_000_000,'夹具GO到期'))
         self.assertEqual(len(engine.io.calls),14)
         self.assertIn('raw',engine.rows[0]['samples'][-1])
 
@@ -2564,18 +2566,18 @@ class LeftFeedbackTests(unittest.TestCase):
             engine=self.engine();ref=m.left_feedback_tool_ref(engine.plan)
             ref[key]='0'*64 if key=='sha256' else ref[key]+1
             with self.subTest(key=key),self.assertRaises(ValueError):
-                m.run_left_wheel_feedback(engine,lambda:None)
+                m.run_right_wheel_feedback(engine,lambda:None)
             self.assertEqual(engine.io.calls,[])
         engine=self.engine()
         with self.assertRaises(ValueError):
-            m.run_left_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO已失效')))
+            m.run_right_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO已失效')))
         self.assertEqual(engine.io.calls,[])
         with self.assertRaises(ValueError):
             m.left_feedback_raw(engine.io,self.reference,'Goal_Position',lambda:None)
         self.assertEqual(engine.io.calls,[])
         engine=self.engine()
         with patch.object(m,'verify_ref',side_effect=lambda *a,**k:setattr(engine.io,'t',1_500_000_000)):
-            with self.assertRaises(ValueError):m.run_left_wheel_feedback(engine,lambda:None)
+            with self.assertRaises(ValueError):m.run_right_wheel_feedback(engine,lambda:None)
         self.assertEqual(engine.io.calls,[])
 
     def test_raw_target_and_frame_metadata_mismatch_stop_after_one_read(self):
@@ -2588,25 +2590,25 @@ class LeftFeedbackTests(unittest.TestCase):
                 return json.dumps(raw)+'\n'
             engine.io.command=changed
             with self.subTest(key=key),self.assertRaises(ValueError):
-                m.run_left_wheel_feedback(engine,lambda:None)
+                m.run_right_wheel_feedback(engine,lambda:None)
             self.assertEqual(len(engine.io.calls),1)
             self.assertTrue(engine.rows[0]['uart_blocked'])
 
     def test_flag_contract_binding_and_missing_go_have_zero_child(self):
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('禁止子进程')) as child:
-            for args in (['--left-wheel-feedback-only','--right-wheel-pulse'],
-                         ['--left-wheel-feedback-only','--position-target','head-1'],
-                         ['--left-wheel-feedback-only','--execute']):
+            for args in (['--right-wheel-feedback-only','--right-wheel-pulse'],
+                         ['--right-wheel-feedback-only','--position-target','head-1'],
+                         ['--right-wheel-feedback-only','--execute']):
                 with self.assertRaises(ValueError):m.main(args)
             for key in ('target','reads','capture_budget_ns'):
-                plan=self.plan();plan['left_wheel_feedback_only'][key]=0
+                plan=self.plan();plan['right_wheel_feedback_only'][key]=0
                 with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
             for key in ('refs','binary_paths'):
                 plan=self.plan();plan['bindings'][key]=[]
                 with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
             with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),0)
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(m.main(['--left-wheel-feedback-only']),0)
+                self.assertEqual(m.main(['--right-wheel-feedback-only']),0)
             self.assertEqual(json.loads(out.getvalue())['actions_started'],0)
             child.assert_not_called()
 
@@ -2625,7 +2627,7 @@ class LeftFeedbackTests(unittest.TestCase):
     def test_final_journal_or_report_failure_revokes_candidate_pass(self):
         self.check_execute_cases(('journal','report'))
 
-    def check_execute_cases(self,faults,*,front=False,right=False):
+    def check_execute_cases(self,faults,*,front=False,left=False):
         for fault in faults:
             root=self.root/str(fault);root.mkdir()
             helper=root/'helper.py';helper.write_text('# 本机空helper\n')
@@ -2636,8 +2638,8 @@ class LeftFeedbackTests(unittest.TestCase):
                 for name in ('rx_trust.lock','estop_latch.lock'):
                     path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
                     bindings['protection'][side][name]={'path':str(path)}
-            executor=FeedbackIO(motor=9 if right else 8 if front else 7);executor.fail_at=fault
-            if front or right:executor.positions=[1200,1210,1220,1230,1240];executor.velocities=[100,-250,50,-50,0x8000]
+            executor=FeedbackIO(motor=9 if left else 8 if front else 7);executor.fail_at=fault
+            if front or left:executor.positions=[1200,1210,1220,1230,1240];executor.velocities=[100,-250,50,-50,0x8000]
             if fault=='journal':
                 class FailedClose(io.StringIO):
                     def close(self):raise OSError('注入日志关闭失败')
@@ -2664,8 +2666,8 @@ class LeftFeedbackTests(unittest.TestCase):
                   patch.object(m,'write_new',side_effect=write_report),
                   patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO()) as messages):
                 plan=m.make_plan(bindings,root/'run','feedback',root,
-                                 left_wheel_feedback_only=not (front or right),front_wheel_feedback_only=front,
-                                 right_wheel_feedback_only=right)
+                                 right_wheel_feedback_only=not (front or left),front_wheel_feedback_only=front,
+                                 left_wheel_feedback_only=left)
                 go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
@@ -2678,8 +2680,8 @@ class LeftFeedbackTests(unittest.TestCase):
                 report=json.loads((root/'run/run.json').read_text())
             if fault=='journal':self.assertIn('journal_close_error',report)
             self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
-            verification='right9_feedback_capture' if right else 'front8_feedback_capture' if front else 'left7_candidate_verification'
-            self.assertEqual(report[verification]['status'],('DIAGNOSTIC_CAPTURED' if front or right else 'PASS') if fault is None else 'FAIL')
+            verification='left9_feedback_capture' if left else 'front8_feedback_capture' if front else 'right7_candidate_verification'
+            self.assertEqual(report[verification]['status'],('DIAGNOSTIC_CAPTURED' if front or left else 'PASS') if fault is None else 'FAIL')
             self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
             self.assertEqual(report['position_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
             expected_identity={'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS')
@@ -2711,28 +2713,28 @@ class LeftFeedbackTests(unittest.TestCase):
 
     def test_front_fixed_plan_go_scope_and_final_metadata_cannot_be_forged_or_mixed(self):
         root='/home/loosqk/robot-checks/feedback'
-        for options in ({'left_wheel_feedback_only':True},{'right_wheel_pulse':True},
+        for options in ({'right_wheel_feedback_only':True},{'right_wheel_pulse':True},
                         {'wheel_pulse_target':'front'},{'zero_stop_check':True}):
             with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,
                                                          front_wheel_feedback_only=True,**options)
         with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,['head-1'],front_wheel_feedback_only=True)
         with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,front_wheel_feedback_only=1)
         plan=self.plan(front=True);go=self.go(plan,100);m.validate_go(go,plan,200)
-        for key,value in (('target',['right',7,'base_left_wheel']),('reads',12),('capture_budget_ns',2_000_000_000),
+        for key,value in (('target',['right',7,'base_right_wheel']),('reads',12),('capture_budget_ns',2_000_000_000),
                           ('present_velocity_policy','ZERO_OR_FIFTY'),('position_span_policy','AT_MOST_ONE')):
             bad=copy.deepcopy(plan);bad['front_wheel_feedback_only'][key]=value
             with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         for key in ('scope','target'):
             bad=copy.deepcopy(go)
-            if key=='scope':bad['physical']['right']['base_confirmation_scope']=m.LEFT_FEEDBACK_SCOPE
+            if key=='scope':bad['physical']['right']['base_confirmation_scope']=m.RIGHT_FEEDBACK_SCOPE
             else:bad['plan_sha256']=m.digest(self.plan())
             with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
         with self.assertRaises(ValueError):m.validate_go(self.go(plan,100),plan,600_000_000_101)
-        for extra in ('right_wheel_pulse','left_wheel_feedback_only'):
+        for extra in ('right_wheel_pulse','right_wheel_feedback_only'):
             bad=copy.deepcopy(plan);bad[extra]={}
             with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('不可创建child')) as child:
-            for args in (['--front-wheel-feedback-only','--left-wheel-feedback-only'],
+            for args in (['--front-wheel-feedback-only','--right-wheel-feedback-only'],
                          ['--front-wheel-feedback-only','--right-wheel-pulse'],
                          ['--front-wheel-feedback-only','--wheel-pulse','left'],
                          ['--front-wheel-feedback-only','--position-target','head-1'],
@@ -2741,7 +2743,7 @@ class LeftFeedbackTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--front-wheel-feedback-only']),0)
             self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
         engine=self.engine(front=True);m.run_front_wheel_feedback(engine,lambda:None)
-        for key,value in (('kind','left7_stop_stability'),('same_frame',True),('anchor_raw',100),
+        for key,value in (('kind','right7_stop_stability'),('same_frame',True),('anchor_raw',100),
                           ('position_span_raw',500),('stop_verified',True),('observation_started_ns',0)):
             bad=copy.deepcopy(engine.rows[0]);bad[key]=value
             with self.assertRaises(ValueError):m.validate_front_feedback_window(bad,engine.plan)
@@ -2825,7 +2827,7 @@ class LeftFeedbackTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
         self.assertIs(engine.io.front_feedback_before_spawn,foreign);self.assertEqual(engine.io.calls,[])
 
-    def test_front_raw_support_does_not_relax_default_left7_target_or_contract(self):
+    def test_front_raw_support_does_not_relax_default_right7_target_or_contract(self):
         engine=self.engine(front=True);m.run_front_wheel_feedback(engine,lambda:None)
         raw=engine.rows[0]['samples'][0]['raw']
         self.assertEqual(m.validate_left_feedback_raw(raw,'Torque_Enable',motor=8),0)
@@ -2833,7 +2835,7 @@ class LeftFeedbackTests(unittest.TestCase):
         for motor in (6,9,True):
             with self.assertRaises(ValueError):m.validate_left_feedback_raw(raw,'Torque_Enable',motor=motor)
         left=self.engine();left.io.positions=[1212,1212,1214,1212,1212]
-        with self.assertRaises(ValueError):m.run_left_wheel_feedback(left,lambda:None)
+        with self.assertRaises(ValueError):m.run_right_wheel_feedback(left,lambda:None)
         self.assertEqual(m.left_stop_contract()['position_span_max'],1)
         self.assertEqual(m.left_stop_contract()['present_velocity_raw_unsigned'],[0,50,0x8032])
         self.assertNotIn('front_wheel_feedback_only',self.plan())
@@ -2841,13 +2843,13 @@ class LeftFeedbackTests(unittest.TestCase):
     def test_front_execute_only_fourteen_reads_and_identity_no_stop_in_success_or_failure(self):
         self.check_execute_cases((None,3,'post','journal','report'),front=True)
 
-    def test_right_feedback_fourteen_fixed_reads_keep_signed_fifty_words_and_position_span(self):
-        engine=self.engine(right=True)
+    def test_left_feedback_fourteen_fixed_reads_keep_signed_fifty_words_and_position_span(self):
+        engine=self.engine(left=True)
         engine.io.positions=[948,949,950,951,960];engine.io.velocities=[0,50,-50,300,-250]
         m.run_front_wheel_feedback(engine,lambda:None,motor=9)
         row=engine.rows[0]
         self.assertEqual((row['side'],row['motor'],row['name'],row['kind']),
-                         ('right',9,'base_right_wheel','right9_feedback_diagnostic'))
+                         ('right',9,'base_left_wheel','left9_feedback_diagnostic'))
         self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED');self.assertFalse(row['stop_verified'])
         self.assertEqual([call[4] for call in engine.io.calls],
                          ['Torque_Enable','Goal_Velocity']+['Present_Position','Present_Velocity']*5+['Goal_Velocity','Torque_Enable'])
@@ -2864,43 +2866,43 @@ class LeftFeedbackTests(unittest.TestCase):
         for motor in (7,8):
             with self.assertRaises(ValueError):m.validate_left_feedback_raw(row['samples'][0]['raw'],'Torque_Enable',motor=motor)
 
-    def test_right_feedback_plan_scope_go_and_fixed_target_reject_mixups_and_missing_authority(self):
-        plan=self.plan(right=True);go=self.go(plan,100);m.validate_go(go,plan,200)
+    def test_left_feedback_plan_scope_go_and_fixed_target_reject_mixups_and_missing_authority(self):
+        plan=self.plan(left=True);go=self.go(plan,100);m.validate_go(go,plan,200)
         root='/home/loosqk/robot-checks/feedback'
-        for options in ({'left_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
+        for options in ({'right_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
                         {'right_wheel_pulse':True},{'wheel_pulse_target':'front'},{'zero_stop_check':True}):
-            with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,right_wheel_feedback_only=True,**options)
-        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,['head-1'],right_wheel_feedback_only=True)
-        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,right_wheel_feedback_only=1)
+            with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,left_wheel_feedback_only=True,**options)
+        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,['head-1'],left_wheel_feedback_only=True)
+        with self.assertRaises(ValueError):m.make_plan(self.bindings(),root+'/run','feedback',root,left_wheel_feedback_only=1)
         for field,value in (('target',['right',8,'base_front_wheel']),('reads',12),('capture_budget_ns',2_000_000_000),
                             ('present_velocity_policy','ZERO_OR_FIFTY'),('position_span_policy','AT_MOST_ONE')):
-            bad=copy.deepcopy(plan);bad['right_wheel_feedback_only'][field]=value
+            bad=copy.deepcopy(plan);bad['left_wheel_feedback_only'][field]=value
             with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         for old in (self.plan(),self.plan(front=True)):
             with self.assertRaises(ValueError):m.validate_go(self.go(old,100),plan,200)
             bad=copy.deepcopy(go);bad['physical']['right']['base_confirmation_scope']=old['scope']
             with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
-        for extra in ('left_wheel_feedback_only','front_wheel_feedback_only','right_wheel_pulse'):
+        for extra in ('right_wheel_feedback_only','front_wheel_feedback_only','right_wheel_pulse'):
             bad=copy.deepcopy(plan);bad[extra]={}
             with self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         with self.assertRaises((ValueError,KeyError)):m.validate_go({},plan,200)
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不得child')) as child:
-            for extra in (['--front-wheel-feedback-only'],['--left-wheel-feedback-only'],['--right-wheel-pulse'],
+            for extra in (['--front-wheel-feedback-only'],['--right-wheel-feedback-only'],['--right-wheel-pulse'],
                           ['--wheel-pulse','front'],['--position-target','head-1'],['--zero-stop-check'],['--execute']):
-                with self.assertRaises(ValueError):m.main(['--right-wheel-feedback-only',*extra])
-            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--right-wheel-feedback-only']),0)
+                with self.assertRaises(ValueError):m.main(['--left-wheel-feedback-only',*extra])
+            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--left-wheel-feedback-only']),0)
             self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
-        engine=self.engine(right=True)
+        engine=self.engine(left=True)
         with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
         self.assertEqual(engine.io.calls,[])
         front=self.engine(front=True)
         with self.assertRaises(ValueError):m.run_front_wheel_feedback(front,lambda:None,motor=9)
         self.assertEqual(front.io.calls,[])
 
-    def test_right_feedback_wrong_id_bad_frame_te_goal_and_io_errors_block_further_reads(self):
+    def test_left_feedback_wrong_id_bad_frame_te_goal_and_io_errors_block_further_reads(self):
         for fault,index in (('argv',0),('response',1),('bad_at',4),('torque_at',1),('goal_at',2),
                             ('goal_at',13),('torque_at',14),('fail_at',6),('signal_at',9)):
-            engine=self.engine(right=True)
+            engine=self.engine(left=True)
             if fault in ('argv','response'):
                 command=engine.io.command
                 def changed(argv,**kwargs):
@@ -2918,9 +2920,9 @@ class LeftFeedbackTests(unittest.TestCase):
             with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None,motor=9)
             self.assertEqual(len(engine.io.calls),count);self.assertFalse(hasattr(engine.io,'front_feedback_before_spawn'))
 
-    def test_right_feedback_next_slot_total_budget_and_go_expiry_never_fill_missing_reads(self):
+    def test_left_feedback_next_slot_total_budget_and_go_expiry_never_fill_missing_reads(self):
         for fault,index,delay in (('slot',4,250_000_000),('total',14,1_500_000_000),('go',5,0)):
-            engine=self.engine(right=True)
+            engine=self.engine(left=True)
             if fault!='go':engine.io.slow_at=index;engine.io.slow_ns=delay
             def gate():
                 if fault=='go':m.require(engine.io.sequence<index,'GO已到期')
@@ -2930,12 +2932,12 @@ class LeftFeedbackTests(unittest.TestCase):
             self.assertIn('raw',row['samples'][-1]);self.assertTrue(row['uart_blocked'])
             if fault=='slot':self.assertLess(row['finished_ns'],row['deadline_ns'])
             self.assertTrue(engine.manual_cut)
-        engine=self.engine(right=True)
+        engine=self.engine(left=True)
         with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:(_ for _ in ()).throw(ValueError('GO过期')),motor=9)
         self.assertEqual(engine.io.calls,[])
 
-    def test_right_feedback_execute_has_only_fourteen_reads_locks_and_nonuart_finish(self):
-        self.check_execute_cases((None,3,'post','journal','report'),right=True)
+    def test_left_feedback_execute_has_only_fourteen_reads_locks_and_nonuart_finish(self):
+        self.check_execute_cases((None,3,'post','journal','report'),left=True)
 
 
 class MixedRawTests(unittest.TestCase):
@@ -2961,11 +2963,11 @@ class MixedRawTests(unittest.TestCase):
                  'source_deadline_ns':first+(index+1)*50_000_000} for index in range(400)]
         cycles[0]={'started_ns':first-1_000_000,'finished_ns':first+2_000_000,
                    'source_deadline_ns':first+49_000_000}
-        return {'schema':'FEETECH_MIXED_RIGHT9_V1','operation':'mixed-hold-right9','result':'PASS','error':None,
+        return {'schema':'FEETECH_MIXED_LEFT9_V1','operation':'mixed-hold-left9','result':'PASS','error':None,
             'serial_device':m.DEVICES['right'],
             'arm_calibration_path':self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path'],
-            'go_expires_at_unix_ns':self.expiry,'motor_ids':[1,2,3,4,5,6,8,7,9],
-            'wheel_ids':[8,7,9],'wheel_raw_goal':[0,0,500],'pulse_duration_ns':20_000_000_000,
+            'go_expires_at_unix_ns':self.expiry,'motor_ids':[1,2,3,4,5,6,8,9,7],
+            'wheel_ids':[8,9,7],'wheel_raw_goal':[0,500,0],'pulse_duration_ns':20_000_000_000,
             'zero_window_ns':500_000_000,'enable_budget_ns':21_000_000_000,'cycle_count':400,
             'loaded_calibration':list(self.calibration.values()),
             'arm_anchors':[{'motor_id':motor,'raw':1000,'goal_raw':1000,'calibration_min':0,
@@ -2974,7 +2976,7 @@ class MixedRawTests(unittest.TestCase):
             'arm_final':[{'motor_id':motor,'raw':1000} for motor in range(1,7)],'cycles':cycles,
             'wheel_samples':[{'started_ns':cycles[index*5]['started_ns']+1_000_000,
                 'finished_ns':cycles[index*5]['started_ns']+2_000_000,
-                'position_raw':[1000,1000,(4000+index*5)%4096],'velocity_word':[0,0,500],
+                'position_raw':[1000,(4000+index*5)%4096,1000],'velocity_word':[0,500,0],
                 'arm_position_raw':[1000]*6} for index in range(1,80)],
             'zero_samples':[{'started_ns':zero_done+offset,'finished_ns':zero_done+offset+1_000_000,
                 'torque_enable':1,'goal_velocity_word':0,'present_velocity_word':word}
@@ -3026,22 +3028,26 @@ class MixedRawTests(unittest.TestCase):
     def test_mixed_plan_binds_new_refs_exact_targets_and_rejects_all_old_mode_combinations(self):
         self.assertEqual(m.position_targets_from_plan(self.plan),[])
         self.assertEqual(self.plan['bus2_mixed_raw_hold']['allowed_raw_targets'],[0,500])
+        self.assertEqual(self.plan['bus2_mixed_raw_hold']['wheel_ids'],[8,9,7])
+        self.assertEqual(self.plan['bus2_mixed_raw_hold']['wheel_raw_goal'],[0,500,0])
         default=m.make_plan(self.bindings,self.root+'/default','mixed-default',self.root)
         self.assertNotIn('bus2_mixed_raw_hold',default)
         self.assertTrue(all(row['decision']=='DEFERRED' for row in default['base_targets']))
         for options in ({'right_wheel_pulse':True},{'wheel_pulse_target':'left'},
-                        {'left_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
-                        {'right_wheel_feedback_only':True},{'zero_stop_check':True}):
+                        {'right_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
+                        {'left_wheel_feedback_only':True},{'zero_stop_check':True}):
             with self.subTest(options=options),self.assertRaises(ValueError):
                 m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True,**options)
         with self.assertRaises(ValueError):
             m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,['head-1'],bus2_mixed_raw_hold=True)
-        for mutation in ('old_tool','missing_ref','calibration','negative'):
+        for mutation in ('old_tool','missing_ref','calibration','negative','old_operation','old_order'):
             bad=copy.deepcopy(self.plan)
             if mutation=='old_tool':bad['bindings']['bus2_mixed_raw_hold']['tool']['sha256']=m.TOOL_SHA
             if mutation=='missing_ref':bad['bindings']['refs'].pop()
             if mutation=='calibration':bad['bus2_mixed_raw_hold']['arm_calibration']['sha256']='0'*64
             if mutation=='negative':bad['bus2_mixed_raw_hold']['wheel_raw_goal']=[0,0,-500]
+            if mutation=='old_operation':bad['bus2_mixed_raw_hold']['operation']='mixed-hold-right9'
+            if mutation=='old_order':bad['bus2_mixed_raw_hold']['wheel_ids']=[8,7,9]
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('不许启动')):
             with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(m.main(['--bus2-mixed-raw-hold']),0)
@@ -3061,20 +3067,26 @@ class MixedRawTests(unittest.TestCase):
             if mutation=='scope':bad['physical']['right']['base_confirmation_scope']=m.RIGHT_PULSE_SCOPE
             if mutation=='ttl':bad['expires_at_ns']=bad['issued_at_ns']+600_000_000_001
             if mutation=='watch':bad['physical']['right']['continuous_wheel_observation']=False
-            if mutation=='old_plan':bad['plan_sha256']='0'*64
+            if mutation=='old_plan':
+                old=copy.deepcopy(self.plan)
+                old['bus2_mixed_raw_hold'].update(operation='mixed-hold-right9',wheel_ids=[8,7,9],wheel_raw_goal=[0,0,500])
+                bad['plan_sha256']=m.digest(old)
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.validate_go(bad,self.plan,2000)
 
     def test_mixed_raw_receipt_preserves_words_wraps_and_each_original_zero_case(self):
         for intermediate,final in ((0,0),(0x8032,50),(250,0x8032)):
             row=self.receipt();row['zero_samples'][0]['present_velocity_word']=intermediate
             row['zero_samples'][-1]['present_velocity_word']=final
-            row['wheel_samples'][0]['velocity_word'][:2]=[50,0x8032]
+            row['wheel_samples'][0]['velocity_word'][::2]=[50,0x8032]
             self.assertEqual(self.parse(row),row)
 
     def test_mixed_receipt_rejects_forged_targets_timing_calibration_motion_and_cleanup(self):
-        changes=[('schema',lambda r:r.update(schema='PASS')),('extra',lambda r:r.update(hidden_write=True)),
+        changes=[('schema',lambda r:r.update(schema='PASS')),
+            ('old_schema',lambda r:r.update(schema='FEETECH_MIXED_RIGHT9_V1')),
+            ('old_operation',lambda r:r.update(operation='mixed-hold-right9')),
+            ('extra',lambda r:r.update(hidden_write=True)),
             ('id',lambda r:r['motor_ids'].__setitem__(0,True)),
-            ('raw',lambda r:r['wheel_raw_goal'].__setitem__(2,-500)),
+            ('raw',lambda r:r['wheel_raw_goal'].__setitem__(1,-500)),
             ('expiry',lambda r:r.update(go_expires_at_unix_ns=self.expiry+1)),
             ('calibration',lambda r:r['loaded_calibration'][0].update(range_max=4094)),
             ('goal',lambda r:r['arm_anchors'][0].update(goal_raw=1001)),
@@ -3084,9 +3096,9 @@ class MixedRawTests(unittest.TestCase):
             ('wheel_anchor',lambda r:r['wheel_anchors'][0].update(motor_id=9)),
             ('other_wheel',lambda r:r['wheel_samples'][0]['position_raw'].__setitem__(0,1005)),
             ('other_speed',lambda r:r['wheel_samples'][0]['velocity_word'].__setitem__(0,51)),
-            ('no_pv',lambda r:[s['velocity_word'].__setitem__(2,0) for s in r['wheel_samples']]),
-            ('no_travel',lambda r:[s['position_raw'].__setitem__(2,4000) for s in r['wheel_samples']]),
-            ('reverse',lambda r:r['wheel_samples'][0]['velocity_word'].__setitem__(2,0x8032)),
+            ('no_pv',lambda r:[s['velocity_word'].__setitem__(1,0) for s in r['wheel_samples']]),
+            ('no_travel',lambda r:[s['position_raw'].__setitem__(1,4000) for s in r['wheel_samples']]),
+            ('reverse',lambda r:r['wheel_samples'][0]['velocity_word'].__setitem__(1,0x8032)),
             ('cycle_missing',lambda r:r['cycles'].pop()),
             ('deadline',lambda r:r['cycles'][2].update(source_deadline_ns=r['cycles'][2]['source_deadline_ns']+1)),
             ('first_late',lambda r:r['cycles'][0].update(finished_ns=r['timing']['first_nonzero_ns']-1)),
@@ -3152,7 +3164,7 @@ class MixedRawTests(unittest.TestCase):
     def test_mixed_result_branch_keeps_identity_and_pass_checks_strict(self):
         for field,value in (('schema','OTHER'),('operation','other'),('serial_device',m.DEVICES['left']),
                             ('arm_calibration_path','/other.json'),('go_expires_at_unix_ns',self.expiry+1),
-                            ('wheel_raw_goal',[0,500,0]),('pulse_duration_ns',1),
+                            ('wheel_raw_goal',[0,0,500]),('pulse_duration_ns',1),
                             ('result','UNKNOWN'),('error',None),('error',''),('error',{'message':'失败'})):
             row=self.failed_receipt();row[field]=value
             with self.subTest(field=field,value=value),self.assertRaises(ValueError) as caught:self.parse(row)

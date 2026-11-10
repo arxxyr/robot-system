@@ -24,8 +24,8 @@ impl WheelRole {
     pub const fn motor_id(self) -> u8 {
         match self {
             Self::Front => 8,
-            Self::Left => 7,
-            Self::Right => 9,
+            Self::Left => 9,
+            Self::Right => 7,
         }
     }
 }
@@ -314,6 +314,36 @@ mod tests {
     fn profile(phase: u8, limit: u16) -> Sts3215WheelProfile {
         let (observation, contract) = inputs(WheelRole::Front, phase, limit);
         Sts3215WheelProfile::try_bind(observation, contract).unwrap()
+    }
+
+    #[test]
+    fn wheel_roles_bind_front_eight_left_nine_and_right_seven() {
+        for (role, id, wrong_id) in [
+            (WheelRole::Front, 8, 7),
+            (WheelRole::Left, 9, 7),
+            (WheelRole::Right, 7, 9),
+        ] {
+            assert_eq!(role.motor_id(), id);
+            let (mut observed, contract) = inputs(role, 4, 500);
+            observed.motor_id = id;
+            assert!(Sts3215WheelProfile::try_bind(observed, contract).is_ok());
+            observed.phase = 12;
+            observed.firmware = Some(FirmwareVersion {
+                major: 3,
+                minor: 10,
+            });
+            assert!(Sts3215RawWheelProfile::try_bind(observed, role).is_ok());
+            observed.motor_id = wrong_id;
+            assert_eq!(
+                Sts3215RawWheelProfile::try_bind(observed, role),
+                Err(WheelProfileError::WrongMotorId)
+            );
+            observed.phase = 4;
+            assert_eq!(
+                Sts3215WheelProfile::try_bind(observed, contract),
+                Err(WheelProfileError::WrongMotorId)
+            );
+        }
     }
 
     #[test]
