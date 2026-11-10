@@ -123,6 +123,9 @@ ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
 ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
                    'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
                    '不提供混合动作的新鲜锚点或动作授权')
+ARM_ELBOW_RANGE_SCOPE = ('仅右肘物理3以单ID SYNC_READ读取TE→PV→PP，共3次只读；TE/PV严格0，'
+                         'PP须在0..4095并按原物理3校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
+                         '不提供混合动作的新鲜锚点或动作授权')
 GRIPPER_TOLERANCE_RAW = 5
 GRIPPER_MAX_INCREMENT_RAW = 256
 GRIPPER_TARGETS = {goal:{'goal_raw':goal,'direction':direction,
@@ -342,20 +345,25 @@ def verify_arm_calibration(plan):
     return mixed_calibration_rows(strict_json(data.decode()))
 
 
-def arm_range_contract(bindings):
-    return {'schema':'MAINTENANCE_BUS2_ARM_RANGE_V1','scope':ARM_RANGE_SCOPE,
-            'targets':[['right',motor,name] for motor,name in enumerate(MIXED_ARM_NAMES,1)],
+def arm_range_contract(bindings,arm_range_id=None):
+    require(arm_range_id is None or type(arm_range_id) is int and arm_range_id==3,'右臂单ID只读仅接受物理3')
+    targets=[['right',motor,MIXED_ARM_NAMES[motor-1]] for motor in (range(1,7) if arm_range_id is None else (3,))]
+    return {'schema':'MAINTENANCE_BUS2_ARM_RANGE_V1','scope':ARM_RANGE_SCOPE if arm_range_id is None else ARM_ELBOW_RANGE_SCOPE,
+            'targets':targets,
             'raw_tool':dict(RIGHT_PULSE_RAW),'arm_calibration':dict(arm_calibration_ref(bindings)),
-            'operation':'sync_read','registers':list(ARM_RANGE_REGS),'reads':18,'register_writes':0,
+            'operation':'sync_read','registers':list(ARM_RANGE_REGS),'reads':3*len(targets),'register_writes':0,
             'torque_enable':0,'present_velocity':0,'position_raw_min':0,'position_raw_max':4095,
             'stop_verified':False,'same_frame':False,'mixed_anchor_permitted':False}
 
 
 def validate_arm_range_plan(plan):
+    contract=plan.get('bus2_arm_range_only')
+    require(isinstance(contract,dict),'缺少右臂范围只读合同')
+    selected=3 if contract.get('targets')==[['right',3,MIXED_ARM_NAMES[2]]] else None
     require(not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
-                'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold'))
-            and plan.get('position_targets')==[] and plan.get('scope')==ARM_RANGE_SCOPE
-            and plan.get('bus2_arm_range_only')==arm_range_contract(plan['bindings']),
+                'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold','right_gripper_release'))
+            and plan.get('position_targets')==[] and plan.get('scope')==contract.get('scope')
+            and contract==arm_range_contract(plan['bindings'],selected),
             '右臂范围只读禁止混用动作、轮诊断或改动固定合同')
     require(RIGHT_PULSE_RAW['path'] in plan['bindings'].get('binary_paths',[]),'右臂范围只读进程名单缺b2')
     left_feedback_tool_ref(plan)
@@ -825,7 +833,9 @@ def position_targets_from_plan(plan):
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
               left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
-              gripper_goal=1600):
+              gripper_goal=1600,arm_range_id=None):
+    require(arm_range_id is None or bus2_arm_range_only and type(arm_range_id) is int and arm_range_id==3,
+            '单ID3选择只能附加到右臂范围只读')
     require(type(gripper_goal) is int and gripper_goal in GRIPPER_TARGETS
             and (right_gripper_release or gripper_goal==1600),'夹爪目标仅用于本次固定单右6动作')
     require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
@@ -893,9 +903,9 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
                              '维护真实adapter链；不声明SerialTick、S0/S1、D15或生产验收完成']
         validate_mixed_raw_plan(plan)
     if bus2_arm_range_only:
-        plan['bus2_arm_range_only']=arm_range_contract(bindings)
-        plan['scope']=ARM_RANGE_SCOPE
-        plan['limitations']=['六臂PP仅为顺序采样的范围诊断，不是混合动作200毫秒新鲜锚点',
+        plan['bus2_arm_range_only']=arm_range_contract(bindings,arm_range_id)
+        plan['scope']=plan['bus2_arm_range_only']['scope']
+        plan['limitations']=['所选关节PP仅为顺序采样的范围诊断，不是混合动作200毫秒新鲜锚点',
                              '无寄存器写入，不判整机停止或物理安全，不解除D15或生产验收']
         validate_arm_range_plan(plan)
     if right_gripper_release:
@@ -930,7 +940,7 @@ def validate_go(go, plan, now_ns):
         require(0 < go['expires_at_ns']-go['issued_at_ns'] <= 600_000_000_000
                 and 0 <= now_ns-facts['confirmed_at_ns'] <= 600_000_000_000,
                 '右臂范围只读现场/GO最多600秒')
-        require(facts.get('arm_range_confirmation_scope')==ARM_RANGE_SCOPE
+        require(facts.get('arm_range_confirmation_scope')==plan['bus2_arm_range_only']['scope']
                 and isinstance(facts.get('arm_range_confirmation_answer'),str)
                 and facts['arm_range_confirmation_answer'].strip(), '缺本轮右臂范围只读具体现场确认')
     if any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only','front_wheel_feedback_only',
@@ -1145,7 +1155,7 @@ class RealExecutor:
             return
         require(not getattr(self,'arm_range_uart_blocked',False),'右臂范围只读UART已封锁')
         require(len(argv)==5 and argv[:2]==[RIGHT_PULSE_RAW['path'],DEVICES['right']]
-                and argv[2] in tuple(map(str,range(1,7))) and argv[3]=='read-raw'
+                and argv[2] in tuple(map(str,getattr(self,'arm_range_motor_ids',range(1,7)))) and argv[3]=='read-raw'
                 and argv[4] in ARM_RANGE_REGS,'右臂范围只读拒绝UART写或范围外命令')
 
     def poke(self, side, motor, action, register, value=None, *, cleanup=False):
@@ -1524,12 +1534,13 @@ def validate_arm_range_capture(row,plan):
             and row.get('same_frame') is False and row.get('mixed_anchor_permitted') is False
             and not row.get('errors') and not row.get('uart_blocked'),'右臂范围采集身份/结果变化')
     samples=row.get('samples',[]);ranges=row.get('ranges',[])
-    require(len(samples)==18 and len(ranges)==6,'右臂范围18读原件不完整')
+    targets=plan['bus2_arm_range_only']['targets']
+    require(len(samples)==3*len(targets) and len(ranges)==len(targets),'右臂范围读取原件不完整')
     start,finish=row.get('started_ns'),row.get('finished_ns')
     require(type(start) is int and type(finish) is int and start<=finish,'右臂范围采集时刻缺失')
     previous_finish=start;previous_sequence=-1
     for index,sample in enumerate(samples):
-        motor=index//3+1;register=ARM_RANGE_REGS[index%3]
+        _,motor,name=targets[index//3];register=ARM_RANGE_REGS[index%3]
         begin,end,command=(sample.get(key) for key in ('started_ns','finished_ns','command_sequence'))
         require(sample.get('motor')==motor and sample.get('register')==register
                 and sample.get('status')=='READ_VALID' and not sample.get('error')
@@ -1542,7 +1553,7 @@ def validate_arm_range_capture(row,plan):
             require(0<=value<=4095,'右臂范围PP不在单圈范围')
             calibration=calibrations[motor-1]
             status='INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE'
-            require(ranges[motor-1]=={'motor':motor,'name':MIXED_ARM_NAMES[motor-1],'position_raw':value,
+            require(ranges[index//3]=={'motor':motor,'name':name,'position_raw':value,
                     'range_min':calibration['range_min'],'range_max':calibration['range_max'],'status':status,
                     'sampled_ns':end},'右臂范围校准判定变化')
         previous_finish,previous_sequence=end,command
@@ -1571,7 +1582,8 @@ def run_bus2_arm_range_only(engine,check_go):
         ready();calibrations=verify_arm_calibration(engine.plan)
         require(not hasattr(io,'arm_range_before_spawn'),'右臂范围采集不可嵌套')
         io.arm_range_before_spawn=prelaunch;installed=True
-        for motor,calibration in enumerate(calibrations,1):
+        for _,motor,name in engine.plan['bus2_arm_range_only']['targets']:
+            calibration=calibrations[motor-1]
             for register in ARM_RANGE_REGS:
                 ready()
                 expected_argv=[reference['path'],DEVICES['right'],str(motor),'read-raw',register]
@@ -1585,7 +1597,7 @@ def run_bus2_arm_range_only(engine,check_go):
                     if register!='Present_Position':require(value==0,'右臂范围TE/PV非零，停止后续UART')
                     else:
                         require(0<=value<=4095,'右臂范围PP不在单圈范围，停止后续UART')
-                        row['ranges'].append({'motor':motor,'name':MIXED_ARM_NAMES[motor-1],
+                        row['ranges'].append({'motor':motor,'name':name,
                             'position_raw':value,'range_min':calibration['range_min'],'range_max':calibration['range_max'],
                             'status':'INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE',
                             'sampled_ns':sample['finished_ns']})
@@ -2825,6 +2837,8 @@ def execute(plan, go, approval):
     if 'bus2_mixed_raw_hold' in plan:
         io.mixed_feetech_tool=plan['bus2_mixed_raw_hold']['tool']
     io.arm_range_read_only=arm_range_only
+    if arm_range_only:
+        io.arm_range_motor_ids=tuple(target[1] for target in plan['bus2_arm_range_only']['targets'])
     io.process_snapshots=[]
     for signum in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP,signal.SIGQUIT):
         signal.signal(signum,io.mark_signal)
@@ -3008,11 +3022,14 @@ def main(argv=None):
                         help='仅FW3.10/Phase12：六臂原位保持及物理9 raw+500/20秒；复用整机停止后验')
     parser.add_argument('--bus2-arm-range-only',action='store_true',
                         help='仅右臂1..6逐ID SYNC_READ TE/PV/PP，共18读；记录校准范围，不写电机、不判停止')
+    parser.add_argument('--arm-range-id',type=int,choices=(3,),
+                        help='仅附加到右臂范围只读：只选右肘物理3，共3读；缺省仍六臂18读')
     grippers=parser.add_mutually_exclusive_group()
     grippers.add_argument('--right-gripper-release',action='store_true',help=GRIPPER_RELEASE_SCOPE)
     grippers.add_argument('--right-gripper-close',action='store_true',help=GRIPPER_TARGETS[1397]['scope'])
     options=parser.parse_args(argv)
     configure_bus_mapping(options.bus_config)
+    require(options.arm_range_id is None or options.bus2_arm_range_only,'单ID3选择只能附加到右臂范围只读')
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
     wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None
     pulse_requested=options.right_wheel_pulse or wheel_target is not None
@@ -3033,7 +3050,9 @@ def main(argv=None):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
                           'position_targets':selected_targets,
-                          'scope':GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
+                          'scope':GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else
+                              (ARM_ELBOW_RANGE_SCOPE if options.arm_range_id==3 else ARM_RANGE_SCOPE)
+                              if options.bus2_arm_range_only else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
                    options.position_target,right_wheel_pulse=options.right_wheel_pulse,
@@ -3041,7 +3060,7 @@ def main(argv=None):
                    zero_stop_check=options.zero_stop_check,front_wheel_feedback_only=options.front_wheel_feedback_only,
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
-                   right_gripper_release=gripper_requested,gripper_goal=gripper_goal)
+                   right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

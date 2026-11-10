@@ -3347,17 +3347,49 @@ class ArmRangeTests(unittest.TestCase):
         bindings['bus2_mixed_raw_hold']={'arm_calibration':dict(self.calibration_ref)}
         return bindings
 
-    def plan(self,bindings=None,root=None):
+    def plan(self,bindings=None,root=None,arm_range_id=None):
         root=root or '/home/loosqk/robot-checks/arm-range'
-        return m.make_plan(bindings or self.bindings(),str(root)+'/run','arm-range',root,bus2_arm_range_only=True)
+        return m.make_plan(bindings or self.bindings(),str(root)+'/run','arm-range',root,
+                           bus2_arm_range_only=True,arm_range_id=arm_range_id)
 
     def go(self,plan,now):
         go=WheelFeedbackTests.go(self,plan,now)
         go['physical']['right']={**{key:True for key in m.FACTS},'confirmed_at_ns':now,
-            'arm_range_confirmation_scope':m.ARM_RANGE_SCOPE,'arm_range_confirmation_answer':'夹具范围只读'}
+            'arm_range_confirmation_scope':plan['bus2_arm_range_only']['scope'],'arm_range_confirmation_answer':'夹具范围只读'}
         return go
 
-    def engine(self):return m.ProbeEngine(ArmRangeIO(),self.plan())
+    def engine(self,arm_range_id=None):return m.ProbeEngine(ArmRangeIO(),self.plan(arm_range_id=arm_range_id))
+
+    def test_single_elbow_reads_only_three_fields_with_physical_three_calibration_and_bound_go(self):
+        engine=self.engine(3);plan=engine.plan;contract=plan['bus2_arm_range_only']
+        self.assertEqual(contract['targets'],[['right',3,m.MIXED_ARM_NAMES[2]]])
+        self.assertEqual((contract['reads'],contract['scope']),(3,m.ARM_ELBOW_RANGE_SCOPE))
+        go=self.go(plan,100);m.validate_go(go,plan,200)
+        wrong=copy.deepcopy(go);wrong['physical']['right']['arm_range_confirmation_scope']=m.ARM_RANGE_SCOPE
+        with self.assertRaises(ValueError):m.validate_go(wrong,plan,200)
+        with self.assertRaises(ValueError):m.validate_go(self.go(self.plan(),100),plan,200)
+        m.run_bus2_arm_range_only(engine,lambda:None);row=engine.rows[0]
+        self.assertEqual([(call[2],call[3],call[4]) for call in engine.io.calls],
+                         [('3','read-raw',register) for register in m.ARM_RANGE_REGS])
+        self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED')
+        self.assertEqual((row['ranges'][0]['motor'],row['ranges'][0]['position_raw'],row['ranges'][0]['range_max'],
+                          row['ranges'][0]['status']),(3,2992,2991,'OUTSIDE'))
+        self.assertEqual(row['register_writes'],0);self.assertFalse(row['mixed_anchor_permitted'])
+        m.validate_arm_range_capture(row,plan)
+        with self.assertRaises(ValueError):m.validate_arm_range_capture(row,self.plan())
+
+    def test_single_elbow_selection_is_only_three_and_requires_existing_readonly_mode(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('禁止子进程')) as child:
+            for args in (['--arm-range-id','3'],['--bus2-arm-range-only','--arm-range-id','2'],
+                         ['--bus2-arm-range-only','--arm-range-id','3','--right-gripper-close']):
+                with self.subTest(args=args),contextlib.redirect_stderr(io.StringIO()),self.assertRaises((ValueError,SystemExit)):
+                    run_main(args)
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(run_main(['--bus2-arm-range-only','--arm-range-id','3']),0)
+            self.assertEqual(json.loads(output.getvalue())['scope'],m.ARM_ELBOW_RANGE_SCOPE)
+            child.assert_not_called()
+        for motor in (True,1,2,4,3.0):
+            with self.subTest(motor=motor),self.assertRaises(ValueError):self.plan(arm_range_id=motor)
 
     def test_eighteen_sync_reads_preserve_frames_and_outside_three_six_without_clamp(self):
         engine=self.engine();m.run_bus2_arm_range_only(engine,lambda:None)
@@ -3486,12 +3518,17 @@ class ArmRangeTests(unittest.TestCase):
                          [self.reference['path'],m.DEVICES['right'],'1','read-raw','Goal_Velocity'],
                          [self.reference['path'],m.DEVICES['left'],'1','read-raw','Torque_Enable']):
                 with self.assertRaises(ValueError):executor.command(argv,cleanup=True)
+            executor.arm_range_motor_ids=(3,)
+            executor.check_arm_range_command([self.reference['path'],m.DEVICES['right'],'3','read-raw','Torque_Enable'])
+            for motor in (1,2,4,6):
+                with self.subTest(motor=motor),self.assertRaises(ValueError):
+                    executor.command([self.reference['path'],m.DEVICES['right'],str(motor),'read-raw','Torque_Enable'])
             child.assert_not_called()
         self.assertEqual(executor.sequence,0)
 
     def test_execute_dispatch_locks_one_shot_go_and_nonuart_finish_in_success_and_failure(self):
-        for fault in (None,3,'post','journal','report','expired'):
-            root=self.root/str(fault);root.mkdir();helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+        for fault,arm_range_id in [(fault,None) for fault in (None,3,'post','journal','report','expired')]+[(None,3),(3,3)]:
+            root=self.root/f'{fault}-{arm_range_id}';root.mkdir();helper=root/'helper.py';helper.write_text('# 本机空helper\n')
             bindings=self.bindings();bindings['proc_helper']={'path':str(helper),
                 'sha256':hashlib.sha256(helper.read_bytes()).hexdigest(),'bytes':helper.stat().st_size}
             bindings['protection']={}
@@ -3529,7 +3566,7 @@ class ArmRangeTests(unittest.TestCase):
                 motion=stack.enter_context(patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')))
                 finish=stack.enter_context(patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')))
                 safe_off=stack.enter_context(patch.object(m.ProbeEngine,'safe_off',side_effect=AssertionError('不可safe_off')))
-                plan=self.plan(bindings,root);go=self.go(plan,m.time.time_ns());approval=root/'go.json'
+                plan=self.plan(bindings,root,arm_range_id);go=self.go(plan,m.time.time_ns());approval=root/'go.json'
                 if fault=='expired':go['expires_at_ns']=go['issued_at_ns']
                 m.write_new(approval,go)
                 if fault=='expired':
@@ -3546,7 +3583,10 @@ class ArmRangeTests(unittest.TestCase):
             self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
             self.assertEqual(report['position_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
             self.assertEqual(report['identity_verification']['status'],{'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS'))
-            self.assertEqual(len(report['owned_locks']),4);self.assertEqual(len(executor.calls),3 if fault==3 else 18)
+            self.assertEqual(len(report['owned_locks']),4);self.assertEqual(len(executor.calls),3 if fault==3 or arm_range_id==3 else 18)
+            if arm_range_id==3:
+                self.assertEqual([(call[2],call[3],call[4]) for call in executor.calls],
+                                 [('3','read-raw',register) for register in m.ARM_RANGE_REGS])
             self.assertTrue(Path(str(approval)+'.consumed').exists());self.assertFalse(report['deployable'])
 
 
