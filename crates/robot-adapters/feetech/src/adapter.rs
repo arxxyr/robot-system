@@ -182,6 +182,10 @@ pub struct FeetechAdapter<T: SerialTransport> {
     connected: bool,
     mixed_bus2: Option<MixedBus2>,
     mixed_arm_anchor: Option<([i32; 6], u64)>,
+    /// 仅完整成功的 raw 混合零轮目标允许后续设备观测，不代表已停止。
+    mixed_zero_target_confirmed: bool,
+    /// 观测尝试的独立限频，不随重复零目标或非零目标重置。
+    mixed_zero_observation_last_ns: Option<u64>,
     command_budget_ns: u64,
     info: AdapterInfo,
     bus: FeetechBus<T>,
@@ -317,6 +321,8 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             connected: false,
             mixed_bus2: None,
             mixed_arm_anchor: None,
+            mixed_zero_target_confirmed: false,
+            mixed_zero_observation_last_ns: None,
             command_budget_ns: u64::try_from(config.call_deadline.as_nanos()).unwrap_or(u64::MAX),
             info: AdapterInfo {
                 name: config.adapter_name,
@@ -629,6 +635,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     /// - 透传 `sync_write_by_id_into` 的协议 / transport 错误。
     /// - transport 未打开或停止目标为空 → `NotConnected`，绝不发空广播冒充成功。
     pub fn safety_stop_fast(&mut self) -> Result<(), FeetechError> {
+        self.mixed_zero_target_confirmed = false;
         self.bus.set_op_class(BusOpClass::Safety);
         // 构造期已填完整目标；首次广播只要求物理 transport 已打开。
         if !self.bus.is_connected()
@@ -654,6 +661,8 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn connect(&mut self) -> Result<(), RobotError> {
+        self.mixed_zero_target_confirmed = false;
+        self.mixed_zero_observation_last_ns = None;
         let class = self
             .preempt
             .as_ref()
@@ -670,6 +679,8 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn disconnect(&mut self) -> Result<(), RobotError> {
+        self.mixed_zero_target_confirmed = false;
+        self.mixed_zero_observation_last_ns = None;
         self.bus.set_op_class(BusOpClass::NormalEffectful);
         self.connected = false;
         self.bus.disconnect();
@@ -712,6 +723,10 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         }
         out.joint_count = self.joint_count;
         // stamp_ns 由调用方填（trait 文档约定：adapter 不持时钟）
+        self.observe_raw_mixed_zero().map_err(|error| {
+            self.record_error(4, &error);
+            RobotError::from(error)
+        })?;
         Ok(())
     }
 
@@ -805,6 +820,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     }
 
     fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+        self.mixed_zero_target_confirmed = false;
         self.require_connected().map_err(RobotError::from)?;
         self.bus.set_op_class(BusOpClass::NormalEffectful);
         if on {
@@ -1830,6 +1846,9 @@ mod tests {
     #[test]
     fn read_state_decodes_positions_to_rad() {
         let (mut a, h) = make_adapter(&[("j1", 1)]);
+        let diagnostics = Arc::new(CapturedDiagnostics::default());
+        a.diag = Some(diagnostics.clone());
+        let _ = h.drain_tx();
         // sync_read Present_Position：1 motor，raw=2047+1024 = 3071 (positive)
         // raw 3071 LE = [0xFF, 0x0B]
         h.push_rx(&read_status(1, &[0xFF, 0x0B]));
@@ -1841,6 +1860,10 @@ mod tests {
         assert_eq!(state.joint_count, 1);
         assert!((state.positions[0] - std::f32::consts::FRAC_PI_2).abs() < 1e-3);
         assert_eq!(state.velocities[0], 0.0);
+        let requests = h.drain_tx();
+        assert_eq!(requests.len(), 18, "位置实例仍只发两个单电机 SYNC_READ");
+        assert_eq!((requests[5], requests[14]), (56, 58));
+        assert!(diagnostics.0.lock().unwrap().is_empty());
     }
 
     #[test]

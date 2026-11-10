@@ -2,7 +2,11 @@
 
 use super::*;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU8},
+    mpsc,
+};
 use std::time::Duration;
 
 use robot_adapter_feetech::adapter::FeetechAdapterConfig;
@@ -40,6 +44,8 @@ struct Port {
     handle: MockHandle,
     exchanges: Exchanges,
     expire_after_write: Arc<AtomicBool>,
+    estop_after_request: Arc<AtomicU8>,
+    ctrl: Arc<SerialIoCtrlInner>,
     clock: Arc<MockClock>,
 }
 
@@ -61,6 +67,11 @@ impl SerialTransport for Port {
         let response = self.response(buf);
         self.inner.write_all(buf)?;
         self.handle.push_rx(&response);
+        let address = self.estop_after_request.load(Ordering::Acquire);
+        if address != 0 && buf.get(4..6) == Some([0x82, address].as_slice()) {
+            self.estop_after_request.store(0, Ordering::Release);
+            let _ = self.ctrl.authority().estop();
+        }
         Ok(())
     }
 
@@ -133,7 +144,7 @@ struct Fixture {
     clock: Arc<MockClock>,
     ctrl: Arc<SerialIoCtrlInner>,
     probe: Arc<SerialPreemptProbe>,
-    diag: SerialDiagRing,
+    diag: Arc<SerialDiagRing>,
     metrics: SerialIoThreadMetrics,
     tick: SerialTick,
     adapter: Option<FeetechAdapter<Port>>,
@@ -141,6 +152,7 @@ struct Fixture {
     exchanges: Exchanges,
     handle: MockHandle,
     expire_after_write: Arc<AtomicBool>,
+    estop_after_request: Arc<AtomicU8>,
 }
 
 impl Fixture {
@@ -151,6 +163,10 @@ impl Fixture {
     }
 
     fn unstarted() -> Self {
+        Self::with_observation(false)
+    }
+
+    fn with_observation(observe: bool) -> Self {
         let mut config: RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
         // 此模块的黄金帧使用显式固定夹具；实际配置换位由分组/adapter映射测试覆盖。
@@ -185,8 +201,10 @@ impl Fixture {
         let clock = Arc::new(MockClock::new(MonoRawNs(100)));
         let ctrl = Arc::new(SerialIoCtrlInner::new_serial(test_authority(true)));
         let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
+        let diag = Arc::new(SerialDiagRing::new());
         let exchanges = Arc::new(Mutex::new(VecDeque::new()));
         let expire_after_write = Arc::new(AtomicBool::new(false));
+        let estop_after_request = Arc::new(AtomicU8::new(0));
         let (inner, handle) = MockTransport::new();
         let bus = FeetechBus::new(
             Port {
@@ -194,6 +212,8 @@ impl Fixture {
                 handle: handle.clone(),
                 exchanges: exchanges.clone(),
                 expire_after_write: expire_after_write.clone(),
+                estop_after_request: estop_after_request.clone(),
+                ctrl: ctrl.clone(),
                 clock: clock.clone(),
             },
             motors,
@@ -222,7 +242,7 @@ impl Fixture {
             FeetechAdapterConfig {
                 clock: clock.clone(),
                 preempt: Some(probe.clone()),
-                diag: None,
+                diag: observe.then(|| diag.clone() as Arc<dyn DiagSink>),
                 call_deadline: Duration::from_millis(50),
                 adapter_name: "s0_raw_test",
                 joint_names: hardware.joints,
@@ -238,13 +258,14 @@ impl Fixture {
             clock,
             ctrl,
             probe,
-            diag: SerialDiagRing::new(),
+            diag,
             metrics: SerialIoThreadMetrics::default(),
             adapter: Some(adapter),
             layout,
             exchanges,
             handle,
             expire_after_write,
+            estop_after_request,
         }
     }
 
@@ -305,7 +326,7 @@ impl Fixture {
             &SerialTickContext {
                 ctrl: &self.ctrl,
                 probe: &self.probe,
-                diag: &self.diag,
+                diag: self.diag.as_ref(),
                 clock: self.clock.as_ref(),
                 metrics: &self.metrics,
             },
@@ -484,6 +505,58 @@ fn raw_unobserved_negative_speed_is_rejected_before_first_motion_frame() {
     fixture.stop_and_confirm(&command);
 }
 
+#[test]
+fn raw_zero_observation_fault_or_estop_uses_original_full_bus_convergence() {
+    for estop in [false, true] {
+        let mut fixture = Fixture::with_observation(true);
+        fixture.boot_and_enable();
+        SerialIoCtrlClient::new(fixture.ctrl.clone()).set_policy(OutputPolicy::ActiveForward);
+        let command = fixture.command(0);
+        fixture.writes(46, 2, &WHEELS, &[0; 3]);
+        fixture.writes(42, 2, &ARMS, &ANCHOR);
+        fixture.feedback(ANCHOR.map(|raw| raw + 2), 0);
+        if estop {
+            fixture.sync_read(40, 1, &WHEELS, &[1; 3]);
+            // 在新增TE请求提交后、GV开始前施加真实权限撤销。
+            fixture.estop_after_request.store(40, Ordering::Release);
+        } else {
+            let mut response: Vec<_> = WHEELS
+                .into_iter()
+                .flat_map(|id| packet(id, 0, &[1]))
+                .collect();
+            *response.last_mut().unwrap() ^= 1;
+            fixture.enqueue(packet(254, 0x82, &[40, 1, 8, 9, 7]), response);
+        }
+        let stamp_before = fixture.tick.state().stamp_ns;
+        let positions_before = fixture.tick.state().positions.map(f32::to_bits);
+        fixture.step(&command);
+        fixture.assert_consumed();
+        assert_eq!(fixture.metrics.read_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.tick.state().stamp_ns, stamp_before);
+        assert_eq!(
+            fixture.tick.state().positions.map(f32::to_bits),
+            positions_before
+        );
+        assert_eq!(fixture.tick.convergence.phase(), ConvergePhase::StopIssue);
+        let mut observed = 0;
+        while let Some(event) = fixture.diag.pop() {
+            observed += usize::from(event.site == 31);
+        }
+        assert_eq!(observed, 0, "失败采样不得生成成功观测组");
+        let fault = fixture.ctrl.mailbox_snapshot();
+        fixture.stop_and_confirm(&command);
+        assert_eq!(fixture.ctrl.mailbox_snapshot(), fault);
+        if estop {
+            // 急停由独立latch保持，不要求产生普通故障的inhibit位或邮箱。
+            assert!(fixture.ctrl.authority().snapshot().latch);
+            assert!(fault.is_none());
+        } else {
+            assert!(fault.is_some());
+            assert_ne!(fixture.ctrl.inhibit_bits(), 0);
+        }
+    }
+}
+
 /// 只在周期边界阻塞工作线程；设备与 probe 仍共用原 `MockClock`。
 /// 有界超时仅防测试挂死，测试结果依据握手和快照，不测墙钟调度速度。
 struct WorkerClock {
@@ -551,7 +624,7 @@ impl Worker {
             publisher,
             fixture.ctrl.clone(),
             fixture.probe.clone(),
-            Arc::new(SerialDiagRing::new()),
+            fixture.diag.clone(),
             true,
             boot.clone(),
             stop,
@@ -659,9 +732,28 @@ fn publish_raw_wire_command(fixture: &Fixture, worker: &Worker) {
     assert_eq!(metrics.command_parse_errors.load(Ordering::Relaxed), 0);
 }
 
+fn assert_raw_zero_observation(fixture: &Fixture, stamp_ns: u64) {
+    let mut observations = Vec::new();
+    while let Some(event) = fixture.diag.pop() {
+        if event.site == 31 {
+            observations.push(event);
+        }
+    }
+    assert_eq!(observations.len(), 4);
+    assert_eq!((observations[0].kind, observations[0].a), (0, 3));
+    for (index, word) in [0_u16, 50, 0x8032].into_iter().enumerate() {
+        let event = observations[index + 1];
+        assert_eq!((event.kind, event.a, event.b), (1, WHEELS[index], 1));
+        assert_eq!(event.seq_lo, u32::from(word) << 16);
+        assert_eq!(event.stamp_ns, stamp_ns);
+    }
+    assert_eq!(fixture.diag.dropped(), 0);
+    assert_eq!(fixture.ctrl.safety_state(), OutputSafetyState::TorqueOn);
+}
+
 #[test]
 fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() {
-    let mut fixture = Fixture::unstarted();
+    let mut fixture = Fixture::with_observation(true);
     fixture.enqueue_boot();
     let mut worker = Worker::spawn(&mut fixture);
     for _ in 0..3 {
@@ -709,11 +801,15 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
     fixture.writes(46, 2, &WHEELS, &[0; 3]);
     fixture.writes(42, 2, &ARMS, &ANCHOR.map(|raw| raw + 1));
     fixture.feedback(ANCHOR.map(|raw| raw + 1), 0);
+    fixture.sync_read(40, 1, &WHEELS, &[1; 3]);
+    fixture.sync_read(46, 2, &WHEELS, &[0; 3]);
+    fixture.sync_read(58, 2, &WHEELS, &[0, 50, 0x8032]);
     let holding = worker.step();
     assert_eq!(holding.state.stamp_ns, fixture.clock.now().0);
     assert!(holding.state.stamp_ns > moving.state.stamp_ns);
     assert!(holding.state.velocities[8].is_nan());
     fixture.assert_consumed();
+    assert_raw_zero_observation(&fixture, holding.state.stamp_ns);
 
     client.safety_stop();
     fixture.writes(40, 1, &IDS, &[0; 9]);

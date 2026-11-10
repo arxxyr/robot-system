@@ -39,7 +39,7 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 2. 头部相机实时 USB 型号为 **D435i**，序列号 `043323051347`；RGB 对应配置中的稳定 by-path（当前枚举 `/dev/video8`），采集目标为640×480、15 FPS。真实输出 FPS/帧龄须由订阅端测量，驱动报告值不代替发布实测。
 3. 此前单路真实 D435i＋模拟执行器的 S0 连续收到145帧（约10秒，14.47 FPS），最大帧龄20.86毫秒、心跳最大间隔21.93毫秒；画面已检查，daemon/订阅器退出码均0，相机设备释放。FPS不是收尾门槛，不继续调优。该结果不替代新版多路或真实执行器并行测试。
 4. 当前相机唯一配置为 `[[sensor]]`，旧 `[camera]` 明确拒绝。Orin只读枚举可见两个 `USB2.0_CAM1` 节点，稳定路径分别为 `platform-3610000.usb-usb-0:2.1:1.0-video-index0` 和 `platform-3610000.usb-usb-0:2.2:1.0-video-index0`；实际左右腕对应和采集格式待确认，暂不猜填配置。
-5. 后续准备默认 S0 的执行器实机验收。现有20秒维护入口直接调用 adapter，不能仅替换二进制冒充 daemon 验收；仍缺有界非零混合发送入口及沿唯一写者完成零速阶段 TE/GV/PV 读回。准备完成后再通知动作、确认现场，不复用此前 GO。
+5. 默认 S0 已沿原 SerialRT 连接补齐 raw 混合零目标后的三轮 TE/GV/PV 原字观测，尝试间隔至少20毫秒；不改变停止判据或以日志提交安全状态，格式见[日志说明](logging.md#raw-混合零目标的设备观测)。现有20秒维护入口直接调用 adapter，不能仅替换二进制冒充 daemon 验收；仍缺默认 S0 的有界非零混合发送与现有维护独占/停止流程接入，新增读取的真实总线耗时尚未验证。准备完成后再通知动作、确认现场，不复用此前 GO。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
@@ -54,4 +54,5 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 - 本轮软件与相机证据：`.verify/s0_body_hal_2026-11-10/`，Orin `/home/loosqk/robot-checks/s0-body-hal-20261110/`；原失败日志保留。
 - 默认 daemon 相机/执行器组合：[测试](../crates/robot-s0/tests/comm_fault_startup/camera_actuator.rs)、[验证摘要](../.verify/s0_camera_actuator_2026-11-10/summary.json)。Orin 4项相机集成测试及 fmt→根目录/测试特性 Clippy 通过；仅软件接线，无实机动作。
 - 多路相机软件：[验证摘要](../.verify/s0_multi_camera_2026-11-10/summary.json)。Orin 90项不同测试通过，含三路协议图像与模拟执行器组合；fmt→根目录及S0全部特性Clippy通过。早期lint/断言编译失败原件保留；未开相机、未访问UART、未部署。
+- raw零目标设备观测：[软件验证](../.verify/s0_wheel_observation_2026-11-10/summary.json)，覆盖原字、配置轮序、限频、读失败/急停的整总线收敛，以及Pub状态/心跳继续发布；不代替真实总线或停止验收。
 - 线程与图像：[SerialRT](../crates/robot-s0/src/serial_io_thread.rs)、[驱动夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)、[SoftRT IO](../crates/robot-s0/src/io_thread.rs)、[发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。

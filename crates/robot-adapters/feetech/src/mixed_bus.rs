@@ -9,6 +9,7 @@ use crate::velocity_profile::{
     FirmwareVersion, Sts3215RawWheelProfile, Sts3215WheelProfile, WheelObservation, WheelRole,
 };
 use robot_core::adapter::{ControlMode, JointCommandView, JointSelection};
+use robot_core::diag::DiagEvent;
 use robot_core::error::RobotError;
 use robot_core::serial_services::BusOpClass;
 use robot_core::time::{Deadline, MonoRawNs};
@@ -24,6 +25,8 @@ const JOINTS: [&str; 9] = [
     "base_left_wheel",
     "base_right_wheel",
 ];
+
+const ZERO_OBSERVATION_INTERVAL_NS: u64 = 20_000_000;
 
 #[derive(Clone, Copy)]
 enum Profiles {
@@ -251,6 +254,82 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             .is_some_and(|layout| matches!(layout.profiles, Profiles::ObservedRaw(_)))
     }
 
+    /// 只记录设备原字，不把零目标、记录成功或丢记录当作停止/权限事实。
+    pub(super) fn observe_raw_mixed_zero(&mut self) -> Result<(), crate::FeetechError> {
+        if !self.raw_mixed() || !self.mixed_zero_target_confirmed || self.diag.is_none() {
+            return Ok(());
+        }
+        let started = self.clock.now().0;
+        if self.mixed_zero_observation_last_ns.is_some_and(|last| {
+            started
+                .checked_sub(last)
+                .is_none_or(|elapsed| elapsed < ZERO_OBSERVATION_INTERVAL_NS)
+        }) {
+            return Ok(());
+        }
+        self.mixed_zero_observation_last_ns = Some(started);
+        let Some(layout) = self.mixed_bus2 else {
+            return Ok(());
+        };
+        let ids = layout.wheel_ids;
+        let mut tx = [0_u8; 11];
+        let mut rx = [0_u8; 24];
+        let mut words = [[0_u32; 3]; 3];
+        // 沿调用方的 PeriodicRead 执行权与预算，不逐读续期。
+        for (register, output) in ["Torque_Enable", "Goal_Velocity", "Present_Velocity"]
+            .into_iter()
+            .zip(&mut words)
+        {
+            self.bus
+                .sync_read_by_id_raw_into(register, &ids, output, &mut tx, &mut rx)?;
+        }
+        let mut torque = [0_u8; 3];
+        let mut goals = [0_u16; 3];
+        let mut velocities = [0_u16; 3];
+        for index in 0..3 {
+            let range_error = |value, max_bytes, max| crate::FeetechError::ValueExceedsByteRange {
+                value,
+                max_bytes,
+                max,
+            };
+            torque[index] = u8::try_from(words[0][index])
+                .map_err(|_| range_error(words[0][index], 1, u32::from(u8::MAX)))?;
+            goals[index] = u16::try_from(words[1][index])
+                .map_err(|_| range_error(words[1][index], 2, u32::from(u16::MAX)))?;
+            velocities[index] = u16::try_from(words[2][index])
+                .map_err(|_| range_error(words[2][index], 2, u32::from(u16::MAX)))?;
+        }
+        if let Some(reason) = self
+            .preempt
+            .as_ref()
+            .and_then(|probe| probe.should_abort(BusOpClass::PeriodicRead))
+        {
+            return Err(crate::FeetechError::Aborted(reason));
+        }
+        let finished = self.clock.now().0;
+        if let Some(diag) = self.diag.as_ref() {
+            diag.record(DiagEvent {
+                stamp_ns: started,
+                site: 31,
+                kind: 0,
+                a: 3,
+                b: 0,
+                seq_lo: 0,
+            });
+            for index in 0..3 {
+                diag.record(DiagEvent {
+                    stamp_ns: finished,
+                    site: 31,
+                    kind: 1,
+                    a: ids[index],
+                    b: torque[index],
+                    seq_lo: u32::from(goals[index]) | (u32::from(velocities[index]) << 16),
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn verify_mixed_bus2(&mut self) -> Result<(), RobotError> {
         let Some(layout) = self.mixed_bus2 else {
             return Ok(());
@@ -303,6 +382,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     ) -> Result<(), RobotError> {
         let layout = self.mixed_bus2.unwrap();
         if command.mode == ControlMode::Stop && command.selection == JointSelection::All {
+            self.mixed_zero_target_confirmed = false;
             return Ok(());
         }
         command.validate_selection(9)?;
@@ -364,13 +444,18 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         self.bus.set_op_class(BusOpClass::PeriodicWrite);
         let source = SourceWriteDeadline::new(self.clock.as_ref(), Deadline(MonoRawNs(deadline)));
         let mut frame = [0; 256];
+        // 从首次可能副作用起旧零目标不再可信；部分写失败不得恢复。
+        self.mixed_zero_target_confirmed = false;
         // 先轮速后位置：有界反馈保持时先写零轮速；两帧不是原子事务。
         self.bus
             .sync_write_by_id_into_until("Goal_Velocity", &velocities, &mut frame, source)
             .map_err(RobotError::from)?;
         self.bus
             .sync_write_by_id_into_until("Goal_Position", &positions, &mut frame, source)
-            .map_err(RobotError::from)
+            .map_err(RobotError::from)?;
+        self.mixed_zero_target_confirmed =
+            self.raw_mixed() && velocities.iter().all(|&(_, raw)| raw == 0);
+        Ok(())
     }
 }
 
@@ -382,7 +467,9 @@ mod tests {
     use crate::transport::{MockHandle, MockTransport};
     use crate::types::Motor;
     use crate::velocity_profile::WheelContract;
-    use robot_core::adapter::{ControlModeRepr, JointCommandBuf, ManipulatorAdapter};
+    use robot_core::adapter::{
+        ControlModeRepr, JointCommandBuf, JointStateBuf, ManipulatorAdapter,
+    };
     use robot_core::control_authority::{
         AuthorityInit, ControlAuthority, EnableResult, InhibitSet, NormalIoIntent,
     };
@@ -393,8 +480,8 @@ mod tests {
     use robot_core::time::{DurationNs, MockClock, RobotClock};
     use std::collections::HashMap;
     use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     };
     use std::time::Duration;
 
@@ -439,7 +526,10 @@ mod tests {
             }
             let lease = self
                 .0
-                .acquire_normal_io(NormalIoIntent::Motion)
+                .acquire_normal_io(match class {
+                    BusOpClass::PeriodicRead => NormalIoIntent::PeriodicRead,
+                    _ => NormalIoIntent::Motion,
+                })
                 .map_err(|_| AbortReason::Revoked)?;
             Ok(BusLease::with_normal(class, lease).unwrap())
         }
@@ -454,6 +544,7 @@ mod tests {
         clock: Arc<MockClock>,
         fail: u8,
         calls: Arc<AtomicUsize>,
+        read_advance_ns: Arc<AtomicU64>,
     }
     impl SerialTransport for Port {
         fn write_all(&mut self, bytes: &[u8]) -> Result<(), crate::error::FeetechError> {
@@ -477,7 +568,10 @@ mod tests {
             Ok(())
         }
         fn read_exact(&mut self, out: &mut [u8]) -> Result<(), crate::error::FeetechError> {
-            self.inner.read_exact(out)
+            let result = self.inner.read_exact(out);
+            self.clock
+                .advance(DurationNs(self.read_advance_ns.load(Ordering::Relaxed)));
+            result
         }
         fn set_timeout(&mut self, duration: Duration) -> Result<(), crate::error::FeetechError> {
             self.inner.set_timeout(duration)
@@ -555,6 +649,7 @@ mod tests {
         clock: Arc<MockClock>,
         calls: Arc<AtomicUsize>,
         ids: [u8; 9],
+        read_advance_ns: Arc<AtomicU64>,
     }
     impl Fixture {
         fn new(
@@ -609,12 +704,14 @@ mod tests {
             let (inner, handle) = MockTransport::new();
             let clock = Arc::new(MockClock::default());
             let calls = Arc::new(AtomicUsize::new(0));
+            let read_advance_ns = Arc::new(AtomicU64::new(0));
             let bus = FeetechBus::new(
                 Port {
                     inner,
                     clock: clock.clone(),
                     fail,
                     calls: calls.clone(),
+                    read_advance_ns: read_advance_ns.clone(),
                 },
                 motors,
             )
@@ -673,6 +770,7 @@ mod tests {
                     clock,
                     calls,
                     ids,
+                    read_advance_ns,
                 },
                 connected,
             )
@@ -695,6 +793,85 @@ mod tests {
             }
             command
         }
+
+        fn write_zero(&mut self) {
+            let mut command = self.command();
+            command.raw_velocities.fill(0);
+            self.adapter.write_command(&command.as_view()).unwrap();
+        }
+
+        fn queue_state(&self) {
+            for word in [2047_u16, 0] {
+                for id in self.ids {
+                    self.handle.push_rx(&read_status(id, &word.to_le_bytes()));
+                }
+            }
+        }
+
+        fn queue_observation(&self, words: [[u16; 3]; 3]) {
+            let ids = self.adapter.mixed_bus2.unwrap().wheel_ids;
+            for (register, row) in words.into_iter().enumerate() {
+                for (id, word) in ids.into_iter().zip(row) {
+                    let bytes = word.to_le_bytes();
+                    self.handle.push_rx(&read_status(
+                        id,
+                        &bytes[..if register == 0 { 1 } else { 2 }],
+                    ));
+                }
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct Diagnostics(Mutex<Vec<DiagEvent>>);
+
+    impl robot_core::diag::DiagSink for Diagnostics {
+        fn record(&self, event: DiagEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    fn attach_diagnostics(fixture: &mut Fixture) -> Arc<Diagnostics> {
+        let diagnostics = Arc::new(Diagnostics::default());
+        fixture.adapter.diag = Some(diagnostics.clone());
+        diagnostics
+    }
+
+    struct ObservationProbe {
+        inner: Probe,
+        checkpoints: AtomicUsize,
+        abort_at: usize,
+    }
+
+    impl PreemptProbe for ObservationProbe {
+        fn should_abort(&self, class: BusOpClass) -> Option<AbortReason> {
+            assert_eq!(class, BusOpClass::PeriodicRead);
+            (self.checkpoints.load(Ordering::Relaxed) >= self.abort_at)
+                .then_some(AbortReason::Revoked)
+        }
+        fn checkpoint(&self) {
+            self.checkpoints.fetch_add(1, Ordering::Relaxed);
+        }
+        fn sleep_or_abort(&self, class: BusOpClass, _: DurationNs) -> Result<(), AbortReason> {
+            self.should_abort(class).map_or(Ok(()), Err)
+        }
+        fn operation_class(&self) -> BusOpClass {
+            BusOpClass::PeriodicRead
+        }
+        fn confirmation_trusted(&self) -> bool {
+            true
+        }
+        fn report_comm_error(&self, _: CommErrorKind) {}
+    }
+
+    impl LeasedPreemptProbe for ObservationProbe {
+        fn begin_leased(&self, class: BusOpClass) -> Result<BusLease, AbortReason> {
+            self.should_abort(class)
+                .map_or_else(|| self.inner.begin_leased(class), Err)
+        }
+        fn finish_leased(&self, lease: BusLease) {
+            self.inner.finish_leased(lease);
+        }
     }
     fn frames(bytes: &[u8]) -> Vec<&[u8]> {
         let mut remaining = bytes;
@@ -708,6 +885,300 @@ mod tests {
             remaining = &remaining[size..];
         }
         output
+    }
+
+    #[test]
+    fn raw_zero_observation_reads_configured_ids_in_order_and_preserves_unsigned_words() {
+        for wheel_ids in [
+            [7, 8, 9],
+            [7, 9, 8],
+            [8, 7, 9],
+            [8, 9, 7],
+            [9, 7, 8],
+            [9, 8, 7],
+        ] {
+            let ids = [wheel_ids[2], 3, 6, 1, wheel_ids[0], 4, 2, wheel_ids[1], 5];
+            let (mut f, connected) = Fixture::with_mapping(ids, 0, 12, false, true, wheel_ids);
+            connected.unwrap();
+            let diagnostics = attach_diagnostics(&mut f);
+            let _ = f.handle.drain_tx();
+            f.queue_state();
+            let mut state = JointStateBuf::default();
+            f.adapter.read_state(&mut state).unwrap();
+            assert_eq!(frames(&f.handle.drain_tx()).len(), 2);
+            assert!(diagnostics.0.lock().unwrap().is_empty());
+
+            f.write_zero();
+            let _ = f.handle.drain_tx();
+            f.read_advance_ns.store(2, Ordering::Relaxed);
+            f.queue_state();
+            // TE 是原字节，GV/PV 包括负零和符号位，不解码为 signed。
+            let words = [
+                [1, 0x80, 0xff],
+                [0x8000, 0x8032, 0xffff],
+                [0xffff, 0x8000, 0x8001],
+            ];
+            f.queue_observation(words);
+            f.adapter.read_state(&mut state).unwrap();
+            let bytes = f.handle.drain_tx();
+            let requests = frames(&bytes);
+            assert_eq!(requests.len(), 5);
+            assert_eq!((requests[0][5], requests[1][5]), (56, 58));
+            for (request, (address, width)) in requests[2..].iter().zip([(40, 1), (46, 2), (58, 2)])
+            {
+                assert_eq!((request[4], request[5], request[6]), (0x82, address, width));
+                assert_eq!(&request[7..10], wheel_ids);
+            }
+            let events = diagnostics.0.lock().unwrap();
+            assert_eq!(events.len(), 4);
+            assert_eq!(
+                events[0],
+                DiagEvent {
+                    stamp_ns: 4,
+                    site: 31,
+                    kind: 0,
+                    a: 3,
+                    b: 0,
+                    seq_lo: 0,
+                }
+            );
+            for index in 0..3 {
+                assert_eq!(
+                    events[index + 1],
+                    DiagEvent {
+                        stamp_ns: 10,
+                        site: 31,
+                        kind: 1,
+                        a: wheel_ids[index],
+                        b: u8::try_from(words[0][index]).unwrap(),
+                        seq_lo: u32::from(words[1][index]) | (u32::from(words[2][index]) << 16),
+                    }
+                );
+            }
+            assert_eq!(&state.positions[..9], &[0.0; 9]);
+            assert!(state.velocities[..9].iter().all(|value| value.is_nan()));
+            assert!(state.torques[..9].iter().all(|value| value.is_nan()));
+        }
+    }
+
+    #[test]
+    fn raw_zero_observation_rate_limit_survives_repeated_zero_and_nonzero_commands() {
+        let (mut f, connected) =
+            Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+        connected.unwrap();
+        let diagnostics = attach_diagnostics(&mut f);
+        f.write_zero();
+        f.queue_state();
+        f.queue_observation([[1; 3], [0; 3], [0; 3]]);
+        f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
+        assert_eq!(f.adapter.mixed_zero_observation_last_ns, Some(0));
+        assert_eq!(diagnostics.0.lock().unwrap().len(), 4);
+        for elapsed in [1, ZERO_OBSERVATION_INTERVAL_NS - 1] {
+            f.clock.set(MonoRawNs(elapsed));
+            let mut nonzero = f.command();
+            nonzero.raw_velocities.fill(0);
+            nonzero.raw_velocities[f.adapter.mixed_bus2.unwrap().wheel_slots[0]] = 500;
+            f.adapter.write_command(&nonzero.as_view()).unwrap();
+            assert!(!f.adapter.mixed_zero_target_confirmed);
+            f.write_zero();
+            let _ = f.handle.drain_tx();
+            f.queue_state();
+            f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
+            assert_eq!(frames(&f.handle.drain_tx()).len(), 2);
+            assert_eq!(f.adapter.mixed_zero_observation_last_ns, Some(0));
+            assert_eq!(diagnostics.0.lock().unwrap().len(), 4);
+        }
+        f.clock.set(MonoRawNs(ZERO_OBSERVATION_INTERVAL_NS));
+        f.write_zero();
+        let _ = f.handle.drain_tx();
+        f.queue_state();
+        f.queue_observation([[1; 3], [0; 3], [0; 3]]);
+        f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
+        assert_eq!(frames(&f.handle.drain_tx()).len(), 5);
+        assert_eq!(diagnostics.0.lock().unwrap().len(), 8);
+    }
+
+    #[test]
+    fn raw_zero_target_fact_is_invalidated_by_partial_writes_and_lifecycle_operations() {
+        for fail in [1, 2] {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], fail, 12, false, true);
+            connected.unwrap();
+            // 先避开夹具的一次性故障，真实写成完整零目标。
+            f.calls.store(2, Ordering::Relaxed);
+            f.write_zero();
+            assert!(f.adapter.mixed_zero_target_confirmed);
+            let mut invalid = f.command();
+            invalid.raw_velocities.fill(0);
+            invalid.raw_velocities[f.adapter.mixed_bus2.unwrap().wheel_slots[0]] = 501;
+            assert!(f.adapter.write_command(&invalid.as_view()).is_err());
+            assert!(
+                f.adapter.mixed_zero_target_confirmed,
+                "无副作用拒绝不改最近成功目标"
+            );
+            f.calls.store(0, Ordering::Relaxed);
+            let mut zero = f.command();
+            zero.raw_velocities.fill(0);
+            assert!(f.adapter.write_command(&zero.as_view()).is_err());
+            assert!(!f.adapter.mixed_zero_target_confirmed);
+        }
+        for operation in 0..8 {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+            connected.unwrap();
+            f.write_zero();
+            assert!(f.adapter.mixed_zero_target_confirmed);
+            match operation {
+                0 => {
+                    f.adapter.disconnect().unwrap();
+                }
+                1 => {
+                    assert!(f.adapter.connect().is_err());
+                }
+                2 => {
+                    // 即使 Enable 准备读失败，也不能继承上一轮零目标事实。
+                    assert!(f.adapter.enable(true).is_err());
+                }
+                3 => {
+                    for id in f.ids {
+                        f.handle.push_rx(&ack_status(id));
+                    }
+                    f.adapter.enable(false).unwrap();
+                }
+                4 => f.adapter.safety_stop_fast().unwrap(),
+                5 => f.adapter.safety_stop().unwrap(),
+                6 => {
+                    f.adapter
+                        .write_command(&JointCommandBuf::default().as_view())
+                        .unwrap();
+                }
+                _ => {
+                    f.adapter.safety_stop_entries.clear();
+                    assert!(f.adapter.safety_stop_fast().is_err());
+                }
+            }
+            assert!(!f.adapter.mixed_zero_target_confirmed);
+        }
+    }
+
+    #[test]
+    fn raw_observation_failures_and_preemption_never_emit_a_success_group() {
+        for failed_register in 0..3 {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+            connected.unwrap();
+            let diagnostics = attach_diagnostics(&mut f);
+            f.write_zero();
+            let _ = f.handle.drain_tx();
+            f.queue_state();
+            let ids = f.adapter.mixed_bus2.unwrap().wheel_ids;
+            for register in 0..=failed_register {
+                for (index, id) in ids.into_iter().enumerate() {
+                    let mut response = read_status(id, if register == 0 { &[1] } else { &[0, 0] });
+                    if register == failed_register && index == 2 {
+                        response[4] = 0x20;
+                        let last = response.len() - 1;
+                        response[last] = checksum(&response[2..last]);
+                    }
+                    f.handle.push_rx(&response);
+                }
+            }
+            assert!(matches!(
+                f.adapter.read_state(&mut JointStateBuf::default()),
+                Err(RobotError::HardwareFault("feetech motor status"))
+            ));
+            assert_eq!(frames(&f.handle.drain_tx()).len(), 3 + failed_register);
+            let events = diagnostics.0.lock().unwrap();
+            assert!(events.iter().all(|event| event.site != 31));
+            assert!(events.iter().any(|event| event.site == 4
+                && event.kind == 5
+                && event.a == ids[2]
+                && event.b == 0x20));
+        }
+        // 两个原状态事务后及每个新增事务后抢占，末读完成也不得发布成功组。
+        for abort_at in [4, 6, 8, 10] {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+            connected.unwrap();
+            let diagnostics = attach_diagnostics(&mut f);
+            f.write_zero();
+            f.queue_state();
+            f.queue_observation([[1; 3], [0; 3], [0; 3]]);
+            let probe = Arc::new(ObservationProbe {
+                inner: Probe::new(),
+                checkpoints: AtomicUsize::new(0),
+                abort_at,
+            });
+            f.adapter.preempt = Some(probe.clone());
+            f.adapter.bus.set_services(Some(probe), None);
+            assert_eq!(
+                f.adapter.read_state(&mut JointStateBuf::default()),
+                Err(RobotError::Aborted(AbortReason::Revoked))
+            );
+            let events = diagnostics.0.lock().unwrap();
+            assert!(events.iter().all(|event| event.site != 31));
+            assert!(
+                events
+                    .iter()
+                    .any(|event| event.site == 4 && event.kind == 7)
+            );
+        }
+    }
+
+    #[test]
+    fn nominal_mixed_and_raw_without_diagnostics_keep_the_original_two_reads() {
+        for raw in [false, true] {
+            let (mut f, connected) = Fixture::with_profile(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                0,
+                if raw { 12 } else { 4 },
+                false,
+                raw,
+            );
+            connected.unwrap();
+            let diagnostics = (!raw).then(|| attach_diagnostics(&mut f));
+            f.write_zero();
+            let _ = f.handle.drain_tx();
+            f.queue_state();
+            f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
+            let bytes = f.handle.drain_tx();
+            let requests = frames(&bytes);
+            assert_eq!(requests.len(), 2);
+            assert_eq!((requests[0][5], requests[1][5]), (56, 58));
+            assert!(diagnostics.is_none_or(|sink| sink.0.lock().unwrap().is_empty()));
+            assert_eq!(f.adapter.mixed_zero_observation_last_ns, None);
+        }
+    }
+
+    #[test]
+    fn incomplete_raw_observation_keeps_timeout_routing_without_any_success_record() {
+        for completed_reads in 0..3 {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+            connected.unwrap();
+            let diagnostics = attach_diagnostics(&mut f);
+            f.write_zero();
+            let _ = f.handle.drain_tx();
+            f.queue_state();
+            for register in 0..completed_reads {
+                for id in f.adapter.mixed_bus2.unwrap().wheel_ids {
+                    f.handle
+                        .push_rx(&read_status(id, if register == 0 { &[1] } else { &[0, 0] }));
+                }
+            }
+            assert_eq!(
+                f.adapter.read_state(&mut JointStateBuf::default()),
+                Err(RobotError::Comm(CommErrorKind::Timeout))
+            );
+            assert_eq!(frames(&f.handle.drain_tx()).len(), 3 + completed_reads);
+            let events = diagnostics.0.lock().unwrap();
+            assert!(events.iter().all(|event| event.site != 31));
+            assert!(
+                events
+                    .iter()
+                    .any(|event| event.site == 4 && event.kind == 0)
+            );
+        }
     }
 
     #[test]

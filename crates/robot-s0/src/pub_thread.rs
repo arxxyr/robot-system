@@ -637,15 +637,29 @@ fn drain_serial_diag(
     let Some(diag) = diag else { return };
     for _ in 0..256 {
         let Some(event) = diag.pop() else { break };
-        tracing::warn!(
-            site = event.site,
-            kind = event.kind,
-            a = event.a,
-            b = event.b,
-            seq = event.seq_lo,
-            stamp = event.stamp_ns,
-            "串口诊断事件",
-        );
+        if event.site == 31 && matches!(event.kind, 0 | 1) {
+            // Feetech 同连接零速原字观测；不是故障或安全状态提交。
+            tracing::debug!(
+                target: "s0_wheel_observation",
+                site = event.site,
+                kind = event.kind,
+                a = event.a,
+                b = event.b,
+                seq = event.seq_lo,
+                stamp = event.stamp_ns,
+                "串口设备观测",
+            );
+        } else {
+            tracing::warn!(
+                site = event.site,
+                kind = event.kind,
+                a = event.a,
+                b = event.b,
+                seq = event.seq_lo,
+                stamp = event.stamp_ns,
+                "串口诊断事件",
+            );
+        }
     }
     if now.saturating_sub(*last_summary) >= 1_000_000_000 {
         *last_summary = now;
@@ -854,12 +868,13 @@ mod tests {
         Observers,
         Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
     ) {
-        bring_up_with_camera(None)
+        bring_up_with_camera_and_diag(None, None)
     }
 
     #[allow(clippy::type_complexity)]
-    fn bring_up_with_camera(
+    fn bring_up_with_camera_and_diag(
         camera: Option<Arc<CameraFrames>>,
+        diag: Option<Arc<crate::diag::SerialDiagRing>>,
     ) -> (
         PubThreadHandle,
         RtSnapshotPublisher<RtSnapshot>,
@@ -938,7 +953,7 @@ mod tests {
             rt_rdr,
             state_rdr.clone(),
             Arc::clone(&rt_ctrl),
-            None,
+            diag,
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .unwrap();
@@ -976,6 +991,215 @@ mod tests {
         panic!("drain_latest timed out after {max:?}");
     }
 
+    mod serial_diagnostics {
+        use super::*;
+        use std::collections::BTreeMap;
+        use std::sync::Mutex;
+
+        use robot_core::diag::{DiagEvent, DiagSink};
+        use tracing::field::{Field, Visit};
+        use tracing::span::{Attributes, Id, Record};
+        use tracing::{Event, Level, Metadata, Subscriber};
+
+        #[derive(Debug)]
+        struct CapturedDiagnostic {
+            target: &'static str,
+            level: Level,
+            fields: BTreeMap<&'static str, u64>,
+        }
+
+        impl Visit for CapturedDiagnostic {
+            fn record_u64(&mut self, field: &Field, value: u64) {
+                self.fields.insert(field.name(), value);
+            }
+            fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+        }
+
+        struct DiagnosticSubscriber(Arc<Mutex<Vec<CapturedDiagnostic>>>);
+
+        impl Subscriber for DiagnosticSubscriber {
+            fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _span: &Attributes<'_>) -> Id {
+                Id::from_u64(1)
+            }
+            fn record(&self, _span: &Id, _values: &Record<'_>) {}
+            fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+            fn enter(&self, _span: &Id) {}
+            fn exit(&self, _span: &Id) {}
+
+            fn event(&self, event: &Event<'_>) {
+                let mut captured = CapturedDiagnostic {
+                    target: event.metadata().target(),
+                    level: *event.metadata().level(),
+                    fields: BTreeMap::new(),
+                };
+                event.record(&mut captured);
+                self.0.lock().unwrap().push(captured);
+            }
+        }
+
+        fn raw_group(stamp_ns: u64) -> [DiagEvent; 4] {
+            // GV/PV 保留符号幅度原字：负零、负50，以及完整16位边界，不在 Pub 解码。
+            [
+                (0, 3, 0, 0),
+                (1, 9, 1, 0x8032_0000),
+                (1, 7, 0, 0x0000_8000),
+                (1, 8, 1, u32::MAX),
+            ]
+            .map(|(kind, a, b, seq_lo)| DiagEvent {
+                stamp_ns,
+                site: 31,
+                kind,
+                a,
+                b,
+                seq_lo,
+            })
+        }
+
+        #[test]
+        fn drain_preserves_raw_words_order_and_only_known_observations_are_debug() {
+            let diag = crate::diag::SerialDiagRing::new();
+            let ctrl = crate::hard_rt_ctrl::HardRtCtrlInner::new(
+                crate::hard_rt_ctrl::test_authority(true),
+            );
+            let before = ctrl.authority().snapshot();
+            let mut events = raw_group(100).to_vec();
+            events.extend([
+                DiagEvent {
+                    stamp_ns: 101,
+                    site: 20,
+                    kind: 2,
+                    a: 3,
+                    b: 4,
+                    seq_lo: 5,
+                },
+                DiagEvent {
+                    stamp_ns: 102,
+                    site: 31,
+                    kind: 2,
+                    a: 6,
+                    b: 7,
+                    seq_lo: 8,
+                },
+            ]);
+            for &event in &events {
+                diag.record(event);
+            }
+            let captured = Arc::new(Mutex::new(Vec::new()));
+            let mut last_summary = 200;
+            tracing::subscriber::with_default(DiagnosticSubscriber(Arc::clone(&captured)), || {
+                drain_serial_diag(Some(&diag), &ctrl, 200, &mut last_summary);
+            });
+            let captured = captured.lock().unwrap();
+            assert_eq!(captured.len(), events.len());
+            let levels = [
+                Level::DEBUG,
+                Level::DEBUG,
+                Level::DEBUG,
+                Level::DEBUG,
+                Level::WARN,
+                Level::WARN,
+            ];
+            let targets = [
+                "s0_wheel_observation",
+                "s0_wheel_observation",
+                "s0_wheel_observation",
+                "s0_wheel_observation",
+                "robot_s0::pub_thread",
+                "robot_s0::pub_thread",
+            ];
+            for (((actual, expected), level), target) in
+                captured.iter().zip(&events).zip(levels).zip(targets)
+            {
+                assert_eq!(actual.target, target);
+                assert_eq!(actual.level, level);
+                assert_eq!(
+                    actual.fields,
+                    BTreeMap::from([
+                        ("site", u64::from(expected.site)),
+                        ("kind", u64::from(expected.kind)),
+                        ("a", u64::from(expected.a)),
+                        ("b", u64::from(expected.b)),
+                        ("seq", u64::from(expected.seq_lo)),
+                        ("stamp", expected.stamp_ns),
+                    ])
+                );
+            }
+            assert!(diag.pop().is_none());
+            assert_eq!(diag.dropped(), 0);
+            assert_eq!(ctrl.authority().snapshot(), before);
+            assert_eq!(ctrl.comm_level.load(Ordering::Acquire), 0);
+            assert!(ctrl.mailbox_snapshot().is_none());
+        }
+
+        #[test]
+        fn finite_50hz_raw_batches_keep_state_and_heartbeat_publishing() {
+            let diag = Arc::new(crate::diag::SerialDiagRing::new());
+            let (handle, _rt, _state, mut observers, ctrl) =
+                bring_up_with_camera_and_diag(None, Some(Arc::clone(&diag)));
+            // 即使订阅或断言失败，也先停并真实 join 原 Pub worker。
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut state_seq =
+                    drain_latest(&mut observers.joint_state, Duration::from_secs(2))
+                        .view()
+                        .unwrap()
+                        .header
+                        .seq();
+                let mut heartbeat_seq =
+                    drain_latest(&mut observers.heartbeat, Duration::from_secs(2))
+                        .view()
+                        .unwrap()
+                        .header
+                        .seq();
+                let started = SystemClock.now().0;
+                // 50 Hz 节拍下投十组；通过取决于真实发布推进，不把调度速度当性能门槛。
+                for batch in 0..10_u64 {
+                    SystemClock.sleep_until(robot_core::time::Deadline(MonoRawNs(
+                        started + batch * 20_000_000,
+                    )));
+                    for event in raw_group(SystemClock.now().0) {
+                        diag.record(event);
+                    }
+                    let queued_at = SystemClock.now().0;
+                    let before_state = state_seq;
+                    let before_heartbeat = heartbeat_seq;
+                    let mut state_after_drain = false;
+                    let mut heartbeat_after_drain = false;
+                    assert!(
+                        crate::test_util::wait_until(Duration::from_secs(2), || {
+                            if let Some(lease) = observers.joint_state.latest().unwrap() {
+                                let view = lease.view().unwrap();
+                                state_seq = view.header.seq();
+                                state_after_drain |=
+                                    state_seq > before_state && view.header.stamp_ns() > queued_at;
+                            }
+                            if let Some(lease) = observers.heartbeat.latest().unwrap() {
+                                let view = lease.view().unwrap();
+                                heartbeat_seq = view.header.seq();
+                                heartbeat_after_drain |= heartbeat_seq > before_heartbeat
+                                    && view.header.stamp_ns() > queued_at;
+                            }
+                            state_after_drain && heartbeat_after_drain
+                        }),
+                        "第{batch}组诊断后状态与心跳必须继续发布"
+                    );
+                    // Pub 每轮先 drain 再发布；晚于入队的真实帧确认该组已消费。
+                    assert!(diag.pop().is_none());
+                }
+                assert_eq!(diag.dropped(), 0);
+                assert_eq!(ctrl.comm_level.load(Ordering::Acquire), 0);
+                assert!(ctrl.mailbox_snapshot().is_none());
+            }));
+            handle.request_stop();
+            handle.join().unwrap();
+            if let Err(panic) = result {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    }
+
     fn camera_test_frame(stamp_ns: u64) -> crate::camera::CameraFrame {
         crate::camera::CameraFrame {
             width: 2,
@@ -990,7 +1214,7 @@ mod tests {
     fn camera_frame_reaches_real_sensor_pubsub_with_original_stamp_and_bgr_blob() {
         let frames = Arc::new(CameraFrames::default());
         let (handle, _rt, _state, mut observers, _ctrl) =
-            bring_up_with_camera(Some(Arc::clone(&frames)));
+            bring_up_with_camera_and_diag(Some(Arc::clone(&frames)), None);
         let stamp = SystemClock.now().0;
         frames.replace(camera_test_frame(stamp));
         let lease = drain_latest(observers.camera.as_mut().unwrap(), Duration::from_secs(2));
@@ -1165,7 +1389,7 @@ mod tests {
     fn blocked_camera_io_does_not_block_pub_state_or_heartbeat() {
         let frames = Arc::new(CameraFrames::default());
         let (publisher, _rt, _state, _observers, _ctrl) =
-            bring_up_with_camera(Some(Arc::clone(&frames)));
+            bring_up_with_camera_and_diag(Some(Arc::clone(&frames)), None);
         assert!(crate::test_util::wait_until(
             Duration::from_secs(2),
             || publisher

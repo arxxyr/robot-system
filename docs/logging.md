@@ -121,6 +121,12 @@ Revoked，也不能由一个中止事件推断当前物理扭矩或整个请求�
   present 值对比）。`RUST_LOG=debug` 打开。
 - `TRACE`：极详细（每个 packet byte、每个 register 操作）。`RUST_LOG=trace` 打开。
 
+### raw 混合零目标的设备观测
+
+完整 raw 混合零轮目标写成功后，Feetech 复用当前连接补读三轮 TE、GV、PV；相邻尝试至少20毫秒。每组三个事务全部成功才向原诊断环提交四条 `site=31` 记录：`kind=0` 的 `stamp` 为开始时刻、`a=3`；随后三条 `kind=1` 共用结束时刻，`a` 为配置中的物理ID，`b` 为TE，`seq` 低16位为GV、高16位为PV。原字不做符号归一化。
+
+Pub 使用独立 target `s0_wheel_observation` 的 DEBUG 日志，默认 `info,robot=debug` 不输出；采证时追加 `s0_wheel_observation=debug`。未知kind和原故障仍为WARN。缺失、重复、丢弃或时间超界的组不能作为有效停止证据；日志本身不提交安全状态。额外读取失败沿原周期读错误路径处理，200毫秒上下文不等于整组三读硬超时；真实总线耗时和外层500毫秒窗口仍须实测。
+
 ## 过滤（`RUST_LOG`）
 
 `tracing-subscriber::EnvFilter` 标准语法。
