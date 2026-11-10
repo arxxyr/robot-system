@@ -5,7 +5,7 @@
 | 任务 | 入口 |
 |---|---|
 | 开始工作、最小检查命令 | [按需开始](02_start_here.md) |
-| 当前、测试和历史配置 | [配置导航](../configs/README.md) |
+| 当前配置与测试夹具 | [配置导航](../configs/README.md) |
 | 当前完成边界、阻塞与近期顺序 | [S0 HAL 状态](s0_hal_status.md) |
 | 架构与不变量 | [00_design.md](00_design.md)：v0.1.2 冻结设计，权威 |
 | 验证契约、指标与既有结果 | [10_verification.md](10_verification.md)：按具体主题检索 |

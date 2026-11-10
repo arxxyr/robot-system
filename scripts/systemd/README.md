@@ -13,7 +13,7 @@
 
 - 全总线 unit 引用随开发变化的配置，**不是冻结的回滚版本**。回滚使用事先备份并验证过的二进制、配置和 unit；不能仅切换 unit 名称。
 - arm-only 与 full-bus 的 robot ID、保护文件和控制范围不同，不自动迁移或混用。`Conflicts=` 只是服务互斥的一部分，还须核对手工进程及串口所有权。
-- 先按[配置导航](../../configs/README.md)选择明确文件，不安装 `configs/archive/` 中的历史试验配置。
+- 先按[当前配置](../../configs/README.md)选择明确文件，不使用已退出当前流程的试验配置。
 - 测试构建使用隔离目录。`run_clear_estop_smoke.sh` 构建与运行同一份隔离产物，不改服务引用的 `target/release`；安装仍走既有部署步骤。
 
 ## 启停与保护状态
