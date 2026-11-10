@@ -11,6 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::format;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
@@ -18,7 +19,6 @@ use iceoryx2_bb_container::slotmap::SlotMap;
 use iceoryx2_bb_container::slotmap::SlotMapKey;
 use iceoryx2_bb_container::vector::polymorphic_vec::*;
 use iceoryx2_bb_elementary::cyclic_tagger::*;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_memory::heap_allocator::HeapAllocator;
 use iceoryx2_cal::named_concept::NamedConceptBuilder;
@@ -30,9 +30,9 @@ use crate::port::DegradationCause;
 use crate::port::DegradationInfo;
 use crate::port::update_connections::ConnectionFailure;
 use crate::port::{DegradationAction, DegradationHandler, ReceiveError};
-use crate::service::NoResource;
 use crate::service::SharedServiceState;
 use crate::service::naming_scheme::data_segment_name;
+use crate::service::resource::ServiceResource;
 use crate::service::static_config::message_type_details::MessageTypeDetails;
 use crate::service::{self, config_scheme::connection_config, naming_scheme::connection_name};
 
@@ -68,7 +68,7 @@ mod unregister_trace {
 #[derive(Clone, Copy)]
 pub(crate) struct SenderDetails {
     pub(crate) port_id: u128,
-    pub(crate) number_of_samples: usize,
+    pub(crate) number_of_chunks: usize,
     pub(crate) max_number_of_segments: u8,
     pub(crate) data_segment_type: DataSegmentType,
 }
@@ -105,42 +105,45 @@ impl RoutePin {
 }
 
 #[derive(Debug)]
-pub(crate) struct Connection<Service: service::Service> {
+pub(crate) struct Connection<Service: service::Service, Resource: ServiceResource> {
     pub(crate) receiver: <Service::Connection as ZeroCopyConnection>::Receiver,
     pub(crate) data_segment: DataSegmentView<Service>,
     pub(crate) sender_port_id: u128,
     /// RR R2：持有该连接原 route 的 strict 请求数（Live 或 Detached），只由同一 shared 锁内改动。
     pin_count: usize,
     tag: Tag,
+    _resource: PhantomData<Resource>,
 }
 
-impl<Service: service::Service> Abandonable for Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Abandonable
+    for Connection<Service, Resource>
+{
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
 
         unsafe {
             <Service::Connection as ZeroCopyConnection>::Receiver::abandon_in_place(
-                NonNull::iox2_from_mut(&mut this.receiver),
+                NonNull::from_mut(&mut this.receiver),
             )
         };
-        unsafe {
-            DataSegmentView::abandon_in_place(NonNull::iox2_from_mut(&mut this.data_segment))
-        };
+        unsafe { DataSegmentView::abandon_in_place(NonNull::from_mut(&mut this.data_segment)) };
     }
 }
 
-impl<Service: service::Service> Taggable for Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Taggable
+    for Connection<Service, Resource>
+{
     fn tag(&self) -> &Tag {
         &self.tag
     }
 }
 
-impl<Service: service::Service> Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Connection<Service, Resource> {
     fn new(
-        this: &Receiver<Service>,
+        this: &Receiver<Service, Resource>,
         data_segment_type: DataSegmentType,
         sender_port_id: u128,
-        number_of_samples: usize,
+        number_of_chunks: usize,
         max_number_of_segments: u8,
         cyclic_tagger: &CyclicTagger,
         initial_channel_state: ChannelState,
@@ -156,9 +159,9 @@ impl<Service: service::Service> Connection<Service> {
                             Builder::new( &connection_name(sender_port_id, this.receiver_port_id))
                                     .config(&connection_config::<Service>(global_config))
                                     .buffer_size(this.buffer_size)
-                                    .receiver_max_borrowed_samples_per_channel(this.receiver_max_borrowed_samples)
+                                    .receiver_max_borrowed_chunks_per_channel(this.receiver_max_borrowed_chunks)
                                     .enable_safe_overflow(this.enable_safe_overflow)
-                                    .number_of_samples_per_segment(number_of_samples)
+                                    .number_of_chunks_per_segment(number_of_chunks)
                                     .number_of_channels(this.number_of_channels)
                                     .initial_channel_state(initial_channel_state)
                                     .max_supported_shared_memory_segments(max_number_of_segments)
@@ -186,31 +189,32 @@ impl<Service: service::Service> Connection<Service> {
             sender_port_id,
             pin_count: 0,
             tag: cyclic_tagger.create_tag(),
+            _resource: PhantomData,
         })
     }
 
     fn has_data_or_borrows(&self) -> bool {
         let (has_data, has_borrows) =
-            Receiver::<Service>::receiver_channels_have_data_or_borrows(&self.receiver);
+            Receiver::<Service, Resource>::receiver_channels_have_data_or_borrows(&self.receiver);
         has_data | has_borrows
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct Receiver<Service: service::Service> {
+pub(crate) struct Receiver<Service: service::Service, Resource: ServiceResource> {
     pub(crate) connections: PolymorphicVec<'static, UnsafeCell<Option<SlotMapKey>>, HeapAllocator>,
     pub(crate) receiver_port_id: u128,
-    pub(crate) service_state: SharedServiceState<Service, NoResource>,
+    pub(crate) service_state: SharedServiceState<Service, Resource>,
     pub(crate) buffer_size: usize,
     pub(crate) tagger: CyclicTagger,
     pub(crate) to_be_removed_connections:
-        Option<UnsafeCell<PolymorphicVec<'static, SlotMapKey, HeapAllocator>>>,
+        UnsafeCell<PolymorphicVec<'static, SlotMapKey, HeapAllocator>>,
     pub(crate) degradation_handler: DegradationHandler<'static>,
     pub(crate) message_type_details: MessageTypeDetails,
-    pub(crate) receiver_max_borrowed_samples: usize,
+    pub(crate) receiver_max_borrowed_chunks: usize,
     pub(crate) enable_safe_overflow: bool,
     pub(crate) number_of_channels: usize,
-    pub(crate) connection_storage: UnsafeCell<SlotMap<Connection<Service>>>,
+    pub(crate) connection_storage: UnsafeCell<SlotMap<Connection<Service, Resource>>>,
     pub(crate) initial_channel_state: ChannelState,
     /// RR R2：保留策略；`StrictPinned` 下换代 / 消失但仍被 pin 或仍有数据 / 借用的连接进入
     /// `retained`（绝对 key），不再由 index 数组引用。
@@ -219,17 +223,17 @@ pub(crate) struct Receiver<Service: service::Service> {
     pub(crate) retained: Option<UnsafeCell<PolymorphicVec<'static, SlotMapKey, HeapAllocator>>>,
 }
 
-impl<Service: service::Service> Abandonable for Receiver<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Abandonable
+    for Receiver<Service, Resource>
+{
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
 
-        unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
     }
 }
 
-impl<Service: service::Service> Receiver<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Receiver<Service, Resource> {
     /// 仅故障测试：该原 receiver 对指定 offset 实际 unregister 的累计次数。
     #[cfg(all(test, feature = "r2-test-fixtures"))]
     pub(crate) fn unregister_count_for_test(&self, offset: PointerOffset) -> usize {
@@ -249,7 +253,7 @@ impl<Service: service::Service> Receiver<Service> {
             match connection.receiver.release(chunk.offset, channel_id) {
                 Ok(()) => (),
                 Err(ZeroCopyReleaseError::RetrieveBufferFull) => {
-                    error!(from self, "This should never happen! The publishers retrieve channel is full and the sample cannot be returned.");
+                    error!(from self, "This should never happen! The publishers retrieve channel is full and the chunk cannot be returned.");
                 }
             }
         }
@@ -314,7 +318,7 @@ impl<Service: service::Service> Receiver<Service> {
             self,
             sender_details.data_segment_type,
             sender_details.port_id,
-            sender_details.number_of_samples,
+            sender_details.number_of_chunks,
             sender_details.max_number_of_segments,
             &self.tagger,
             self.initial_channel_state,
@@ -332,77 +336,73 @@ impl<Service: service::Service> Receiver<Service> {
     }
 
     pub(crate) fn prepare_connection_removal(&self, index: usize) {
-        if let Some(to_be_removed_connections) = &self.to_be_removed_connections {
-            let key = unsafe { *self.connections[index].get() };
-            let key = match key {
-                None => return,
-                Some(key) => key,
-            };
+        let key = unsafe { *self.connections[index].get() };
+        let key = match key {
+            None => return,
+            Some(key) => key,
+        };
 
-            let connection_storage = unsafe { &mut *self.connection_storage.get() };
+        let connection_storage = unsafe { &mut *self.connection_storage.get() };
 
-            if let Some(connection) = connection_storage.get_mut(key) {
-                let receiver = &connection.receiver;
-                let (connection_has_data, connection_has_borrows) =
-                    Self::receiver_channels_have_data_or_borrows(receiver);
+        if let Some(connection) = connection_storage.get_mut(key) {
+            let receiver = &connection.receiver;
+            let (connection_has_data, connection_has_borrows) =
+                Self::receiver_channels_have_data_or_borrows(receiver);
 
-                let keep_connection = connection_has_data | connection_has_borrows;
-                if keep_connection {
-                    let to_be_removed_connections =
-                        unsafe { &mut *to_be_removed_connections.get() };
-                    if to_be_removed_connections.push(key).is_err() {
-                        let msg_begin = "Expired connection buffer exceeded.";
-                        let msg_disconnect_with_data =
-                            "A sender disconnected with undelivered data that will be discarded.";
-                        let msg_disconnet_with_borrows = "A sender disconnected with data that is still borrowed. This will lead to segmentation faults when the data is accessed later on.";
-                        let msg_end =
-                            "Increase the expired connection buffer to mitigate the problem.";
+            let keep_connection = connection_has_data | connection_has_borrows;
+            if keep_connection {
+                let to_be_removed_connections =
+                    unsafe { &mut *self.to_be_removed_connections.get() };
+                if to_be_removed_connections.push(key).is_err() {
+                    let msg_begin = "Expired connection buffer exceeded.";
+                    let msg_disconnect_with_data =
+                        "A sender disconnected with undelivered data that will be discarded.";
+                    let msg_disconnet_with_borrows = "A sender disconnected with data that is still borrowed. This will lead to segmentation faults when the data is accessed later on.";
+                    let msg_end = "Increase the expired connection buffer to mitigate the problem.";
 
-                        // push failed! let's see if there is something that can be removed
-                        let index_and_key_to_remove =
-                            Self::find_connection_without_data_and_borrows(
-                                connection_storage,
-                                to_be_removed_connections,
-                            );
+                    // push failed! let's see if there is something that can be removed
+                    let index_and_key_to_remove = Self::find_connection_without_data_and_borrows(
+                        connection_storage,
+                        to_be_removed_connections,
+                    );
+
+                    if let Some((index, key)) = index_and_key_to_remove {
+                        // we found a connection without data and borrows which can be removed from the container
+                        to_be_removed_connections.remove(index);
+                        connection_storage.remove(key);
+                    } else if connection_has_borrows {
+                        // we did not find a connection that can safely be removed to create some space for the connection with borrows;
+                        // removing a connection with borrows might lead to segfaults -> try to remove a connection without borrows
+                        let index_and_key_to_remove = Self::find_connection_without_borrows(
+                            connection_storage,
+                            to_be_removed_connections,
+                        );
 
                         if let Some((index, key)) = index_and_key_to_remove {
-                            // we found a connection without data and borrows which can be removed from the container
+                            // we found a connection without borrows which can be removed from the container
+                            warn!(from self, "{} {} {}", msg_begin, msg_disconnect_with_data, msg_end);
                             to_be_removed_connections.remove(index);
-                            connection_storage.remove(key);
-                        } else if connection_has_borrows {
-                            // we did not find a connection that can safely be removed to create some space for the connection with borrows;
-                            // removing a connection with borrows might lead to segfaults -> try to remove a connection without borrows
-                            let index_and_key_to_remove = Self::find_connection_without_borrows(
-                                connection_storage,
-                                to_be_removed_connections,
-                            );
-
-                            if let Some((index, key)) = index_and_key_to_remove {
-                                // we found a connection without borrows which can be removed from the container
-                                warn!(from self, "{} {} {}", msg_begin, msg_disconnect_with_data, msg_end);
-                                to_be_removed_connections.remove(index);
-                                connection_storage.remove(key);
-                            }
-                        }
-
-                        if to_be_removed_connections.push(key).is_err() {
-                            if connection_has_borrows {
-                                fatal_panic!(from self, "This should never happen! {} {} {}", msg_begin, msg_disconnet_with_borrows, msg_end);
-                            } else {
-                                warn!(from self, "{} {} {}", msg_begin, msg_disconnect_with_data, msg_end);
-                            }
                             connection_storage.remove(key);
                         }
                     }
-                } else {
-                    connection_storage.remove(key);
+
+                    if to_be_removed_connections.push(key).is_err() {
+                        if connection_has_borrows {
+                            fatal_panic!(from self, "This should never happen! {} {} {}", msg_begin, msg_disconnet_with_borrows, msg_end);
+                        } else {
+                            warn!(from self, "{} {} {}", msg_begin, msg_disconnect_with_data, msg_end);
+                        }
+                        connection_storage.remove(key);
+                    }
                 }
+            } else {
+                connection_storage.remove(key);
             }
         }
     }
 
     fn find_connection_without_data_and_borrows(
-        connection_storage: &SlotMap<Connection<Service>>,
+        connection_storage: &SlotMap<Connection<Service, Resource>>,
         connections: &PolymorphicVec<'static, SlotMapKey, HeapAllocator>,
     ) -> Option<(usize, SlotMapKey)> {
         Self::find_connection_with_condition(
@@ -413,7 +413,7 @@ impl<Service: service::Service> Receiver<Service> {
     }
 
     fn find_connection_without_borrows(
-        connection_storage: &SlotMap<Connection<Service>>,
+        connection_storage: &SlotMap<Connection<Service, Resource>>,
         connections: &PolymorphicVec<'static, SlotMapKey, HeapAllocator>,
     ) -> Option<(usize, SlotMapKey)> {
         Self::find_connection_with_condition(
@@ -424,7 +424,7 @@ impl<Service: service::Service> Receiver<Service> {
     }
 
     fn find_connection_with_condition<C: Fn(bool, bool) -> bool>(
-        connection_storage: &SlotMap<Connection<Service>>,
+        connection_storage: &SlotMap<Connection<Service, Resource>>,
         connections: &PolymorphicVec<'static, SlotMapKey, HeapAllocator>,
         condition: C,
     ) -> Option<(usize, SlotMapKey)> {
@@ -459,7 +459,7 @@ impl<Service: service::Service> Receiver<Service> {
             let channel_id = ChannelId::new(id);
             has_data |= receiver.has_data(channel_id);
             has_borrows |= receiver.borrow_count(channel_id) > 0;
-            if has_data & has_borrows {
+            if has_data && has_borrows {
                 break;
             }
         }
@@ -472,7 +472,7 @@ impl<Service: service::Service> Receiver<Service> {
         unsafe { *self.connections[index].get() = None };
     }
 
-    pub(crate) fn has_samples(&self, channel_id: ChannelId) -> bool {
+    pub(crate) fn has_chunks(&self, channel_id: ChannelId) -> bool {
         let connection_storage = unsafe { &mut *self.connection_storage.get() };
         for (_, connection) in connection_storage.iter() {
             if connection.receiver.has_data(channel_id) {
@@ -483,15 +483,14 @@ impl<Service: service::Service> Receiver<Service> {
         false
     }
 
-    pub(crate) fn has_samples_in_active_connection(&self, channel_id: ChannelId) -> bool {
+    pub(crate) fn has_chunks_in_active_connection(&self, channel_id: ChannelId) -> bool {
         let connection_storage = unsafe { &mut *self.connection_storage.get() };
         for connection_key in self.connections.iter() {
-            if let Some(connection_key) = unsafe { &*connection_key.get() } {
-                if let Some(connection) = connection_storage.get(*connection_key) {
-                    if connection.receiver.has_data(channel_id) {
-                        return true;
-                    }
-                }
+            if let Some(connection_key) = unsafe { &*connection_key.get() }
+                && let Some(connection) = connection_storage.get(*connection_key)
+                && connection.receiver.has_data(channel_id)
+            {
+                return true;
             }
         }
         false
@@ -499,11 +498,11 @@ impl<Service: service::Service> Receiver<Service> {
 
     fn receive_from_connection(
         &self,
-        connection: &Connection<Service>,
+        connection: &Connection<Service, Resource>,
         connection_key: SlotMapKey,
         channel_id: ChannelId,
     ) -> Result<Option<(ChunkDetails, Chunk)>, ReceiveError> {
-        let msg = "Unable to receive another sample";
+        let msg = "Unable to receive another chunk";
 
         match connection.receiver.receive(channel_id) {
             Ok(data) => match data {
@@ -543,8 +542,8 @@ impl<Service: service::Service> Receiver<Service> {
             },
             Err(ZeroCopyReceiveError::ReceiveWouldExceedMaxBorrowValue) => {
                 fail!(from self, with ReceiveError::ExceedsMaxBorrows,
-                    "{} since it would exceed the maximum {} of borrowed samples.",
-                    msg, connection.receiver.max_borrowed_samples());
+                    "{} since it would exceed the maximum {} of borrowed chunks.",
+                    msg, connection.receiver.max_borrowed_chunks());
             }
         }
     }
@@ -554,62 +553,60 @@ impl<Service: service::Service> Receiver<Service> {
         channel_id: ChannelId,
     ) -> Result<Option<(ChunkDetails, Chunk)>, ReceiveError> {
         let mut ret_val = None;
-        if let Some(to_be_removed_connections) = &self.to_be_removed_connections {
-            let to_be_removed_connections = unsafe { &mut *to_be_removed_connections.get() };
+        let to_be_removed_connections = unsafe { &mut *self.to_be_removed_connections.get() };
 
-            if !to_be_removed_connections.is_empty() {
-                let connection_storage = unsafe { &mut *self.connection_storage.get() };
+        if !to_be_removed_connections.is_empty() {
+            let connection_storage = unsafe { &mut *self.connection_storage.get() };
 
-                let mut indices_to_skip = 0;
-                // loop through all 'to_be_removed_connections' break the for-loop if a connection needs to be removed;
-                // then continue the for-loop but skip the previously looped indices
-                loop {
-                    let mut index_and_key = None;
-                    for (n, connection_key) in to_be_removed_connections
-                        .iter()
-                        .skip(indices_to_skip)
-                        .enumerate()
-                    {
-                        let connection = match connection_storage.get(*connection_key) {
-                            Some(connection) => connection,
-                            None => {
-                                index_and_key = Some((n, *connection_key));
-                                break;
-                            }
-                        };
-                        let receiver = &connection.receiver;
-
-                        if receiver.borrow_count(channel_id) == receiver.max_borrowed_samples() {
-                            continue;
-                        }
-
-                        if let Some((details, absolute_address)) =
-                            self.receive_from_connection(connection, *connection_key, channel_id)?
-                        {
-                            ret_val = Some((details, absolute_address));
+            let mut indices_to_skip = 0;
+            // loop through all 'to_be_removed_connections' break the for-loop if a connection needs to be removed;
+            // then continue the for-loop but skip the previously looped indices
+            loop {
+                let mut index_and_key = None;
+                for (n, connection_key) in to_be_removed_connections
+                    .iter()
+                    .skip(indices_to_skip)
+                    .enumerate()
+                {
+                    let connection = match connection_storage.get(*connection_key) {
+                        Some(connection) => connection,
+                        None => {
+                            index_and_key = Some((n, *connection_key));
                             break;
-                        } else {
-                            let (_has_data, has_borrows) =
-                                Self::receiver_channels_have_data_or_borrows(receiver);
-
-                            if !has_borrows {
-                                index_and_key = Some((n, *connection_key));
-                                break;
-                            }
                         }
-                    }
-                    // there is a connection which has neither data nor borrows nor is it present in the 'connection_storage'
-                    if let Some((index, key)) = index_and_key {
-                        to_be_removed_connections.remove(index);
-                        connection_storage.remove(key);
-                        indices_to_skip = index;
+                    };
+                    let receiver = &connection.receiver;
 
+                    if receiver.borrow_count(channel_id) == receiver.max_borrowed_chunks() {
                         continue;
                     }
 
-                    // at this point we either were able to receive a sample or iterated through all connections
-                    break;
+                    if let Some((details, absolute_address)) =
+                        self.receive_from_connection(connection, *connection_key, channel_id)?
+                    {
+                        ret_val = Some((details, absolute_address));
+                        break;
+                    } else {
+                        let (_has_data, has_borrows) =
+                            Self::receiver_channels_have_data_or_borrows(receiver);
+
+                        if !has_borrows {
+                            index_and_key = Some((n, *connection_key));
+                            break;
+                        }
+                    }
                 }
+                // there is a connection which has neither data nor borrows nor is it present in the 'connection_storage'
+                if let Some((index, key)) = index_and_key {
+                    to_be_removed_connections.remove(index);
+                    connection_storage.remove(key);
+                    indices_to_skip = index;
+
+                    continue;
+                }
+
+                // at this point we either were able to receive a chunk or iterated through all connections
+                break;
             }
         }
 
@@ -635,7 +632,7 @@ impl<Service: service::Service> Receiver<Service> {
 
             active_channel_count += 1;
             if connection.receiver.borrow_count(channel_id)
-                >= connection.receiver.max_borrowed_samples()
+                >= connection.receiver.max_borrowed_chunks()
             {
                 continue;
             } else {
@@ -743,14 +740,13 @@ impl<Service: service::Service> Receiver<Service> {
     pub(crate) fn finish_update_connection_cycle(&self) {
         let connection_storage = unsafe { &mut *self.connection_storage.get() };
         for (n, connection_key) in self.connections.iter().enumerate() {
-            if let Some(connection_key) = unsafe { &*connection_key.get() } {
-                if let Some(connection) = connection_storage.get(*connection_key) {
-                    if !connection.was_tagged_by(&self.tagger) {
-                        match self.retention {
-                            RetentionPolicy::Standard => self.remove_connection(n),
-                            RetentionPolicy::StrictPinned => self.retire_index_strict(n),
-                        }
-                    }
+            if let Some(connection_key) = unsafe { &*connection_key.get() }
+                && let Some(connection) = connection_storage.get(*connection_key)
+                && !connection.was_tagged_by(&self.tagger)
+            {
+                match self.retention {
+                    RetentionPolicy::Standard => self.remove_connection(n),
+                    RetentionPolicy::StrictPinned => self.retire_index_strict(n),
                 }
             }
         }
@@ -926,7 +922,7 @@ impl<Service: service::Service> Receiver<Service> {
     }
 
     /// 原 pin 原件所指连接（pin 持有期间不会被回收；缺失或身份不符即不变量损坏）。
-    fn pinned(&self, pin: &RoutePin) -> &Connection<Service> {
+    fn pinned(&self, pin: &RoutePin) -> &Connection<Service, Resource> {
         if pin.receiver_port_id != self.receiver_port_id {
             fatal_panic!(from self, "This should never happen! A strict route pin of another receiver was used here.");
         }

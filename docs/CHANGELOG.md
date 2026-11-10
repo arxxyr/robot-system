@@ -10,6 +10,16 @@
 
 ---
 
+## 2026-11-10 · 依赖集中与上游版本升级
+
+按用户要求，自有 crate（含 RR 内存模型工具）的依赖版本和来源统一到根 `workspace.dependencies`，子清单仅继承并保留必要特性选择，共用根锁文件。第三方补丁包及其私有测试工作区保留上游清单结构。升级到当前 registry 可用版本，主要包括 iceoryx2 0.10.0、Rerun 0.42.0、libc 1.0.0-alpha.5、serialport 4.10.1；FlatBuffers runtime/flatc 仍为最新的25.12.19配套。
+
+iceoryx2 升级须迁移本地严格 RR 所有权、容量检查和退休修复；不能删除 patch 改用未修正原包。上游0.10变更内部请求/响应头和服务资源布局，S0/S1/工具必须同版重编，不能假设与旧0.9进程或共享内存可滚动兼容。本次不安装到控制服务、不执行硬件动作，不继承旧实机验收结论。 跨进程测试通过既有环境变量绑定同源辅助程序；CI先准备带测试后端的release S1，并明确debug/unwind对照，避免默认命中共享缓存中的旧release。
+
+Rerun 0.42的re_protos精确依赖旧protoc-bin-vendored 3.2.0，与本次最新版3.3.0无法同时解析；仅将该包构建清单迁到3.3.0，协议和已生成Rust源码保持上游原件。补丁来源和移除条件见[来源说明](../3rd-party/RE_PROTOS_VENDOR_SOURCE.md)，新版描述符须由prost-reflect实际解码验证。
+
+依赖审计偏离随精确版本更新：serialport 4.10.1仍为MPL-2.0，移除旧4.10.0的撤回版本豁免；webpki-roots及新增webpki-root-certs 1.0.11沿CDLA-Permissive-2.0精确例外，不扩大全局许可白名单。发布包已核对锁文件SHA和许可原文；新根证书包来自rustls-platform-verifier。Rerun 0.42的re_string_interner/re_query仍使用paste 1.0.15，原停止维护公告例外保留，依赖路径、公告或下次发布审计变化时复审。软件验证见 `.verify/dependency_refresh_2026-11-10/`；硬件及D15边界保持。
+
 ## 2026-11-10 · S0 单路相机接入既有 SoftRT 生命周期
 
 按用户的全身HAL目标落地冻结§4.4的原 `SensorAdapter` 关联帧接口；具体拥有像素的BGR帧留在S0相机模块。现有IO线程独占一个基于原版OpenCV的本地采集辅助进程，非阻塞分段接收，保持原采集完成的MONOTONIC_RAW时间戳，不宣称曝光时刻。为复用当前Orin已安装依赖，本阶段单路相机静态构造，不扩建冻结§4.5的Sensor inventory注册体系或新crate；相机配置只归属指定硬件实例。

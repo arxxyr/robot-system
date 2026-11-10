@@ -52,7 +52,7 @@ use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_posix::metadata::MetadataFromPathError;
 
 pub use crate::named_concept::*;
 pub use crate::static_storage::*;
@@ -64,13 +64,13 @@ use iceoryx2_bb_posix::{
 };
 use iceoryx2_log::{fail, trace, warn};
 
+const INIT_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE;
+
 #[cfg(not(feature = "dev_permissions"))]
 const FINAL_PERMISSIONS: Permission = Permission::OWNER_READ;
 
 #[cfg(not(feature = "dev_permissions"))]
-const DIR_PERMISSIONS: Permission = Permission::OWNER_ALL
-    .const_bitor(Permission::GROUP_READ)
-    .const_bitor(Permission::GROUP_EXEC);
+const DIR_PERMISSIONS: Permission = Permission::OWNER_ALL.const_bitor(Permission::GROUP_READ_EXEC);
 
 #[cfg(feature = "dev_permissions")]
 const FINAL_PERMISSIONS: Permission = Permission::OWNER_READ
@@ -136,7 +136,7 @@ pub struct Locked {
 impl Abandonable for Locked {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.static_storage)) };
+        unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.static_storage)) };
     }
 }
 
@@ -149,11 +149,26 @@ impl NamedConcept for Locked {
 impl StaticStorageLocked<Storage> for Locked {
     fn unlock(mut self, contents: &[u8]) -> Result<Storage, StaticStorageUnlockError> {
         let msg = "Failed to unlock storage";
-        let bytes_written = fail!(from self, when self.static_storage.file.write(contents),
-            map FileWriteError::InsufficientPermissions => StaticStorageUnlockError::InsufficientPermissions;
-                FileWriteError::NoSpaceLeft => StaticStorageUnlockError::NoSpaceLeft,
-            unmatched StaticStorageUnlockError::InternalError,
-            "{} due to a failure while writing the contents.", msg);
+
+        let bytes_written = match self.static_storage.view.file.write(contents) {
+            Ok(bytes_written) => bytes_written,
+            Err(FileWriteError::InsufficientPermissions) => {
+                fail!(from self, with StaticStorageUnlockError::InsufficientPermissions,
+                    "{} due to insufficient permissions.", msg);
+            }
+            Err(FileWriteError::Interrupt) => {
+                fail!(from self, with StaticStorageUnlockError::Interrupt,
+                    "{} since an interrupt signal was raised.", msg);
+            }
+            Err(FileWriteError::NoSpaceLeft) => {
+                fail!(from self, with StaticStorageUnlockError::NoSpaceLeft,
+                    "{} since there is not enough space left to write the contents.", msg);
+            }
+            Err(e) => {
+                fail!(from self, with StaticStorageUnlockError::InternalError,
+                    "{} due to an unknown failure while writing the contents. [{e:?}]", msg);
+            }
+        };
 
         if bytes_written != contents.len() as u64 {
             fail!(from self, with StaticStorageUnlockError::NoSpaceLeft,
@@ -161,12 +176,38 @@ impl StaticStorageLocked<Storage> for Locked {
                 msg, contents.len(), bytes_written);
         }
 
-        fail!(from self, when self.static_storage.file.set_permission(FINAL_PERMISSIONS),
-                map FileSetPermissionError::InsufficientPermissions => StaticStorageUnlockError::InsufficientPermissions,
-                unmatched StaticStorageUnlockError::InternalError,
-                "{} due to a failure while updating the permissions to {}.", msg, FINAL_PERMISSIONS);
+        match self.static_storage.view.file.sync_all() {
+            Ok(()) => (),
+            Err(FileSyncError::Interrupt) => {
+                fail!(from self, with StaticStorageUnlockError::Interrupt,
+                    "{} since an interrupt signal was raised while syncing the underlying file.", msg);
+            }
+            Err(e) => {
+                fail!(from self, with StaticStorageUnlockError::InternalError,
+                    "{} due to an unknown failure while syncing the underlying file. [{e:?}]", msg);
+            }
+        }
 
-        self.static_storage.len = contents.len() as u64;
+        match self
+            .static_storage
+            .view
+            .file
+            .set_permission(FINAL_PERMISSIONS)
+        {
+            Ok(_) => (),
+            Err(FileSetPermissionError::InsufficientPermissions) => {
+                fail!(from self, with StaticStorageUnlockError::InsufficientPermissions,
+                    "{} since the static storage could not be unlocked due to insufficient permissions.",
+                    msg);
+            }
+            Err(e) => {
+                fail!(from self, with StaticStorageUnlockError::InternalError,
+                    "{} since the static storage could not be unlocked due to an unknown failure. [{e:?}]",
+                    msg);
+            }
+        }
+
+        self.static_storage.view.len = contents.len() as u64;
 
         Ok(self.static_storage)
     }
@@ -178,14 +219,13 @@ pub struct Storage {
     name: FileName,
     config: Configuration,
     has_ownership: AtomicBool,
-    file: File,
-    len: u64,
+    view: StorageView,
 }
 
 impl Abandonable for Storage {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { File::abandon_in_place(NonNull::iox2_from_mut(&mut this.file)) };
+        unsafe { StorageView::abandon_in_place(NonNull::from_mut(&mut this.view)) };
     }
 }
 
@@ -240,6 +280,21 @@ impl crate::named_concept::NamedConceptMgmt for Storage {
     fn list_cfg(config: &Configuration) -> Result<Vec<FileName>, NamedConceptListError> {
         let msg = "Unable to list all storages";
         let origin = "static_storage::File::list_cfg()";
+
+        match Directory::does_exist(&config.path) {
+            Ok(true) => (),
+            Ok(false) => return Ok(vec![]),
+            Err(MetadataFromPathError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptListError::InsufficientPermissions,
+                    "{} due to insufficient permissions to read the storage directory.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptListError::InternalError,
+                    "{} due to an internal failure while checking the existance of the storage directory \"{}\". [{e:?}]",
+                    msg, config.path);
+            }
+        }
+
         let directory = match Directory::new(&config.path) {
             Ok(directory) => directory,
             Err(DirectoryOpenError::InsufficientPermissions) => {
@@ -255,17 +310,23 @@ impl crate::named_concept::NamedConceptMgmt for Storage {
             }
         };
 
-        let entries = fail!(from origin,
-                            when directory.contents(),
-                            map DirectoryReadError::InsufficientPermissions => NamedConceptListError::InsufficientPermissions,
-                            unmatched NamedConceptListError::InternalError,
-                            "{} due to a failure while reading the storage directory (\"{}\") contents.", msg, config.path);
+        let entries = match directory.contents() {
+            Ok(entries) => entries,
+            Err(DirectoryReadError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptListError::InsufficientPermissions,
+                    "{} due to insufficient permissions to acquire the directory contents.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptListError::InternalError,
+                    "{} since the directory contents could not be acquired due to an unknown failure. [{e:?}]", msg);
+            }
+        };
 
         Ok(entries
             .iter()
             .filter(|entry| {
                 let metadata = entry.metadata();
-                metadata.file_type() == FileType::File && metadata.permission() == FINAL_PERMISSIONS
+                metadata.file_type() == FileType::File && metadata.permission() != INIT_PERMISSIONS
             })
             .filter_map(|entry| config.extract_name_from_file(entry.name()))
             .collect())
@@ -280,28 +341,39 @@ impl crate::named_concept::NamedConceptMgmt for Storage {
 
         let adjusted_path = config.path_for(storage_name);
 
-        let does_exist = || {
-            File::does_exist(&adjusted_path).or_else(|v| {
-                fail!(from origin, with NamedConceptDoesExistError::UnderlyingResourcesCorrupted,
-                    "{} due to an internal failure ({:?}), is the static storage in a corrupted state?", msg, v);
-        })
+        let does_exist = || match File::does_exist(&adjusted_path) {
+            Ok(file) => Ok(file),
+            Err(MetadataFromPathError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptDoesExistError::InsufficientPermissions,
+                        "{} due to insufficient permissions to verify the existence of the underlying file.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptDoesExistError::InternalError,
+                    "{} due to an unknown failure while determing the existence of the underlying file. [{e:?}]", msg);
+            }
         };
 
         if !does_exist()? {
             return Ok(false);
         }
 
-        let file = FileBuilder::new(&adjusted_path).open_existing(AccessMode::Read);
-        if file.is_err() {
-            if !does_exist()? {
-                return Ok(false);
+        let file = match FileBuilder::new(&adjusted_path).open_existing(AccessMode::Read) {
+            Ok(file) => file,
+            Err(FileOpenError::FileDoesNotExist) => return Ok(false),
+            Err(FileOpenError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptDoesExistError::InsufficientPermissions,
+                    "{} due to insufficient permissions to read the underlying file.", msg);
             }
+            Err(FileOpenError::Interrupt) => {
+                fail!(from origin, with NamedConceptDoesExistError::Interrupt,
+                    "{} since an interrupt signal was raised.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptDoesExistError::InternalError,
+                    "{} due to an internal error while reading the underlying file. [{e:?}]", msg);
+            }
+        };
 
-            fail!(from origin, with NamedConceptDoesExistError::UnderlyingResourcesCorrupted,
-                "{} since the file could not be opened for reading ({:?}), is static storage in a corrupted state?", msg, file.err().unwrap() );
-        }
-
-        let file = file.unwrap();
         let metadata = file.metadata();
         if metadata.is_err() {
             if !does_exist()? {
@@ -309,12 +381,12 @@ impl crate::named_concept::NamedConceptMgmt for Storage {
             }
 
             fail!(from origin, with NamedConceptDoesExistError::UnderlyingResourcesCorrupted,
-                "{} due to an internal failure ({:?}) while acquiring underlying file informations, is static storage in a corrupted state?",
+                "{} due to an internal failure ({:?}) while acquiring underlying file information, is static storage in a corrupted state?",
                 msg, metadata.err().unwrap());
         }
         let metadata = metadata.unwrap();
 
-        if metadata.file_type() == FileType::File && metadata.permission() == FINAL_PERMISSIONS {
+        if metadata.file_type() == FileType::File && metadata.permission() != INIT_PERMISSIONS {
             return Ok(true);
         }
 
@@ -327,18 +399,20 @@ impl crate::named_concept::NamedConceptMgmt for Storage {
     }
 }
 
-impl crate::static_storage::StaticStorage for Storage {
-    type Builder = Builder;
-    type Locked = Locked;
+#[derive(Debug)]
+pub struct StorageView {
+    file: File,
+    len: u64,
+}
 
-    fn release_ownership(&self) {
-        self.has_ownership.store(false, Ordering::Relaxed);
+impl Abandonable for StorageView {
+    unsafe fn abandon_in_place(mut this: NonNull<Self>) {
+        let this = unsafe { this.as_mut() };
+        unsafe { File::abandon_in_place(NonNull::from_mut(&mut this.file)) };
     }
+}
 
-    fn acquire_ownership(&self) {
-        self.has_ownership.store(true, Ordering::Relaxed);
-    }
-
+impl crate::static_storage::StaticStorageView for StorageView {
     fn len(&self) -> u64 {
         self.len
     }
@@ -357,9 +431,24 @@ impl crate::static_storage::StaticStorage for Storage {
                 msg, len, content.len());
         }
 
-        let bytes_read = fail!(from self, when self.file.read(content),
-                                with StaticStorageReadError::ReadError,
-                                "{} due to a failure while reading the underlying file.", msg);
+        if let Err(e) = self.file.seek(0) {
+            fail!(from self, with StaticStorageReadError::InternalError,
+                "{msg} since the file position could not be set to 0. [{e:?}]");
+        }
+
+        let bytes_read = match self.file.read(content) {
+            Ok(bytes_read) => bytes_read,
+            Err(FileReadError::Interrupt) => {
+                fail!(from self,
+                      with StaticStorageReadError::Interrupt,
+                      "{} since an interrupt signal was raised.", msg);
+            }
+            Err(e) => {
+                fail!(from self,
+                    with StaticStorageReadError::InternalError,
+                    "{} due to an unknown failure while reading the file. [{e:?}]", msg);
+            }
+        };
 
         if bytes_read != len {
             fail!(from self, with StaticStorageReadError::StaticStorageWasModified,
@@ -368,6 +457,38 @@ impl crate::static_storage::StaticStorage for Storage {
         }
 
         Ok(())
+    }
+}
+
+impl crate::static_storage::StaticStorage for Storage {
+    type Builder = Builder;
+    type Locked = Locked;
+    type View = StorageView;
+
+    fn view(&self) -> &Self::View {
+        &self.view
+    }
+
+    fn release_ownership(&self) {
+        self.has_ownership.store(false, Ordering::Relaxed);
+    }
+
+    fn acquire_ownership(&self) {
+        self.has_ownership.store(true, Ordering::Relaxed);
+    }
+}
+
+impl crate::static_storage::StaticStorageView for Storage {
+    fn is_empty(&self) -> bool {
+        self.view.is_empty()
+    }
+
+    fn len(&self) -> u64 {
+        self.view.len()
+    }
+
+    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
+        self.view.read(content)
     }
 }
 
@@ -403,38 +524,59 @@ impl crate::static_storage::StaticStorageBuilder<Storage> for Builder {
     }
 
     fn create_locked(self) -> Result<Locked, StaticStorageCreateError> {
-        let msg = format!("Unable to create target directory \"{}\"", self.config.path);
-        if !fail!(from self, when Directory::does_exist(&self.config.path),
-            with StaticStorageCreateError::Creation,
-               "{} since the system is unable to determine if the directory even exists.", msg)
-        {
+        // create root directory before File
+        let msg = format!("Unable to create root directory \"{}\"", self.config.path);
+        let Ok(root_dir_exist) = Directory::does_exist(&self.config.path) else {
+            fail!(from self, with StaticStorageCreateError::RootDirectoryCreationFailure,
+                "{} since the system is unable to determine if the directory even exists.", msg);
+        };
+
+        if !root_dir_exist {
             match Directory::create(&self.config.path, DIR_PERMISSIONS) {
                 Ok(_) | Err(DirectoryCreateError::DirectoryAlreadyExists) => (),
                 Err(e) => {
-                    fail!(from self, with StaticStorageCreateError::Creation,
+                    fail!(from self, with StaticStorageCreateError::RootDirectoryCreationFailure,
                         "{} due to a failure while creating the service root directory ({:?}).", msg, e);
                 }
             }
             trace!(from self, "Created service root directory \"{}\" since it did not exist before.", self.config.path);
         }
 
-        let file = fail!(from self, when
-            FileBuilder::new(&self.config.path_for(&self.storage_name))
+        // create File
+        let file = match FileBuilder::new(&self.config.path_for(&self.storage_name))
             .creation_mode(CreationMode::CreateExclusive)
-            .permission(Permission::OWNER_ALL)
-            .create(),
-            map FileCreationError::FileAlreadyExists => StaticStorageCreateError::AlreadyExists;
-                FileCreationError::InsufficientPermissions => StaticStorageCreateError::InsufficientPermissions,
-            unmatched StaticStorageCreateError::Creation,
-            "{} due to a failure while creating the underlying file.", msg);
+            .permission(INIT_PERMISSIONS)
+            .create()
+        {
+            Ok(file) => file,
+            Err(FileCreationError::FileAlreadyExists) => {
+                fail!(from self,
+                      with StaticStorageCreateError::AlreadyExists,
+                      "{} since the underlying file already exists.", msg);
+            }
+            Err(FileCreationError::InsufficientPermissions) => {
+                fail!(from self,
+                    with StaticStorageCreateError::InsufficientPermissions,
+                    "{} due to insufficient permissions.", msg);
+            }
+            Err(FileCreationError::Interrupt) => {
+                fail!(from self,
+                    with StaticStorageCreateError::Interrupt,
+                    "{} since an interrupt signal was raised.", msg);
+            }
+            Err(e) => {
+                fail!(from self,
+                    with StaticStorageCreateError::InternalError,
+                    "{} due to an internal error. [{e:?}]", msg);
+            }
+        };
 
         Ok(Locked {
             static_storage: Storage {
                 name: self.storage_name,
                 config: self.config,
                 has_ownership: AtomicBool::new(self.has_ownership),
-                file,
-                len: 0,
+                view: StorageView { file, len: 0 },
             },
         })
     }
@@ -443,10 +585,31 @@ impl crate::static_storage::StaticStorageBuilder<Storage> for Builder {
         let msg = "Unable to open static storage";
         let origin = "static_storage::File::Builder::open()";
 
-        let file = fail!(from origin,
-            when FileBuilder::new(&self.config.path_for(&self.storage_name)).open_existing(AccessMode::Read),
-            with StaticStorageOpenError::DoesNotExist,
-            "{} due to a failure while opening the file.", msg);
+        let file = match FileBuilder::new(&self.config.path_for(&self.storage_name))
+            .open_existing(AccessMode::Read)
+        {
+            Ok(file) => file,
+            Err(FileOpenError::FileDoesNotExist) => {
+                fail!(from origin,
+                      with StaticStorageOpenError::DoesNotExist,
+                      "{} due to a failure while opening the file.", msg);
+            }
+            Err(FileOpenError::InsufficientPermissions) => {
+                fail!(from origin,
+                      with StaticStorageOpenError::InsufficientPermissions,
+                      "{} due to insufficient permissions to open the file.", msg);
+            }
+            Err(FileOpenError::Interrupt) => {
+                fail!(from origin,
+                    with StaticStorageOpenError::Interrupt,
+                    "{} since an interrupt signal was received.", msg);
+            }
+            Err(e) => {
+                fail!(from origin,
+                    with StaticStorageOpenError::InternalError,
+                    "{} since an unknown failure occurred. [{e:?}]", msg);
+            }
+        };
 
         let mut wait_for_read_access = fail!(from self,
             when AdaptiveWaitBuilder::new()
@@ -458,11 +621,15 @@ impl crate::static_storage::StaticStorageBuilder<Storage> for Builder {
         let mut elapsed_time = Duration::ZERO;
 
         loop {
-            let metadata = fail!(from origin,
-            when file.metadata(), with StaticStorageOpenError::Read,
-            "{} due to a failure while reading the files metadata.", msg);
+            let metadata = match file.metadata() {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    fail!(from origin, with StaticStorageOpenError::InternalError,
+                          "{} due to a failure while reading the files metadata. [{e:?}]", msg);
+                }
+            };
 
-            if metadata.permission() != FINAL_PERMISSIONS {
+            if metadata.permission() == INIT_PERMISSIONS {
                 if elapsed_time > timeout {
                     fail!(from origin,
                         with StaticStorageOpenError::InitializationNotYetFinalized,
@@ -479,8 +646,10 @@ impl crate::static_storage::StaticStorageBuilder<Storage> for Builder {
                     name: self.storage_name,
                     config: self.config,
                     has_ownership: AtomicBool::new(self.has_ownership),
-                    file,
-                    len: metadata.size(),
+                    view: StorageView {
+                        file,
+                        len: metadata.size(),
+                    },
                 });
             }
         }

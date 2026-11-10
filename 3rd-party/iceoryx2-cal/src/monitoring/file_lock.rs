@@ -15,7 +15,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_posix::file::Permission;
 use iceoryx2_bb_posix::process_state::ProcessGuardBuilder;
@@ -46,17 +45,17 @@ use super::{
 };
 
 #[cfg(not(feature = "dev_permissions"))]
-const GUARD_PERMISSIONS: Permission = Permission::OWNER_ALL;
+const GUARD_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE;
 
 #[cfg(not(feature = "dev_permissions"))]
 const DIR_PERMISSIONS: Permission = Permission::OWNER_ALL
-    .const_bitor(Permission::GROUP_READ)
-    .const_bitor(Permission::GROUP_EXEC)
-    .const_bitor(Permission::OTHERS_READ)
-    .const_bitor(Permission::OTHERS_EXEC);
+    .const_bitor(Permission::GROUP_READ_EXEC)
+    .const_bitor(Permission::OTHERS_READ_EXEC);
 
 #[cfg(feature = "dev_permissions")]
-const GUARD_PERMISSIONS: Permission = Permission::ALL;
+const GUARD_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE
+    .const_bitor(Permission::GROUP_READ_WRITE)
+    .const_bitor(Permission::OTHERS_READ_WRITE);
 
 #[cfg(feature = "dev_permissions")]
 const DIR_PERMISSIONS: Permission = Permission::ALL;
@@ -158,7 +157,7 @@ pub struct Cleaner {
 impl Abandonable for Cleaner {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { ProcessCleaner::abandon_in_place(NonNull::iox2_from_mut(&mut this.cleaner)) };
+        unsafe { ProcessCleaner::abandon_in_place(NonNull::from_mut(&mut this.cleaner)) };
     }
 }
 
@@ -183,7 +182,7 @@ pub struct Token {
 impl Abandonable for Token {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { ProcessGuard::abandon_in_place(NonNull::iox2_from_mut(&mut this.guard)) };
+        unsafe { ProcessGuard::abandon_in_place(NonNull::from_mut(&mut this.guard)) };
     }
 }
 

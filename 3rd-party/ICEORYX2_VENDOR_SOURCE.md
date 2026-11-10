@@ -1,67 +1,61 @@
-# vendor iceoryx2 / iceoryx2-cal 0.9.3 来源说明
+# vendor iceoryx2 / iceoryx2-cal 0.10.0 来源说明
 
-> 两个上游运行时 crate 的本地副本，供根 `Cargo.toml` 的 `[patch.crates-io]` 接入。
-> 版本不变（仍 0.9.3），只把 source 从 crates.io 换成本地 path；目的是让后续
-> RR 严格修正（R1 CAL / R2 IOX）落在单一补丁图上。其余 `iceoryx2-bb-*` /
-> `iceoryx2-pal-*` / `iceoryx2-log*` 仍从 crates.io 解析，不升级、不 vendor。
+两个运行时 crate 通过根 `Cargo.toml` 的 `[patch.crates-io]` 接入。当前以 0.10.0 发布包为基线，
+迁移本仓库原 0.9.3 的 R0/R1/R2 补丁；其余 iceoryx2 同族依赖从 registry 解析为 0.10.0。
+本文后半的 R0/R1/R2 登记解释补丁原始合同，旧版本、行号与校验值是当时记录，不代表当前文件。
 
-## 原件身份
+## 当前原件身份
 
-| 目录 | 原始发布包 | SHA256（.crate，等于 vendor 前根 Cargo.lock checksum） |
+| 目录 | 原始发布包 | SHA256 |
 |---|---|---|
-| `3rd-party/iceoryx2/` | `iceoryx2-0.9.3.crate` | `e226c6041866b416e8c384d69a54a8578cb26619725253351e3e17ea5f32627f` |
-| `3rd-party/iceoryx2-cal/` | `iceoryx2-cal-0.9.3.crate` | `bd00991d2e43e9315f555f8ec07bda7fd1a67da3beac9a504b5edaf7de25502f` |
+| `3rd-party/iceoryx2/` | `iceoryx2-0.10.0.crate` | `52eeb56858fe88b5e65fa4ee01e3d8f923b16160e8e6dabc1dbdbf0ae5a175c6` |
+| `3rd-party/iceoryx2-cal/` | `iceoryx2-cal-0.10.0.crate` | `62fed30472e8053487d7b6f0b7e50b1b123b89cd0dd4a7f75895907e92d57386` |
 
-- 来源：本机 cargo registry 缓存 `~/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/`
-  中的原始 `.crate`（与 `https://static.crates.io/crates/<name>/<name>-0.9.3.crate` 同一文件）。
-- 上游 commit：两包 `.cargo_vcs_info.json` 均指 `eclipse-iceoryx/iceoryx2`
-  `6ef7c55176a8487ae7ca53c2e0649d5df9a1b3b4`，`path_in_vcs` 分别 `iceoryx2` / `iceoryx2-cal`。
-- 提取方式：直接从 tar 流写出全部成员（iceoryx2 93 件、iceoryx2-cal 75 件），逐件
-  SHA256 与原包一致；成员全部为普通文件、无链接、无 `..`。不复制 registry 解包目录，
-  因此不含本机解包标记 `.cargo-ok`。
-- 保留原件：已规范化的 `Cargo.toml`（crates.io 发布形态，依赖为 registry 版本要求）、
-  `Cargo.toml.orig`（上游 workspace 继承形态，仅作历史，不用于构建）、`.cargo_vcs_info.json`、
-  `BUILD.bazel`、上游 `Cargo.lock`（嵌套锁，根构建不读取）、`README.md`（仅 iceoryx2）。
-- 许可证：两包 `license = "MIT OR Apache-2.0"`，逐源文件带 SPDX 头。
+- 来源：`https://static.crates.io/crates/<name>/<name>-0.10.0.crate`，校验值与 crates.io sparse index 一致。
+- 两包 `.cargo_vcs_info.json` 的上游 commit 均为 `135d09dd8b29f321f1725920d434864c4e512378`，
+  仓库为 `https://github.com/eclipse-iceoryx/iceoryx2`，路径分别 `iceoryx2` / `iceoryx2-cal`。
+- `.crate` 按普通文件提取，不含本机 `.cargo-ok` 或自造 `.cargo-checksum.json`。
+  `Cargo.toml.orig`、嵌套上游 `Cargo.lock`、Bazel 文件与测试入口保留原件；构建实际使用规范化 `Cargo.toml`。
+- 两份实际清单沿用上游依赖表，去掉冗余 `readme`，保留默认关闭的 `r2-test-fixtures` feature。
+- 原发布包缺失的 `LICENSE-APACHE` / `LICENSE-MIT` / `NOTICE.md` 从同一上游 commit 根目录补齐；
+  其内容与原 0.9.3 补入文件相同，SHA256 分别为
+  `62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a`、
+  `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3`、
+  `4001e4a44dc66b4092318f2cc7d464df72de96e3fa2ac43ac65665e5e67b601c`。
 
-## 原包缺失、本仓库补入的文件
+## 0.10.0 迁移边界
 
-原始 `.crate` **不含** `LICENSE-APACHE` / `LICENSE-MIT` / `NOTICE.md`，也不含
-`.cargo-checksum.json`。本仓库只补入前三者，取自同一上游 commit
-`6ef7c55176a8487ae7ca53c2e0649d5df9a1b3b4` 的仓库根目录（两个 vendor 目录各一份）：
+- 以原 0.9.3 发布包、本地补丁树、0.10.0 发布包三方合并。保留 CAL 同源 `channel_state`、真实
+  `try_send_observed` publication 回执、ORPHANED CAS、strict 三态、容量前置受检及默认关闭的故障夹具。
+- 保留 strict 单 server、固定槽、原 route pin、完整 peer 身份、Detached 清理和正常 Closed 退休合同。
+  `raw_sample.rs` 虽被上游删除，本仓库仅为 strict 自有 RAII 对象保留私有指针桥；普通 API 使用上游 Chunk 表示。
+- 适配 `IceoryxSend`、`BagFamily`、`ServiceResource`、`PortLifetimeTag` 和 sample → chunk 的私有 API 改名。
+  strict 仍额外要求 `ZeroCopySend`，不扩展为原生 FlatBuffer strict API。
+- 新 header 的 `payload_offset` 在 strict typed/slice 路径固定为 0；普通 response 的原 client 身份沿
+  未初始化、已初始化与 FlatBuffer 转换传递。普通发送与 finish/hint 仍按完整身份定位，不能向复用 index 的新 peer 投递。
+- 保留上游失败投递关闭响应 channel，以及未启用 fire-and-forget 时仍保留断连借用请求的修复。
+  strict sender 仍使用原 max-loan 上界；普通 sender 采用 0.10 的总借用容量。两者均前置受检。
+- `checked_chunk_layout` 按 0.10 实际的 header / user-header / payload-stride / 最大对齐计算，
+  保留溢出 typed 拒绝。CAL 分配器迁移为 `Allocate<NonNull<u8>>`，process-local 先核布局再分配 `MaybeUninit`。
+- 0.10 的内部共享内存 header / service 配置发生变化；所有互通进程须同版本重编，不能承诺与 0.9 进程
+  或其遗留共享资源滚动兼容。本次软件升级不启动或清理现场服务、设备及共享资源。
+- nightly / 新 MSRV 的机械兼容：沿用 `try_update`，使用 let-chain / `is_multiple_of` 与字段简写；
+  `ServiceHash` 补标准 `FromStr` 并委托原 `TryFrom<&str>`，不改变解析或删除旧入口。
+- FlatBuffers runtime 仍为 25.12.19，与本仓库 flatc 版本配套；0.10 原生 FlatBuffers 支持不改变本方 wire 合同。
 
-| 文件 | SHA256 | 字节 |
-|---|---|---|
-| `LICENSE-APACHE` | `62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a` | 9723 |
-| `LICENSE-MIT` | `23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3` | 1023 |
-| `NOTICE.md` | `4001e4a44dc66b4092318f2cc7d464df72de96e3fa2ac43ac65665e5e67b601c` | 1718 |
+## 构建与验证入口
 
-`.cargo-checksum.json`：原包不含，本仓库也未生成；原件校验输入以上表 `.crate` SHA256
-为准。
+根 workspace 消费两个 path 依赖；vendor 私有测试仍用 `3rd-party/Cargo.toml`，独立锁由 Cargo 生成，
+运行时依赖闭包需与根锁一致。上游 `tests/tests.rs` 引用未发布的 `*_tests_common`，不宣称跑过完整上游集成测试。
 
-## 接入方式与边界
+```sh
+cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests -p iceoryx2-cal --lib --features std
+cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests -p iceoryx2 --lib
+cargo test --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests -p iceoryx2 --lib --features r2-test-fixtures
+cargo check --locked --manifest-path 3rd-party/Cargo.toml --target-dir target/rr-vendor-tests -p iceoryx2-cal --lib --no-default-features
+```
 
-- 根 `Cargo.toml`：`[patch.crates-io]` 仅这两条；`[workspace] exclude` 显式列出两个目录
-  （以及预留的 `tools/rr-memory-model`），本方 14 个 members 不变。两包不是 workspace
-  成员：`--workspace` / `--all` 门只选本方 crate，vendor 作为库依赖编译。
-- 根 `Cargo.lock` 由 Cargo 自动重解析生成，对应两条 `[[package]]` 去掉 `source` / `checksum`，
-  其余依赖版本不变。
-- 上游 `tests/tests.rs`（两包各一）显式注册为 `[[test]]`，但只 `extern crate`
-  未发布、未声明的 `iceoryx2_tests_common` / `iceoryx2_cal_tests_common`，**无法编译运行**。
-  原件保留不删；任何“跑过完整上游集成测试”的说法都不成立。
-- 实测（2026-09-14，cargo 1.100.0-nightly 3c0b53475）：从根执行
-  `cargo test --locked -p iceoryx2 --lib` 退出码 101，
-  `error: package `iceoryx2` cannot be tested because it requires dev-dependencies and is not a member of the workspace`；
-  `cargo test --locked -p iceoryx2-cal --lib --features std` 退出码 101，
-  `error: cannot specify features for packages outside of workspace`。库内既有
-  `#[cfg(test)]` 单测依赖 dev-dependency `iceoryx2-bb-testing`（不在根锁中）。后续
-  vendor 私有门的运行方式另定。
-- 实测同日：两包作为 path 依赖编译时 rustc 不再 `--cap-lints allow`，上游
-  `src/port/client.rs:611` 的 `Atomic::<u64>::fetch_update` 在当前 nightly 触发
-  `deprecated` 警告（registry 形态下被 cap 隐藏），`CARGO_BUILD_WARNINGS=deny` 的
-  test/build 门因此失败。
-
-## 与原包的唯一差异（R0 nightly 兼容补正）
+## 原 0.9.3 补丁登记（R0 nightly 兼容补正）
 
 root 于 2026-09-14 批准的唯一源码改动，不静音警告、不改 Ordering / 闭包 / expect / 取模：
 

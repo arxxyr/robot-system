@@ -2332,7 +2332,14 @@ async fn final_stop(
 
 pub(super) async fn run(args: &Args) -> Result<Value, String> {
     let (case, hardware_id, environment) = physical_case(args)?;
-    run_instance(case, &hardware_id, &environment, SlaRunKind::Physical).await
+    // 将共享实例编排的较大 future 留在堆上，避免沿场景分派逐层增大调用方 future。
+    Box::pin(run_instance(
+        case,
+        &hardware_id,
+        &environment,
+        SlaRunKind::Physical,
+    ))
+    .await
 }
 
 pub(super) async fn software_probe(args: &Args) -> Result<Value, String> {
@@ -2340,13 +2347,13 @@ pub(super) async fn software_probe(args: &Args) -> Result<Value, String> {
         return Err("软件采样仅属于 mock/all phase".to_owned());
     }
     let case = Case::new(&args.evidence_dir, &args.bin_dir, "runtime_sla_probe", 6)?;
-    run_instance(
+    Box::pin(run_instance(
         case,
         "arm",
         &json!({"runtime_only": true, "hardware_only": false,
         "in_flight_exercised": true, "mock_lease": true, "physical_uart": false}),
         SlaRunKind::SoftwareProbe,
-    )
+    ))
     .await
 }
 
@@ -2355,14 +2362,14 @@ pub(super) async fn software_load(args: &Args) -> Result<Value, String> {
         return Err("长负载仅允许无现场参数的 mock-h2-load".to_owned());
     }
     let case = Case::new(&args.evidence_dir, &args.bin_dir, "mock_h2_load", 6)?;
-    run_instance(
+    Box::pin(run_instance(
         case,
         "arm",
         &json!({"runtime_only":true,"hardware_only":false,"physical_uart":false}),
         SlaRunKind::SoftwareLoad {
             cache_entries: args.h2_software_cache_entries.unwrap_or(8192),
         },
-    )
+    ))
     .await
 }
 

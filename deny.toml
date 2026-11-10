@@ -30,8 +30,7 @@ yanked = "deny"
 # ignore 仅按公告 ID 或精确撤回包版本登记，不关闭整类检查。
 # 加条目前必须先在 docs/CHANGELOG.md 登记 "偏离" 条，写明豁免理由 + 复审触发。
 ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "Rerun 0.38.1 间接使用 paste 1.0.15 编译期宏；上游停止维护且无修复版本；SDK/paste、依赖路径或公告变化及下次发布审计时复审，替代落地后移除" },
-    { crate = "serialport@4.10.0", reason = "保留已验 Linux aarch64 控制基线，本轮旧锁及包 checksum 未变；版本、平台或公告变化及下次发布审计时复审，独立串口升级回归后移除" },
+    { id = "RUSTSEC-2024-0436", reason = "Rerun 0.42.0 经 re_string_interner/re_query 使用 paste 1.0.15 编译期宏；上游停止维护且无修复版本；SDK/paste、依赖路径或公告变化及下次发布审计时复审，替代落地后移除" },
 ]
 
 # ---------------------------------------------------------------------------
@@ -64,10 +63,11 @@ private = { ignore = true }
 # 2026-09-08 依赖升级条与 2026-09-29 Rerun 依赖审计偏离条。
 exceptions = [
     { name = "assert_no_alloc", version = "=1.1.2", allow = ["BSD-1-Clause"] },
-    { name = "serialport", version = "=4.10.0", allow = ["MPL-2.0"] },
+    { name = "serialport", version = "=4.10.1", allow = ["MPL-2.0"] },
     { name = "indent", version = "=0.1.1", allow = ["MPL-2.0"] },
     { name = "option-ext", version = "=0.2.0", allow = ["MPL-2.0"] },
-    { name = "webpki-roots", version = "=1.0.9", allow = ["CDLA-Permissive-2.0"] },
+    { name = "webpki-roots", version = "=1.0.11", allow = ["CDLA-Permissive-2.0"] },
+    { name = "webpki-root-certs", version = "=1.0.11", allow = ["CDLA-Permissive-2.0"] },
     { name = "xxhash-rust", version = "=0.8.19", allow = ["BSL-1.0"] },
 ]
 
@@ -90,11 +90,8 @@ highlight = "all"
 deny = []
 
 # skip-tree：允许某依赖子树里出现重复版本。
-# iceoryx2 0.9.3 仍依赖 toml 0.9 (→ winnow 0.7)；trybuild 1.0.121（连同
-# robot-rpc / robot-s0 直依）依赖 toml 1.1 (→ winnow 1.0)。两棵独立子树，
-# dup 不在我们控制面；2026-07-12 升 0.9.3 后复核 dup 仍在，继续等上游对齐
-# 后再清。仅标 iceoryx2 不够（因为 trybuild 那棵也贡献）；标 toml 会把整个
-# toml 生态豁免过粗。务实折中：标两端。
+# iceoryx2 仍使用 toml 0.9；trybuild 与本项目使用 toml 1.2。
+# 两条依赖路径尚未对齐，只标这两个上游子树，不豁免整个 toml 生态。
 skip-tree = [
     { crate = "iceoryx2" },
     { crate = "trybuild" },

@@ -38,6 +38,7 @@ Rust 机器人运行时；S0/S1/S2、iceoryx2 与 FlatBuffers 沿既有设计。
 ## 工具链与代码
 
 - Rust 使用浮动最新 `nightly`、Edition 2024，不写 `rust-version`，记录实际版本。核心 crate 默认不用 `#![feature]`；确需启用应注释并评审。仅真实编译回归可临时回退日期并登记解除条件。
+- 自有 crate 的依赖版本和来源只在根 `Cargo.toml` 的 `workspace.dependencies` 定义；子 crate 一律 `workspace = true`，仅保留必要的可选项与特性选择。测试工具也共用根 workspace 和锁文件；第三方补丁源码保持上游 manifest 结构。
 - S0/S1 使用系统分配器且 RT 禁 alloc；外部工具按既有约定使用 mimalloc。沿用 Cargo 已登记的构建方案：当前 workspace `release` 为 abort，独立观测工具用 `release-tools` 保留 unwind；不在整理时改变 panic 语义。
 - `robot-core` 保持冻结设计的零 runtime 依赖边界，遵守既有白名单；RPC 使用 `CommandMeta` 与强类型，不用 `protobuf.Any`；`layout_id` 保持 `u64`。具体接口、线程和 wire 规则按需读设计对应章节。
 - 每次提交前实际执行 `cargo fmt --all`，再执行 `cargo clippy --all --all-targets -- -D warnings`，零警告后提交；相关测试按改动选择。CI 顺序沿既有配置。

@@ -20,7 +20,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use iceoryx2::prelude::NodeBuilder;
 use iceoryx2::service::ipc::Service;
 use rerun::external::re_log_encoding::DecoderApp;
-use rerun::external::re_log_types::{LogMsg, StoreKind};
+use rerun::external::re_log_types::StoreKind;
+use rerun::log::LogMsg;
 use robot_core::time::{DurationNs, RobotClock, SystemClock};
 use robot_msg::schema_id::{
     SCHEMA_ESTOP_EVENT, SCHEMA_IMAGE_HEADER, SCHEMA_JOINT_LAYOUT, SCHEMA_JOINT_STATE,

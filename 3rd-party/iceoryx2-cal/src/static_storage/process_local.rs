@@ -52,15 +52,15 @@ use core::ptr::NonNull;
 use iceoryx2_bb_concurrency::atomic::AtomicBool;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::lazy_lock::LazyLock;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_concurrency::spin_lock::SpinLock;
 use iceoryx2_bb_posix::adaptive_wait::AdaptiveWaitBuilder;
 use iceoryx2_bb_posix::mutex::*;
 use iceoryx2_log::{fail, fatal_panic};
 
 #[derive(Debug)]
 struct StorageContent {
-    is_locked: bool,
-    value: Vec<u8>,
+    is_locked: AtomicBool,
+    value: SpinLock<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -136,7 +136,7 @@ pub struct Locked {
 impl Abandonable for Locked {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+        unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
     }
 }
 
@@ -149,29 +149,60 @@ impl NamedConcept for Locked {
 impl StaticStorageLocked<Storage> for Locked {
     fn unlock(self, contents: &[u8]) -> Result<Storage, StaticStorageUnlockError> {
         let msg = "Failed to unlock storage";
-        let mut guard = fail!(from self, when PROCESS_LOCAL_STORAGE.lock(),
+        let guard = fail!(from self, when PROCESS_LOCAL_STORAGE.lock(),
                 with StaticStorageUnlockError::InternalError,
                 "{} due to a failure while acquiring the lock.", msg);
 
         let name = self.storage.config.path_for(&self.storage.name);
-        let entry = guard.get(&name);
-        if entry.is_none() {
-            fatal_panic!(from self,
+        match guard.get(&name) {
+            Some(entry) => {
+                entry.content.is_locked.store(false, Ordering::Relaxed);
+                *entry.content.value.blocking_lock() = Vec::from(contents);
+            }
+            None => {
+                fatal_panic!(from self,
                 "{} since a storage with the name \"{}\" does not exists. The internal data structure seems to be corrupted.",
                 msg, self.storage.name());
+            }
         }
 
-        guard.insert(
-            name,
-            StorageEntry {
-                content: Arc::new(StorageContent {
-                    is_locked: false,
-                    value: Vec::from(contents),
-                }),
-            },
-        );
-
         Ok(self.storage)
+    }
+}
+
+#[derive(Debug)]
+pub struct StorageView {
+    content: Arc<StorageContent>,
+}
+
+impl Abandonable for StorageView {
+    unsafe fn abandon_in_place(mut this: NonNull<Self>) {
+        let this = unsafe { this.as_mut() };
+        unsafe { core::ptr::drop_in_place(&mut this.content) };
+    }
+}
+
+impl StaticStorageView for StorageView {
+    fn len(&self) -> u64 {
+        self.content.value.blocking_lock().len() as u64
+    }
+
+    fn is_empty(&self) -> bool {
+        self.content.value.blocking_lock().is_empty()
+    }
+
+    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
+        let msg = "Failed to read from storage";
+        let value = self.content.value.blocking_lock();
+        if value.len() > content.len() {
+            fail!(from self, with StaticStorageReadError::BufferTooSmall,
+                    "{} since the provided buffer with a size of {} bytes is too small. Require at least a size of {} bytes.",
+                    msg, content.len(), value.len() );
+        }
+
+        content.clone_from_slice(value.as_slice());
+
+        Ok(())
     }
 }
 
@@ -180,23 +211,23 @@ pub struct Storage {
     name: FileName,
     has_ownership: AtomicBool,
     config: Configuration,
-    content: Arc<StorageContent>,
+    view: StorageView,
 }
 
 impl Abandonable for Storage {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         this.has_ownership.store(false, Ordering::Relaxed);
-        unsafe { core::ptr::drop_in_place(this) };
+        unsafe { StorageView::abandon_in_place(NonNull::from_mut(&mut this.view)) };
     }
 }
 
 impl Drop for Storage {
     fn drop(&mut self) {
-        if self.has_ownership.load(Ordering::Relaxed) {
-            if let Err(v) = unsafe { Self::remove_cfg(&self.name, &self.config) } {
-                fatal_panic!(from self, "This should never happen! Failed to remove underlying storage ({:?})", v);
-            }
+        if self.has_ownership.load(Ordering::Relaxed)
+            && let Err(v) = unsafe { Self::remove_cfg(&self.name, &self.config) }
+        {
+            fatal_panic!(from self, "This should never happen! Failed to remove underlying storage ({:?})", v);
         }
     }
 }
@@ -246,7 +277,7 @@ impl NamedConceptMgmt for Storage {
                         when PROCESS_LOCAL_STORAGE.lock(), "{} since the lock could not be acquired.", msg);
 
         match guard.get(&config.path_for(storage_name)) {
-            Some(v) => match v.content.is_locked {
+            Some(v) => match v.content.is_locked.load(Ordering::Relaxed) {
                 true => Err(NamedConceptDoesExistError::UnderlyingResourcesBeingSetUp),
                 false => Ok(true),
             },
@@ -259,6 +290,20 @@ impl NamedConceptMgmt for Storage {
     }
 }
 
+impl StaticStorageView for Storage {
+    fn is_empty(&self) -> bool {
+        self.view.is_empty()
+    }
+
+    fn len(&self) -> u64 {
+        self.view.len()
+    }
+
+    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
+        self.view.read(content)
+    }
+}
+
 impl NamedConcept for Storage {
     fn name(&self) -> &FileName {
         &self.name
@@ -268,26 +313,10 @@ impl NamedConcept for Storage {
 impl StaticStorage for Storage {
     type Builder = Builder;
     type Locked = Locked;
+    type View = StorageView;
 
-    fn len(&self) -> u64 {
-        self.content.value.len() as u64
-    }
-
-    fn is_empty(&self) -> bool {
-        self.content.value.is_empty()
-    }
-
-    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
-        let msg = "Failed to read from storage";
-        if self.content.value.len() > content.len() {
-            fail!(from self, with StaticStorageReadError::BufferTooSmall,
-                    "{} since the provided buffer with a size of {} bytes is too small. Require at least a size of {} bytes.",
-                    msg, content.len(), self.content.value.len() );
-        }
-
-        content.clone_from_slice(self.content.value.as_slice());
-
-        Ok(())
+    fn view(&self) -> &Self::View {
+        &self.view
     }
 
     fn release_ownership(&self) {
@@ -348,7 +377,7 @@ impl StaticStorageBuilder<Storage> for Builder {
             }
 
             let entry = entry.unwrap();
-            if entry.content.is_locked {
+            if entry.content.is_locked.load(Ordering::Relaxed) {
                 if elapsed_time > timeout {
                     fail!(from self, with StaticStorageOpenError::InitializationNotYetFinalized,
                         "{} since the static storage is still being created (in locked state), try later.", msg);
@@ -363,7 +392,9 @@ impl StaticStorageBuilder<Storage> for Builder {
                     name: self.name,
                     has_ownership: AtomicBool::new(self.has_ownership),
                     config: self.config,
-                    content: entry.content.clone(),
+                    view: StorageView {
+                        content: entry.content.clone(),
+                    },
                 });
             }
         }
@@ -384,8 +415,8 @@ impl StaticStorageBuilder<Storage> for Builder {
         }
 
         let content = Arc::new(StorageContent {
-            is_locked: true,
-            value: vec![],
+            is_locked: AtomicBool::new(true),
+            value: SpinLock::new(vec![]),
         });
 
         guard.insert(
@@ -400,7 +431,7 @@ impl StaticStorageBuilder<Storage> for Builder {
                 name: self.name,
                 has_ownership: AtomicBool::new(self.has_ownership),
                 config: self.config,
-                content,
+                view: StorageView { content },
             },
         })
     }

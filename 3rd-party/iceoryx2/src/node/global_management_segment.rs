@@ -14,10 +14,12 @@ extern crate alloc;
 
 use crate::{config::Config, service::Service};
 use alloc::format;
-use iceoryx2_bb_concurrency::atomic::AtomicU32;
-use iceoryx2_bb_concurrency::atomic::Ordering;
+
+use iceoryx2_bb_concurrency::atomic::{AtomicU32, Ordering};
 use iceoryx2_bb_container::semantic_string::SemanticString;
+use iceoryx2_bb_derive_macros::ZeroCopySend;
 use iceoryx2_bb_elementary::package_version::PackageVersion;
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_system_types::file_name::FileName;
 use iceoryx2_cal::dynamic_storage::*;
 use iceoryx2_cal::named_concept::*;
@@ -26,7 +28,8 @@ use iceoryx2_log::fatal_panic;
 
 const GLOBAL_MGMT_NAME: FileName = unsafe { FileName::new_unchecked_const(b"node") };
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, ZeroCopySend)]
+#[repr(C)]
 struct State {
     node_counter: AtomicU32,
 }
@@ -48,7 +51,9 @@ impl<S: Service> GlobalManagementSegment<S> {
         .has_ownership(false)
         .config(&config)
         .timeout(global_config.global.creation_timeout)
-        .open_or_create(State::default())
+        .enable_global_access(true)
+        .initializer(|_, _| true)
+        .open_or_create()
         {
             Ok(storage) => storage,
             Err(e) => {
@@ -58,6 +63,28 @@ impl<S: Service> GlobalManagementSegment<S> {
         };
 
         Ok(Self { storage })
+    }
+
+    /// # Safety
+    ///
+    /// * It must be ensured that !NO! other process is running currently using the
+    ///   same iceoryx2 domain.
+    ///
+    pub(crate) unsafe fn remove(global_config: &Config) -> Result<bool, NamedConceptRemoveError> {
+        let origin = "GlobalManagementSegment::remove()";
+        let msg = "Unable to remove the global management segment";
+        let config = Self::dynamic_storage_config(global_config);
+        match unsafe {
+            <S::PersistentDynamicStorage<State> as NamedConceptMgmt>::remove_cfg(
+                &GLOBAL_MGMT_NAME,
+                &config,
+            )
+        } {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                fail!(from origin, with e, "{msg} due to {e:?}.");
+            }
+        }
     }
 
     pub fn increment_node_counter(&self) -> u32 {

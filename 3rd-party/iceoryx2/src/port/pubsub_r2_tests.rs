@@ -583,7 +583,7 @@ fn pubsub_dead_subscriber_cleanup_releases_full_retry_sender() {
         let deadline = Instant::now() + BOUND;
         loop {
             cleanup_attempts += 1;
-            let state = Node::<Service>::try_cleanup_dead_nodes(&config);
+            let state = node.try_cleanup_dead_nodes();
             cleanups_total += state.cleanups;
             assert_eq!(
                 state.failed_cleanups, 0,

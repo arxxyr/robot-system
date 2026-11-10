@@ -34,9 +34,9 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use iceoryx2_bb_derive_macros::ZeroCopySend;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
-use iceoryx2_cal::shm_allocator::AllocationStrategy;
 use iceoryx2_cal::zero_copy_connection::{ChannelId, StrictChannelStatus};
 
 use crate::config::Config;
@@ -367,7 +367,7 @@ fn strict_distinct_client_channel_counts_reclaim_original_connections() {
         {
             client.maintain();
             let shared = client.shared_for_test().lock();
-            shared.request_sender.retrieve_returned_samples();
+            shared.request_sender.retrieve_returned_chunks();
             assert_eq!(client_counters(&shared), idle(channels));
             for offset in offsets {
                 assert_eq!(
@@ -380,7 +380,7 @@ fn strict_distinct_client_channel_counts_reclaim_original_connections() {
             assert_eq!(shared.response_receiver.pin_count_at_index(0), Some(0));
         }
         let shared = server.shared_for_test().lock();
-        shared.response_sender.retrieve_returned_samples();
+        shared.response_sender.retrieve_returned_chunks();
         assert_eq!(
             shared.response_sender.loan_counter.load(Ordering::Relaxed),
             0
@@ -578,7 +578,7 @@ fn strict_capacity_uses_single_override() {
         assert_eq!(client_counters(&shared), idle(2));
         assert_eq!(shared.response_receiver.number_of_channels, 2);
         assert_eq!(
-            shared.request_sender.number_of_samples, 2,
+            shared.request_sender.number_of_chunks, 2,
             "请求数据段 chunk 数 = N"
         );
     }
@@ -618,7 +618,7 @@ fn strict_capacity_uses_single_override() {
             .shared_for_test()
             .lock()
             .response_sender
-            .number_of_samples,
+            .number_of_chunks,
         1,
         "回复数据段 chunk 数 = override 后真实 M"
     );
@@ -918,7 +918,7 @@ fn strict_clean_enqueue_commits_loan_active_and_pin_once() {
             Some(0),
             "原 pin 消费一次"
         );
-        shared.request_sender.retrieve_returned_samples();
+        shared.request_sender.retrieve_returned_chunks();
         assert_eq!(
             shared
                 .request_sender
@@ -1726,12 +1726,12 @@ fn strict_write_from_slice_requires_exact_length_on_both_ends() {
 }
 
 // ---------------------------------------------------------------------------
-// 普通多目标语义门：两 server 部分投递的旧 Result / 拥有语义不被夹带改变
+// 普通多目标语义门：保留部分投递 Result，并验证 0.10 失败退休修复
 // ---------------------------------------------------------------------------
 
 /// 覆盖：普通 Client 对两个普通 Server，第一目标已接受、第二目标（缓冲真实填满、从不消费）经
 /// `DiscardDataAndFail` 真实失败——`send_request` 返回旧的 `Err(SendError::UnableToDeliver)`，
-/// 第一份仍由第一目标收到；失败路径的 active 计数保持上游原样。
+/// 第一份仍由第一目标收到；0.10 失败路径不占用 active 配额并关闭原响应 channel。
 #[test]
 fn ordinary_two_servers_keep_partial_delivery_error_semantics() {
     let config = strict_config();
@@ -1791,6 +1791,7 @@ fn ordinary_two_servers_keep_partial_delivery_error_semantics() {
         .expect("A receive")
         .expect("A 仍可收第二份");
     assert_eq!(*active_a, 2);
+    assert!(!active_a.is_connected(), "失败投递的原响应 channel 已关闭");
     drop(active_a);
     let active_b = server_b
         .receive()
@@ -1799,15 +1800,29 @@ fn ordinary_two_servers_keep_partial_delivery_error_semantics() {
     assert_eq!(*active_b, 1);
     drop(active_b);
     assert!(server_b.receive().expect("B receive").is_none());
-    // 上游旧拥有语义：send_request 在投递前已计入 active，Err 路径不回退；本门只记录该原行为，
-    // 不宣称 strict 修复了普通多目标语义。
+    // 上游 0.10：只有成功投递才计入 active；失败时没有 Pending，立即关闭原 channel。
     assert_eq!(
         client
             .client_shared_state
             .lock()
             .active_request_counter
             .load(Ordering::Relaxed),
-        1
+        0
+    );
+    let pending = client.send_copy(3).expect("失败后可复用 active 配额");
+    assert_eq!(pending.number_of_server_connections(), 2);
+    for server in [&server_a, &server_b] {
+        let active = server.receive().expect("receive").expect("第三份请求");
+        assert_eq!(*active, 3);
+    }
+    drop(pending);
+    assert_eq!(
+        client
+            .client_shared_state
+            .lock()
+            .active_request_counter
+            .load(Ordering::Relaxed),
+        0
     );
 }
 
@@ -2308,7 +2323,7 @@ fn strict_origin_mismatch_rejects_original_sample_without_finishing_new_client()
         .shared_for_test()
         .lock()
         .request_sender
-        .retrieve_returned_samples();
+        .retrieve_returned_chunks();
     assert_eq!(
         client
             .shared_for_test()
@@ -2433,7 +2448,7 @@ fn strict_cleanup_unknown_keeps_detached_until_local_exit() {
     }
     {
         let shared = client.shared_for_test().lock();
-        shared.request_sender.retrieve_returned_samples();
+        shared.request_sender.retrieve_returned_chunks();
         let pin = detached_pin(&shared, channel);
         assert_eq!(
             shared.response_receiver.strict_status_pinned(pin),
@@ -2751,16 +2766,13 @@ fn strict_pending_early_drop_waits_for_original_close() {
             },
             "真收并归还回复后一次释放 offset / active / channel / pin"
         );
-        assert!(
-            !shared.response_receiver.has_samples(channel1),
-            "回复已归还"
-        );
+        assert!(!shared.response_receiver.has_chunks(channel1), "回复已归还");
         assert_eq!(
             shared.response_receiver.pin_count_at_index(0),
             Some(1),
             "只剩 Live 的 pin"
         );
-        shared.request_sender.retrieve_returned_samples();
+        shared.request_sender.retrieve_returned_chunks();
         assert_eq!(
             shared
                 .request_sender
@@ -2806,7 +2818,7 @@ fn strict_detached_drains_real_reply_before_reuse() {
         assert_eq!(client_counters(&shared).detached, 1);
         assert_eq!(client_counters(&shared).pool, 0);
         assert!(
-            shared.response_receiver.has_samples(CH0),
+            shared.response_receiver.has_chunks(CH0),
             "无人等待的回复尚未排空"
         );
     }
@@ -2829,7 +2841,7 @@ fn strict_detached_drains_real_reply_before_reuse() {
             }
         );
         assert!(
-            !shared.response_receiver.has_samples(CH0),
+            !shared.response_receiver.has_chunks(CH0),
             "旧回复已被维护归还"
         );
         assert_eq!(shared.response_receiver.pin_count_at_index(0), Some(0));
@@ -3047,8 +3059,8 @@ fn strict_normal_detached_reclaim_reuses_channel() {
         let shared = client.shared_for_test().lock();
         assert_eq!(client_counters(&shared), idle(1));
         assert_eq!(shared.response_receiver.pin_count_at_index(0), Some(0));
-        assert!(!shared.response_receiver.has_samples(CH0));
-        shared.request_sender.retrieve_returned_samples();
+        assert!(!shared.response_receiver.has_chunks(CH0));
+        shared.request_sender.retrieve_returned_chunks();
         assert_eq!(
             shared
                 .request_sender

@@ -25,7 +25,18 @@ use crate::constants::MAX_TYPE_NAME_LENGTH;
 /// or if its a type that satisfies [`Sized`] ([`TypeVariant::FixedSize`]).
 #[repr(C)]
 #[derive(
-    Default, Debug, Clone, Copy, Eq, Hash, PartialEq, ZeroCopySend, Serialize, Deserialize,
+    Default,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    ZeroCopySend,
+    Serialize,
+    Deserialize,
 )]
 pub enum TypeVariant {
     #[default]
@@ -68,19 +79,43 @@ pub struct TypeDetail {
 impl TypeDetail {
     /// Creates a new [`TypeDetail`] from the provided `T`. The [`TypeVariant`] defines if
     /// the type is part of a slice or directly contained.
-    pub fn new<T: ZeroCopySend>(variant: TypeVariant) -> Self {
+    pub fn new<T: iceoryx2_bb_elementary_traits::type_name::TypeName>(
+        variant: TypeVariant,
+    ) -> Self {
         Self {
             variant,
             type_name: unsafe {
                 fatal_panic!(
                     from "TypeDetail::__internal_new::<T>()",
-                    when TypeName::try_from(T::type_name()),
+                    when TypeName::try_from(<T as iceoryx2_bb_elementary_traits::type_name::TypeName>::type_name()),
                     "Name of type T does not fit into fixed-size TypeNameString"
                 )
             },
             size: core::mem::size_of::<T>(),
             alignment: core::mem::align_of::<T>(),
         }
+    }
+
+    /// Creates a new [`TypeDetail`] from its parts, with the type name
+    /// provided at runtime. Fails when the name does not fit into the
+    /// fixed-size [`TypeName`].
+    ///
+    /// Intended for infrastructure that describes services whose types it
+    /// cannot know at compile time, e.g. gateways. Not part of the stable
+    /// public API.
+    #[doc(hidden)]
+    pub fn __internal_new_from_parts(
+        variant: TypeVariant,
+        type_name: &str,
+        size: usize,
+        alignment: usize,
+    ) -> Result<Self, StringModificationError> {
+        Ok(Self {
+            variant,
+            type_name: TypeName::try_from(type_name)?,
+            size,
+            alignment,
+        })
     }
 
     /// The [`TypeVariant`] of the type
@@ -121,7 +156,11 @@ pub struct MessageTypeDetails {
 }
 
 impl MessageTypeDetails {
-    pub(crate) fn from<Header: ZeroCopySend, UserHeader: ZeroCopySend, Payload: ZeroCopySend>(
+    pub(crate) fn from<
+        Header: iceoryx2_bb_elementary_traits::type_name::TypeName,
+        UserHeader: iceoryx2_bb_elementary_traits::type_name::TypeName,
+        Payload: iceoryx2_bb_elementary_traits::type_name::TypeName,
+    >(
         payload_variant: TypeVariant,
     ) -> Self {
         Self {
@@ -129,6 +168,13 @@ impl MessageTypeDetails {
             user_header: TypeDetail::new::<UserHeader>(TypeVariant::FixedSize),
             payload: TypeDetail::new::<Payload>(payload_variant),
         }
+    }
+
+    pub(crate) fn all_headers_len(&self) -> usize {
+        align(
+            align(self.header.size, self.user_header.alignment) + self.user_header.size,
+            self.payload.alignment,
+        )
     }
 
     pub(crate) fn payload_ptr_from_header(&self, header: *const u8) -> *const u8 {
@@ -144,27 +190,33 @@ impl MessageTypeDetails {
         user_header_start as *const u8
     }
 
-    pub(crate) fn sample_layout(&self, number_of_elements: usize) -> Layout {
+    pub(crate) fn max_alignment(&self) -> usize {
+        self.header
+            .alignment()
+            .max(self.user_header.alignment())
+            .max(self.payload.alignment)
+    }
+
+    pub(crate) fn chunk_layout(&self, number_of_elements: usize) -> Layout {
+        let max_alignment = self.max_alignment();
         unsafe {
             Layout::from_size_align_unchecked(
                 align(
-                    self.header.size + self.user_header.size + self.user_header.alignment - 1
-                        + self.payload.size * number_of_elements
-                        + self.payload.alignment
-                        - 1,
-                    self.header.alignment,
+                    self.all_headers_len()
+                        + align(self.payload.size, self.payload.alignment) * number_of_elements,
+                    max_alignment,
                 ),
-                self.header.alignment,
+                max_alignment,
             )
         }
     }
 
     /// RR R2：受检版本——任一步算术溢出、对齐非法或 `Layout` 非法均返回 `None`。构造期以真实
-    /// 最大切片长度调用一次；之后 loan 期的 `sample_layout` 只会用不大于该长度的参数（单调），
+    /// 最大切片长度调用一次；之后 loan 期的 `chunk_layout` 只会用不大于该长度的参数（单调），
     /// 不再溢出。
-    pub(crate) fn checked_sample_layout(&self, number_of_elements: usize) -> Option<Layout> {
+    pub(crate) fn checked_chunk_layout(&self, number_of_elements: usize) -> Option<Layout> {
         fn checked_align(value: usize, alignment: usize) -> Option<usize> {
-            if alignment == 0 {
+            if !alignment.is_power_of_two() {
                 return None;
             }
             let remainder = value % alignment;
@@ -175,16 +227,17 @@ impl MessageTypeDetails {
             }
         }
 
-        let payload_bytes = self.payload.size.checked_mul(number_of_elements)?;
-        let unaligned = self
-            .header
-            .size
-            .checked_add(self.user_header.size)?
-            .checked_add(self.user_header.alignment.checked_sub(1)?)?
-            .checked_add(payload_bytes)?
-            .checked_add(self.payload.alignment.checked_sub(1)?)?;
-        let size = checked_align(unaligned, self.header.alignment)?;
-        Layout::from_size_align(size, self.header.alignment).ok()
+        if !self.header.alignment.is_power_of_two() {
+            return None;
+        }
+        let user_header_end = checked_align(self.header.size, self.user_header.alignment)?
+            .checked_add(self.user_header.size)?;
+        let headers_len = checked_align(user_header_end, self.payload.alignment)?;
+        let payload_stride = checked_align(self.payload.size, self.payload.alignment)?;
+        let unaligned = headers_len.checked_add(payload_stride.checked_mul(number_of_elements)?)?;
+        let max_alignment = self.max_alignment();
+        let size = checked_align(unaligned, max_alignment)?;
+        Layout::from_size_align(size, max_alignment).ok()
     }
 
     pub(crate) fn is_compatible_to(&self, rhs: &Self) -> bool {
@@ -210,6 +263,52 @@ mod tests {
     const ALIGNMENT: usize = 4;
     #[cfg(target_pointer_width = "64")]
     const ALIGNMENT: usize = 8;
+
+    #[test]
+    fn chunk_layout_uses_largest_alignment() {
+        let align_4 = TypeDetail {
+            variant: TypeVariant::FixedSize,
+            type_name: "i32".try_into().unwrap(),
+            size: 4,
+            alignment: 4,
+        };
+        let align_8 = TypeDetail {
+            variant: TypeVariant::FixedSize,
+            type_name: "u64".try_into().unwrap(),
+            size: 8,
+            alignment: 8,
+        };
+        let align_16 = TypeDetail {
+            variant: TypeVariant::FixedSize,
+            type_name: "u128".try_into().unwrap(),
+            size: 16,
+            alignment: 16,
+        };
+
+        let sut = MessageTypeDetails {
+            header: align_4,
+            user_header: align_8,
+            payload: align_16,
+        };
+        let layout = sut.chunk_layout(1);
+        assert_that!(layout.align(), eq 16);
+
+        let sut = MessageTypeDetails {
+            header: align_4,
+            user_header: align_8,
+            payload: align_4,
+        };
+        let layout = sut.chunk_layout(1);
+        assert_that!(layout.align(), eq 8);
+
+        let sut = MessageTypeDetails {
+            header: align_4,
+            user_header: align_4,
+            payload: align_4,
+        };
+        let layout = sut.chunk_layout(1);
+        assert_that!(layout.align(), eq 4);
+    }
 
     #[test]
     fn test_from() {
@@ -335,37 +434,20 @@ mod tests {
     // test_sample_layout tests the sample layout for combinations of different types.
     fn test_sample_layout() {
         let details = MessageTypeDetails::from::<i64, i64, i64>(TypeVariant::FixedSize);
-        let sut = details.sample_layout(0);
-        #[cfg(target_pointer_width = "32")]
-        let expected = 24;
-        #[cfg(target_pointer_width = "64")]
-        let expected = 32;
-        assert_that!(sut.size(), eq expected);
+        let sut = details.chunk_layout(0);
+        assert_that!(sut.size(), eq 16);
 
         let details = MessageTypeDetails::from::<i64, i64, i64>(TypeVariant::FixedSize);
-        let sut = details.sample_layout(2);
-        #[cfg(target_pointer_width = "32")]
-        let expected = 40;
-        #[cfg(target_pointer_width = "64")]
-        let expected = 48;
-        assert_that!(sut.size(), eq expected);
+        let sut = details.chunk_layout(2);
+        assert_that!(sut.size(), eq 32);
 
         let details = MessageTypeDetails::from::<i64, i64, bool>(TypeVariant::FixedSize);
-        let sut = details.sample_layout(3);
-        #[cfg(target_pointer_width = "32")]
-        let expected = 24;
-        #[cfg(target_pointer_width = "64")]
-        let expected = 32;
-        assert_that!(sut.size(), eq expected);
+        let sut = details.chunk_layout(3);
+        assert_that!(sut.size(), eq 24);
 
         let details = MessageTypeDetails::from::<i64, i32, bool>(TypeVariant::FixedSize);
-        let sut = details.sample_layout(11);
-
-        #[cfg(target_pointer_width = "32")]
-        let expected = 28;
-        #[cfg(target_pointer_width = "64")]
-        let expected = 32;
-        assert_that!(sut.size(), eq expected);
+        let sut = details.chunk_layout(11);
+        assert_that!(sut.size(), eq 24);
 
         #[derive(ZeroCopySend)]
         #[repr(C)]
@@ -376,12 +458,12 @@ mod tests {
         }
 
         let details = MessageTypeDetails::from::<i64, i64, Demo>(TypeVariant::FixedSize);
-        let sut = details.sample_layout(2);
-        #[cfg(target_pointer_width = "32")]
-        let expected = 48;
-        #[cfg(target_pointer_width = "64")]
-        let expected = 64;
-        assert_that!(sut.size(), eq expected);
+        let sut = details.chunk_layout(2);
+        assert_that!(sut.size(), eq 48);
+
+        let details = MessageTypeDetails::from::<bool, bool, u128>(TypeVariant::FixedSize);
+        let sut = details.chunk_layout(2);
+        assert_that!(sut.size(), eq 48);
     }
 
     #[test]
@@ -461,5 +543,30 @@ mod tests {
         // bigger to smaller is invalid.
         let sut = right.is_compatible_to(&left);
         assert_that!(sut, eq false);
+    }
+}
+
+#[cfg(test)]
+mod checked_layout_tests {
+    use super::*;
+
+    #[test]
+    fn checked_layout_matches_chunk_with_header_and_payload_padding() {
+        let mut details = MessageTypeDetails::from::<u8, u64, u32>(TypeVariant::Dynamic);
+        // 外部运行时描述允许 size 不等于 alignment 的倍数，须与真实 chunk 步长一致。
+        details.payload.size = 5;
+        details.payload.alignment = 16;
+        for count in [0, 1, 2, 17] {
+            assert_eq!(
+                details.checked_chunk_layout(count),
+                Some(details.chunk_layout(count))
+            );
+        }
+        assert!(details.checked_chunk_layout(usize::MAX).is_none());
+        details.user_header.size = usize::MAX;
+        assert!(details.checked_chunk_layout(1).is_none());
+        details.user_header.size = 8;
+        details.header.alignment = 3;
+        assert!(details.checked_chunk_layout(1).is_none());
     }
 }

@@ -11,7 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::string::ToString;
-
+use core::fmt::Display;
 use iceoryx2_bb_container::semantic_string::*;
 use iceoryx2_bb_derive_macros::ZeroCopySend;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
@@ -32,8 +32,17 @@ const SERVICE_HASH_CAPACITY: usize = 64;
 #[repr(C)]
 pub struct ServiceHash(pub(crate) RestrictedFileName<SERVICE_HASH_CAPACITY>);
 
+impl Display for ServiceHash {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl ServiceHash {
-    pub(crate) fn new<Hasher: Hash>(
+    /// Creates the [`ServiceHash`] which identifies a
+    /// service name and messaging pattern pair used by a
+    /// [`Service`](crate::service::Service).
+    pub fn new<Hasher: Hash>(
         service_name: &ServiceName,
         messaging_pattern: MessagingPattern,
     ) -> Self {
@@ -47,6 +56,11 @@ impl ServiceHash {
                    "This should never happen! The Hasher used to create the ServiceHash created an illegal value ({value}, len = {}).", value.len()))
     }
 
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, SemanticStringError> {
+        let content = RestrictedFileName::new(bytes)?;
+        Ok(Self(content))
+    }
+
     /// Returns the maximum string length of a [`ServiceHash`]
     pub const fn max_number_of_characters() -> usize {
         SERVICE_HASH_CAPACITY
@@ -56,5 +70,22 @@ impl ServiceHash {
     pub fn as_str(&self) -> &str {
         // SAFETY: a SemanticString is always a valid UTF-8 string
         unsafe { core::str::from_utf8_unchecked(self.0.as_bytes()) }
+    }
+}
+
+impl core::convert::TryFrom<&str> for ServiceHash {
+    type Error = iceoryx2_bb_container::semantic_string::SemanticStringError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self(RestrictedFileName::try_from(value)?))
+    }
+}
+
+// 兼容新版 Clippy，同时保留上游 TryFrom 公共入口及原解析语义。
+impl core::str::FromStr for ServiceHash {
+    type Err = iceoryx2_bb_container::semantic_string::SemanticStringError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::try_from(value)
     }
 }

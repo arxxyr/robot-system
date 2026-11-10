@@ -29,15 +29,21 @@
 //! ```
 
 use crate::identifiers::{UniqueNodeId, UniquePortId, UniqueReaderId, UniqueWriterId};
+use crate::port::port_name::PortName;
 use iceoryx2_bb_container::queue::RelocatableContainer;
-use iceoryx2_bb_lock_free::mpmc::{container::*, unique_index_set_enums::ReleaseMode};
+use iceoryx2_bb_derive_macros::ZeroCopySend;
+use iceoryx2_bb_elementary::CallbackProgression;
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+use iceoryx2_bb_lock_free::mpmc::unique_index_set_enums::ReleaseMode;
 use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
+use iceoryx2_cal::bag::{Bag, BagFamily, BagStateFamily};
 use iceoryx2_log::{error, fatal_panic};
+use serde::{Deserialize, Serialize};
 
 use super::PortCleanupAction;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, ZeroCopySend)]
 pub(crate) struct DynamicConfigSettings {
     pub number_of_readers: usize,
     pub number_of_writers: usize,
@@ -46,10 +52,12 @@ pub(crate) struct DynamicConfigSettings {
 /// Contains the communication settings of the connected
 /// [`Reader`](crate::port::reader::Reader).
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct ReaderDetails {
     /// The [`UniqueReaderId`] of the [`Reader`](crate::port::reader::Reader).
     pub reader_id: UniqueReaderId,
+    /// The [`PortName`] of the [`Reader`](crate::port::reader::Reader).
+    pub reader_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Reader`](crate::port::reader::Reader) was created.
     pub node_id: UniqueNodeId,
@@ -58,10 +66,12 @@ pub struct ReaderDetails {
 /// Contains the communication settings of the connected
 /// [`Writer`](crate::port::writer::Writer).
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct WriterDetails {
     /// The [`UniqueWriterId`] of the [`Writer`](crate::port::writer::Writer).
     pub writer_id: UniqueWriterId,
+    /// The [`PortName`] of the [`Writer`](crate::port::writer::Writer).
+    pub writer_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Writer`](crate::port::writer::Writer) was created.
     pub node_id: UniqueNodeId,
@@ -71,17 +81,17 @@ pub struct WriterDetails {
 /// [`crate::service::messaging_pattern::MessagingPattern::Blackboard`]
 /// based service. Contains dynamic parameters like the connected endpoints etc..
 #[repr(C)]
-#[derive(Debug)]
-pub struct DynamicConfig {
-    pub(crate) readers: Container<ReaderDetails>,
-    pub(crate) writers: Container<WriterDetails>,
+#[derive(Debug, ZeroCopySend)]
+pub struct DynamicConfig<B: BagFamily> {
+    pub(crate) readers: B::Bag<ReaderDetails>,
+    pub(crate) writers: B::Bag<WriterDetails>,
 }
 
-impl DynamicConfig {
+impl<B: BagFamily> DynamicConfig<B> {
     pub(crate) fn new(config: &DynamicConfigSettings) -> Self {
         Self {
-            readers: unsafe { Container::new_uninit(config.number_of_readers) },
-            writers: unsafe { Container::new_uninit(config.number_of_writers) },
+            readers: unsafe { B::Bag::new_uninit(config.number_of_readers) },
+            writers: unsafe { B::Bag::new_uninit(config.number_of_writers) },
         }
     }
 
@@ -97,8 +107,8 @@ impl DynamicConfig {
     }
 
     pub(crate) fn memory_size(config: &DynamicConfigSettings) -> usize {
-        Container::<ReaderDetails>::memory_size(config.number_of_readers)
-            + Container::<WriterDetails>::memory_size(config.number_of_writers)
+        B::Bag::<ReaderDetails>::memory_size(config.number_of_readers)
+            + B::Bag::<WriterDetails>::memory_size(config.number_of_writers)
     }
 
     /// Returns how many [`Reader`](crate::port::reader::Reader) ports are currently connected.
@@ -142,7 +152,7 @@ impl DynamicConfig {
             self.readers.recover(
                 node_id.owner_id(),
                 |registered_reader| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_reader.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Reader(registered_reader.reader_id))
                             == PortCleanupAction::RemovePort
@@ -153,7 +163,7 @@ impl DynamicConfig {
             self.writers.recover(
                 node_id.owner_id(),
                 |registered_writer| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_writer.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Writer(registered_writer.writer_id))
                             == PortCleanupAction::RemovePort
@@ -163,21 +173,27 @@ impl DynamicConfig {
         }
     }
 
-    pub(crate) fn add_reader_id(&self, details: ReaderDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_reader_id(
+        &self,
+        details: ReaderDetails,
+    ) -> Option<(*const ReaderDetails, B::BagHandle)> {
         unsafe { self.readers.add(details, details.node_id.owner_id()).ok() }
     }
 
-    pub(crate) fn release_reader_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_reader_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.readers.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister reader from service. This could indicate a corrupted system! [{e:?}]");
         }
     }
 
-    pub(crate) fn add_writer_id(&self, details: WriterDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_writer_id(
+        &self,
+        details: WriterDetails,
+    ) -> Option<(*const WriterDetails, B::BagHandle)> {
         unsafe { self.writers.add(details, details.node_id.owner_id()).ok() }
     }
 
-    pub(crate) fn release_writer_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_writer_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.writers.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister writer from service. This could indicate a corrupted system! [{e:?}]");
         }

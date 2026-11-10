@@ -1,7 +1,7 @@
 # rr-memory-model
 
-RR R1 的 Loom 同源内存模型。独立测试 workspace（`publish = false`，无产品版本），
-根 `Cargo.toml` 的 `workspace.exclude` 已列出本目录；不进入任何生产依赖图。
+RR R1 的 Loom 同源内存模型，属于根工作区；包元数据与依赖版本统一继承根
+`Cargo.toml`，使用根 `Cargo.lock`。本包不可发布，不进入 S0 / S1 / Gateway 的生产依赖图。
 
 ## 测试一览
 
@@ -26,7 +26,7 @@ CAS / 算法，不加 Barrier / 锁 / 额外 Acquire。两个负对照只更换�
 在仓库根执行（Cargo 由本方串行执行）：
 
 ```bash
-cargo test --locked --manifest-path tools/rr-memory-model/Cargo.toml \
+cargo test --locked -p rr-memory-model \
   --target-dir target/rr-memory-model -- --nocapture --test-threads=1
 ```
 
@@ -89,5 +89,5 @@ MODEL <测试名> kind=<positive|negative_control|capability_boundary> <字段>=
 - Loom 只探索其支持的调度与 C11 可见性子集，不覆盖全部弱内存重排；Release→Acquire 论证与
   x86 / ARM 实测另列。模型 PASS 不等于真实 SHM、映射、allocator 或 ARM 证明，也不代替本方
   IPC 子进程门与真机验证。
-- 依赖：仅 dev-dependency `loom =0.7.2`（default-features = false），传递依赖由 `Cargo.lock`
-  记录；原包 checksum 见 `Cargo.toml` 注释。
+- 依赖：仅开发依赖 `loom`，版本及 `default-features = false` 在根 `Cargo.toml` 定义；
+  传递依赖与 checksum 由根 `Cargo.lock` 记录。

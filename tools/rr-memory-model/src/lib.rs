@@ -1,7 +1,6 @@
 //! RR R1 同源内存模型（`tools/rr-memory-model`）。
 //!
-//! - 独立测试 workspace，`publish = false`，无产品版本；根 `workspace.exclude` 已列本目录，
-//!   不进入 S0 / S1 / Gateway 生产依赖图。
+//! - 根工作区的测试成员，包元数据和依赖继承根清单；不进入 S0 / S1 / Gateway 生产依赖图。
 //! - 只通过 `#[path]` 包含仓库里同一份
 //!   `3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs`：模型侧仅提供
 //!   Loom 原子适配（直接转发同一 Ordering），不复制 CAS / 算法，不加任何更强同步。
@@ -15,12 +14,17 @@
 
 #[cfg(test)]
 #[allow(dead_code)]
+#[allow(
+    clippy::doc_markdown,
+    reason = "保留同源 CAL 模块原文，仅在模型导入处豁免文档标记检查"
+)]
 #[path = "../../../3rd-party/iceoryx2-cal/src/zero_copy_connection/channel_state.rs"]
 mod channel_state;
 
 #[cfg(test)]
 mod models {
     use core::sync::atomic::Ordering;
+    use std::fmt::Write as _;
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::atomic::{AtomicUsize, Ordering as StdOrdering};
 
@@ -61,7 +65,7 @@ mod models {
     /// Builder 参数：含根线程共 4，worker ≤ 3；每次排列最多 4096 次线程切换。
     const MAX_THREADS: usize = 4;
     const MAX_BRANCHES: usize = 4096;
-    /// Loom 默认值；没有 checkpoint_file 时不生效，仍显式赋值避免继承环境变量。
+    /// Loom 默认值；没有 `checkpoint_file` 时不生效，仍显式赋值避免继承环境变量。
     const CHECKPOINT_INTERVAL: usize = 20_000;
 
     /// 显式覆盖 `Builder::new()` 读到的全部环境变量：不继承任何截断，不装 checkpoint。
@@ -99,7 +103,7 @@ mod models {
     fn report(model: &str, kind: &str, fields: &[(&str, String)]) {
         let mut line = format!("MODEL {model} kind={kind}");
         for (name, value) in fields {
-            line.push_str(&format!(" {name}={value}"));
+            let _ = write!(line, " {name}={value}");
         }
         println!("{line}");
     }
@@ -129,7 +133,7 @@ mod models {
     ///
     /// spawn 之后 client 只做一次 `classify_prepared`，然后读尾（Relaxed）；期间不 hint、
     /// 不 join、不读额外 ACK、无任何额外 Acquire。被测 HB 唯一来自同一 state 原子上
-    /// finish 的 Release → classify_prepared 的 Acquire。并发 hint 竞争留给模型 3。
+    /// finish 的 Release → `classify_prepared` 的 Acquire。并发 hint 竞争留给模型 3。
     ///
     /// `tally` 由调用方在 check 闭包外持有：负对照的反例 panic 逃出 `check` 后，调用方仍能
     /// 读到真实的"反例前已完成排列数"与反例计数。
@@ -400,6 +404,10 @@ mod models {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "完整保留单一模型的并发操作、断言和结果计数，便于核对同步边界"
+    )]
     fn model_cleanup_never_proves_tail_drained() {
         let tally = std::sync::Arc::new(CleanupTally::default());
         let tally_in = std::sync::Arc::clone(&tally);
@@ -541,6 +549,10 @@ mod models {
     /// `prepare(REQ2)` 成功且此时 `classify_prepared(REQ)` 为 Unknown(Open(REQ2))。
     /// 复用后再次 CLOSED 的同值问题不在此证明，见能力边界测试。
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "完整保留单一模型的竞争、迟到操作和代次断言，避免拆散被测执行顺序"
+    )]
     fn model_hint_prepare_cleanup_and_generation_never_upgrade_unknown() {
         let tally = std::sync::Arc::new(GenerationTally::default());
         let tally_in = std::sync::Arc::clone(&tally);
@@ -583,7 +595,7 @@ mod models {
             let late_finish = channel_state::finish(&*state, REQ);
             let late_hint = channel_state::set_hint(&*state, REQ);
             let reuse = channel_state::prepare(&*state, REQ2);
-            let stale = channel_state::prepare(&*state, REQ);
+            let old_request_prepare = channel_state::prepare(&*state, REQ);
             let observed_req = channel_state::classify_prepared(&*state, REQ);
             let observed_req2 = channel_state::classify_prepared(&*state, REQ2);
             let terminal_after_late_ops = channel_state::terminal(&*state);
@@ -600,7 +612,10 @@ mod models {
                 assert_eq!(late_finish, FinishOutcome::Orphaned, "迟到 finish 不得重开");
                 assert_eq!(late_hint, HintOutcome::Orphaned, "迟到 hint 不得重开");
                 assert_eq!(reuse, Err(PrepareError::NotClosed(Value::Orphaned)));
-                assert_eq!(stale, Err(PrepareError::NotClosed(Value::Orphaned)));
+                assert_eq!(
+                    old_request_prepare,
+                    Err(PrepareError::NotClosed(Value::Orphaned))
+                );
                 assert_eq!(observed_req, Prepared::Unknown(Value::Orphaned));
                 assert_eq!(observed_req2, Prepared::Unknown(Value::Orphaned));
                 assert!(terminal_after_late_ops);
@@ -620,7 +635,10 @@ mod models {
                 assert_eq!(late_hint, HintOutcome::Closed);
                 // 合法复用：CLOSED → REQ2；此时旧请求的同源分类为 Unknown（错代次），新请求 Open。
                 assert_eq!(reuse, Ok(()));
-                assert_eq!(stale, Err(PrepareError::NotClosed(Value::Open(REQ2))));
+                assert_eq!(
+                    old_request_prepare,
+                    Err(PrepareError::NotClosed(Value::Open(REQ2)))
+                );
                 assert_eq!(observed_req, Prepared::Unknown(Value::Open(REQ2)));
                 assert_eq!(observed_req2, Prepared::Open);
                 assert!(!terminal_after_late_ops, "复用后 channel 不再是终止值");

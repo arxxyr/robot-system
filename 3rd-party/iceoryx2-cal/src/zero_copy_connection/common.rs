@@ -12,19 +12,16 @@
 
 #[doc(hidden)]
 pub mod details {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use core::fmt::Debug;
     use core::marker::PhantomData;
     use core::ptr::NonNull;
     use iceoryx2_bb_concurrency::atomic::Ordering;
-
-    use alloc::vec;
-    use alloc::vec::Vec;
-
     use iceoryx2_bb_concurrency::atomic::{AtomicU8, AtomicU64, AtomicUsize};
     use iceoryx2_bb_concurrency::cell::UnsafeCell;
     use iceoryx2_bb_container::vector::relocatable_vec::*;
-    use iceoryx2_bb_elementary_traits::allocator::{AllocationError, BaseAllocator};
-    use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+    use iceoryx2_bb_elementary_traits::allocator::{Allocate, AllocationError};
     use iceoryx2_bb_elementary_traits::relocatable_container::RelocatableContainer;
     use iceoryx2_bb_lock_free::spsc::{
         index_queue::RelocatableIndexQueue,
@@ -140,7 +137,8 @@ pub mod details {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, ZeroCopySend)]
+    #[repr(C)]
     struct SegmentDetails {
         used_chunk_list: RelocatableUsedChunkList,
         sample_size: AtomicUsize,
@@ -154,7 +152,10 @@ pub mod details {
             }
         }
 
-        unsafe fn init<T: BaseAllocator>(&mut self, allocator: &T) -> Result<(), AllocationError> {
+        unsafe fn init<T: Allocate<NonNull<u8>>>(
+            &mut self,
+            allocator: &T,
+        ) -> Result<(), AllocationError> {
             unsafe { self.used_chunk_list.init(allocator) }
         }
     }
@@ -208,7 +209,7 @@ pub mod details {
         Some(total)
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, ZeroCopySend)]
     #[repr(C)]
     struct Channel {
         state: AtomicU64,
@@ -238,7 +239,7 @@ pub mod details {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, ZeroCopySend)]
     #[repr(C)]
     pub struct SharedManagementData {
         channels: RelocatableVec<Channel>,
@@ -433,8 +434,17 @@ pub mod details {
         .config(&self.config.dynamic_storage_config)
         .timeout(self.timeout)
         .supplementary_size(supplementary_size)
-        .call_drop_on_destruction(false)
         .initializer(|data, allocator| {
+            data.write(
+                SharedManagementData::new(
+                                        self.enable_safe_overflow,
+                                        self.max_borrowed_samples_per_channel,
+                                        self.number_of_samples_per_segment,
+                                        self.number_of_segments,
+                                        self.number_of_channels
+                                    )
+            );
+            let data = unsafe{ data.assume_init_mut() };
             unsafe { data.init(allocator, self.submission_queue_size(), self.completion_queue_size())};
             for channel in data.channels.iter() {
                 channel.state.store(self.initial_channel_state.0, Ordering::Relaxed);
@@ -442,15 +452,7 @@ pub mod details {
 
             true
         })
-        .open_or_create(
-            SharedManagementData::new(
-                                    self.enable_safe_overflow,
-                                    self.max_borrowed_samples_per_channel,
-                                    self.number_of_samples_per_segment,
-                                    self.number_of_segments,
-                                    self.number_of_channels
-                                )
-            );
+        .open_or_create();
 
             let storage = match storage {
                 Ok(storage) => storage,
@@ -589,12 +591,12 @@ pub mod details {
             self
         }
 
-        fn number_of_samples_per_segment(mut self, value: usize) -> Self {
+        fn number_of_chunks_per_segment(mut self, value: usize) -> Self {
             self.number_of_samples_per_segment = value.clamp(1, usize::MAX);
             self
         }
 
-        fn receiver_max_borrowed_samples_per_channel(mut self, value: usize) -> Self {
+        fn receiver_max_borrowed_chunks_per_channel(mut self, value: usize) -> Self {
             self.max_borrowed_samples_per_channel = value.clamp(1, usize::MAX);
             self
         }
@@ -739,7 +741,7 @@ pub mod details {
     impl<Storage: DynamicStorage<SharedManagementData>> Abandonable for Sender<Storage> {
         unsafe fn abandon_in_place(mut this: NonNull<Self>) {
             let this = unsafe { this.as_mut() };
-            unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+            unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
         }
     }
 
@@ -764,7 +766,7 @@ pub mod details {
             self.storage.get().number_of_segments
         }
 
-        fn max_borrowed_samples(&self) -> usize {
+        fn max_borrowed_chunks(&self) -> usize {
             self.storage.get().max_borrowed_samples
         }
 
@@ -822,7 +824,7 @@ pub mod details {
             segment_details
                 .sample_size
                 .store(sample_size, Ordering::Relaxed);
-            debug_assert!(ptr.offset() % sample_size == 0);
+            debug_assert!(ptr.offset().is_multiple_of(sample_size));
             let index = ptr.offset() / sample_size;
 
             debug_assert!(segment_id < storage.number_of_segments as usize);
@@ -842,9 +844,9 @@ pub mod details {
                     let segment_details =
                         storage.get_segment_details(segment_id, channel_id.value());
                     debug_assert!(
-                        pointer_offset.offset()
-                            % segment_details.sample_size.load(Ordering::Relaxed)
-                            == 0
+                        pointer_offset
+                            .offset()
+                            .is_multiple_of(segment_details.sample_size.load(Ordering::Relaxed))
                     );
                     let index = pointer_offset.offset()
                         / segment_details.sample_size.load(Ordering::Relaxed);
@@ -922,7 +924,7 @@ pub mod details {
             if sample_size == 0 {
                 return Err(FixtureTargetError::SampleSizeUnknown);
             }
-            if ptr.offset() % sample_size != 0 {
+            if !ptr.offset().is_multiple_of(sample_size) {
                 return Err(FixtureTargetError::OffsetNotAligned);
             }
             let index = ptr.offset() / sample_size;
@@ -1081,9 +1083,9 @@ pub mod details {
                     let segment_details =
                         storage.get_segment_details(segment_id, channel_id.value());
                     debug_assert!(
-                        pointer_offset.offset()
-                            % segment_details.sample_size.load(Ordering::Relaxed)
-                            == 0
+                        pointer_offset
+                            .offset()
+                            .is_multiple_of(segment_details.sample_size.load(Ordering::Relaxed))
                     );
                     let index = pointer_offset.offset()
                         / segment_details.sample_size.load(Ordering::Relaxed);
@@ -1178,7 +1180,7 @@ pub mod details {
             // 10          1               3
             // 11          2               3
             //
-            // to map an index to a segment id, we need to substract from index the
+            // to map an index to a segment id, we need to subtract from index the
             // rounded down value of index which is rounded down to the greatest multiple
             // of number_of_segments.
             SegmentId::new((index - (index / number_of_segments) * number_of_segments) as u8)
@@ -1195,7 +1197,7 @@ pub mod details {
     impl<Storage: DynamicStorage<SharedManagementData>> Abandonable for Receiver<Storage> {
         unsafe fn abandon_in_place(mut this: NonNull<Self>) {
             let this = unsafe { this.as_mut() };
-            unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+            unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
         }
     }
 
@@ -1231,7 +1233,7 @@ pub mod details {
             self.storage.get().number_of_segments
         }
 
-        fn max_borrowed_samples(&self) -> usize {
+        fn max_borrowed_chunks(&self) -> usize {
             self.storage.get().max_borrowed_samples
         }
 
@@ -1270,7 +1272,7 @@ pub mod details {
             if *self.borrow_counter(channel_id) >= self.storage.get().max_borrowed_samples {
                 fail!(from self, with ZeroCopyReceiveError::ReceiveWouldExceedMaxBorrowValue,
                 "Unable to receive another sample since already {} samples were borrowed and this would exceed the max borrow value of {}.",
-                    self.borrow_counter(channel_id), self.max_borrowed_samples());
+                    self.borrow_counter(channel_id), self.max_borrowed_chunks());
             }
 
             match unsafe {
@@ -1380,6 +1382,10 @@ pub mod details {
                                    Err(NamedConceptRemoveError::InsufficientPermissions) => {
                                        fail!(from origin, with ZeroCopyPortRemoveError::InsufficientPermissions,
                                            "{msg} since the underlying dynamic storage has a different iceoryx2 version.");
+                                   }
+                                   Err(NamedConceptRemoveError::Interrupt) => {
+                                       fail!(from origin, with ZeroCopyPortRemoveError::Interrupt,
+                                           "{msg} since an interrupt signal was raised.");
                                    }
                                    Err(NamedConceptRemoveError::InternalError) => {
                                        fail!(from origin, with ZeroCopyPortRemoveError::InternalError,

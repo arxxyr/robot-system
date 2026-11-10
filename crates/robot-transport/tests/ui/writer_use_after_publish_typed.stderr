@@ -11,5 +11,7 @@ error[E0382]: borrow of moved value: `writer`
 note: `robot_transport::SampleWriter::<'a, T>::publish_typed` takes ownership of the receiver `self`, which moves `writer`
   --> src/writer.rs
    |
+   | impl<'a, T: BodyMarker> SampleWriter<'a, T> {
+...
    |     pub fn publish_typed(self) -> Result<PublishReceipt, PublishFailure> {
    |                          ^^^^

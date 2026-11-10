@@ -17,12 +17,12 @@
 //! ```
 //! # extern crate iceoryx2_bb_loggers;
 //!
+//! use iceoryx2_bb_concurrency::atomic::{AtomicI64, Ordering};
 //! use iceoryx2_bb_posix::access_mode::AccessMode;
 //! use iceoryx2_bb_system_types::file_name::FileName;
 //! use iceoryx2_bb_container::semantic_string::SemanticString;
 //! use iceoryx2_cal::dynamic_storage::posix_shared_memory::*;
 //! use iceoryx2_cal::named_concept::*;
-//! use core::sync::atomic::{AtomicI64, Ordering};
 //!
 //! let additional_size: usize = 1024;
 //! let storage_name = FileName::new(b"myStorageName").unwrap();
@@ -30,7 +30,12 @@
 //!                 .supplementary_size(additional_size)
 //!                 // we always have to use a thread-safe object since multiple processes can
 //!                 // access this concurrently
-//!                 .create(AtomicI64::new(0)).unwrap();
+//!                 .initializer(|value, _| {
+//!                     value.write(AtomicI64::new(0));
+//!                     true
+//!                 })
+//!                 .create()
+//!                 .unwrap();
 //! owner.get().store(123, Ordering::Relaxed);
 //!
 //! // usually a different process
@@ -59,7 +64,6 @@ use alloc::vec::Vec;
 
 use iceoryx2_bb_concurrency::atomic::AtomicU64;
 use iceoryx2_bb_elementary::package_version::PackageVersion;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_posix::adaptive_wait::{AdaptiveWaitBuilder, AdaptiveWaitStrategy};
 use iceoryx2_bb_posix::directory::*;
 use iceoryx2_bb_posix::file_descriptor::FileDescriptorManagement;
@@ -76,17 +80,21 @@ use self::dynamic_storage_configuration::DynamicStorageConfiguration;
 const INIT_PERMISSIONS: Permission = Permission::OWNER_WRITE;
 
 #[cfg(not(feature = "dev_permissions"))]
-const FINAL_PERMISSIONS: Permission = Permission::OWNER_ALL;
+const FINAL_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE;
+
+const FINAL_PERMISSIONS_GLOBAL_ACCESS: Permission = Permission::OWNER_READ_WRITE
+    .const_bitor(Permission::GROUP_READ_WRITE)
+    .const_bitor(Permission::OTHERS_READ_WRITE);
 
 #[cfg(feature = "dev_permissions")]
-const FINAL_PERMISSIONS: Permission = Permission::ALL;
+const FINAL_PERMISSIONS: Permission = FINAL_PERMISSIONS_GLOBAL_ACCESS;
 
 /// The builder of [`Storage`].
 #[derive(Debug)]
-pub struct Builder<'builder, T: Send + Sync + Debug> {
+pub struct Builder<'builder, T: Send + Sync + Debug + ZeroCopySend> {
     storage_name: FileName,
-    call_drop_on_destruction: bool,
     supplementary_size: usize,
+    enable_global_access: bool,
     has_ownership: bool,
     config: Configuration<T>,
     timeout: Duration,
@@ -95,7 +103,7 @@ pub struct Builder<'builder, T: Send + Sync + Debug> {
 }
 
 #[derive(Debug)]
-pub struct Configuration<T: Send + Sync + Debug> {
+pub struct Configuration<T: Send + Sync + Debug + ZeroCopySend> {
     suffix: FileName,
     prefix: FileName,
     path: Path,
@@ -103,7 +111,7 @@ pub struct Configuration<T: Send + Sync + Debug> {
     type_name: String,
 }
 
-impl<T: Send + Sync + Debug> Clone for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Clone for Configuration<T> {
     fn clone(&self) -> Self {
         Self {
             suffix: self.suffix,
@@ -116,13 +124,12 @@ impl<T: Send + Sync + Debug> Clone for Configuration<T> {
 }
 
 #[repr(C)]
-struct Data<T: Send + Sync + Debug> {
+struct Data<T: Send + Sync + Debug + ZeroCopySend> {
     version: AtomicU64,
-    call_drop_on_destruction: bool,
-    data: T,
+    data: MaybeUninit<T>,
 }
 
-impl<T: Send + Sync + Debug> Default for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Default for Configuration<T> {
     fn default() -> Self {
         Self {
             path: Storage::<()>::default_path_hint(),
@@ -134,13 +141,13 @@ impl<T: Send + Sync + Debug> Default for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> DynamicStorageConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> DynamicStorageConfiguration for Configuration<T> {
     fn type_name(&self) -> &str {
         &self.type_name
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptConfiguration for Configuration<T> {
     fn prefix(mut self, value: &FileName) -> Self {
         self.prefix = *value;
         self
@@ -177,16 +184,16 @@ impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptBuilder<Storage<T>> for Builder<'_, T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptBuilder<Storage<T>> for Builder<'_, T> {
     fn new(storage_name: &FileName) -> Self {
         Self {
-            call_drop_on_destruction: true,
             has_ownership: true,
             storage_name: *storage_name,
             supplementary_size: 0,
             config: Configuration::default(),
+            enable_global_access: false,
             timeout: Duration::ZERO,
-            initializer: Initializer::new(|_, _| true),
+            initializer: Initializer::new(|_, _| false),
             _phantom_data: PhantomData,
         }
     }
@@ -197,7 +204,7 @@ impl<T: Send + Sync + Debug> NamedConceptBuilder<Storage<T>> for Builder<'_, T> 
     }
 }
 
-impl<T: Send + Sync + Debug> Builder<'_, T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Builder<'_, T> {
     fn open_impl(&self, access_mode: AccessMode) -> Result<Storage<T>, DynamicStorageOpenError> {
         let msg = "Failed to open posix_shared_memory::DynamicStorage";
 
@@ -330,18 +337,13 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
     fn init_impl(
         &mut self,
         mut shm: SharedMemory,
-        initial_value: T,
     ) -> Result<Storage<T>, DynamicStorageCreateError> {
         let msg = "Failed to init dynamic_storage::PosixSharedMemory";
         let value = shm.base_address().as_ptr() as *mut Data<T>;
         let version_ptr = unsafe { core::ptr::addr_of_mut!((*value).version) };
         unsafe { version_ptr.write(AtomicU64::new(0)) };
 
-        unsafe { core::ptr::addr_of_mut!((*value).data).write(initial_value) };
-        unsafe {
-            core::ptr::addr_of_mut!((*value).call_drop_on_destruction)
-                .write(self.call_drop_on_destruction)
-        };
+        unsafe { core::ptr::addr_of_mut!((*value).data).write(MaybeUninit::uninit()) };
 
         let supplementary_start =
             (shm.base_address().as_ptr() as usize + core::mem::size_of::<Data<T>>()) as *mut u8;
@@ -372,7 +374,13 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
         //////////////////////////////////////////
         unsafe { (*version_ptr).store(PackageVersion::get().to_u64(), Ordering::SeqCst) };
 
-        if let Err(e) = shm.set_permission(FINAL_PERMISSIONS) {
+        let final_permission = if self.enable_global_access {
+            FINAL_PERMISSIONS_GLOBAL_ACCESS
+        } else {
+            FINAL_PERMISSIONS
+        };
+
+        if let Err(e) = shm.set_permission(final_permission) {
             unsafe { core::ptr::drop_in_place(value) };
             shm.acquire_ownership();
             fail!(from origin, with DynamicStorageCreateError::InternalError,
@@ -388,20 +396,20 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
     }
 }
 
-impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storage<T>>
+impl<'builder, T: Send + Sync + Debug + ZeroCopySend> DynamicStorageBuilder<'builder, T, Storage<T>>
     for Builder<'builder, T>
 {
-    fn call_drop_on_destruction(mut self, value: bool) -> Self {
-        self.call_drop_on_destruction = value;
-        self
-    }
-
     fn has_ownership(mut self, value: bool) -> Self {
         self.has_ownership = value;
         self
     }
 
-    fn initializer<F: FnMut(&mut T, &mut BumpAllocator) -> bool + 'builder>(
+    fn enable_global_access(mut self, value: bool) -> Self {
+        self.enable_global_access = value;
+        self
+    }
+
+    fn initializer<F: FnMut(&mut MaybeUninit<T>, &mut BumpAllocator) -> bool + 'builder>(
         mut self,
         value: F,
     ) -> Self {
@@ -419,25 +427,22 @@ impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storag
         self
     }
 
-    fn create(mut self, initial_value: T) -> Result<Storage<T>, DynamicStorageCreateError> {
+    fn create(mut self) -> Result<Storage<T>, DynamicStorageCreateError> {
         let shm = self.create_impl()?;
-        self.init_impl(shm, initial_value)
+        self.init_impl(shm)
     }
 
     fn open(self, access_mode: AccessMode) -> Result<Storage<T>, DynamicStorageOpenError> {
         self.open_impl(access_mode)
     }
 
-    fn open_or_create(
-        mut self,
-        initial_value: T,
-    ) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
+    fn open_or_create(mut self) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
         loop {
             match self.open_impl(AccessMode::ReadWrite) {
                 Ok(storage) => return Ok(storage),
                 Err(DynamicStorageOpenError::DoesNotExist) => match self.create_impl() {
                     Ok(shm) => {
-                        return Ok(self.init_impl(shm, initial_value)?);
+                        return Ok(self.init_impl(shm)?);
                     }
                     Err(DynamicStorageCreateError::AlreadyExists) => continue,
                     Err(e) => return Err(e.into()),
@@ -451,41 +456,39 @@ impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storag
 /// Implements [`DynamicStorage`] for POSIX shared memory. It is built by
 /// [`Builder`].
 #[derive(Debug)]
-pub struct Storage<T: Debug + Send + Sync> {
+pub struct Storage<T: Debug + Send + Sync + ZeroCopySend> {
     shm: SharedMemory,
     name: FileName,
     _phantom_data: PhantomData<T>,
 }
 
-unsafe impl<T: Debug + Send + Sync> Send for Storage<T> {}
-unsafe impl<T: Debug + Send + Sync> Sync for Storage<T> {}
+unsafe impl<T: Debug + Send + Sync + ZeroCopySend> Send for Storage<T> {}
+unsafe impl<T: Debug + Send + Sync + ZeroCopySend> Sync for Storage<T> {}
 
-impl<T: Debug + Send + Sync> Abandonable for Storage<T> {
+impl<T: Debug + Send + Sync + ZeroCopySend> Abandonable for Storage<T> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedMemory::abandon_in_place(NonNull::iox2_from_mut(&mut this.shm)) };
+        unsafe { SharedMemory::abandon_in_place(NonNull::from_mut(&mut this.shm)) };
     }
 }
 
-impl<T: Debug + Send + Sync> Drop for Storage<T> {
+impl<T: Debug + Send + Sync + ZeroCopySend> Drop for Storage<T> {
     fn drop(&mut self) {
         if self.shm.has_ownership() {
-            let data = unsafe { &mut (*(self.shm.base_address().as_ptr() as *mut Data<T>)) };
-            if data.call_drop_on_destruction {
-                let user_type = &mut data.data;
-                unsafe { core::ptr::drop_in_place(user_type) };
-            }
+            let user_type =
+                unsafe { &mut (*(self.shm.base_address().as_ptr() as *mut Data<T>)).data };
+            unsafe { core::ptr::drop_in_place(user_type) };
         }
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConcept for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConcept for Storage<T> {
     fn name(&self) -> &FileName {
         &self.name
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptMgmt for Storage<T> {
     type Configuration = Configuration<T>;
 
     fn does_exist_cfg(
@@ -544,7 +547,7 @@ impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> DynamicStorage<T> for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> DynamicStorage<T> for Storage<T> {
     type Builder<'builder> = Builder<'builder, T>;
 
     fn does_support_persistency() -> bool {
@@ -556,7 +559,11 @@ impl<T: Send + Sync + Debug> DynamicStorage<T> for Storage<T> {
     }
 
     fn get(&self) -> &T {
-        unsafe { &(*(self.shm.base_address().as_ptr() as *const Data<T>)).data }
+        unsafe {
+            (*(self.shm.base_address().as_ptr() as *const Data<T>))
+                .data
+                .assume_init_ref()
+        }
     }
 
     fn has_ownership(&self) -> bool {

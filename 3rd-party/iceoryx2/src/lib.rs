@@ -218,9 +218,9 @@
 //! let mut listener = event.listener_builder().create()?;
 //!
 //! while node.wait(Duration::ZERO).is_ok() {
-//!     if let Ok(Some(event_id)) = listener.timed_wait_one(CYCLE_TIME) {
-//!         println!("event was triggered with id: {:?}", event_id);
-//!     }
+//!     listener.timed_wait(|event| {
+//!         println!("event was triggered with id: {:?} {} times", event.id, event.count);
+//!     }, CYCLE_TIME);
 //! }
 //!
 //! # Ok(())
@@ -423,11 +423,11 @@
 //!     //          configurations that use a bitset as event tracking mechanism
 //!     .event_id_max_value(256)
 //!     // optional event id that is emitted when a new notifier was created
-//!     .notifier_created_event(EventId::new(999))
+//!     .notifier_created_event(EventId::new(255))
 //!     // optional event id that is emitted when a notifier is dropped
 //!     .notifier_dropped_event(EventId::new(0))
 //!     // optional event id that is emitted when a notifier is identified as dead
-//!     .notifier_dead_event(EventId::new(2000))
+//!     .notifier_dead_event(EventId::new(254))
 //!     // the deadline of the service defines how long a listener has to wait at most until
 //!     // a signal will be received
 //!     .deadline(Duration::from_secs(1))
@@ -521,8 +521,6 @@ pub mod node;
 /// The ports or communication endpoints of iceoryx2
 pub mod port;
 
-pub(crate) mod raw_sample;
-
 /// Represents a "connection" to a [`Client`](crate::port::client::Client) that corresponds to a
 /// previously received [`RequestMut`](crate::request_mut::RequestMut).
 pub mod active_request;
@@ -539,6 +537,8 @@ pub mod pending_response;
 pub mod request_mut;
 /// RR R2：受检的严格单 server / 唯一回复 RR 入口（robot-system 本地补丁）。
 pub mod strict;
+// 严格 RR 的私有指针桥；普通 API 使用上游 Chunk 表示。
+mod raw_sample;
 
 /// The uninitialized payload that is sent by a [`Client`](crate::port::client::Client) to a
 /// [`Server`](crate::port::server::Server).
@@ -575,7 +575,7 @@ pub mod service;
 /// [`WaitSet`](crate::waitset::WaitSet) shall handle system signals.
 pub mod signal_handling_mode;
 
-/// Loads a meaninful subset to cover 90% of the iceoryx2 communication use cases.
+/// Loads a meaningful subset to cover 90% of the iceoryx2 communication use cases.
 pub mod prelude;
 
 #[doc(hidden)]
@@ -584,3 +584,8 @@ pub mod testing;
 /// Event handling mechanism to wait on multiple [`Listener`](crate::port::listener::Listener)s
 /// in one call, realizing the reactor pattern. (Event multiplexer)
 pub mod waitset;
+
+pub(crate) mod payload;
+
+/// Mechanism to generate unique IDs.
+pub mod unique_id_generator;

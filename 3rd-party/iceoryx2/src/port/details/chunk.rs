@@ -10,12 +10,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::service::static_config::message_type_details::MessageTypeDetails;
 use iceoryx2_cal::{shared_memory::ShmPointer, shm_allocator::PointerOffset};
 
-use crate::service::static_config::message_type_details::MessageTypeDetails;
-
 #[derive(Debug)]
-pub(crate) struct Chunk {
+pub struct Chunk {
     pub(crate) header: *const u8,
     pub(crate) user_header: *const u8,
     pub(crate) payload: *const u8,
@@ -30,10 +29,22 @@ impl Chunk {
             header: offset as *const u8,
         }
     }
+
+    pub fn header_ptr(&self) -> *const u8 {
+        self.header
+    }
+
+    pub fn user_header_ptr(&self) -> *const u8 {
+        self.user_header
+    }
+
+    pub fn payload_ptr(&self) -> *const u8 {
+        self.payload
+    }
 }
 
-#[derive(Debug)]
-pub(crate) struct ChunkMut {
+#[derive(Debug, Clone)]
+pub struct ChunkMut {
     pub(crate) offset: PointerOffset,
     pub(crate) header: *mut u8,
     pub(crate) user_header: *mut u8,
@@ -42,7 +53,7 @@ pub(crate) struct ChunkMut {
 }
 
 impl ChunkMut {
-    pub(crate) fn new(
+    pub fn new(
         message_type_details: &MessageTypeDetails,
         shm_pointer: ShmPointer,
         size: usize,
@@ -58,5 +69,44 @@ impl ChunkMut {
             offset: shm_pointer.offset,
             size,
         }
+    }
+
+    pub fn offset(&self) -> PointerOffset {
+        self.offset
+    }
+
+    pub fn header_ptr(&self) -> *const u8 {
+        self.header
+    }
+
+    pub fn header_mut_ptr(&mut self) -> *mut u8 {
+        self.header
+    }
+
+    pub fn user_header_ptr(&self) -> *const u8 {
+        self.user_header
+    }
+
+    pub fn user_header_mut_ptr(&mut self) -> *mut u8 {
+        self.user_header
+    }
+
+    pub fn payload_ptr(&self) -> *const u8 {
+        self.payload
+    }
+
+    pub fn payload_mut_ptr(&mut self) -> *mut u8 {
+        self.payload
+    }
+
+    pub fn to_shm_pointer(&self) -> ShmPointer {
+        ShmPointer {
+            offset: self.offset,
+            data_ptr: self.header,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
     }
 }

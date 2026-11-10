@@ -17,6 +17,7 @@ pub use core::ops::Deref;
 
 use core::fmt::Debug;
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 
@@ -28,11 +29,9 @@ use alloc::vec::Vec;
 
 use iceoryx2_bb_concurrency::atomic::AtomicU64;
 use iceoryx2_bb_elementary::package_version::PackageVersion;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_posix::adaptive_wait::{AdaptiveWaitBuilder, AdaptiveWaitStrategy};
 use iceoryx2_bb_posix::directory::*;
 use iceoryx2_bb_posix::file::File;
-use iceoryx2_bb_posix::file::FileAccessError;
 use iceoryx2_bb_posix::file::FileBuilder;
 use iceoryx2_bb_posix::file::FileCreationError;
 use iceoryx2_bb_posix::file::FileOpenError;
@@ -44,9 +43,10 @@ use iceoryx2_bb_posix::memory_mapping::MappingBehavior;
 use iceoryx2_bb_posix::memory_mapping::MappingPermission;
 use iceoryx2_bb_posix::memory_mapping::MemoryMapping;
 use iceoryx2_bb_posix::memory_mapping::MemoryMappingBuilder;
+use iceoryx2_bb_posix::metadata::MetadataFromPathError;
 use iceoryx2_bb_posix::shared_memory::*;
 use iceoryx2_bb_system_types::path::Path;
-use iceoryx2_log::fail;
+use iceoryx2_log::{fail, trace};
 
 use crate::static_storage::file::NamedConceptConfiguration;
 use crate::static_storage::file::NamedConceptRemoveError;
@@ -56,18 +56,28 @@ use self::dynamic_storage_configuration::DynamicStorageConfiguration;
 const INIT_PERMISSIONS: Permission = Permission::OWNER_WRITE;
 
 #[cfg(not(feature = "dev_permissions"))]
-const FINAL_PERMISSIONS: Permission = Permission::OWNER_ALL;
+const FINAL_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE;
+#[cfg(not(feature = "dev_permissions"))]
+const DIR_PERMISSIONS: Permission = Permission::OWNER_ALL
+    .const_bitor(Permission::GROUP_READ)
+    .const_bitor(Permission::GROUP_EXEC);
+
+const FINAL_PERMISSIONS_GLOBAL_ACCESS: Permission = Permission::OWNER_READ_WRITE
+    .const_bitor(Permission::GROUP_READ_WRITE)
+    .const_bitor(Permission::OTHERS_READ_WRITE);
 
 #[cfg(feature = "dev_permissions")]
-const FINAL_PERMISSIONS: Permission = Permission::ALL;
+const FINAL_PERMISSIONS: Permission = FINAL_PERMISSIONS_GLOBAL_ACCESS;
+#[cfg(feature = "dev_permissions")]
+const DIR_PERMISSIONS: Permission = Permission::ALL;
 
 /// The builder of [`Storage`].
 #[derive(Debug)]
-pub struct Builder<'builder, T: Send + Sync + Debug> {
+pub struct Builder<'builder, T: Send + Sync + Debug + ZeroCopySend> {
     storage_name: FileName,
-    call_drop_on_destruction: bool,
     supplementary_size: usize,
     has_ownership: bool,
+    enable_global_access: bool,
     config: Configuration<T>,
     timeout: Duration,
     initializer: Initializer<'builder, T>,
@@ -75,7 +85,7 @@ pub struct Builder<'builder, T: Send + Sync + Debug> {
 }
 
 #[derive(Debug)]
-pub struct Configuration<T: Send + Sync + Debug> {
+pub struct Configuration<T: Send + Sync + Debug + ZeroCopySend> {
     suffix: FileName,
     prefix: FileName,
     path: Path,
@@ -83,7 +93,7 @@ pub struct Configuration<T: Send + Sync + Debug> {
     type_name: String,
 }
 
-impl<T: Send + Sync + Debug> Clone for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Clone for Configuration<T> {
     fn clone(&self) -> Self {
         Self {
             suffix: self.suffix,
@@ -96,13 +106,12 @@ impl<T: Send + Sync + Debug> Clone for Configuration<T> {
 }
 
 #[repr(C)]
-struct Data<T: Send + Sync + Debug> {
+struct Data<T: Send + Sync + Debug + ZeroCopySend> {
     version: AtomicU64,
-    call_drop_on_destruction: bool,
-    data: T,
+    data: MaybeUninit<T>,
 }
 
-impl<T: Send + Sync + Debug> Default for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Default for Configuration<T> {
     fn default() -> Self {
         Self {
             path: Storage::<()>::default_path_hint(),
@@ -114,13 +123,13 @@ impl<T: Send + Sync + Debug> Default for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> DynamicStorageConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> DynamicStorageConfiguration for Configuration<T> {
     fn type_name(&self) -> &str {
         &self.type_name
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptConfiguration for Configuration<T> {
     fn prefix(mut self, value: &FileName) -> Self {
         self.prefix = *value;
         self
@@ -157,16 +166,16 @@ impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptBuilder<Storage<T>> for Builder<'_, T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptBuilder<Storage<T>> for Builder<'_, T> {
     fn new(storage_name: &FileName) -> Self {
         Self {
-            call_drop_on_destruction: true,
             has_ownership: true,
             storage_name: *storage_name,
             supplementary_size: 0,
+            enable_global_access: false,
             config: Configuration::default(),
             timeout: Duration::ZERO,
-            initializer: Initializer::new(|_, _| true),
+            initializer: Initializer::new(|_, _| false),
             _phantom_data: PhantomData,
         }
     }
@@ -177,7 +186,7 @@ impl<T: Send + Sync + Debug> NamedConceptBuilder<Storage<T>> for Builder<'_, T> 
     }
 }
 
-impl<T: Send + Sync + Debug> Builder<'_, T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Builder<'_, T> {
     fn open_impl(&self, access_mode: AccessMode) -> Result<Storage<T>, DynamicStorageOpenError> {
         let msg = "Failed to open file::DynamicStorage";
 
@@ -302,6 +311,25 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
     fn create_impl(&mut self) -> Result<Storage<T>, DynamicStorageCreateError> {
         let msg = "Failed to create dynamic_storage::file::DynamicStorage";
 
+        // create root directory before the DynamicStorage
+        let dir_msg = format!("Unable to create root directory \"{}\"", self.config.path);
+        let Ok(root_dir_exist) = Directory::does_exist(&self.config.path) else {
+            fail!(from self, with DynamicStorageCreateError::RootDirectoryCreationFailure,
+                "{} since the system is unable to determine if the directory even exists.", dir_msg);
+        };
+
+        if !root_dir_exist {
+            match Directory::create(&self.config.path, DIR_PERMISSIONS) {
+                Ok(_) | Err(DirectoryCreateError::DirectoryAlreadyExists) => (),
+                Err(e) => {
+                    fail!(from self, with DynamicStorageCreateError::RootDirectoryCreationFailure,
+                        "{} due to a failure while creating the service root directory ({:?}).", dir_msg, e);
+                }
+            }
+            trace!(from self, "Created service root directory \"{}\" since it did not exist before.", self.config.path);
+        }
+
+        // create DynamicStorage
         let full_name = self.config.path_for(&self.storage_name);
         let mut file = match FileBuilder::new(&full_name)
             .has_ownership(self.has_ownership)
@@ -358,18 +386,13 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
     fn init_impl(
         &mut self,
         mut storage: Storage<T>,
-        initial_value: T,
     ) -> Result<Storage<T>, DynamicStorageCreateError> {
         let msg = "Failed to init dynamic_storage::file::DynamicStorage";
         let value = storage.memory_mapping.base_address_mut() as *mut Data<T>;
         let version_ptr = unsafe { core::ptr::addr_of_mut!((*value).version) };
         unsafe { version_ptr.write(AtomicU64::new(0)) };
 
-        unsafe { core::ptr::addr_of_mut!((*value).data).write(initial_value) };
-        unsafe {
-            core::ptr::addr_of_mut!((*value).call_drop_on_destruction)
-                .write(self.call_drop_on_destruction)
-        };
+        unsafe { core::ptr::addr_of_mut!((*value).data).write(MaybeUninit::uninit()) };
 
         let supplementary_start = (storage.memory_mapping.base_address() as usize
             + core::mem::size_of::<Data<T>>()) as *mut u8;
@@ -399,7 +422,13 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
         //////////////////////////////////////////
         unsafe { (*version_ptr).store(PackageVersion::get().to_u64(), Ordering::SeqCst) };
 
-        if let Err(e) = storage.file.set_permission(FINAL_PERMISSIONS) {
+        let final_permissions = if self.enable_global_access {
+            FINAL_PERMISSIONS_GLOBAL_ACCESS
+        } else {
+            FINAL_PERMISSIONS
+        };
+
+        if let Err(e) = storage.file.set_permission(final_permissions) {
             storage.file.acquire_ownership();
             fail!(from origin, with DynamicStorageCreateError::InternalError,
                 "{} since the final permissions could not be applied to the underlying file ({:?}).",
@@ -410,20 +439,20 @@ impl<T: Send + Sync + Debug> Builder<'_, T> {
     }
 }
 
-impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storage<T>>
+impl<'builder, T: Send + Sync + Debug + ZeroCopySend> DynamicStorageBuilder<'builder, T, Storage<T>>
     for Builder<'builder, T>
 {
-    fn call_drop_on_destruction(mut self, value: bool) -> Self {
-        self.call_drop_on_destruction = value;
-        self
-    }
-
     fn has_ownership(mut self, value: bool) -> Self {
         self.has_ownership = value;
         self
     }
 
-    fn initializer<F: FnMut(&mut T, &mut BumpAllocator) -> bool + 'builder>(
+    fn enable_global_access(mut self, value: bool) -> Self {
+        self.enable_global_access = value;
+        self
+    }
+
+    fn initializer<F: FnMut(&mut MaybeUninit<T>, &mut BumpAllocator) -> bool + 'builder>(
         mut self,
         value: F,
     ) -> Self {
@@ -441,25 +470,22 @@ impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storag
         self
     }
 
-    fn create(mut self, initial_value: T) -> Result<Storage<T>, DynamicStorageCreateError> {
+    fn create(mut self) -> Result<Storage<T>, DynamicStorageCreateError> {
         let shm = self.create_impl()?;
-        self.init_impl(shm, initial_value)
+        self.init_impl(shm)
     }
 
     fn open(self, access_mode: AccessMode) -> Result<Storage<T>, DynamicStorageOpenError> {
         self.open_impl(access_mode)
     }
 
-    fn open_or_create(
-        mut self,
-        initial_value: T,
-    ) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
+    fn open_or_create(mut self) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
         loop {
             match self.open_impl(AccessMode::ReadWrite) {
                 Ok(storage) => return Ok(storage),
                 Err(DynamicStorageOpenError::DoesNotExist) => match self.create_impl() {
                     Ok(shm) => {
-                        return Ok(self.init_impl(shm, initial_value)?);
+                        return Ok(self.init_impl(shm)?);
                     }
                     Err(DynamicStorageCreateError::AlreadyExists) => continue,
                     Err(e) => return Err(e.into()),
@@ -473,45 +499,43 @@ impl<'builder, T: Send + Sync + Debug> DynamicStorageBuilder<'builder, T, Storag
 /// Implements [`DynamicStorage`] based on a [`File`]. It is built by
 /// [`Builder`].
 #[derive(Debug)]
-pub struct Storage<T: Debug + Send + Sync> {
+pub struct Storage<T: Debug + Send + Sync + ZeroCopySend> {
     file: File,
     memory_mapping: MemoryMapping,
     name: FileName,
     _data: PhantomData<T>,
 }
 
-unsafe impl<T: Debug + Send + Sync> Send for Storage<T> {}
-unsafe impl<T: Debug + Send + Sync> Sync for Storage<T> {}
+unsafe impl<T: Debug + Send + Sync + ZeroCopySend> Send for Storage<T> {}
+unsafe impl<T: Debug + Send + Sync + ZeroCopySend> Sync for Storage<T> {}
 
-impl<T: Debug + Send + Sync> Abandonable for Storage<T> {
+impl<T: Debug + Send + Sync + ZeroCopySend> Abandonable for Storage<T> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { File::abandon_in_place(NonNull::iox2_from_mut(&mut this.file)) };
+        unsafe { File::abandon_in_place(NonNull::from_mut(&mut this.file)) };
         unsafe {
             core::ptr::drop_in_place(&mut this.memory_mapping);
         }
     }
 }
 
-impl<T: Debug + Send + Sync> Drop for Storage<T> {
+impl<T: Debug + Send + Sync + ZeroCopySend> Drop for Storage<T> {
     fn drop(&mut self) {
         if self.file.has_ownership() {
-            let data = unsafe { &mut (*(self.memory_mapping.base_address_mut() as *mut Data<T>)) };
-            if data.call_drop_on_destruction {
-                let user_type = &mut data.data;
-                unsafe { core::ptr::drop_in_place(user_type) };
-            }
+            let user_type =
+                unsafe { &mut (*(self.memory_mapping.base_address_mut() as *mut Data<T>)).data };
+            unsafe { core::ptr::drop_in_place(user_type) };
         }
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConcept for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConcept for Storage<T> {
     fn name(&self) -> &FileName {
         &self.name
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptMgmt for Storage<T> {
     type Configuration = Configuration<T>;
 
     fn does_exist_cfg(
@@ -523,7 +547,7 @@ impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
         let full_name = cfg.path_for(name);
         match File::does_exist(&full_name) {
             Ok(v) => Ok(v),
-            Err(FileAccessError::InsufficientPermissions) => {
+            Err(MetadataFromPathError::InsufficientPermissions) => {
                 fail!(from origin, with NamedConceptDoesExistError::InsufficientPermissions,
                     "{msg} with the name {name} due to insufficient permissions.");
             }
@@ -537,6 +561,21 @@ impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
     fn list_cfg(cfg: &Self::Configuration) -> Result<Vec<FileName>, NamedConceptListError> {
         let origin = "dynamic_storage::File::list_cfg()";
         let msg = "Unable to list all dynamic storages";
+
+        match Directory::does_exist(&cfg.path) {
+            Ok(true) => (),
+            Ok(false) => return Ok(vec![]),
+            Err(MetadataFromPathError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptListError::InsufficientPermissions,
+                    "{} due to insufficient permissions to read the storage directory.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptListError::InternalError,
+                    "{} due to an internal failure while checking the existance of the storage directory \"{}\". [{e:?}]",
+                    msg, cfg.path);
+            }
+        }
+
         let directory = match Directory::new(&cfg.path) {
             Ok(d) => d,
             Err(DirectoryOpenError::InsufficientPermissions) => {
@@ -599,11 +638,11 @@ impl<T: Send + Sync + Debug> NamedConceptMgmt for Storage<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> DynamicStorage<T> for Storage<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> DynamicStorage<T> for Storage<T> {
     type Builder<'builder> = Builder<'builder, T>;
 
     fn does_support_persistency() -> bool {
-        SharedMemory::does_support_persistency()
+        true
     }
 
     fn acquire_ownership(&self) {
@@ -611,7 +650,11 @@ impl<T: Send + Sync + Debug> DynamicStorage<T> for Storage<T> {
     }
 
     fn get(&self) -> &T {
-        unsafe { &(*(self.memory_mapping.base_address() as *const Data<T>)).data }
+        unsafe {
+            (*(self.memory_mapping.base_address() as *const Data<T>))
+                .data
+                .assume_init_ref()
+        }
     }
 
     fn has_ownership(&self) -> bool {

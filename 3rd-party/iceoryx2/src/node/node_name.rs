@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize, de::Visitor};
 type NodeNameString = StaticString<MAX_NODE_NAME_LENGTH>;
 
 /// Represent the name for a [`crate::node::Node`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct NodeName {
     value: NodeNameString,
 }
@@ -42,7 +42,7 @@ impl NodeName {
 
     /// Returns a str reference to the [`NodeName`]
     pub fn as_str(&self) -> &str {
-        // SAFETY: `ServieName` was created from a `&str` and therefore this conversion is safe
+        // SAFETY: `NodeName` was created from a `&str` and therefore this conversion is safe
         unsafe { core::str::from_utf8_unchecked(self.value.as_bytes()) }
     }
 

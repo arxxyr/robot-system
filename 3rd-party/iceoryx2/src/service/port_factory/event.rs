@@ -45,18 +45,17 @@ use super::notifier::PortFactoryNotifier;
 use crate::identifiers::UniqueServiceId;
 use crate::node::NodeListFailure;
 use crate::service::attribute::AttributeSet;
-use crate::service::port_factory::blocking_cleanup_dead_nodes_in_service;
+use crate::service::resource::NoResource;
 use crate::service::service_hash::ServiceHash;
-use crate::service::{self, NoResource, ServiceState, SharedServiceState, static_config};
+use crate::service::{self, ServiceState, SharedServiceState, static_config};
 use crate::service::{ServiceName, dynamic_config};
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 
 /// The factory for
 /// [`MessagingPattern::Event`](crate::service::messaging_pattern::MessagingPattern::Event). It can
-/// acquire dynamic and static service informations and create [`crate::port::notifier::Notifier`]
+/// acquire dynamic and static service information and create [`crate::port::notifier::Notifier`]
 /// or [`crate::port::listener::Listener`] ports.
 #[derive(Debug)]
 pub struct PortFactory<Service: service::Service> {
@@ -69,14 +68,14 @@ unsafe impl<Service: service::Service> Sync for PortFactory<Service> {}
 impl<Service: service::Service> Abandonable for PortFactory<Service> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service)) };
     }
 }
 
 impl<Service: service::Service> crate::service::port_factory::PortFactory for PortFactory<Service> {
     type Service = Service;
     type StaticConfig = static_config::event::StaticConfig;
-    type DynamicConfig = dynamic_config::event::DynamicConfig;
+    type DynamicConfig = dynamic_config::event::DynamicConfig<Service::Bag>;
 
     fn name(&self) -> &ServiceName {
         self.service.static_config().name()
@@ -98,7 +97,7 @@ impl<Service: service::Service> crate::service::port_factory::PortFactory for Po
         self.service.static_config().event()
     }
 
-    fn dynamic_config(&self) -> &dynamic_config::event::DynamicConfig {
+    fn dynamic_config(&self) -> &dynamic_config::event::DynamicConfig<Service::Bag> {
         self.service.dynamic_storage().get().event()
     }
 
@@ -116,26 +115,11 @@ impl<Service: service::Service> crate::service::port_factory::PortFactory for Po
 
 impl<Service: service::Service> PortFactory<Service> {
     pub(crate) fn new(service: ServiceState<Service, NoResource>) -> Self {
-        let shared_node = service.shared_node.clone();
-        let new_self = Self {
+        Self {
             service: SharedServiceState {
                 state: Arc::new(service),
             },
-        };
-
-        if shared_node
-            .config()
-            .global
-            .service
-            .cleanup_dead_nodes_on_open
-        {
-            blocking_cleanup_dead_nodes_in_service(
-                &new_self,
-                shared_node.config().global.creation_timeout,
-            );
         }
-
-        new_self
     }
 
     /// Returns a [`PortFactoryNotifier`] to create a new [`crate::port::notifier::Notifier`] port
@@ -177,6 +161,6 @@ impl<Service: service::Service> PortFactory<Service> {
     /// # }
     /// ```
     pub fn listener_builder(&self) -> PortFactoryListener<'_, Service> {
-        PortFactoryListener { factory: self }
+        PortFactoryListener::new(self)
     }
 }

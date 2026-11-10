@@ -16,7 +16,11 @@ use core::time::Duration;
 use tiny_fn::tiny_fn;
 use update_connections::ConnectionFailure;
 
+pub use iceoryx2_cal::event::EventId;
+pub use iceoryx2_cal::event::event_state::EventActivation;
+
 pub(crate) mod details;
+pub(crate) mod port_lifetime_tag;
 pub use details::data_segment::DataSegmentType;
 
 /// Sends requests to a [`Server`](crate::port::server::Server) and receives responses.
@@ -27,6 +31,8 @@ pub mod event_id;
 pub mod listener;
 /// Sending endpoint (port) for event based communication
 pub mod notifier;
+/// The name for a port.
+pub mod port_name;
 /// Sending endpoint (port) for publish-subscribe based communication
 pub mod publisher;
 /// Reading endpoint (port) for blackboard based communication
@@ -215,7 +221,7 @@ pub enum LoanError {
     /// The provided slice size exceeds the configured max slice size.
     /// To send data with this size a new port has to be created with as a larger slice size or the
     /// port must be configured with an
-    /// [`AllocationStrategy`](iceoryx2_cal::shm_allocator::AllocationStrategy).
+    /// [`AllocationStrategy`](iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy).
     ExceedsMaxLoanSize,
     /// Errors that indicate either an implementation issue or a wrongly configured system.
     InternalFailure,

@@ -11,6 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use core::alloc::Layout;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 
@@ -20,10 +21,13 @@ use alloc::vec::Vec;
 use iceoryx2_bb_concurrency::atomic::AtomicUsize;
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_elementary::cyclic_tagger::*;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::allocator::{
+    AllocationError, AllocationGrowError, ContentPlacement, Grow,
+};
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_cal::named_concept::NamedConceptBuilder;
-use iceoryx2_cal::shm_allocator::{AllocationError, PointerOffset, ShmAllocationError};
+use iceoryx2_cal::shared_memory::ShmPointer;
+use iceoryx2_cal::shm_allocator::PointerOffset;
 use iceoryx2_cal::zero_copy_connection::{
     BackpressureToReceiverAction, ChannelId, ChannelState, StrictChannelStatus, TrySendReceipt,
     ZeroCopyConnection, ZeroCopyConnectionBuilder, ZeroCopyCreationError, ZeroCopyPortDetails,
@@ -37,9 +41,10 @@ use crate::port::{
     DegradationInfo, LoanError, SendError,
 };
 use crate::prelude::BackpressureStrategy;
+use crate::service::SharedServiceState;
 use crate::service::config_scheme::connection_config;
+use crate::service::resource::ServiceResource;
 use crate::service::static_config::message_type_details::{MessageTypeDetails, TypeVariant};
-use crate::service::{NoResource, SharedServiceState};
 use crate::{service, service::naming_scheme::connection_name};
 
 use super::chunk::ChunkMut;
@@ -65,37 +70,42 @@ pub(crate) enum ExactTargetError {
 }
 
 #[derive(Debug)]
-pub(crate) struct Connection<Service: service::Service> {
+pub(crate) struct Connection<Service: service::Service, Resource: ServiceResource> {
     pub(crate) sender: <Service::Connection as ZeroCopyConnection>::Sender,
     pub(crate) receiver_port_id: u128,
     /// RR R2：本连接真实建立的 channel 数（≤ Sender 的全局上界）。
     pub(crate) number_of_channels: usize,
     tag: Tag,
+    _resource: PhantomData<Resource>,
 }
 
-impl<Service: service::Service> Abandonable for Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Abandonable
+    for Connection<Service, Resource>
+{
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
             <Service::Connection as ZeroCopyConnection>::Sender::abandon_in_place(
-                NonNull::iox2_from_mut(&mut this.sender),
+                NonNull::from_mut(&mut this.sender),
             )
         };
     }
 }
 
-impl<Service: service::Service> Taggable for Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Taggable
+    for Connection<Service, Resource>
+{
     fn tag(&self) -> &Tag {
         &self.tag
     }
 }
 
-impl<Service: service::Service> Connection<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Connection<Service, Resource> {
     fn new(
-        this: &Sender<Service>,
+        this: &Sender<Service, Resource>,
         receiver_port_id: u128,
         buffer_size: usize,
-        number_of_samples: usize,
+        number_of_chunks: usize,
         number_of_channels: usize,
         tag: Tag,
         initial_channel_state: ChannelState,
@@ -121,9 +131,9 @@ impl<Service: service::Service> Connection<Service> {
                         Builder::new( &connection_name(this.sender_port_id, receiver_port_id))
                                 .config(&connection_config::<Service>(this.shared_node.config()))
                                 .buffer_size(buffer_size)
-                                .receiver_max_borrowed_samples_per_channel(this.receiver_max_borrowed_samples)
+                                .receiver_max_borrowed_chunks_per_channel(this.receiver_max_borrowed_chunks)
                                 .enable_safe_overflow(this.enable_safe_overflow)
-                                .number_of_samples_per_segment(number_of_samples)
+                                .number_of_chunks_per_segment(number_of_chunks)
                                 .max_supported_shared_memory_segments(this.max_number_of_segments)
                                 .initial_channel_state(initial_channel_state)
                                 .number_of_channels(number_of_channels)
@@ -136,26 +146,27 @@ impl<Service: service::Service> Connection<Service> {
             receiver_port_id,
             number_of_channels,
             tag,
+            _resource: PhantomData,
         })
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct Sender<Service: service::Service> {
+pub(crate) struct Sender<Service: service::Service, Resource: ServiceResource> {
     pub(crate) segment_states: Vec<SegmentState>,
     pub(crate) data_segment: DataSegment<Service>,
-    pub(crate) connections: Vec<UnsafeCell<Option<Connection<Service>>>>,
+    pub(crate) connections: Vec<UnsafeCell<Option<Connection<Service, Resource>>>>,
     pub(crate) sender_port_id: u128,
     pub(crate) shared_node: SharedNode<Service>,
     pub(crate) receiver_max_buffer_size: usize,
-    pub(crate) receiver_max_borrowed_samples: usize,
-    pub(crate) sender_max_borrowed_samples: usize,
+    pub(crate) receiver_max_borrowed_chunks: usize,
+    pub(crate) sender_max_borrowed_chunks: usize,
     pub(crate) enable_safe_overflow: bool,
-    pub(crate) number_of_samples: usize,
+    pub(crate) number_of_chunks: usize,
     pub(crate) max_number_of_segments: u8,
     pub(crate) degradation_handler: DegradationHandler<'static>,
     pub(crate) backpressure_handler: Option<BackpressureHandler<'static>>,
-    pub(crate) service_state: SharedServiceState<Service, NoResource>,
+    pub(crate) service_state: SharedServiceState<Service, Resource>,
     pub(crate) tagger: CyclicTagger,
     pub(crate) loan_counter: AtomicUsize,
     pub(crate) backpressure_strategy: BackpressureStrategy,
@@ -164,35 +175,59 @@ pub(crate) struct Sender<Service: service::Service> {
     pub(crate) initial_channel_state: ChannelState,
 }
 
-impl<Service: service::Service> Abandonable for Sender<Service> {
+impl<Service: service::Service, Resource: ServiceResource> Grow<ShmPointer>
+    for Sender<Service, Resource>
+{
+    unsafe fn grow(
+        &self,
+        ptr: ShmPointer,
+        old_layout: Layout,
+        new_layout: Layout,
+        content_placement: ContentPlacement,
+    ) -> Result<ShmPointer, AllocationGrowError> {
+        let new_ptr = unsafe {
+            self.data_segment
+                .grow(ptr, old_layout, new_layout, content_placement)
+        }?;
+
+        if ptr.offset != new_ptr.offset {
+            self.borrow_chunk(new_ptr.offset);
+            self.untrack_chunk(ptr.offset);
+        }
+
+        Ok(new_ptr)
+    }
+}
+
+impl<Service: service::Service, Resource: ServiceResource> Abandonable
+    for Sender<Service, Resource>
+{
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            SharedNode::<Service>::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_node))
+            SharedNode::<Service>::abandon_in_place(NonNull::from_mut(&mut this.shared_node))
         };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
         unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
-        unsafe {
-            DataSegment::<Service>::abandon_in_place(NonNull::iox2_from_mut(&mut this.data_segment))
+            DataSegment::<Service>::abandon_in_place(NonNull::from_mut(&mut this.data_segment))
         };
 
         for connection in &mut this.connections {
             if let Some(c) = connection.get_mut() {
-                unsafe { Connection::<Service>::abandon_in_place(NonNull::iox2_from_mut(c)) };
+                unsafe { Connection::<Service, Resource>::abandon_in_place(NonNull::from_mut(c)) };
             }
         }
     }
 }
 
-impl<Service: service::Service> Sender<Service> {
-    fn get(&self, index: usize) -> &Option<Connection<Service>> {
+impl<Service: service::Service, Resource: ServiceResource> Sender<Service, Resource> {
+    fn get(&self, index: usize) -> &Option<Connection<Service, Resource>> {
         unsafe { &(*self.connections[index].get()) }
     }
 
-    // only used internally as convinience function
+    // only used internally as convenience function
     #[allow(clippy::mut_from_ref)]
-    fn get_mut(&self, index: usize) -> &mut Option<Connection<Service>> {
+    fn get_mut(&self, index: usize) -> &mut Option<Connection<Service, Resource>> {
         #[deny(clippy::mut_from_ref)]
         unsafe {
             &mut (*self.connections[index].get())
@@ -201,10 +236,10 @@ impl<Service: service::Service> Sender<Service> {
 
     pub(crate) fn get_connection_id_of(&self, receiver_port_id: u128) -> Option<usize> {
         for i in 0..self.len() {
-            if let Some(connection) = self.get(i) {
-                if connection.receiver_port_id == receiver_port_id {
-                    return Some(i);
-                }
+            if let Some(connection) = self.get(i)
+                && connection.receiver_port_id == receiver_port_id
+            {
+                return Some(i);
             }
         }
 
@@ -213,12 +248,11 @@ impl<Service: service::Service> Sender<Service> {
 
     fn deliver_offset_to_connection_impl(
         &self,
-        offset: PointerOffset,
-        sample_size: usize,
+        chunk: &ChunkMut,
         channel_id: ChannelId,
         connection_id: usize,
     ) -> Result<usize, SendError> {
-        let msg = "While delivering the sample:";
+        let msg = "While delivering the chunk:";
 
         let mut number_of_recipients = 0;
         if let Some(connection) = self.get(connection_id) {
@@ -234,8 +268,8 @@ impl<Service: service::Service> Sender<Service> {
 
                 <Service::Connection as ZeroCopyConnection>::Sender::blocking_send(
                     &connection.sender,
-                    offset,
-                    sample_size,
+                    chunk.offset(),
+                    chunk.size(),
                     channel_id,
                     |retries, elapsed_time| {
                         handler
@@ -259,16 +293,16 @@ impl<Service: service::Service> Sender<Service> {
                     BackpressureStrategy::DiscardData => {
                         <Service::Connection as ZeroCopyConnection>::Sender::try_send(
                             &connection.sender,
-                            offset,
-                            sample_size,
+                            chunk.offset(),
+                            chunk.size(),
                             channel_id,
                         )
                     }
                     BackpressureStrategy::RetryUntilDelivered => {
                         <Service::Connection as ZeroCopyConnection>::Sender::blocking_send(
                             &connection.sender,
-                            offset,
-                            sample_size,
+                            chunk.offset(),
+                            chunk.size(),
                             channel_id,
                             |_, _| BackpressureToReceiverAction::FollowBackpressureyStrategy,
                             BackpressureToReceiverAction::Retry,
@@ -282,7 +316,7 @@ impl<Service: service::Service> Sender<Service> {
                     // can only happen with blocking send and the degradation handler triggered a failure
                     fail!(from self, with SendError::UnableToDeliver,
                           "{msg} {:?} could not be delivered to receiver {:?}.",
-                          offset, connection.receiver_port_id);
+                          chunk, connection.receiver_port_id);
                 }
                 Err(ZeroCopySendError::ReceiveBufferFull)
                 | Err(ZeroCopySendError::UsedChunkListFull) => {
@@ -300,7 +334,7 @@ impl<Service: service::Service> Sender<Service> {
                 }
                 Err(ZeroCopySendError::InternalError) => {
                     fail!(from self, with SendError::InternalError,
-                        "{msg} {:?} to receiver {:?} an internal mechanism failed and the offset was delivered only to a subset of receivers.", offset, connection.receiver_port_id);
+                        "{msg} {:?} to receiver {:?} an internal mechanism failed and the offset was delivered only to a subset of receivers.", chunk, connection.receiver_port_id);
                 }
                 Err(ZeroCopySendError::ConnectionCorrupted) => {
                     match self.degradation_handler.call(
@@ -319,21 +353,21 @@ impl<Service: service::Service> Sender<Service> {
                         DegradationAction::Warn => {
                             error!(from self,
                                         "{msg} {:?} a corrupted connection was detected with receiver {:?}.",
-                                        offset, connection.receiver_port_id);
+                                        chunk, connection.receiver_port_id);
                         }
                         DegradationAction::DegradeAndFail => {
                             fail!(from self, with SendError::ConnectionCorrupted,
                                         "{msg} {:?} a corrupted connection was detected with receiver {:?}.",
-                                        offset, connection.receiver_port_id);
+                                        chunk, connection.receiver_port_id);
                         }
                     }
                 }
                 Ok(overflow) => {
-                    self.borrow_sample(offset);
+                    self.borrow_chunk(chunk.offset());
                     number_of_recipients += 1;
 
                     if let Some(old) = overflow {
-                        self.release_sample(old)
+                        self.release_chunk(old)
                     }
                 }
             }
@@ -343,12 +377,11 @@ impl<Service: service::Service> Sender<Service> {
 
     /// RR R2：按完整原 receiver id 精确定位连接；`hint` 只是原 index 提示，不匹配时重新查找。
     pub(crate) fn resolve_connection(&self, hint: usize, receiver_port_id: u128) -> Option<usize> {
-        if hint < self.len() {
-            if let Some(connection) = self.get(hint) {
-                if connection.receiver_port_id == receiver_port_id {
-                    return Some(hint);
-                }
-            }
+        if hint < self.len()
+            && let Some(connection) = self.get(hint)
+            && connection.receiver_port_id == receiver_port_id
+        {
+            return Some(hint);
         }
         self.get_connection_id_of(receiver_port_id)
     }
@@ -360,12 +393,11 @@ impl<Service: service::Service> Sender<Service> {
         hint: usize,
         receiver_port_id: u128,
     ) -> ExactTargetError {
-        if hint < self.len() {
-            if let Some(connection) = self.get(hint) {
-                if connection.receiver_port_id != receiver_port_id {
-                    return ExactTargetError::TargetChanged;
-                }
-            }
+        if hint < self.len()
+            && let Some(connection) = self.get(hint)
+            && connection.receiver_port_id != receiver_port_id
+        {
+            return ExactTargetError::TargetChanged;
         }
         ExactTargetError::TargetGone
     }
@@ -380,7 +412,7 @@ impl<Service: service::Service> Sender<Service> {
         sample_size: usize,
         channel_id: ChannelId,
     ) -> Result<TrySendReceipt, ExactTargetError> {
-        self.retrieve_returned_samples();
+        self.retrieve_returned_chunks();
         if index >= self.len() {
             return Err(ExactTargetError::TargetGone);
         }
@@ -396,9 +428,9 @@ impl<Service: service::Service> Sender<Service> {
             reclaimed_overflow, ..
         } = receipt
         {
-            self.borrow_sample(offset);
+            self.borrow_chunk(offset);
             if let Some(old) = reclaimed_overflow {
-                self.release_sample(old);
+                self.release_chunk(old);
             }
         }
         Ok(receipt)
@@ -462,27 +494,25 @@ impl<Service: service::Service> Sender<Service> {
 
     pub(crate) fn deliver_offset_to_connection(
         &self,
-        offset: PointerOffset,
-        sample_size: usize,
+        chunk: &ChunkMut,
         channel_id: ChannelId,
         connection_id: usize,
     ) -> Result<usize, SendError> {
-        self.retrieve_returned_samples();
-        self.deliver_offset_to_connection_impl(offset, sample_size, channel_id, connection_id)
+        self.retrieve_returned_chunks();
+        self.deliver_offset_to_connection_impl(chunk, channel_id, connection_id)
     }
 
     pub(crate) fn deliver_offset(
         &self,
-        offset: PointerOffset,
-        sample_size: usize,
+        chunk: &ChunkMut,
         channel_id: ChannelId,
     ) -> Result<usize, SendError> {
-        self.retrieve_returned_samples();
+        self.retrieve_returned_chunks();
 
         let mut number_of_recipients = 0;
         let mut delivery_error = None;
         for i in 0..self.len() {
-            match self.deliver_offset_to_connection_impl(offset, sample_size, channel_id, i) {
+            match self.deliver_offset_to_connection_impl(chunk, channel_id, i) {
                 Ok(n) => number_of_recipients += n,
                 Err(error) => match error {
                     SendError::ConnectionCorrupted => {
@@ -516,8 +546,8 @@ impl<Service: service::Service> Sender<Service> {
         }
     }
 
-    pub(crate) fn return_loaned_sample(&self, distance_to_chunk: PointerOffset) {
-        self.release_sample(distance_to_chunk);
+    pub(crate) fn return_loaned_chunk(&self, distance_to_chunk: PointerOffset) {
+        self.release_chunk(distance_to_chunk);
         self.loan_counter.fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -530,7 +560,7 @@ impl<Service: service::Service> Sender<Service> {
             self,
             receiver_details.port_id,
             receiver_details.buffer_size,
-            self.number_of_samples,
+            self.number_of_chunks,
             receiver_details.number_of_channels,
             self.tagger.create_tag(),
             self.initial_channel_state,
@@ -544,23 +574,22 @@ impl<Service: service::Service> Sender<Service> {
     }
 
     pub(crate) fn allocate(&self, layout: Layout) -> Result<ChunkMut, LoanError> {
-        self.retrieve_returned_samples();
+        self.retrieve_returned_chunks();
         let msg = "Unable to allocate data";
 
-        if self.loan_counter.load(Ordering::Relaxed) >= self.sender_max_borrowed_samples {
+        if self.loan_counter.load(Ordering::Relaxed) >= self.sender_max_borrowed_chunks {
             fail!(from self, with LoanError::ExceedsMaxLoans,
-                "{} {:?} since already {} samples were loaned and it would exceed the maximum of parallel loans of {}. Release or send a loaned sample to loan another sample.",
-                msg, layout, self.loan_counter.load(Ordering::Relaxed), self.sender_max_borrowed_samples);
+                "{} {:?} since already {} chunks were loaned and it would exceed the maximum of parallel loans of {}. Release or send a loaned chunks to loan another chunk.",
+                msg, layout, self.loan_counter.load(Ordering::Relaxed), self.sender_max_borrowed_chunks);
         }
 
         let shm_pointer = match self.data_segment.allocate(layout) {
             Ok(chunk) => chunk,
-            Err(ShmAllocationError::AllocationError(AllocationError::OutOfMemory)) => {
+            Err(AllocationError::OutOfMemory) => {
                 fail!(from self, with LoanError::OutOfMemory,
                     "{} {:?} since the underlying shared memory is out of memory.", msg, layout);
             }
-            Err(ShmAllocationError::AllocationError(AllocationError::SizeTooLarge))
-            | Err(ShmAllocationError::AllocationError(AllocationError::AlignmentFailure)) => {
+            Err(AllocationError::SizeTooLarge) | Err(AllocationError::AlignmentFailure) => {
                 fatal_panic!(from self, "{} {:?} since the system seems to be corrupted.", msg, layout);
             }
             Err(v) => {
@@ -569,17 +598,17 @@ impl<Service: service::Service> Sender<Service> {
             }
         };
 
-        let (ref_count, sample_size) = self.borrow_sample(shm_pointer.offset);
+        let (ref_count, chunk_size) = self.borrow_chunk(shm_pointer.offset);
         if ref_count != 0 {
             fatal_panic!(from self,
-                "{} since the allocated sample is already in use! This should never happen!", msg);
+                "{} since the allocated chunk is already in use! This should never happen!", msg);
         }
 
         self.loan_counter.fetch_add(1, Ordering::Relaxed);
         Ok(ChunkMut::new(
             &self.message_type_details,
             shm_pointer,
-            sample_size,
+            chunk_size,
         ))
     }
 
@@ -610,7 +639,7 @@ impl<Service: service::Service> Sender<Service> {
         segment_state.reference_count(offset.offset())
     }
 
-    pub(crate) fn borrow_sample(&self, offset: PointerOffset) -> (u64, usize) {
+    pub(crate) fn borrow_chunk(&self, offset: PointerOffset) -> (u64, usize) {
         let segment_id = offset.segment_id();
         let segment_state = &self.segment_states[segment_id.value() as usize];
         let mut payload_size = segment_state.payload_size();
@@ -618,10 +647,10 @@ impl<Service: service::Service> Sender<Service> {
             payload_size = self.data_segment.bucket_size(segment_id);
             segment_state.set_payload_size(payload_size);
         }
-        (segment_state.borrow_sample(offset.offset()), payload_size)
+        (segment_state.borrow_chunk(offset.offset()), payload_size)
     }
 
-    pub(crate) fn retrieve_returned_samples(&self) {
+    pub(crate) fn retrieve_returned_chunks(&self) {
         for i in 0..self.len() {
             if let Some(connection) = self.get(i) {
                 // RR R2：按该连接真实建立的 channel 数回收，不用 Sender 全局上界。
@@ -630,11 +659,11 @@ impl<Service: service::Service> Sender<Service> {
                     loop {
                         match connection.sender.reclaim(id) {
                             Ok(Some(ptr_dist)) => {
-                                self.release_sample(ptr_dist);
+                                self.release_chunk(ptr_dist);
                             }
                             Ok(None) => break,
                             Err(e) => {
-                                warn!(from self, "Unable to reclaim samples from connection {:?} due to {:?}. This may lead to a situation where no more samples will be delivered to this connection.", connection, e)
+                                warn!(from self, "Unable to reclaim chunks from connection {:?} due to {:?}. This may lead to a situation where no more chunks will be delivered to this connection.", connection, e)
                             }
                         }
                     }
@@ -643,10 +672,12 @@ impl<Service: service::Service> Sender<Service> {
         }
     }
 
-    pub(crate) fn release_sample(&self, offset: PointerOffset) {
-        if self.segment_states[offset.segment_id().value() as usize].release_sample(offset.offset())
-            == 1
-        {
+    pub(crate) fn untrack_chunk(&self, offset: PointerOffset) -> u64 {
+        self.segment_states[offset.segment_id().value() as usize].release_chunk(offset.offset())
+    }
+
+    pub(crate) fn release_chunk(&self, offset: PointerOffset) {
+        if self.untrack_chunk(offset) == 1 {
             unsafe {
                 self.data_segment.deallocate_bucket(offset);
             }
@@ -656,11 +687,11 @@ impl<Service: service::Service> Sender<Service> {
     fn remove_connection(&self, i: usize) {
         if let Some(connection) = self.get(i) {
             // # SAFETY: the receiver no longer exist, therefore we can
-            //           reacquire all delivered samples
+            //           reacquire all delivered chunks
             unsafe {
                 connection
                     .sender
-                    .acquire_used_offsets(|offset| self.release_sample(offset))
+                    .acquire_used_offsets(|offset| self.release_chunk(offset))
             };
 
             *self.get_mut(i) = None;
@@ -671,7 +702,7 @@ impl<Service: service::Service> Sender<Service> {
         self.tagger.next_cycle();
     }
 
-    pub(crate) fn update_connection<E: Fn(&Connection<Service>)>(
+    pub(crate) fn update_connection<E: Fn(&Connection<Service, Resource>)>(
         &self,
         index: usize,
         receiver_details: ReceiverDetails,
@@ -730,10 +761,10 @@ impl<Service: service::Service> Sender<Service> {
 
     pub(crate) fn finish_update_connection_cycle(&self) {
         for n in 0..self.len() {
-            if let Some(connection) = self.get(n) {
-                if !connection.was_tagged_by(&self.tagger) {
-                    self.remove_connection(n);
-                }
+            if let Some(connection) = self.get(n)
+                && !connection.was_tagged_by(&self.tagger)
+            {
+                self.remove_connection(n);
             }
         }
     }
@@ -742,8 +773,8 @@ impl<Service: service::Service> Sender<Service> {
         self.message_type_details.payload.size
     }
 
-    pub(crate) fn sample_layout(&self, number_of_elements: usize) -> Layout {
-        self.message_type_details.sample_layout(number_of_elements)
+    pub(crate) fn chunk_layout(&self, number_of_elements: usize) -> Layout {
+        self.message_type_details.chunk_layout(number_of_elements)
     }
 
     pub(crate) fn payload_type_variant(&self) -> TypeVariant {

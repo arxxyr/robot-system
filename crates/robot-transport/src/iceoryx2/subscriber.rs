@@ -14,6 +14,7 @@
 use core::marker::PhantomData;
 
 use iceoryx2::port::subscriber::Subscriber as IxSubscriber;
+use iceoryx2::prelude::PayloadHeader;
 use iceoryx2::sample::Sample as IxSample;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_msg::markers::BodyMarker;

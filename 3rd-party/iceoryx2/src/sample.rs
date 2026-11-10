@@ -30,36 +30,44 @@
 //! # }
 //! ```
 
+use core::marker::PhantomData;
 use core::{fmt::Debug, ops::Deref};
 
+use flatbuffers::InvalidFlatbuffer;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
+use iceoryx2_bb_flatbuffers::FlatbufferError;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
 use iceoryx2_cal::zero_copy_connection::ChannelId;
 
 use crate::identifiers::UniquePublisherId;
+use crate::payload::number_of_elements;
+use crate::port::details::chunk::Chunk;
 use crate::port::details::chunk_details::ChunkDetails;
 use crate::port::subscriber::SubscriberSharedState;
-use crate::raw_sample::RawSample;
 use crate::service::header::publish_subscribe::Header;
+use crate::service::marker::Flatbuffer;
+use crate::unique_id_generator::UniqueId;
 
 /// It stores the payload and is acquired by the [`Subscriber`](crate::port::subscriber::Subscriber) whenever
 /// it receives new data from a [`Publisher`](crate::port::publisher::Publisher) via
 /// [`Subscriber::receive()`](crate::port::subscriber::Subscriber::receive()).
 pub struct Sample<
     Service: crate::service::Service,
-    Payload: Debug + ?Sized + ZeroCopySend,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: ZeroCopySend,
 > {
-    pub(crate) ptr: RawSample<Header, UserHeader, Payload>,
+    pub(crate) chunk: Chunk,
     pub(crate) subscriber_shared_state:
         Service::ArcThreadSafetyPolicy<SubscriberSharedState<Service>>,
     pub(crate) details: ChunkDetails,
+    pub(crate) _payload: PhantomData<Payload>,
+    pub(crate) _user_header: PhantomData<UserHeader>,
 }
 
 unsafe impl<
     Service: crate::service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: ZeroCopySend,
 > Send for Sample<Service, Payload, UserHeader>
 where
@@ -69,18 +77,18 @@ where
 
 impl<
     Service: crate::service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: ZeroCopySend,
 > Debug for Sample<Service, Payload, UserHeader>
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "Sample<{}, {}, {}> {{ ptr: {:?}, details: {:?} }}",
+            "Sample<{}, {}, {}> {{ chunk: {:?}, details: {:?} }}",
             core::any::type_name::<Payload>(),
             core::any::type_name::<UserHeader>(),
             core::any::type_name::<Service>(),
-            self.ptr,
+            self.chunk,
             self.details,
         )
     }
@@ -88,19 +96,37 @@ impl<
 
 impl<
     Service: crate::service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ZeroCopySend,
     UserHeader: ZeroCopySend,
 > Deref for Sample<Service, Payload, UserHeader>
 {
     type Target = Payload;
     fn deref(&self) -> &Self::Target {
-        self.ptr.as_payload_ref()
+        unsafe { &*self.chunk.payload_ptr().cast() }
     }
 }
 
 impl<
     Service: crate::service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ZeroCopySend,
+    UserHeader: ZeroCopySend,
+> Deref for Sample<Service, [Payload], UserHeader>
+{
+    type Target = [Payload];
+    fn deref(&self) -> &Self::Target {
+        let payload_size = self.subscriber_shared_state.lock().receiver.payload_size();
+        unsafe {
+            &*core::ptr::slice_from_raw_parts(
+                self.chunk.payload_ptr().cast(),
+                number_of_elements::<Payload, _>(self.header(), payload_size),
+            )
+        }
+    }
+}
+
+impl<
+    Service: crate::service::Service,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: ZeroCopySend,
 > Drop for Sample<Service, Payload, UserHeader>
 {
@@ -112,29 +138,74 @@ impl<
     }
 }
 
+impl<Service: crate::service::Service, Payload: Debug, UserHeader: ZeroCopySend>
+    Sample<Service, Flatbuffer<Payload>, UserHeader>
+{
+    /// Returns the serialized flatbuffer data as bytes.
+    pub fn payload_bytes(&self) -> &[u8] {
+        let payload_offset = self.header().payload_offset() as usize;
+        let payload_ptr = self.chunk.payload_ptr();
+        let payload_len = self.header().number_of_elements as usize;
+
+        unsafe {
+            core::slice::from_raw_parts(
+                payload_ptr.add(payload_offset),
+                payload_len - payload_offset,
+            )
+        }
+    }
+
+    /// Returns the root of the flatbuffer.
+    pub fn payload_root<'a>(&'a self) -> Result<Payload::Inner, FlatbufferError<InvalidFlatbuffer>>
+    where
+        Payload: flatbuffers::Follow<'a> + flatbuffers::Verifiable,
+    {
+        Ok(flatbuffers::root::<Payload>(self.payload_bytes())?)
+    }
+}
+
 impl<
     Service: crate::service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ZeroCopySend,
     UserHeader: ZeroCopySend,
 > Sample<Service, Payload, UserHeader>
 {
     /// Returns a reference to the payload of the [`Sample`]
     pub fn payload(&self) -> &Payload {
-        self.ptr.as_payload_ref()
+        self.deref()
     }
+}
 
+impl<
+    Service: crate::service::Service,
+    Payload: IceoryxSend + Debug + ZeroCopySend,
+    UserHeader: ZeroCopySend,
+> Sample<Service, [Payload], UserHeader>
+{
+    /// Returns a reference to the payload of the [`Sample`]
+    pub fn payload(&self) -> &[Payload] {
+        self.deref()
+    }
+}
+
+impl<
+    Service: crate::service::Service,
+    Payload: IceoryxSend + Debug + ?Sized,
+    UserHeader: ZeroCopySend,
+> Sample<Service, Payload, UserHeader>
+{
     /// Returns a reference to the user_header of the [`Sample`]
     pub fn user_header(&self) -> &UserHeader {
-        self.ptr.as_user_header_ref()
+        unsafe { &*self.chunk.user_header_ptr().cast() }
     }
 
     /// Returns a reference to the [`Header`] of the [`Sample`].
     pub fn header(&self) -> &Header {
-        self.ptr.as_header_ref()
+        unsafe { &*self.chunk.header_ptr().cast() }
     }
 
     /// Returns the [`UniquePublisherId`] of the [`Publisher`](crate::port::publisher::Publisher)
     pub fn origin(&self) -> UniquePublisherId {
-        UniquePublisherId(UniqueSystemId::from(self.details.origin))
+        UniquePublisherId(unsafe { UniqueId::from_raw_id(self.details.origin) })
     }
 }

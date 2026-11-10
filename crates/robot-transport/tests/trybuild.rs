@@ -38,6 +38,15 @@ fn compile_failures() {
             stdout.lines().any(|line| line == DONE),
             "编译失败检查未全部完成：{stdout}\n{stderr}"
         );
+        // mock 子工作区不使用 Rerun；只接受本仓库固定补丁的这一条未使用警告。
+        let re_protos_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../3rd-party/re_protos")
+            .canonicalize()
+            .expect("无法定位仓库内的 re_protos 补丁");
+        let unused_re_protos_patch = format!(
+            "patch `re_protos v0.42.0 ({})` was not used in the crate graph",
+            re_protos_path.display()
+        );
         for line in stdout.lines().chain(stderr.lines()) {
             assert!(
                 !line.starts_with("warning["),
@@ -51,7 +60,8 @@ fn compile_failures() {
                     .is_some_and(|count| count.parse::<usize>().is_ok());
                 assert!(
                     warning.starts_with("unused workspace dependency `")
-                        || generated_manifest_summary,
+                        || generated_manifest_summary
+                        || warning == unused_re_protos_patch,
                     "trybuild 出现非临时清单警告：{line}\n{stdout}\n{stderr}"
                 );
             }

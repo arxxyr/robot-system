@@ -46,8 +46,8 @@ use crate::{
     node::NodeListFailure,
     prelude::AttributeSet,
     service::{
-        self, NoResource, ServiceState, SharedServiceState, dynamic_config,
-        port_factory::blocking_cleanup_dead_nodes_in_service, service_hash::ServiceHash,
+        self, ServiceState, SharedServiceState, dynamic_config,
+        resource::request_response::RequestResponseResources, service_hash::ServiceHash,
         service_name::ServiceName, static_config,
     },
 };
@@ -55,25 +55,24 @@ use alloc::sync::Arc;
 use core::ptr::NonNull;
 use core::{fmt::Debug, marker::PhantomData};
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
-use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::dynamic_storage::DynamicStorage;
+use iceoryx2_bb_elementary_traits::{iceoryx_send::IceoryxSend, testing::abandonable::Abandonable};
+use iceoryx2_cal::{dynamic_storage::DynamicStorage, static_storage::StaticStorage};
 
 /// The factory for
 /// [`MessagingPattern::RequestResponse`](crate::service::messaging_pattern::MessagingPattern::RequestResponse).
-/// It can acquire dynamic and static service informations and create
+/// It can acquire dynamic and static service information and create
 /// [`crate::port::client::Client`]
 /// or [`crate::port::server::Server`] ports.
 #[derive(Debug)]
 pub struct PortFactory<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
-    pub(crate) service: SharedServiceState<Service, NoResource>,
+    pub(crate) service: SharedServiceState<Service, RequestResponseResources<Service>>,
     _request_payload: PhantomData<RequestPayload>,
     _request_header: PhantomData<RequestHeader>,
     _response_payload: PhantomData<ResponsePayload>,
@@ -82,9 +81,9 @@ pub struct PortFactory<
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Send for PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -92,9 +91,9 @@ unsafe impl<
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Sync for PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -102,24 +101,24 @@ unsafe impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Abandonable
     for PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service)) };
     }
 }
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Clone for PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -136,16 +135,16 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > crate::service::port_factory::PortFactory
     for PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
     type Service = Service;
     type StaticConfig = static_config::request_response::StaticConfig;
-    type DynamicConfig = dynamic_config::request_response::DynamicConfig;
+    type DynamicConfig = dynamic_config::request_response::DynamicConfig<Service::Bag>;
 
     fn name(&self) -> &ServiceName {
         self.service.static_config().name()
@@ -185,15 +184,14 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > PortFactory<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
-    pub(crate) fn new(service: ServiceState<Service, NoResource>) -> Self {
-        let shared_node = service.shared_node.clone();
-        let new_self = Self {
+    pub(crate) fn new(service: ServiceState<Service, RequestResponseResources<Service>>) -> Self {
+        Self {
             service: SharedServiceState {
                 state: Arc::new(service),
             },
@@ -201,21 +199,7 @@ impl<
             _request_header: PhantomData,
             _response_payload: PhantomData,
             _response_header: PhantomData,
-        };
-
-        if shared_node
-            .config()
-            .global
-            .service
-            .cleanup_dead_nodes_on_open
-        {
-            blocking_cleanup_dead_nodes_in_service(
-                &new_self,
-                shared_node.config().global.creation_timeout,
-            );
         }
-
-        new_self
     }
 
     /// Returns a [`PortFactoryClient`] to create a new
@@ -284,5 +268,25 @@ impl<
         ResponseHeader,
     > {
         PortFactoryServer::new(self)
+    }
+
+    /// Returns the [`StaticStorageView`](iceoryx2_cal::static_storage::StaticStorageView) that contains the request's type definition. If the request type has no definition file stored, this function returns [`None`].
+    pub fn request_type_definition(
+        &self,
+    ) -> Option<&<Service::StaticStorage as StaticStorage>::View> {
+        self.service
+            .additional_resource()
+            .request_type_definition()
+            .map(|v| v.view())
+    }
+
+    /// Returns the [`StaticStorageView`](iceoryx2_cal::static_storage::StaticStorageView) that contains the response's type definition. If the response type has no definition file stored, this function returns [`None`].
+    pub fn response_type_definition(
+        &self,
+    ) -> Option<&<Service::StaticStorage as StaticStorage>::View> {
+        self.service
+            .additional_resource()
+            .response_type_definition()
+            .map(|v| v.view())
     }
 }

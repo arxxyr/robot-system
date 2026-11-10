@@ -177,29 +177,10 @@ tracing         = { workspace = true }
 # 模拟最严格的"无 signal handler 机会"故障模型（systemd OOM kill 同款）。
 libc            = { workspace = true }
 
-# v0.3 A2-3 freeze_systemd_smoke optional dep：
-# - 复用 `robot_s0::freeze_control::{TestFreezeCommand, WorkerKind}` wire
-#   struct，**不**复制（reviewer 拍板硬要求："不要复制一份 wire struct"）。
-# - `default-features = false` + 显式 `mock-only` + `test-freeze-hook`：
-#   smoke 不需要 feetech adapter（**不**依赖 Feetech 真硬件，跟模板一致）；
-#   test-freeze-hook 启用 freeze_control module + freeze_until_ns 字段。
-# - `optional = true`：默认构建 / 生产构建不 link robot-s0；只在
-#   `freeze-systemd-smoke` feature 显式开启时才编译。
-# - **不**走 workspace 继承（`workspace = true`）：独立 path 保留本测试入口的
-#   `default-features = false` 边界。旧 workspace 默认 feature 声明不能由
-#   继承方关闭，因此这里一直独立声明；post-E 只删除无人继承的顶层重复条目。
-robot-s0 = { path = "../robot-s0", optional = true, default-features = false, features = [
-    "mock-only",
-] }
-
-# v0.5 候选 E 段(8) sd_watchdog_smoke optional dep（Spec P.2.7 feature 传播
-# 第 3 份）：复用 `robot_s1::freeze_control::{TestFreezeCommandV2, WorkerKind}`
-# wire struct，**不**复制；path + `default-features = false` 沿上面 robot-s0
-# 先例（workspace 继承不允许 override default-features）；`test-freeze-hook`
-# 启用 cfg-gated freeze_control 模块 pub 导出。默认 / 生产构建不 link。
-robot-s1 = { path = "../robot-s1", optional = true, default-features = false, features = [
-    "test-freeze-hook",
-] }
+# 根依赖关闭 S0/S1 默认 features；本包仅在显式 smoke feature 下启用这些依赖。
+# S0 使用 mock；测试 hook 沿下方各 smoke feature 的既有转发开启，不进入生产默认图。
+robot-s0 = { workspace = true, optional = true, features = ["mock-only"] }
+robot-s1 = { workspace = true, optional = true, features = ["test-freeze-hook"] }
 
 # v0.3 A1-3 (3/3-a) clear_estop_e2e optional deps（feature-gated）：
 # - robot-rpc：**不**在依赖声明上全局挂 `client` feature（段(8) round 2 PX-19

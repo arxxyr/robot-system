@@ -19,9 +19,10 @@ pub use crate::communication_channel::*;
 use alloc::format;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
+use iceoryx2_bb_derive_macros::ZeroCopySend;
 
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::relocatable_container::*;
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::spsc::safely_overflowing_index_queue::*;
 use iceoryx2_bb_posix::file::AccessMode;
 use iceoryx2_log::fail;
@@ -178,13 +179,18 @@ impl CommunicationChannelCreator<u64, Channel> for Creator {
             .supplementary_size(SafelyOverflowingIndexQueue::const_memory_size(
                 self.buffer_size,
             ))
-            .initializer(|mgmt, allocator| unsafe { mgmt.index_queue.init(allocator).is_ok() })
-            .create(Management {
-                enable_safe_overflow: self.enable_safe_overflow,
-                index_queue: unsafe {
-                    RelocatableSafelyOverflowingIndexQueue::new_uninit(self.buffer_size)
-                },
-            }) {
+            .initializer(|mgmt, allocator| unsafe {
+                mgmt.write(Management {
+                    index_queue: RelocatableSafelyOverflowingIndexQueue::new_uninit(
+                        self.buffer_size,
+                    ),
+                    enable_safe_overflow: self.enable_safe_overflow,
+                });
+
+                mgmt.assume_init_mut().index_queue.init(allocator).is_ok()
+            })
+            .create()
+        {
             Ok(s) => s,
             Err(DynamicStorageCreateError::AlreadyExists) => {
                 fail!(from self, with CommunicationChannelCreateError::AlreadyExists,
@@ -254,7 +260,8 @@ impl CommunicationChannelConnector<u64, Channel> for Connector {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, ZeroCopySend)]
+#[repr(C)]
 pub(crate) struct Management {
     index_queue: RelocatableSafelyOverflowingIndexQueue,
     enable_safe_overflow: bool,
@@ -268,7 +275,7 @@ pub struct Receiver {
 impl Abandonable for Receiver {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedMemory::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_memory)) }
+        unsafe { SharedMemory::abandon_in_place(NonNull::from_mut(&mut this.shared_memory)) }
     }
 }
 
@@ -308,7 +315,7 @@ pub struct Sender {
 impl Abandonable for Sender {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedMemory::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_memory)) }
+        unsafe { SharedMemory::abandon_in_place(NonNull::from_mut(&mut this.shared_memory)) }
     }
 }
 

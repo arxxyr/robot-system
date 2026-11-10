@@ -37,15 +37,15 @@ use super::request_response::PortFactory;
 use crate::{
     port::{
         BackpressureFn, BackpressureHandler, DegradationAction, DegradationFn, DegradationHandler,
-        server::Server,
+        port_name::PortName, server::Server,
     },
     prelude::BackpressureStrategy,
-    service,
+    service::{self, marker::Flatbuffer},
 };
 use alloc::format;
 use core::fmt::Debug;
-use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::shm_allocator::AllocationStrategy;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
+use iceoryx2_bb_elementary_traits::{iceoryx_send::IceoryxSend, zero_copy_send::ZeroCopySend};
 use iceoryx2_log::{fail, warn};
 use tiny_fn::tiny_fn;
 
@@ -55,6 +55,7 @@ pub(crate) struct LocalServerConfig {
     pub(crate) initial_max_slice_len: usize,
     pub(crate) allocation_strategy: AllocationStrategy,
     pub(crate) max_loaned_responses_per_request: usize,
+    pub(crate) port_name: PortName,
 }
 
 /// Defines a failure that can occur when a [`Server`] is created with
@@ -78,6 +79,8 @@ pub enum ServerCreateError {
     InsufficientMemory,
     /// RR R2：数据段 chunk 数超过底层池分配器可表示的 bucket 数（`UniqueIndexSet` 24 位界）。
     ExceedsMaxSupportedChunks,
+    /// The [`UniqueServerId`](crate::identifiers::UniqueServerId) could not be generated.
+    UnableToGenerateUniqueServerId,
 }
 
 impl core::fmt::Display for ServerCreateError {
@@ -117,9 +120,9 @@ impl<'a> Debug for PreallocatedResponseOverride<'a> {
 pub struct PortFactoryServer<
     'factory,
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     pub(crate) factory: &'factory PortFactory<
@@ -139,9 +142,9 @@ pub struct PortFactoryServer<
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Send
     for PortFactoryServer<
@@ -158,9 +161,9 @@ unsafe impl<
 impl<
     'factory,
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 >
     PortFactoryServer<
@@ -210,6 +213,7 @@ impl<
                 initial_max_slice_len: 1,
                 allocation_strategy: defs.server_allocation_strategy,
                 max_loaned_responses_per_request: defs.server_max_loaned_responses_per_request,
+                port_name: PortName::new_empty(),
             },
             request_degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
             response_degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
@@ -300,6 +304,12 @@ impl<
         self
     }
 
+    /// Sets the [`PortName`] of the  [`Server`].
+    pub fn name(mut self, name: &PortName) -> Self {
+        self.config.port_name = *name;
+        self
+    }
+
     /// Creates a new [`Server`] or returns a [`ServerCreateError`] on failure.
     pub fn create(
         self,
@@ -326,14 +336,18 @@ impl<
             ResponseHeader,
         >,
         crate::strict::StrictCreateError,
-    > {
+    >
+    where
+        RequestPayload: ZeroCopySend,
+        ResponsePayload: ZeroCopySend,
+    {
         crate::strict::StrictServer::new(self)
     }
 }
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend,
     ResponseHeader: Debug + ZeroCopySend,
@@ -352,6 +366,37 @@ impl<
     /// acquires more than max slice len in
     /// [`ActiveRequest::loan_slice()`](crate::active_request::ActiveRequest::loan_slice()) or
     /// [`ActiveRequest::loan_slice_uninit()`](crate::active_request::ActiveRequest::loan_slice_uninit()).
+    pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
+        self.config.allocation_strategy = value;
+        self
+    }
+}
+
+impl<
+    Service: service::Service,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
+    RequestHeader: Debug + ZeroCopySend,
+    ResponsePayload,
+    ResponseHeader: Debug + ZeroCopySend,
+>
+    PortFactoryServer<
+        '_,
+        Service,
+        RequestPayload,
+        RequestHeader,
+        Flatbuffer<ResponsePayload>,
+        ResponseHeader,
+    >
+{
+    /// Sets the maximum initial reserved memory that the underlying allocator reserves
+    /// for the flatbuffer builder.
+    pub fn initial_reserved_memory(mut self, value: usize) -> Self {
+        self.config.initial_max_slice_len = value;
+        self
+    }
+
+    /// Defines the [`AllocationStrategy`] that is used when the underlying flatbuffer builder
+    /// requires more memory and reallocates.
     pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
         self.config.allocation_strategy = value;
         self

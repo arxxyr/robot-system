@@ -73,16 +73,19 @@
 //! # }
 //! ```
 
+use crate::port::details::data_segment_shared_state::DataSegmentSharedState;
+use crate::port::port_lifetime_tag::PortLifetimeTag;
+use crate::port::port_name::PortName;
 use crate::port::update_connections::UpdateConnections;
 use crate::prelude::BackpressureStrategy;
-use crate::service::builder::CustomPayloadMarker;
+use crate::service::SharedServiceState;
 use crate::service::naming_scheme::data_segment_name;
 use crate::service::port_factory::server::LocalServerConfig;
-use crate::service::{NoResource, SharedServiceState};
+use crate::service::resource::request_response::RequestResponseResources;
+use crate::service::static_config::message_type_details::MessageTypeDetails;
 use crate::{
     active_request::ActiveRequest,
     prelude::PortFactory,
-    raw_sample::RawSample,
     service::{
         self,
         dynamic_config::request_response::{ClientDetails, ServerDetails},
@@ -90,6 +93,7 @@ use crate::{
     },
 };
 use alloc::sync::Arc;
+use core::alloc::Layout;
 use core::ptr::NonNull;
 use core::{fmt::Debug, marker::PhantomData};
 use iceoryx2_bb_concurrency::atomic::AtomicUsize;
@@ -97,16 +101,19 @@ use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_container::slotmap::{SlotMap, SlotMapKey};
 use iceoryx2_bb_elementary::{CallbackProgression, cyclic_tagger::CyclicTagger};
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::allocator::{AllocationGrowError, ContentPlacement, Grow};
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
-use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
+use iceoryx2_bb_flatbuffers::AllocationStrategy;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
+use iceoryx2_cal::bag::Bag;
+use iceoryx2_cal::bag::{BagFamily, BagStateFamily};
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
-use iceoryx2_cal::zero_copy_connection::{
-    CHANNEL_STATE_CLOSED, CHANNEL_STATE_OPEN, ChannelId, checked_connection_management_size,
-};
+use iceoryx2_cal::shared_memory::ShmPointer;
+use iceoryx2_cal::shm_allocator::PointerOffset;
+use iceoryx2_cal::zero_copy_connection::checked_connection_management_size;
+use iceoryx2_cal::zero_copy_connection::{CHANNEL_STATE_CLOSED, CHANNEL_STATE_OPEN, ChannelId};
 use iceoryx2_log::{fail, warn};
 
 use super::details::data_segment::{DataSegment, StaticSegmentPlanError};
@@ -130,35 +137,75 @@ use crate::identifiers::UniqueServerId;
 const REQUEST_CHANNEL_ID: ChannelId = ChannelId::new(0);
 pub(crate) const INVALID_CONNECTION_ID: usize = usize::MAX;
 
+#[doc(hidden)]
 #[derive(Debug)]
-pub(crate) struct SharedServerState<Service: service::Service> {
+pub struct SharedServerState<Service: service::Service> {
     pub(crate) config: LocalServerConfig,
-    pub(crate) response_sender: Sender<Service>,
-    server_handle: UnsafeCell<Option<ContainerHandle>>,
-    pub(crate) request_receiver: Receiver<Service>,
-    client_list_state: UnsafeCell<ContainerState<ClientDetails>>,
-    service_state: SharedServiceState<Service, NoResource>,
+    pub(crate) response_sender: Sender<Service, RequestResponseResources<Service>>,
+    server_handle: UnsafeCell<Option<<Service::Bag as BagFamily>::BagHandle>>,
+    pub(crate) request_receiver: Receiver<Service, RequestResponseResources<Service>>,
+    client_list_state: UnsafeCell<<Service::Bag as BagFamily>::BagState<ClientDetails>>,
+    service_state: SharedServiceState<Service, RequestResponseResources<Service>>,
     // IMPORTANT!
     // Fields of a rust struct are dropped in declaration order. Since this tag is our marker that the
     // port exists and might require cleanup after a crash, the tag must be defined as last member of
     // the struct.
     // Otherwise the process might crash during cleanup, has already removed the tag but other resources
     // are still existing. This would make a cleanup from another process impossible.
-    port_tag: Service::StaticStorage,
+    lifetime_tag: PortLifetimeTag<Service>,
+}
+
+impl<Service: service::Service> DataSegmentSharedState for SharedServerState<Service> {
+    fn allocation_strategy(&self) -> AllocationStrategy {
+        self.response_sender.data_segment.allocation_strategy()
+    }
+
+    fn header_len(&self) -> usize {
+        self.response_sender.message_type_details.all_headers_len()
+    }
+
+    fn message_type_details(&self) -> MessageTypeDetails {
+        self.response_sender.message_type_details
+    }
+
+    fn payload_size(&self) -> usize {
+        self.response_sender.payload_size()
+    }
+
+    fn return_loan(&self, offset: PointerOffset) {
+        self.response_sender.return_loaned_chunk(offset);
+    }
+}
+
+impl<Service: service::Service> Grow<ShmPointer> for SharedServerState<Service> {
+    unsafe fn grow(
+        &self,
+        ptr: ShmPointer,
+        old_layout: Layout,
+        new_layout: Layout,
+        content_placement: ContentPlacement,
+    ) -> Result<ShmPointer, AllocationGrowError> {
+        match unsafe {
+            self.response_sender
+                .grow(ptr, old_layout, new_layout, content_placement)
+        } {
+            Ok(ptr) => Ok(ptr),
+            Err(e) => {
+                fail!(from self, with e,
+                        "Failed to grow response from {old_layout:?} to {new_layout:?}. [{e:?}]");
+            }
+        }
+    }
 }
 
 impl<Service: service::Service> Abandonable for SharedServerState<Service> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
 
-        unsafe { Sender::abandon_in_place(NonNull::iox2_from_mut(&mut this.response_sender)) };
-        unsafe { Receiver::abandon_in_place(NonNull::iox2_from_mut(&mut this.request_receiver)) };
-        unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        };
+        unsafe { Sender::abandon_in_place(NonNull::from_mut(&mut this.response_sender)) };
+        unsafe { Receiver::abandon_in_place(NonNull::from_mut(&mut this.request_receiver)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
+        unsafe { Abandonable::abandon_in_place(NonNull::from_mut(&mut this.lifetime_tag)) };
     }
 }
 
@@ -205,7 +252,7 @@ impl<Service: service::Service> SharedServerState<Service> {
                     index,
                     SenderDetails {
                         port_id: details.client_id.value(),
-                        number_of_samples: details.number_of_requests,
+                        number_of_chunks: details.number_of_requests,
                         max_number_of_segments: details.max_number_of_segments,
                         data_segment_type: details.data_segment_type,
                     },
@@ -245,14 +292,15 @@ impl<Service: service::Service> SharedServerState<Service> {
 #[derive(Debug)]
 pub struct Server<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     pub(crate) shared_state: Service::ArcThreadSafetyPolicy<SharedServerState<Service>>,
     pub(crate) max_loaned_responses_per_request: usize,
     pub(crate) enable_fire_and_forget: bool,
+    server_details: &'static ServerDetails,
     _request_payload: PhantomData<RequestPayload>,
     _request_header: PhantomData<RequestHeader>,
     _response_payload: PhantomData<ResponsePayload>,
@@ -261,16 +309,16 @@ pub struct Server<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Abandonable for Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.shared_state,
             ));
         }
@@ -279,9 +327,9 @@ impl<
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Send for Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 where
@@ -291,9 +339,9 @@ where
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Sync for Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 where
@@ -303,9 +351,9 @@ where
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > UpdateConnections
     for Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
@@ -317,9 +365,9 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -334,26 +382,28 @@ impl<
     ) -> Result<Self, ServerCreateError> {
         let msg = "Failed to create Server port";
         let origin = "Server::new()";
-        let server_id = UniqueServerId::new();
         let service = &server_factory.factory.service;
+        let server_id = fail!(from origin,
+            when UniqueServerId::new::<Service>(server_factory.config.port_name, service.shared_node().config()),
+            with ServerCreateError::UnableToGenerateUniqueServerId, "{msg} since the UniqueServerId could not be generated.");
         // !MUST! be the first thing that is created when a new port is instantiated otherwise the
         // port resources might leak if this process is killed in between.
-        let port_tag = match service
-            .shared_node()
-            .create_port_tag(origin, msg, server_id.0.value())
-        {
-            Ok(port_tag) => port_tag,
-            Err(e) => {
-                fail!(from origin, with ServerCreateError::UnableToCreatePortTag,
-                        "{msg} since the port tag, that is required for cleanup, could not be created. [{e:?}]");
-            }
-        };
+        let lifetime_tag = PortLifetimeTag::new(
+            origin,
+            msg,
+            server_id.0.value(),
+            service.shared_node(),
+            ServerCreateError::UnableToCreatePortTag,
+        )?;
 
         let static_config = server_factory.factory.static_config();
         let rr_config = unsafe { service.static_config().messaging_pattern.request_response() };
         // RR R2：全部派生容量受检计算；override 有副作用，只调用一次，其结果统一使用。
         let Some(number_of_requests_per_client) = rr_config
-            .required_amount_of_chunks_per_client_data_segment(static_config.max_loaned_requests)
+            .required_amount_of_chunks_per_client_data_segment(
+                static_config.max_loaned_requests,
+                static_config.max_active_requests_per_client,
+            )
         else {
             fail!(from origin, with ServerCreateError::CapacityOverflow,
                 "{msg} since the required number of request chunks per client overflows.");
@@ -369,7 +419,7 @@ impl<
         let number_of_responses = server_factory
             .preallocated_number_of_responses_override
             .call(worst_case_number_of_responses);
-        let Some(sender_max_borrowed_samples) = server_factory
+        let Some(sender_max_borrowed_chunks) = server_factory
             .config
             .max_loaned_responses_per_request
             .checked_mul(static_config.max_active_requests_per_client)
@@ -402,9 +452,9 @@ impl<
         let segment_name = data_segment_name(server_id.value());
         let max_number_of_segments =
             DataSegment::<Service>::max_number_of_segments(data_segment_type);
-        let Some(sample_layout) = static_config
+        let Some(chunk_layout) = static_config
             .response_message_type_details
-            .checked_sample_layout(server_factory.config.initial_max_slice_len)
+            .checked_chunk_layout(server_factory.config.initial_max_slice_len)
         else {
             fail!(from origin, with ServerCreateError::CapacityOverflow,
                 "{msg} since the response sample layout for {} elements overflows.",
@@ -412,7 +462,7 @@ impl<
         };
         if data_segment_type == DataSegmentType::Static {
             match DataSegment::<Service>::checked_static_segment_plan(
-                sample_layout,
+                chunk_layout,
                 number_of_responses,
             ) {
                 Ok(_) => (),
@@ -460,24 +510,20 @@ impl<
             fail!(from origin, with ServerCreateError::InsufficientMemory,
                 "{msg} since the request connection table could not be allocated.");
         };
-        let to_be_removed_connections = if static_config.enable_fire_and_forget_requests {
-            let Some(table) =
-                try_alloc_empty_table::<SlotMapKey>(number_of_to_be_removed_connections)
-            else {
-                fail!(from origin, with ServerCreateError::InsufficientMemory,
-                    "{msg} since the expired connection buffer could not be allocated.");
-            };
-            Some(UnsafeCell::new(table))
-        } else {
-            None
+        // 0.10 断连清理始终保留借出的请求，仍在创建前以 typed 错误处理分配失败。
+        let Some(table) = try_alloc_empty_table::<SlotMapKey>(number_of_to_be_removed_connections)
+        else {
+            fail!(from origin, with ServerCreateError::InsufficientMemory,
+                "{msg} since the expired connection buffer could not be allocated.");
         };
+        let to_be_removed_connections = UnsafeCell::new(table);
 
         let request_receiver = Receiver {
             connections: receiver_connections,
             receiver_port_id: server_id.value(),
             service_state: service.clone(),
             message_type_details: static_config.request_message_type_details,
-            receiver_max_borrowed_samples: static_config.max_active_requests_per_client,
+            receiver_max_borrowed_chunks: static_config.max_active_requests_per_client,
             enable_safe_overflow: static_config.enable_safe_overflow_for_requests,
             buffer_size: static_config.max_active_requests_per_client,
             tagger: CyclicTagger::new(),
@@ -493,13 +539,13 @@ impl<
         let data_segment = match data_segment_type {
             DataSegmentType::Static => DataSegment::<Service>::create_static_segment(
                 &segment_name,
-                sample_layout,
+                chunk_layout,
                 global_config,
                 number_of_responses,
             ),
             DataSegmentType::Dynamic => DataSegment::<Service>::create_dynamic_segment(
                 &segment_name,
-                sample_layout,
+                chunk_layout,
                 global_config,
                 number_of_responses,
                 server_factory.config.allocation_strategy,
@@ -527,11 +573,10 @@ impl<
             sender_port_id: server_id.value(),
             shared_node: service.shared_node().clone(),
             receiver_max_buffer_size: static_config.max_response_buffer_size,
-            receiver_max_borrowed_samples: static_config
-                .max_borrowed_responses_per_pending_response,
-            sender_max_borrowed_samples,
+            receiver_max_borrowed_chunks: static_config.max_borrowed_responses_per_pending_response,
+            sender_max_borrowed_chunks,
             enable_safe_overflow: static_config.enable_safe_overflow_for_responses,
-            number_of_samples: number_of_responses,
+            number_of_chunks: number_of_responses,
             max_number_of_segments,
             degradation_handler: server_factory.response_degradation_handler,
             backpressure_handler: server_factory.backpressure_handler,
@@ -545,7 +590,7 @@ impl<
         };
 
         let shared_state = Service::ArcThreadSafetyPolicy::new(SharedServerState {
-            port_tag,
+            lifetime_tag,
             config: server_factory.config,
             request_receiver,
             client_list_state: UnsafeCell::new(unsafe { client_list.get_state() }),
@@ -562,7 +607,40 @@ impl<
             }
         };
 
-        let new_self = Self {
+        if let Err(e) = shared_state.lock().force_update_connections() {
+            warn!(from origin, "The new server is unable to connect to every client, caused by {:?}.", e);
+        }
+
+        core::sync::atomic::compiler_fence(Ordering::SeqCst);
+
+        // !MUST! be the last task otherwise a server is added to the dynamic config without the
+        // creation of all required resources
+        let (details, handle) = match service
+            .dynamic_storage()
+            .get()
+            .request_response()
+            .register_server_id(ServerDetails {
+                server_id,
+                node_id: *service.shared_node().id(),
+                request_buffer_size: static_config.max_active_requests_per_client,
+                number_of_responses,
+                max_slice_len: server_factory.config.initial_max_slice_len,
+                data_segment_type,
+                max_number_of_segments,
+                server_name: server_factory.config.port_name,
+            }) {
+            Some(v) => v,
+            None => {
+                fail!(from origin,
+                    with ServerCreateError::ExceedsMaxSupportedServers,
+                    "{} since it would exceed the maximum supported amount of servers of {}.",
+                    msg, service.static_config().request_response().max_servers());
+            }
+        };
+
+        unsafe { *shared_state.lock().server_handle.get() = Some(handle) };
+
+        Ok(Self {
             max_loaned_responses_per_request: server_factory
                 .config
                 .max_loaned_responses_per_request,
@@ -571,52 +649,22 @@ impl<
                 .request_response()
                 .enable_fire_and_forget_requests,
             shared_state,
+            server_details: unsafe { &*details },
             _request_payload: PhantomData,
             _request_header: PhantomData,
             _response_payload: PhantomData,
             _response_header: PhantomData,
-        };
-
-        if let Err(e) = new_self.shared_state.lock().force_update_connections() {
-            warn!(from new_self, "The new server is unable to connect to every client, caused by {:?}.", e);
-        }
-
-        core::sync::atomic::compiler_fence(Ordering::SeqCst);
-
-        // !MUST! be the last task otherwise a server is added to the dynamic config without the
-        // creation of all required resources
-        unsafe {
-            *new_self.shared_state.lock().server_handle.get() = match service
-                .dynamic_storage()
-                .get()
-                .request_response()
-                .add_server_id(ServerDetails {
-                    server_id,
-                    node_id: *service.shared_node().id(),
-                    request_buffer_size: static_config.max_active_requests_per_client,
-                    number_of_responses,
-                    max_slice_len: server_factory.config.initial_max_slice_len,
-                    data_segment_type,
-                    max_number_of_segments,
-                }) {
-                Some(v) => Some(v),
-                None => {
-                    fail!(from origin,
-                    with ServerCreateError::ExceedsMaxSupportedServers,
-                    "{} since it would exceed the maximum supported amount of servers of {}.",
-                    msg, service.static_config().request_response().max_servers());
-                }
-            }
-        };
-
-        Ok(new_self)
+        })
     }
 
     /// Returns the [`UniqueServerId`] of the [`Server`]
     pub fn id(&self) -> UniqueServerId {
-        UniqueServerId(UniqueSystemId::from(
-            self.shared_state.lock().request_receiver.receiver_port_id,
-        ))
+        self.server_details.server_id
+    }
+
+    /// Returns the [`PortName`] of the [`Server`]
+    pub fn name(&self) -> &PortName {
+        &self.server_details.server_name
     }
 
     /// Returns true if the [`Server`] has [`RequestMut`](crate::request_mut::RequestMut)s in its buffer.
@@ -625,13 +673,11 @@ impl<
         fail!(from self, when shared_state.update_connections(),
                 "Some requests are not being received since not all connections to clients could be established.");
         if self.enable_fire_and_forget {
-            Ok(shared_state
-                .request_receiver
-                .has_samples(REQUEST_CHANNEL_ID))
+            Ok(shared_state.request_receiver.has_chunks(REQUEST_CHANNEL_ID))
         } else {
             Ok(shared_state
                 .request_receiver
-                .has_samples_in_active_connection(REQUEST_CHANNEL_ID))
+                .has_chunks_in_active_connection(REQUEST_CHANNEL_ID))
         }
     }
 
@@ -679,9 +725,9 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend,
+    RequestPayload: Debug + IceoryxSend,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -705,14 +751,9 @@ impl<
             connection_id,
             client_port_id,
             shared_state: self.shared_state.clone(),
-            ptr: unsafe {
-                RawSample::new_unchecked(
-                    chunk.header.cast(),
-                    chunk.user_header.cast(),
-                    chunk.payload.cast::<RequestPayload>(),
-                )
-            },
-
+            chunk,
+            _request_payload: PhantomData,
+            _request_header: PhantomData,
             _response_payload: PhantomData,
             _response_header: PhantomData,
         }
@@ -797,7 +838,7 @@ impl<
     Service: service::Service,
     RequestPayload: Debug + ZeroCopySend,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Server<Service, [RequestPayload], RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -806,7 +847,6 @@ impl<
         details: ChunkDetails,
         chunk: Chunk,
         connection_id: usize,
-        number_of_elements: usize,
     ) -> ActiveRequest<Service, [RequestPayload], RequestHeader, ResponsePayload, ResponseHeader>
     {
         let header =
@@ -822,16 +862,9 @@ impl<
             connection_id,
             client_port_id,
             shared_state: self.shared_state.clone(),
-            ptr: unsafe {
-                RawSample::new_slice_unchecked(
-                    chunk.header.cast(),
-                    chunk.user_header.cast(),
-                    core::ptr::slice_from_raw_parts(
-                        chunk.payload.cast::<RequestPayload>(),
-                        number_of_elements as _,
-                    ),
-                )
-            },
+            chunk,
+            _request_payload: PhantomData,
+            _request_header: PhantomData,
             _response_payload: PhantomData,
             _response_header: PhantomData,
         }
@@ -896,12 +929,8 @@ impl<
                         .response_sender
                         .get_connection_id_of(details.origin)
                     {
-                        let active_request = self.create_active_request(
-                            details,
-                            chunk,
-                            connection_id,
-                            header.number_of_elements() as _,
-                        );
+                        let active_request =
+                            self.create_active_request(details, chunk, connection_id);
 
                         if !self.enable_fire_and_forget && !active_request.is_connected() {
                             continue;
@@ -918,7 +947,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend,
     ResponseHeader: Debug + ZeroCopySend,
@@ -927,67 +956,5 @@ impl<
     /// Returns the maximum initial slice length configured for this [`Server`].
     pub fn initial_max_slice_len(&self) -> usize {
         self.shared_state.lock().config.initial_max_slice_len
-    }
-}
-
-impl<
-    Service: service::Service,
-    RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
-    ResponseHeader: Debug + ZeroCopySend,
-> Server<Service, [CustomPayloadMarker], RequestHeader, ResponsePayload, ResponseHeader>
-{
-    #[doc(hidden)]
-    #[allow(clippy::type_complexity)] // type alias would require 5 generic parameters which hardly reduces complexity
-    pub unsafe fn receive_custom_payload(
-        &self,
-    ) -> Result<
-        Option<
-            ActiveRequest<
-                Service,
-                [CustomPayloadMarker],
-                RequestHeader,
-                ResponsePayload,
-                ResponseHeader,
-            >,
-        >,
-        ReceiveError,
-    > {
-        let shared_state = self.shared_state.lock();
-        loop {
-            match self.receive_impl()? {
-                Some((details, chunk)) => {
-                    let header = unsafe {
-                        &*(chunk.header as *const service::header::request_response::RequestHeader)
-                    };
-                    let number_of_elements = (*header).number_of_elements();
-                    let number_of_bytes =
-                        number_of_elements as usize * shared_state.request_receiver.payload_size();
-
-                    if !self.origin_matches_header(&details, header) {
-                        continue;
-                    }
-
-                    if let Some(connection_id) = shared_state
-                        .response_sender
-                        .get_connection_id_of(details.origin)
-                    {
-                        let active_request = self.create_active_request(
-                            details,
-                            chunk,
-                            connection_id,
-                            number_of_bytes,
-                        );
-
-                        if !self.enable_fire_and_forget && !active_request.is_connected() {
-                            continue;
-                        }
-
-                        return Ok(Some(active_request));
-                    }
-                }
-                None => return Ok(None),
-            }
-        }
     }
 }

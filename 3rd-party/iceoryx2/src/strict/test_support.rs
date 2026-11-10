@@ -135,10 +135,10 @@ impl RequestQueueFixture {
                 "须原 L4/C8/M2/单 server/FF/无请求 overflow",
             )?;
             check(
-                sender.number_of_samples == 10
+                sender.number_of_chunks == 10
                     && shared.strict_slots().len() == 10
                     && sender.receiver_max_buffer_size == 4
-                    && sender.sender_max_borrowed_samples == 2,
+                    && sender.sender_max_borrowed_chunks == 2,
                 "须原 N10/queue4/loan2",
             )?;
             check(
@@ -154,7 +154,7 @@ impl RequestQueueFixture {
             // 所有样本的原引用为零，排除已有待收或被借出的辅助件。
             for state in &sender.segment_states {
                 if state.payload_size() != 0 {
-                    for index in 0..sender.number_of_samples {
+                    for index in 0..sender.number_of_chunks {
                         check(
                             state.reference_count(index * state.payload_size()) == 0,
                             "seed 须原样本池全空闲",
@@ -351,7 +351,7 @@ impl RequestQueueFixture {
                 .count(),
             pool_free: unsafe { &*shared.available_channel_ids.get() }.len(),
             channels: shared.strict_slots().len(),
-            samples: shared.request_sender.number_of_samples,
+            samples: shared.request_sender.number_of_chunks,
             queue_capacity: sender.buffer_size(),
             auxiliary_references: shared
                 .request_sender

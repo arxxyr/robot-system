@@ -32,99 +32,115 @@ pub mod blackboard;
 
 use alloc::format;
 
-use iceoryx2_bb_derive_macros::ZeroCopySend;
+use iceoryx2_bb_elementary::package_version::PackageVersion;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::hash::Hash;
 use iceoryx2_log::fatal_panic;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config, identifiers::UniqueServiceId, service::service_hash::ServiceHash};
+use crate::{
+    config,
+    identifiers::UniqueServiceId,
+    service::{self, service_hash::ServiceHash},
+    unique_id_generator::UniqueId,
+};
 
 use self::messaging_pattern::MessagingPattern;
 
 use super::{attribute::AttributeSet, service_name::ServiceName};
 
 /// Defines a common set of static service configuration details every service shares.
-#[derive(Debug, Eq, PartialEq, Clone, ZeroCopySend, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 #[repr(C)]
 pub struct StaticConfig {
+    iceoryx2_version: PackageVersion,
     service_hash: ServiceHash,
     service_name: ServiceName,
-    unique_service_id: UniqueServiceId,
+    pub(crate) unique_service_id: UniqueServiceId,
     pub(crate) attributes: AttributeSet,
     pub(crate) messaging_pattern: MessagingPattern,
 }
 
+unsafe impl ZeroCopySend for StaticConfig {}
+
 impl StaticConfig {
-    pub(crate) fn new_request_response<Hasher: Hash>(
+    pub(crate) fn new_request_response<ServiceType: service::Service>(
         service_name: &ServiceName,
         config: &config::Config,
     ) -> Self {
         let messaging_pattern =
             MessagingPattern::RequestResponse(request_response::StaticConfig::new(config));
         Self {
-            service_hash: ServiceHash::new::<Hasher>(
+            iceoryx2_version: PackageVersion::get(),
+            service_hash: ServiceHash::new::<ServiceType::ServiceNameHasher>(
                 service_name,
                 crate::service::messaging_pattern::MessagingPattern::RequestResponse,
             ),
-            unique_service_id: UniqueServiceId::new(),
+            unique_service_id: UniqueServiceId(unsafe { UniqueId::from_raw_id(0) }), // set during service creation
             service_name: *service_name,
             messaging_pattern,
             attributes: AttributeSet::new(),
         }
     }
 
-    pub(crate) fn new_event<Hasher: Hash>(
+    pub(crate) fn new_event<ServiceType: service::Service>(
         service_name: &ServiceName,
         config: &config::Config,
     ) -> Self {
         let messaging_pattern = MessagingPattern::Event(event::StaticConfig::new(config));
         Self {
-            service_hash: ServiceHash::new::<Hasher>(
+            iceoryx2_version: PackageVersion::get(),
+            service_hash: ServiceHash::new::<ServiceType::ServiceNameHasher>(
                 service_name,
                 crate::service::messaging_pattern::MessagingPattern::Event,
             ),
-            unique_service_id: UniqueServiceId::new(),
+            unique_service_id: UniqueServiceId(unsafe { UniqueId::from_raw_id(0) }), // set during service creation
             service_name: *service_name,
             messaging_pattern,
             attributes: AttributeSet::new(),
         }
     }
 
-    pub(crate) fn new_publish_subscribe<Hasher: Hash>(
+    pub(crate) fn new_publish_subscribe<ServiceType: service::Service>(
         service_name: &ServiceName,
         config: &config::Config,
     ) -> Self {
         let messaging_pattern =
             MessagingPattern::PublishSubscribe(publish_subscribe::StaticConfig::new(config));
         Self {
-            service_hash: ServiceHash::new::<Hasher>(
+            iceoryx2_version: PackageVersion::get(),
+            service_hash: ServiceHash::new::<ServiceType::ServiceNameHasher>(
                 service_name,
                 crate::service::messaging_pattern::MessagingPattern::PublishSubscribe,
             ),
-            unique_service_id: UniqueServiceId::new(),
+            unique_service_id: UniqueServiceId(unsafe { UniqueId::from_raw_id(0) }), // set during service creation
             service_name: *service_name,
             messaging_pattern,
             attributes: AttributeSet::new(),
         }
     }
 
-    pub(crate) fn new_blackboard<Hasher: Hash>(
+    pub(crate) fn new_blackboard<ServiceType: service::Service>(
         service_name: &ServiceName,
         config: &config::Config,
     ) -> Self {
         let messaging_pattern = MessagingPattern::Blackboard(blackboard::StaticConfig::new(config));
         Self {
-            service_hash: ServiceHash::new::<Hasher>(
+            iceoryx2_version: PackageVersion::get(),
+            service_hash: ServiceHash::new::<ServiceType::ServiceNameHasher>(
                 service_name,
                 crate::service::messaging_pattern::MessagingPattern::Blackboard,
             ),
-            unique_service_id: UniqueServiceId::new(),
+            unique_service_id: UniqueServiceId(unsafe { UniqueId::from_raw_id(0) }), // set during service creation
             service_name: *service_name,
             messaging_pattern,
             attributes: AttributeSet::new(),
         }
+    }
+
+    /// Returns the iceoryx2 version of the [`Service`](crate::service::Service)
+    pub fn iceoryx2_version(&self) -> PackageVersion {
+        self.iceoryx2_version
     }
 
     /// Returns the attributes of the [`crate::service::Service`]

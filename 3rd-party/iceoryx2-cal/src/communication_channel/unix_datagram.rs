@@ -20,12 +20,12 @@ use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_posix::metadata::MetadataFromPathError;
 use iceoryx2_bb_posix::{
     directory::*, file::*, system_configuration::SystemInfo, unix_datagram_socket::*,
 };
 use iceoryx2_bb_system_types::path::Path;
-use iceoryx2_log::{fail, fatal_panic};
+use iceoryx2_log::{fail, fatal_panic, trace};
 
 pub use crate::communication_channel::*;
 use crate::static_storage::file::{
@@ -34,10 +34,18 @@ use crate::static_storage::file::{
 };
 
 #[cfg(not(feature = "dev_permissions"))]
-const SOCKET_PERMISSIONS: Permission = Permission::OWNER_ALL;
+const SOCKET_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE;
+#[cfg(not(feature = "dev_permissions"))]
+const DIR_PERMISSIONS: Permission = Permission::OWNER_ALL
+    .const_bitor(Permission::GROUP_READ)
+    .const_bitor(Permission::GROUP_EXEC);
 
 #[cfg(feature = "dev_permissions")]
-const SOCKET_PERMISSIONS: Permission = Permission::ALL;
+const SOCKET_PERMISSIONS: Permission = Permission::OWNER_READ_WRITE
+    .const_bitor(Permission::GROUP_READ_WRITE)
+    .const_bitor(Permission::OTHERS_READ_WRITE);
+#[cfg(feature = "dev_permissions")]
+const DIR_PERMISSIONS: Permission = Permission::ALL;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Configuration {
@@ -102,7 +110,7 @@ impl<T: Copy + Debug> NamedConceptMgmt for Channel<T> {
 
         let full_path = cfg.path_for(name);
 
-        match File::does_exist(&full_path) {
+        match UnixDatagramReceiver::does_exist(&full_path) {
             Ok(true) => Ok(true),
             Ok(false) => Ok(false),
             Err(v) => {
@@ -118,6 +126,20 @@ impl<T: Copy + Debug> NamedConceptMgmt for Channel<T> {
     ) -> Result<Vec<FileName>, crate::static_storage::file::NamedConceptListError> {
         let msg = "Unable to list all communication_channel::unix_datagram";
         let origin = "communication_channel::unix_datagram::Channel::list_cfg()";
+
+        match Directory::does_exist(&config.path_hint) {
+            Ok(true) => (),
+            Ok(false) => return Ok(vec![]),
+            Err(MetadataFromPathError::InsufficientPermissions) => {
+                fail!(from origin, with NamedConceptListError::InsufficientPermissions,
+                    "{} due to insufficient permissions to read the storage directory.", msg);
+            }
+            Err(e) => {
+                fail!(from origin, with NamedConceptListError::InternalError,
+                    "{} due to an internal failure while checking the existance of the storage directory \"{}\". [{e:?}]",
+                    msg, config.path_hint);
+            }
+        }
 
         let directory = fail!(from origin, when Directory::new(&config.path_hint),
             map DirectoryOpenError::InsufficientPermissions => NamedConceptListError::InsufficientPermissions,
@@ -224,6 +246,28 @@ impl<T: Copy + Debug> CommunicationChannelCreator<T, Channel<T>> for Creator<T> 
                 "{} since the channel does not support the safe overflow feature.", msg);
         }
 
+        // create root directory before the Unix Datagram Receiver
+        let dir_msg = format!(
+            "Unable to create root directory \"{}\"",
+            self.config.path_hint
+        );
+        let Ok(root_dir_exist) = Directory::does_exist(&self.config.path_hint) else {
+            fail!(from self, with CommunicationChannelCreateError::RootDirectoryCreationFailure,
+                "{} since the system is unable to determine if the directory even exists.", dir_msg);
+        };
+
+        if !root_dir_exist {
+            match Directory::create(&self.config.path_hint, DIR_PERMISSIONS) {
+                Ok(_) | Err(DirectoryCreateError::DirectoryAlreadyExists) => (),
+                Err(e) => {
+                    fail!(from self, with CommunicationChannelCreateError::RootDirectoryCreationFailure,
+                        "{} due to a failure while creating the service root directory ({:?}).", dir_msg, e);
+                }
+            }
+            trace!(from self, "Created service root directory \"{}\" since it did not exist before.", self.config.path_hint);
+        }
+
+        // create Unix Datagram Receiver
         let full_name = self.config.path_for(&self.channel_name);
         let receiver = UnixDatagramReceiverBuilder::new(&full_name)
             .creation_mode(CreationMode::CreateExclusive)
@@ -348,7 +392,7 @@ pub struct Sender<T> {
 impl<T: Copy + Debug> Abandonable for Sender<T> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { UnixDatagramSender::abandon_in_place(NonNull::iox2_from_mut(&mut this.sender)) };
+        unsafe { UnixDatagramSender::abandon_in_place(NonNull::from_mut(&mut this.sender)) };
     }
 }
 
@@ -418,9 +462,7 @@ pub struct Receiver<T: Debug> {
 impl<T: Copy + Debug> Abandonable for Receiver<T> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe {
-            UnixDatagramReceiver::abandon_in_place(NonNull::iox2_from_mut(&mut this.receiver))
-        };
+        unsafe { UnixDatagramReceiver::abandon_in_place(NonNull::from_mut(&mut this.receiver)) };
     }
 }
 

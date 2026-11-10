@@ -26,7 +26,8 @@ libc = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-re_log_encoding = { version = "=0.38.1", features = ["decoder"] }
+re_log_encoding = { workspace = true }
+re_protos = { workspace = true }
 
 [lints]
 workspace = true

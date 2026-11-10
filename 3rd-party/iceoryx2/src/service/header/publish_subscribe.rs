@@ -34,7 +34,10 @@
 use iceoryx2_bb_derive_macros::ZeroCopySend;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 
-use crate::identifiers::{UniqueNodeId, UniquePublisherId};
+use crate::{
+    identifiers::{UniqueNodeId, UniquePublisherId},
+    service::header::payload_header::PayloadHeader,
+};
 
 /// Sample header used by
 /// [`MessagingPattern::PublishSubscribe`](crate::service::messaging_pattern::MessagingPattern::PublishSubscribe)
@@ -43,7 +46,18 @@ use crate::identifiers::{UniqueNodeId, UniquePublisherId};
 pub struct Header {
     node_id: UniqueNodeId,
     publisher_port_id: UniquePublisherId,
-    number_of_elements: u64,
+    pub(crate) number_of_elements: u64,
+    pub(crate) payload_offset: u64,
+}
+
+impl PayloadHeader for Header {
+    fn node_id(&self) -> UniqueNodeId {
+        self.node_id
+    }
+
+    fn number_of_elements(&self) -> u64 {
+        self.number_of_elements
+    }
 }
 
 impl Header {
@@ -56,13 +70,8 @@ impl Header {
             node_id,
             publisher_port_id,
             number_of_elements,
+            payload_offset: 0,
         }
-    }
-
-    /// Returns the [`UniqueNodeId`] of the source node that published the
-    /// [`Sample`](crate::sample::Sample).
-    pub fn node_id(&self) -> UniqueNodeId {
-        self.node_id
     }
 
     /// Returns the [`UniquePublisherId`] of the source
@@ -71,16 +80,8 @@ impl Header {
         self.publisher_port_id
     }
 
-    /// Returns how many elements are stored inside the [`Sample`](crate::sample::Sample)'s payload.
-    ///
-    /// # Details when using
-    /// [`CustomPayloadMarker`](crate::service::builder::CustomPayloadMarker)
-    ///
-    /// In this case the number of elements relates to the element defined in the
-    /// [`MessageTypeDetails`](crate::service::static_config::message_type_details::MessageTypeDetails).
-    /// When the element has a `payload.size == 40` and the `Sample::payload().len() == 120` it
-    /// means that it contains 3 elements (3 * 40 == 120).
-    pub fn number_of_elements(&self) -> u64 {
-        self.number_of_elements
+    /// Returns the payload offset.
+    pub fn payload_offset(&self) -> u64 {
+        self.payload_offset
     }
 }

@@ -33,15 +33,15 @@ use super::request_response::PortFactory;
 use crate::{
     port::{
         BackpressureFn, BackpressureHandler, DegradationAction, DegradationFn, DegradationHandler,
-        client::Client, details::receiver::RetentionPolicy,
+        client::Client, details::receiver::RetentionPolicy, port_name::PortName,
     },
     prelude::BackpressureStrategy,
-    service,
+    service::{self, marker::Flatbuffer},
 };
 use alloc::format;
 use core::fmt::Debug;
-use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::shm_allocator::AllocationStrategy;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
+use iceoryx2_bb_elementary_traits::{iceoryx_send::IceoryxSend, zero_copy_send::ZeroCopySend};
 use iceoryx2_log::fail;
 use tiny_fn::tiny_fn;
 
@@ -68,6 +68,11 @@ pub enum ClientCreateError {
     InsufficientMemory,
     /// RR R2：数据段 chunk 数超过底层池分配器可表示的 bucket 数（`UniqueIndexSet` 24 位界）。
     ExceedsMaxSupportedChunks,
+    /// When the [`Client`] requires more active requests than the
+    /// [`Service`](crate::service::Service) offers, the creation will fail.
+    MaxActiveRequestsExceedsMaxSupportedActiveRequestsOfService,
+    /// The [`UniqueClientId`](crate::identifiers::UniqueClientId) could not be generated.
+    UnableToGenerateUniqueClientId,
 }
 
 impl core::fmt::Display for ClientCreateError {
@@ -105,6 +110,8 @@ pub(crate) struct LocalClientConfig {
     pub(crate) backpressure_strategy: BackpressureStrategy,
     pub(crate) initial_max_slice_len: usize,
     pub(crate) allocation_strategy: AllocationStrategy,
+    pub(crate) max_active_requests: Option<usize>,
+    pub(crate) port_name: PortName,
 }
 
 /// Factory to create a new [`Client`] port/endpoint for
@@ -114,9 +121,9 @@ pub(crate) struct LocalClientConfig {
 pub struct PortFactoryClient<
     'factory,
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     pub(crate) config: LocalClientConfig,
@@ -135,9 +142,9 @@ pub struct PortFactoryClient<
 
 unsafe impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Send
     for PortFactoryClient<
@@ -154,9 +161,9 @@ unsafe impl<
 impl<
     'factory,
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 >
     PortFactoryClient<
@@ -204,6 +211,8 @@ impl<
                 backpressure_strategy: defs.client_backpressure_strategy,
                 initial_max_slice_len: 1,
                 allocation_strategy: defs.client_allocation_strategy,
+                max_active_requests: None,
+                port_name: PortName::new_empty(),
             },
             preallocate_number_of_requests_override: PreallocatedRequestsOverride::new(|v| v),
             request_degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
@@ -282,6 +291,18 @@ impl<
         self
     }
 
+    /// Sets the maximal amount of active requests the [`Client`] can send.
+    pub fn max_active_requests(mut self, value: usize) -> Self {
+        self.config.max_active_requests = Some(value.max(1));
+        self
+    }
+
+    /// Sets the [`PortName`] of the  [`Client`].
+    pub fn name(mut self, name: &PortName) -> Self {
+        self.config.port_name = *name;
+        self
+    }
+
     /// Creates a new [`Client`] or returns a [`ClientCreateError`] on failure.
     pub fn create(
         self,
@@ -308,7 +329,11 @@ impl<
             ResponseHeader,
         >,
         crate::strict::StrictCreateError,
-    > {
+    >
+    where
+        RequestPayload: ZeroCopySend,
+        ResponsePayload: ZeroCopySend,
+    {
         crate::strict::StrictClient::new(self)
     }
 }
@@ -317,7 +342,7 @@ impl<
     Service: service::Service,
     RequestPayload: Debug + ZeroCopySend,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > PortFactoryClient<'_, Service, [RequestPayload], RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -332,6 +357,37 @@ impl<
     /// [`PortFactoryClient::initial_max_slice_len()`] is exhausted. This happens when the user
     /// acquires more than max slice len in [`Client::loan_slice()`] or
     /// [`Client::loan_slice_uninit()`].
+    pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
+        self.config.allocation_strategy = value;
+        self
+    }
+}
+
+impl<
+    Service: service::Service,
+    RequestPayload,
+    RequestHeader: Debug + ZeroCopySend,
+    ResponsePayload: Debug + IceoryxSend + ?Sized,
+    ResponseHeader: Debug + ZeroCopySend,
+>
+    PortFactoryClient<
+        '_,
+        Service,
+        Flatbuffer<RequestPayload>,
+        RequestHeader,
+        ResponsePayload,
+        ResponseHeader,
+    >
+{
+    /// Sets the maximum initial reserved memory that the underlying allocator reserves
+    /// for the flatbuffer builder.
+    pub fn initial_reserved_memory(mut self, value: usize) -> Self {
+        self.config.initial_max_slice_len = value;
+        self
+    }
+
+    /// Defines the [`AllocationStrategy`] that is used when the underlying flatbuffer builder
+    /// requires more memory and reallocates.
     pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
         self.config.allocation_strategy = value;
         self

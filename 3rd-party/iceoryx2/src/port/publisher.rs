@@ -101,6 +101,7 @@
 //! # }
 //! ```
 
+use core::alloc::Layout;
 use core::any::TypeId;
 use core::fmt::Debug;
 use core::ptr::NonNull;
@@ -113,31 +114,38 @@ use iceoryx2_bb_concurrency::atomic::{AtomicBool, AtomicUsize};
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_container::queue::Queue;
 use iceoryx2_bb_elementary::CallbackProgression;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
 use iceoryx2_bb_elementary::cyclic_tagger::CyclicTagger;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::allocator::{AllocationGrowError, ContentPlacement, Grow};
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
-use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
+use iceoryx2_cal::bag::Bag;
+use iceoryx2_cal::bag::{BagFamily, BagStateFamily};
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
-use iceoryx2_cal::shm_allocator::{AllocationStrategy, PointerOffset};
+use iceoryx2_cal::shared_memory::ShmPointer;
+use iceoryx2_cal::shm_allocator::PointerOffset;
 use iceoryx2_cal::zero_copy_connection::{
     CHANNEL_STATE_OPEN, ChannelId, ZeroCopyCreationError, ZeroCopyPortDetails, ZeroCopySender,
 };
 use iceoryx2_log::{fail, warn};
 
+use crate::port::details::chunk::ChunkMut;
+use crate::port::details::data_segment_shared_state::DataSegmentSharedState;
 use crate::port::details::sender::*;
+use crate::port::port_lifetime_tag::PortLifetimeTag;
+use crate::port::port_name::PortName;
 use crate::port::update_connections::{ConnectionFailure, UpdateConnections};
-use crate::prelude::BackpressureStrategy;
-use crate::raw_sample::RawSampleMut;
+use crate::prelude::{BackpressureStrategy, Flatbuffer};
 use crate::sample_mut::SampleMut;
 use crate::sample_mut_uninit::SampleMutUninit;
-use crate::service::builder::{CustomHeaderMarker, CustomPayloadMarker};
 use crate::service::dynamic_config::publish_subscribe::{PublisherDetails, SubscriberDetails};
 use crate::service::header::publish_subscribe::Header;
+use crate::service::marker::{CustomHeaderMarker, CustomPayloadMarker};
 use crate::service::naming_scheme::data_segment_name;
 use crate::service::port_factory::publisher::{LocalPublisherConfig, PortFactoryPublisher};
+use crate::service::resource::publish_subscribe::PublishSubscribeResources;
 use crate::service::static_config::message_type_details::TypeVariant;
 use crate::service::{self};
 
@@ -162,6 +170,8 @@ pub enum PublisherCreateError {
     FailedToDeployThreadsafetyPolicy,
     /// The tracking port tag, required for cleanup, could not be created.
     UnableToCreatePortTag,
+    /// The [`UniquePublisherId`] could not be generated.
+    UnableToGenerateUniquePublisherId,
 }
 
 impl core::fmt::Display for PublisherCreateError {
@@ -178,11 +188,21 @@ struct OffsetAndSize {
     size: usize,
 }
 
+impl OffsetAndSize {
+    fn new(chunk: &ChunkMut) -> Self {
+        Self {
+            offset: chunk.offset.as_value(),
+            size: chunk.size(),
+        }
+    }
+}
+
+#[doc(hidden)]
 #[derive(Debug)]
-pub(crate) struct PublisherSharedState<Service: service::Service> {
+pub struct PublisherSharedState<Service: service::Service> {
     config: LocalPublisherConfig,
-    pub(crate) sender: Sender<Service>,
-    subscriber_list_state: UnsafeCell<ContainerState<SubscriberDetails>>,
+    pub(crate) sender: Sender<Service, PublishSubscribeResources<Service>>,
+    subscriber_list_state: UnsafeCell<<Service::Bag as BagFamily>::BagState<SubscriberDetails>>,
     history: Option<UnsafeCell<Queue<OffsetAndSize>>>,
     is_active: AtomicBool,
     // IMPORTANT!
@@ -191,34 +211,78 @@ pub(crate) struct PublisherSharedState<Service: service::Service> {
     // the struct.
     // Otherwise the process might crash during cleanup, has already removed the tag but other resources
     // are still existing. This would make a cleanup from another process impossible.
-    port_tag: Service::StaticStorage,
+    lifetime_tag: PortLifetimeTag<Service>,
+}
+
+impl<Service: service::Service> DataSegmentSharedState for PublisherSharedState<Service> {
+    fn return_loan(&self, offset: PointerOffset) {
+        self.sender.return_loaned_chunk(offset);
+    }
+
+    fn header_len(&self) -> usize {
+        self.sender.message_type_details.all_headers_len()
+    }
+
+    fn message_type_details(
+        &self,
+    ) -> service::static_config::message_type_details::MessageTypeDetails {
+        self.sender.message_type_details
+    }
+
+    fn allocation_strategy(&self) -> AllocationStrategy {
+        self.sender.data_segment.allocation_strategy()
+    }
+
+    fn payload_size(&self) -> usize {
+        self.sender.payload_size()
+    }
+}
+
+impl<Service: service::Service> Grow<ShmPointer> for PublisherSharedState<Service> {
+    unsafe fn grow(
+        &self,
+        ptr: ShmPointer,
+        old_layout: Layout,
+        new_layout: Layout,
+        content_placement: ContentPlacement,
+    ) -> Result<ShmPointer, AllocationGrowError> {
+        match unsafe {
+            self.sender
+                .grow(ptr, old_layout, new_layout, content_placement)
+        } {
+            Ok(ptr) => Ok(ptr),
+            Err(e) => {
+                fail!(from self, with e,
+                    "Failed to grow sample from {old_layout:?} to {new_layout:?}. [{e:?}]");
+            }
+        }
+    }
 }
 
 impl<Service: service::Service> Abandonable for PublisherSharedState<Service> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Sender::<Service>::abandon_in_place(NonNull::iox2_from_mut(&mut this.sender)) }
         unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
+            Sender::<Service, PublishSubscribeResources<Service>>::abandon_in_place(
+                NonNull::from_mut(&mut this.sender),
+            )
         }
+        unsafe { Abandonable::abandon_in_place(NonNull::from_mut(&mut this.lifetime_tag)) }
     }
 }
 
 impl<Service: service::Service> PublisherSharedState<Service> {
-    fn add_sample_to_history(&self, offset: PointerOffset, sample_size: usize) {
+    fn add_sample_to_history(&self, chunk: &ChunkMut) {
         match &self.history {
             None => (),
             Some(history) => {
                 let history = unsafe { &mut *history.get() };
-                self.sender.borrow_sample(offset);
-                match history.push_with_overflow(OffsetAndSize {
-                    offset: offset.as_value(),
-                    size: sample_size,
-                }) {
+                self.sender.borrow_chunk(chunk.offset());
+                match history.push_with_overflow(OffsetAndSize::new(chunk)) {
                     None => (),
                     Some(old) => self
                         .sender
-                        .release_sample(PointerOffset::from_value(old.offset)),
+                        .release_chunk(PointerOffset::from_value(old.offset)),
                 }
             }
         }
@@ -236,7 +300,7 @@ impl<Service: service::Service> PublisherSharedState<Service> {
                         buffer_size: port.buffer_size,
                         number_of_channels: 1,
                     },
-                    |connection| self.deliver_sample_history(connection),
+                    |connection| self.deliver_sample_history(connection, port.history_request),
                 );
 
                 if result.is_ok() {
@@ -269,17 +333,22 @@ impl<Service: service::Service> PublisherSharedState<Service> {
         Ok(())
     }
 
-    fn deliver_sample_history(&self, connection: &Connection<Service>) {
+    fn deliver_sample_history(
+        &self,
+        connection: &Connection<Service, PublishSubscribeResources<Service>>,
+        history_request: usize,
+    ) {
         match &self.history {
             None => (),
             Some(history) => {
                 let history = unsafe { &mut *history.get() };
                 let buffer_size = connection.sender.buffer_size();
-                let history_start = history.len().saturating_sub(buffer_size);
+                let history_deliver_count = history_request.min(buffer_size);
+                let history_start = history.len().saturating_sub(history_deliver_count);
 
                 for i in history_start..history.len() {
                     let old_sample = unsafe { history.get_unchecked(i) };
-                    self.sender.retrieve_returned_samples();
+                    self.sender.retrieve_returned_chunks();
 
                     let offset = PointerOffset::from_value(old_sample.offset);
                     match connection
@@ -287,10 +356,10 @@ impl<Service: service::Service> PublisherSharedState<Service> {
                         .try_send(offset, old_sample.size, ChannelId::new(0))
                     {
                         Ok(overflow) => {
-                            self.sender.borrow_sample(offset);
+                            self.sender.borrow_chunk(offset);
 
                             if let Some(old) = overflow {
-                                self.sender.release_sample(old);
+                                self.sender.release_chunk(old);
                             }
                         }
                         Err(e) => {
@@ -302,11 +371,7 @@ impl<Service: service::Service> PublisherSharedState<Service> {
         }
     }
 
-    pub(crate) fn send_sample(
-        &self,
-        offset: PointerOffset,
-        sample_size: usize,
-    ) -> Result<usize, SendError> {
+    pub(crate) fn send_sample(&self, chunk: &ChunkMut) -> Result<usize, SendError> {
         let msg = "Unable to send sample";
         if !self.is_active.load(Ordering::Relaxed) {
             fail!(from self, with SendError::ConnectionBrokenSinceSenderNoLongerExists,
@@ -316,9 +381,8 @@ impl<Service: service::Service> PublisherSharedState<Service> {
         fail!(from self, when self.update_connections(),
             "{} since the connections could not be updated.", msg);
 
-        self.add_sample_to_history(offset, sample_size);
-        self.sender
-            .deliver_offset(offset, sample_size, ChannelId::new(0))
+        self.add_sample_to_history(chunk);
+        self.sender.deliver_offset(chunk, ChannelId::new(0))
     }
 }
 
@@ -326,19 +390,20 @@ impl<Service: service::Service> PublisherSharedState<Service> {
 #[derive(Debug)]
 pub struct Publisher<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized + 'static,
+    Payload: IceoryxSend + Debug + ?Sized + 'static,
     UserHeader: Debug + ZeroCopySend,
 > {
     pub(crate) publisher_shared_state:
         Service::ArcThreadSafetyPolicy<PublisherSharedState<Service>>,
-    dynamic_publisher_handle: Option<ContainerHandle>,
+    dynamic_publisher_handle: <Service::Bag as BagFamily>::BagHandle,
+    publisher_details: &'static PublisherDetails,
     _payload: PhantomData<Payload>,
     _user_header: PhantomData<UserHeader>,
 }
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for Publisher<Service, Payload, UserHeader>
 where
@@ -348,7 +413,7 @@ where
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Sync for Publisher<Service, Payload, UserHeader>
 where
@@ -358,14 +423,14 @@ where
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Abandonable for Publisher<Service, Payload, UserHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.publisher_shared_state,
             ))
         };
@@ -374,28 +439,26 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Drop for Publisher<Service, Payload, UserHeader>
 {
     fn drop(&mut self) {
         let shared_state = self.publisher_shared_state.lock();
         shared_state.is_active.store(false, Ordering::Relaxed);
-        if let Some(handle) = self.dynamic_publisher_handle {
-            shared_state
-                .sender
-                .service_state
-                .dynamic_storage()
-                .get()
-                .publish_subscribe()
-                .release_publisher_handle(handle)
-        }
+        shared_state
+            .sender
+            .service_state
+            .dynamic_storage()
+            .get()
+            .publish_subscribe()
+            .release_publisher_handle(self.dynamic_publisher_handle)
     }
 }
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Publisher<Service, Payload, UserHeader>
 {
@@ -404,21 +467,21 @@ impl<
     ) -> Result<Self, PublisherCreateError> {
         let msg = "Unable to create Publisher port";
         let origin = "Publisher::new()";
-        let port_id = UniquePublisherId::new();
         let config = &publisher_factory.config;
         let service = &publisher_factory.factory.service;
+        let port_id = fail!(from origin,
+            when UniquePublisherId::new::<Service>(config.port_name, service.shared_node().config()),
+            with PublisherCreateError::UnableToGenerateUniquePublisherId,
+            "{msg} since the UniquePublisherId could not be generated.");
         // !MUST! be the first thing that is created when a new port is instantiated otherwise the
         // port resources might leak if this process is killed in between.
-        let port_tag = match service
-            .shared_node()
-            .create_port_tag(origin, msg, port_id.0.value())
-        {
-            Ok(port_tag) => port_tag,
-            Err(e) => {
-                fail!(from origin, with PublisherCreateError::UnableToCreatePortTag,
-                        "{msg} since the port tag, that is required for cleanup, could not be created. [{e:?}]");
-            }
-        };
+        let lifetime_tag = PortLifetimeTag::new(
+            origin,
+            msg,
+            port_id.value(),
+            service.shared_node(),
+            PublisherCreateError::UnableToCreatePortTag,
+        )?;
 
         let static_config = publisher_factory
             .factory
@@ -431,7 +494,7 @@ impl<
             .publish_subscribe()
             .subscribers;
 
-        let number_of_samples = unsafe {
+        let number_of_chunks = unsafe {
             service
                 .static_config()
                 .messaging_pattern
@@ -439,16 +502,16 @@ impl<
         }
         .required_amount_of_samples_per_data_segment(config.max_loaned_samples);
 
-        let number_of_samples = publisher_factory
+        let number_of_chunks = publisher_factory
             .preallocate_number_of_samples_override
-            .call(number_of_samples);
+            .call(number_of_chunks);
 
         let data_segment_type =
             DataSegmentType::new_from_allocation_strategy(config.allocation_strategy);
 
-        let sample_layout = static_config
+        let chunk_layout = static_config
             .message_type_details
-            .sample_layout(config.initial_max_slice_len);
+            .chunk_layout(config.initial_max_slice_len);
 
         let max_slice_len = config.initial_max_slice_len;
         let max_number_of_segments =
@@ -456,7 +519,8 @@ impl<
         let publisher_details = PublisherDetails {
             data_segment_type,
             publisher_id: port_id,
-            number_of_samples,
+            publisher_name: config.port_name,
+            number_of_chunks,
             max_slice_len,
             node_id: *service.shared_node().id(),
             max_number_of_segments,
@@ -467,15 +531,15 @@ impl<
         let data_segment = match data_segment_type {
             DataSegmentType::Static => DataSegment::create_static_segment(
                 &segment_name,
-                sample_layout,
+                chunk_layout,
                 global_config,
-                number_of_samples,
+                number_of_chunks,
             ),
             DataSegmentType::Dynamic => DataSegment::create_dynamic_segment(
                 &segment_name,
-                sample_layout,
+                chunk_layout,
                 global_config,
-                number_of_samples,
+                number_of_chunks,
                 config.allocation_strategy,
             ),
         };
@@ -487,7 +551,7 @@ impl<
 
         let publisher_shared_state =
             <Service as service::Service>::ArcThreadSafetyPolicy::new(PublisherSharedState {
-                port_tag,
+                lifetime_tag,
                 is_active: AtomicBool::new(true),
                 sender: Sender {
                     data_segment,
@@ -495,7 +559,7 @@ impl<
                         let mut v: Vec<SegmentState> =
                             Vec::with_capacity(max_number_of_segments as usize);
                         for _ in 0..max_number_of_segments {
-                            v.push(SegmentState::new(number_of_samples))
+                            v.push(SegmentState::new(number_of_chunks))
                         }
                         v
                     },
@@ -505,16 +569,16 @@ impl<
                     sender_port_id: port_id.value(),
                     shared_node: service.shared_node().clone(),
                     receiver_max_buffer_size: static_config.subscriber_max_buffer_size,
-                    receiver_max_borrowed_samples: static_config.subscriber_max_borrowed_samples,
+                    receiver_max_borrowed_chunks: static_config.subscriber_max_borrowed_samples,
                     enable_safe_overflow: static_config.enable_safe_overflow,
-                    number_of_samples,
+                    number_of_chunks,
                     max_number_of_segments,
                     degradation_handler: publisher_factory.degradation_handler,
                     backpressure_handler: publisher_factory.backpressure_handler,
                     service_state: service.clone(),
                     tagger: CyclicTagger::new(),
                     loan_counter: AtomicUsize::new(0),
-                    sender_max_borrowed_samples: config.max_loaned_samples,
+                    sender_max_borrowed_chunks: config.max_loaned_samples,
                     backpressure_strategy: config.backpressure_strategy,
                     message_type_details: static_config.message_type_details,
                     number_of_channels: 1,
@@ -537,19 +601,8 @@ impl<
             }
         };
 
-        let mut new_self = Self {
-            publisher_shared_state,
-            dynamic_publisher_handle: None,
-            _payload: PhantomData,
-            _user_header: PhantomData,
-        };
-
-        if let Err(e) = new_self
-            .publisher_shared_state
-            .lock()
-            .force_update_connections()
-        {
-            warn!(from new_self,
+        if let Err(e) = publisher_shared_state.lock().force_update_connections() {
+            warn!(from origin,
                 "The new Publisher port is unable to connect to every Subscriber port, caused by {:?}.", e);
         }
 
@@ -557,13 +610,13 @@ impl<
 
         // !MUST! be the last task otherwise a publisher is added to the dynamic config without the
         // creation of all required resources
-        let dynamic_publisher_handle = match service
+        let (details, handle) = match service
             .dynamic_storage()
             .get()
             .publish_subscribe()
-            .add_publisher_id(publisher_details)
+            .register_publisher_id(publisher_details)
         {
-            Some(unique_index) => unique_index,
+            Some(v) => v,
             None => {
                 fail!(from origin, with PublisherCreateError::ExceedsMaxSupportedPublishers,
                             "{} since it would exceed the maximum supported amount of publishers of {}.",
@@ -571,16 +624,23 @@ impl<
             }
         };
 
-        new_self.dynamic_publisher_handle = Some(dynamic_publisher_handle);
-
-        Ok(new_self)
+        Ok(Self {
+            publisher_shared_state,
+            dynamic_publisher_handle: handle,
+            publisher_details: unsafe { &*details },
+            _payload: PhantomData,
+            _user_header: PhantomData,
+        })
     }
 
     /// Returns the [`UniquePublisherId`] of the [`Publisher`]
     pub fn id(&self) -> UniquePublisherId {
-        UniquePublisherId(UniqueSystemId::from(
-            self.publisher_shared_state.lock().sender.sender_port_id,
-        ))
+        self.publisher_details.publisher_id
+    }
+
+    /// Returns the [`PortName`] of the [`Publisher`]
+    pub fn name(&self) -> &PortName {
+        &self.publisher_details.publisher_name
     }
 
     /// Returns the strategy the [`Publisher`] follows when a [`SampleMut`] cannot be delivered
@@ -591,6 +651,39 @@ impl<
             .sender
             .backpressure_strategy
     }
+
+    fn loan_chunk(&self, slice_len: usize) -> Result<ChunkMut, LoanError>
+    where
+        UserHeader: Default,
+    {
+        let shared_state = self.publisher_shared_state.lock();
+        let chunk = shared_state
+            .sender
+            .allocate(shared_state.sender.chunk_layout(slice_len))?;
+        let node_id = shared_state.sender.service_state.shared_node().id();
+        let header_ptr = chunk.header as *mut Header;
+        let user_header_ptr: *mut UserHeader = chunk.user_header.cast();
+        unsafe { header_ptr.write(Header::new(*node_id, self.id(), slice_len as _)) };
+        unsafe { user_header_ptr.write(UserHeader::default()) };
+
+        Ok(chunk)
+    }
+
+    /// Returns the strategy the [`Publisher`] follows when a [`SampleMut`] cannot be allocated.
+    pub fn allocation_strategy(&self) -> AllocationStrategy {
+        self.publisher_shared_state
+            .lock()
+            .config
+            .allocation_strategy
+    }
+
+    /// Returns the maximum number of [`SampleMut`]s that can be loaned in parallel.
+    pub fn max_loaned_samples(&self) -> usize {
+        self.publisher_shared_state
+            .lock()
+            .sender
+            .sender_max_borrowed_chunks
+    }
 }
 
 ////////////////////////
@@ -598,7 +691,7 @@ impl<
 ////////////////////////
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + Sized,
+    Payload: IceoryxSend + ZeroCopySend + Debug + Sized,
     UserHeader: Default + Debug + ZeroCopySend,
 > Publisher<Service, Payload, UserHeader>
 {
@@ -662,36 +755,12 @@ impl<
     pub fn loan_uninit(
         &self,
     ) -> Result<SampleMutUninit<Service, MaybeUninit<Payload>, UserHeader>, LoanError> {
-        let shared_state = self.publisher_shared_state.lock();
-        let chunk = shared_state
-            .sender
-            .allocate(shared_state.sender.sample_layout(1))?;
-        let node_id = shared_state.sender.service_state.shared_node().id();
-        let header_ptr = chunk.header as *mut Header;
-        let user_header_ptr: *mut UserHeader = chunk.user_header.cast();
-        unsafe { header_ptr.write(Header::new(*node_id, self.id(), 1)) };
-        unsafe { user_header_ptr.write(UserHeader::default()) };
-
-        let sample = unsafe {
-            RawSampleMut::new_unchecked(header_ptr, user_header_ptr, chunk.payload.cast())
-        };
-        Ok(
-            SampleMutUninit::<Service, MaybeUninit<Payload>, UserHeader>::new(
-                &self.publisher_shared_state,
-                sample,
-                chunk.offset,
-                chunk.size,
-            ),
+        SampleMutUninit::<Service, MaybeUninit<Payload>, UserHeader>::new(
+            &self.publisher_shared_state,
+            self.loan_chunk(1)?,
         )
     }
-}
 
-impl<
-    Service: service::Service,
-    Payload: Default + Debug + ZeroCopySend + Sized,
-    UserHeader: Default + Debug + ZeroCopySend,
-> Publisher<Service, Payload, UserHeader>
-{
     /// Loans/allocates a [`crate::sample_mut::SampleMut`] from the underlying data segment of the [`Publisher`]
     /// and initialize it with the default value. This can be a performance hit and [`Publisher::loan_uninit`]
     /// can be used to loan a [`core::mem::MaybeUninit<Payload>`].
@@ -719,13 +788,30 @@ impl<
     /// # Ok(())
     /// # }
     /// ```
-    pub fn loan(&self) -> Result<SampleMut<Service, Payload, UserHeader>, LoanError> {
+    pub fn loan(&self) -> Result<SampleMut<Service, Payload, UserHeader>, LoanError>
+    where
+        Payload: Default,
+    {
         Ok(self.loan_uninit()?.write_payload(Payload::default()))
     }
 }
 ////////////////////////
 // END: typed API
 ////////////////////////
+
+impl<Service: service::Service, Payload: Debug, UserHeader: Default + Debug + ZeroCopySend>
+    Publisher<Service, Flatbuffer<Payload>, UserHeader>
+{
+    /// Acquires a [`SampleMutUninit`] with an integrated flatbuffer builder.
+    pub fn loan_flatbuffer(
+        &self,
+    ) -> Result<SampleMutUninit<Service, Flatbuffer<Payload>, UserHeader>, LoanError> {
+        SampleMutUninit::<Service, Flatbuffer<Payload>, UserHeader>::new_flatbuffer(
+            &self.publisher_shared_state,
+            self.loan_chunk(1)?,
+        )
+    }
+}
 
 ////////////////////////
 // BEGIN: sliced API
@@ -823,55 +909,33 @@ impl<
     /// ```
     pub fn loan_slice_uninit(
         &self,
-        slice_len: usize,
+        number_of_elements: usize,
     ) -> Result<SampleMutUninit<Service, [MaybeUninit<Payload>], UserHeader>, LoanError> {
         // required since Rust does not support generic specializations or negative traits
         debug_assert!(TypeId::of::<Payload>() != TypeId::of::<CustomPayloadMarker>());
 
-        self.loan_slice_uninit_impl(slice_len, slice_len)
+        self.loan_slice_uninit_impl(number_of_elements)
     }
 
     fn loan_slice_uninit_impl(
         &self,
         slice_len: usize,
-        underlying_number_of_slice_elements: usize,
     ) -> Result<SampleMutUninit<Service, [MaybeUninit<Payload>], UserHeader>, LoanError> {
-        let shared_state = self.publisher_shared_state.lock();
-        let max_slice_len = shared_state.config.initial_max_slice_len;
-        if shared_state.config.allocation_strategy == AllocationStrategy::Static
-            && max_slice_len < slice_len
         {
-            fail!(from self, with LoanError::ExceedsMaxLoanSize,
+            let shared_state = self.publisher_shared_state.lock();
+            let max_slice_len = shared_state.config.initial_max_slice_len;
+            if shared_state.config.allocation_strategy == AllocationStrategy::Static
+                && max_slice_len < slice_len
+            {
+                fail!(from self, with LoanError::ExceedsMaxLoanSize,
                 "Unable to loan slice with {} elements since it would exceed the max supported slice length of {}.",
                 slice_len, max_slice_len);
+            }
         }
 
-        let sample_layout = shared_state.sender.sample_layout(slice_len);
-        let chunk = shared_state.sender.allocate(sample_layout)?;
-        let user_header_ptr: *mut UserHeader = chunk.user_header.cast();
-        let header_ptr = chunk.header as *mut Header;
-        let node_id = shared_state.sender.service_state.shared_node().id();
-        unsafe { header_ptr.write(Header::new(*node_id, self.id(), slice_len as _)) };
-        unsafe { user_header_ptr.write(UserHeader::default()) };
-
-        let sample = unsafe {
-            RawSampleMut::new_unchecked(
-                header_ptr,
-                user_header_ptr,
-                core::ptr::slice_from_raw_parts_mut(
-                    chunk.payload.cast(),
-                    underlying_number_of_slice_elements,
-                ),
-            )
-        };
-
-        Ok(
-            SampleMutUninit::<Service, [MaybeUninit<Payload>], UserHeader>::new(
-                &self.publisher_shared_state,
-                sample,
-                chunk.offset,
-                chunk.size,
-            ),
+        SampleMutUninit::<Service, [MaybeUninit<Payload>], UserHeader>::new(
+            &self.publisher_shared_state,
+            self.loan_chunk(slice_len)?,
         )
     }
 }
@@ -899,7 +963,7 @@ impl<Service: service::Service> Publisher<Service, [CustomPayloadMarker], Custom
             slice_len == 1 || shared_state.sender.payload_type_variant() == TypeVariant::Dynamic
         );
 
-        self.loan_slice_uninit_impl(slice_len, shared_state.sender.payload_size() * slice_len)
+        self.loan_slice_uninit_impl(slice_len)
     }
 }
 ////////////////////////
@@ -908,7 +972,7 @@ impl<Service: service::Service> Publisher<Service, [CustomPayloadMarker], Custom
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > UpdateConnections for Publisher<Service, Payload, UserHeader>
 {

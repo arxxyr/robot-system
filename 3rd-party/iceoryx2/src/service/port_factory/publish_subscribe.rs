@@ -41,52 +41,51 @@
 //! ```
 extern crate alloc;
 use alloc::sync::Arc;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
+use iceoryx2_cal::static_storage::StaticStorage;
 
 use super::nodes;
 use super::{publisher::PortFactoryPublisher, subscriber::PortFactorySubscriber};
 use crate::identifiers::UniqueServiceId;
 use crate::node::NodeListFailure;
 use crate::service::attribute::AttributeSet;
-use crate::service::port_factory::blocking_cleanup_dead_nodes_in_service;
+use crate::service::resource::publish_subscribe::PublishSubscribeResources;
 use crate::service::service_hash::ServiceHash;
 use crate::service::service_name::ServiceName;
-use crate::service::{
-    self, NoResource, ServiceState, SharedServiceState, dynamic_config, static_config,
-};
+use crate::service::{self, ServiceState, SharedServiceState, dynamic_config, static_config};
 use core::ptr::NonNull;
 use core::{fmt::Debug, marker::PhantomData};
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 
 /// The factory for
 /// [`MessagingPattern::PublishSubscribe`](crate::service::messaging_pattern::MessagingPattern::PublishSubscribe).
-/// It can acquire dynamic and static service informations and create
+/// It can acquire dynamic and static service information and create
 /// [`crate::port::publisher::Publisher`]
 /// or [`crate::port::subscriber::Subscriber`] ports.
 #[derive(Debug)]
 pub struct PortFactory<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > {
-    pub(crate) service: SharedServiceState<Service, NoResource>,
+    pub(crate) service: SharedServiceState<Service, PublishSubscribeResources<Service>>,
     _payload: PhantomData<Payload>,
     _user_header: PhantomData<UserHeader>,
 }
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for PortFactory<Service, Payload, UserHeader>
 {
 }
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Sync for PortFactory<Service, Payload, UserHeader>
 {
@@ -94,25 +93,25 @@ unsafe impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Abandonable for PortFactory<Service, Payload, UserHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service)) };
     }
 }
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > crate::service::port_factory::PortFactory for PortFactory<Service, Payload, UserHeader>
 {
     type Service = Service;
     type StaticConfig = static_config::publish_subscribe::StaticConfig;
-    type DynamicConfig = dynamic_config::publish_subscribe::DynamicConfig;
+    type DynamicConfig = dynamic_config::publish_subscribe::DynamicConfig<Service::Bag>;
 
     fn name(&self) -> &ServiceName {
         self.service.static_config().name()
@@ -134,7 +133,7 @@ impl<
         self.service.static_config().publish_subscribe()
     }
 
-    fn dynamic_config(&self) -> &dynamic_config::publish_subscribe::DynamicConfig {
+    fn dynamic_config(&self) -> &dynamic_config::publish_subscribe::DynamicConfig<Service::Bag> {
         self.service.dynamic_storage().get().publish_subscribe()
     }
 
@@ -152,33 +151,18 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > PortFactory<Service, Payload, UserHeader>
 {
-    pub(crate) fn new(service: ServiceState<Service, NoResource>) -> Self {
-        let shared_node = service.shared_node.clone();
-        let new_self = Self {
+    pub(crate) fn new(service: ServiceState<Service, PublishSubscribeResources<Service>>) -> Self {
+        Self {
             service: SharedServiceState {
                 state: Arc::new(service),
             },
             _payload: PhantomData,
             _user_header: PhantomData,
-        };
-
-        if shared_node
-            .config()
-            .global
-            .service
-            .cleanup_dead_nodes_on_open
-        {
-            blocking_cleanup_dead_nodes_in_service(
-                &new_self,
-                shared_node.config().global.creation_timeout,
-            );
         }
-
-        new_self
     }
 
     /// Returns a [`PortFactorySubscriber`] to create a new
@@ -228,5 +212,14 @@ impl<
     /// ```
     pub fn publisher_builder(&self) -> PortFactoryPublisher<'_, Service, Payload, UserHeader> {
         PortFactoryPublisher::new(self)
+    }
+
+    /// Returns the [`StaticStorageView`](iceoryx2_cal::static_storage::StaticStorageView) that contains the type definition.
+    /// If the [`Service`](crate::service::Service) has no type definition it return [`None`].
+    pub fn type_definition(&self) -> Option<&<Service::StaticStorage as StaticStorage>::View> {
+        self.service
+            .additional_resource()
+            .type_definition()
+            .map(|v| v.view())
     }
 }

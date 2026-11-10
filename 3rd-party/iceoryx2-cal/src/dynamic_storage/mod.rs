@@ -10,7 +10,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Traits that provide modifyable memory which can be accessed by multiple processes
+//! Traits that provide modifiable memory which can be accessed by multiple processes
 //! identified by a name.
 //!
 //! A [`DynamicStorage`] has to fulfill the following contract:
@@ -28,18 +28,23 @@
 //! # Example
 //!
 //! ```
+//! use iceoryx2_bb_concurrency::atomic::{AtomicU64, Ordering};
 //! use iceoryx2_bb_posix::access_mode::AccessMode;
 //! use iceoryx2_bb_system_types::file_name::FileName;
 //! use iceoryx2_bb_container::semantic_string::SemanticString;
 //! use iceoryx2_cal::dynamic_storage::*;
 //! use iceoryx2_cal::named_concept::*;
-//! use core::sync::atomic::{AtomicU64, Ordering};
 //!
 //! // the following two functions can be implemented in different processes
 //! fn process_one<Storage: DynamicStorage<AtomicU64>>() {
 //!     let storage_name = FileName::new(b"myStorageName").unwrap();
 //!     let mut storage = Storage::Builder::new(&storage_name)
-//!                         .create(AtomicU64::new(873)).unwrap();
+//!                         .initializer(|value, _| {
+//!                             value.write(AtomicU64::new(873));
+//!                             true
+//!                         })
+//!                         .create()
+//!                         .unwrap();
 //!
 //!     println!("Created storage {}", storage.name());
 //!     storage.get().store(991, Ordering::Relaxed);
@@ -55,10 +60,12 @@
 //! }
 //! ```
 
-use core::{fmt::Debug, time::Duration};
+use core::{fmt::Debug, mem::MaybeUninit, time::Duration};
 
 use iceoryx2_bb_elementary::enum_gen;
-use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
+use iceoryx2_bb_elementary_traits::{
+    testing::abandonable::Abandonable, zero_copy_send::ZeroCopySend,
+};
 use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
 use iceoryx2_bb_posix::file::AccessMode;
 use iceoryx2_bb_system_types::file_name::*;
@@ -68,7 +75,7 @@ use crate::static_storage::file::{NamedConcept, NamedConceptBuilder, NamedConcep
 
 tiny_fn! {
     /// The callback called to initialize the data inside the [`DynamicStorage`]
-    pub struct Initializer<T> = FnMut(value: &mut T, allocator: &mut BumpAllocator) -> bool;
+    pub struct Initializer<T> = FnMut(value: &mut MaybeUninit<T>, allocator: &mut BumpAllocator) -> bool;
 }
 
 impl<T> Debug for Initializer<'_, T> {
@@ -90,6 +97,7 @@ pub enum DynamicStorageCreateError {
     AlreadyExists,
     InsufficientPermissions,
     InitializationFailed,
+    RootDirectoryCreationFailure,
     InternalError,
 }
 
@@ -126,16 +134,16 @@ enum_gen! {
 }
 
 /// Builder for the [`DynamicStorage`]. T is not allowed to implement the [`Drop`] trait.
-pub trait DynamicStorageBuilder<'builder, T: Send + Sync, D: DynamicStorage<T>>:
+pub trait DynamicStorageBuilder<'builder, T: Send + Sync + ZeroCopySend, D: DynamicStorage<T>>:
     Debug + Sized + NamedConceptBuilder<D>
 {
-    /// Defines if `T::Drop` shall be called when the [`DynamicStorage`] is removed. The default
-    /// is [`true`].
-    fn call_drop_on_destruction(self, value: bool) -> Self;
-
     /// Defines if a newly created [`DynamicStorage`] owns the underlying resources. The default
     /// is [`true`].
     fn has_ownership(self, value: bool) -> Self;
+
+    /// Creates a [`DynamicStorage`] without any access restriction that can be access by any
+    /// instance of the system.
+    fn enable_global_access(self, value: bool) -> Self;
 
     /// Sets the size of the supplementary data. Only relevant when it is newly created otherwise
     /// the already initialized [`DynamicStorage`] with the full size is used.
@@ -143,7 +151,7 @@ pub trait DynamicStorageBuilder<'builder, T: Send + Sync, D: DynamicStorage<T>>:
 
     /// The timeout defines how long the [`DynamicStorageBuilder`] should wait for
     /// [`DynamicStorageBuilder::create()`]
-    /// to finialize the initialization. This is required when the [`DynamicStorage`] is
+    /// to finalize the initialization. This is required when the [`DynamicStorage`] is
     /// created and initialized concurrently from another process.
     /// By default it is set to [`Duration::ZERO`] for no timeout.
     fn timeout(self, value: Duration) -> Self;
@@ -152,13 +160,15 @@ pub trait DynamicStorageBuilder<'builder, T: Send + Sync, D: DynamicStorage<T>>:
     /// with a mutable reference to the new value and a mutable reference to a bump allocator
     /// which provides access to the supplementary memory. If the initialization failed it
     /// shall return false, otherwise true.
-    fn initializer<F: FnMut(&mut T, &mut BumpAllocator) -> bool + 'builder>(self, value: F)
-    -> Self;
+    fn initializer<F: FnMut(&mut MaybeUninit<T>, &mut BumpAllocator) -> bool + 'builder>(
+        self,
+        value: F,
+    ) -> Self;
 
     /// Creates a new [`DynamicStorage`]. The returned object has the ownership of the
     /// [`DynamicStorage`] and when it goes out of scope the underlying resources shall be
     /// removed without corrupting already opened [`DynamicStorage`]s.
-    fn create(self, initial_value: T) -> Result<D, DynamicStorageCreateError>;
+    fn create(self) -> Result<D, DynamicStorageCreateError>;
 
     /// Opens a [`DynamicStorage`]. The implementation must ensure that a [`DynamicStorage`]
     /// which is in the midst of creation cannot be opened. If the [`DynamicStorage`] does not
@@ -166,12 +176,12 @@ pub trait DynamicStorageBuilder<'builder, T: Send + Sync, D: DynamicStorage<T>>:
     fn open(self, access_mode: AccessMode) -> Result<D, DynamicStorageOpenError>;
 
     /// Opens the [`DynamicStorage`] if it exists, otherwise it creates it.
-    fn open_or_create(self, initial_value: T) -> Result<D, DynamicStorageOpenOrCreateError>;
+    fn open_or_create(self) -> Result<D, DynamicStorageOpenOrCreateError>;
 }
 
 /// Is being built by the [`DynamicStorageBuilder`]. The [`DynamicStorage`] trait shall provide
-/// inter-process access to a modifyable piece of memory identified by some name.
-pub trait DynamicStorage<T: Send + Sync>:
+/// inter-process access to a modifiable piece of memory identified by some name.
+pub trait DynamicStorage<T: Send + Sync + ZeroCopySend>:
     Sized + Debug + NamedConceptMgmt + NamedConcept + Send + Sync + Abandonable
 {
     type Builder<'builder>: DynamicStorageBuilder<'builder, T, Self>;
@@ -205,7 +215,7 @@ pub trait DynamicStorage<T: Send + Sync>:
     /// # Safety
     ///
     /// * ensure that the contained type matches the semantic type_name given with `T`
-    /// * if `T` is some arbitary placeholder, then only use it to remove the concept or list it
+    /// * if `T` is some arbitrary placeholder, then only use it to remove the concept or list it
     ///   * DO NOT OPEN IT
     unsafe fn __internal_set_type_name_in_config(config: &mut Self::Configuration, type_name: &str);
 }

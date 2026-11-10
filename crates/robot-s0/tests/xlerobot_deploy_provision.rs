@@ -21,6 +21,7 @@ fn run_provision(args: &[&std::ffi::OsStr]) -> (i32, String) {
         .arg("provision")
         .args(args)
         .env("RUST_LOG", "info")
+        .env("NO_COLOR", "1")
         .env_remove("NOTIFY_SOCKET")
         .stdin(Stdio::null())
         .output()

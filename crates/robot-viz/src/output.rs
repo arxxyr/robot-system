@@ -449,7 +449,40 @@ fn root(topic: &str) -> rerun::EntityPath {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rerun::external::re_log_types::LogMsg;
+    use rerun::log::LogMsg;
+
+    #[test]
+    fn upgraded_protoc_descriptor_resolves_arrow_message_and_timestamp_import() {
+        // 上游入口实际调用 prost-reflect 解码本轮 protoc 构建的 descriptor。
+        let pool = re_protos::json::descriptor_pool();
+        let arrow = pool
+            .get_message_by_name("rerun.log_msg.v1alpha1.ArrowMsg")
+            .expect("descriptor 须包含写入 RRD 的 ArrowMsg");
+        assert_eq!(arrow.parent_file().name(), "rerun/v1alpha1/log_msg.proto");
+        assert_eq!(arrow.get_field_by_name("payload").unwrap().number(), 5);
+        let timestamp = pool
+            .get_message_by_name("google.protobuf.Timestamp")
+            .expect("--include_imports 须保留 Google Timestamp");
+        assert_eq!(
+            timestamp.parent_file().name(),
+            "google/protobuf/timestamp.proto"
+        );
+        assert_eq!(timestamp.get_field_by_name("seconds").unwrap().number(), 1);
+        assert_eq!(timestamp.get_field_by_name("nanos").unwrap().number(), 2);
+        assert!(
+            pool.get_file_by_name("rerun/v1alpha1/cloud.proto")
+                .unwrap()
+                .dependencies()
+                .any(|file| file.name() == "google/protobuf/timestamp.proto")
+        );
+        // 同一 descriptor 还须正确解码现有生成类型，验证字段绑定保持一致。
+        let message = re_protos::log_msg::v1alpha1::ArrowMsg {
+            payload: vec![1, 2, 3].into(),
+            ..Default::default()
+        };
+        let json = re_protos::json::to_json_value(&message).unwrap();
+        assert_eq!(json["payload"], "AQID");
+    }
 
     #[test]
     fn quantity_filters_exclude_other_units_using_official_path_parser() {

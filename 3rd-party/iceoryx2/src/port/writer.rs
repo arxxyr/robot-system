@@ -42,10 +42,13 @@
 
 use crate::constants::MAX_BLACKBOARD_KEY_SIZE;
 use crate::identifiers::UniqueWriterId;
+use crate::port::port_lifetime_tag::PortLifetimeTag;
+use crate::port::port_name::PortName;
 use crate::prelude::EventId;
-use crate::service::builder::CustomKeyMarker;
-use crate::service::builder::blackboard::{BlackboardResources, KeyMemory};
 use crate::service::dynamic_config::blackboard::WriterDetails;
+use crate::service::marker::CustomKeyMarker;
+use crate::service::port_factory::writer::WriterConfig;
+use crate::service::resource::blackboard::{BlackboardResources, KeyMemory};
 use crate::service::static_config::message_type_details::{TypeDetail, TypeVariant};
 use crate::service::{self, SharedServiceState};
 use core::alloc::Layout;
@@ -57,14 +60,13 @@ use core::ptr::NonNull;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_elementary::math::align;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_lock_free::mpmc::container::ContainerHandle;
 use iceoryx2_bb_lock_free::spmc::unrestricted_atomic::{
     Producer, UnrestrictedAtomic, UnrestrictedAtomicMgmt,
 };
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
+use iceoryx2_cal::bag::BagFamily;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 use iceoryx2_cal::shared_memory::SharedMemory;
 use iceoryx2_log::{fail, fatal_panic};
@@ -75,7 +77,7 @@ struct WriterSharedState<
     KeyType: Send + Sync + Eq + Clone + Debug + 'static + Hash + ZeroCopySend,
 > {
     service_state: SharedServiceState<Service, BlackboardResources<Service>>,
-    dynamic_writer_handle: UnsafeCell<Option<ContainerHandle>>,
+    dynamic_writer_handle: UnsafeCell<Option<<Service::Bag as BagFamily>::BagHandle>>,
     _key: PhantomData<KeyType>,
 }
 
@@ -109,9 +111,7 @@ impl<
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
     }
 }
 
@@ -131,6 +131,8 @@ pub enum WriterCreateError {
     FailedToDeployThreadsafetyPolicy,
     /// The tracking port tag, required for cleanup, could not be created.
     UnableToCreatePortTag,
+    /// The [`UniqueWriterId`] could not be generated.
+    UnableToGenerateUniqueWriterId,
 }
 
 impl core::fmt::Display for WriterCreateError {
@@ -148,14 +150,14 @@ pub struct Writer<
     KeyType: Send + Sync + Eq + Clone + Copy + Debug + 'static + Hash + ZeroCopySend,
 > {
     shared_state: Service::ArcThreadSafetyPolicy<WriterSharedState<Service, KeyType>>,
-    writer_id: UniqueWriterId,
+    writer_details: &'static WriterDetails,
     // IMPORTANT!
     // Fields of a rust struct are dropped in declaration order. Since this tag is our marker that the
-    // port exists and might require cleanup after a crash, the tag must be defined as last member of
+    // port exists and might require cleanup after a crash, the tag must be defined last member of
     // the struct.
     // Otherwise the process might crash during cleanup, has already removed the tag but other resources
     // are still existing. This would make a cleanup from another process impossible.
-    port_tag: Service::StaticStorage,
+    lifetime_tag: PortLifetimeTag<Service>,
 }
 
 impl<
@@ -166,13 +168,11 @@ impl<
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.shared_state,
             ))
         };
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        };
+        unsafe { Abandonable::abandon_in_place(NonNull::from_mut(&mut this.lifetime_tag)) };
     }
 }
 
@@ -183,22 +183,22 @@ impl<
 {
     pub(crate) fn new(
         service: SharedServiceState<Service, BlackboardResources<Service>>,
+        config: WriterConfig,
     ) -> Result<Self, WriterCreateError> {
         let origin = "Writer::new()";
         let msg = "Unable to create Writer port";
-        let writer_id = UniqueWriterId::new();
+        let writer_id = fail!(from origin,
+            when UniqueWriterId::new::<Service>(config.port_name, service.shared_node().config()),
+            with WriterCreateError::UnableToGenerateUniqueWriterId, "{msg} since the UniqueWriterId could not be generated.");
         // !MUST! be the first thing that is created when a new port is instantiated otherwise the
         // port resources might leak if this process is killed in between.
-        let port_tag = match service
-            .shared_node()
-            .create_port_tag(origin, msg, writer_id.0.value())
-        {
-            Ok(port_tag) => port_tag,
-            Err(e) => {
-                fail!(from origin, with WriterCreateError::UnableToCreatePortTag,
-                        "{msg} since the port tag, that is required for cleanup, could not be created. [{e:?}]");
-            }
-        };
+        let lifetime_tag = PortLifetimeTag::new(
+            origin,
+            msg,
+            writer_id.0.value(),
+            service.shared_node(),
+            WriterCreateError::UnableToCreatePortTag,
+        )?;
 
         let shared_state = Service::ArcThreadSafetyPolicy::new(WriterSharedState {
             service_state: service.clone(),
@@ -214,22 +214,17 @@ impl<
             }
         };
 
-        let new_self = Self {
-            shared_state,
-            writer_id,
-            port_tag,
-        };
-
         core::sync::atomic::compiler_fence(Ordering::SeqCst);
 
         // !MUST! be the last task otherwise a writer is added to the dynamic config without the
         // creation of all required resources
-        let dynamic_writer_handle = match service
+        let (details, handle) = match service
             .dynamic_storage()
             .get()
             .blackboard()
-            .add_writer_id(WriterDetails {
+            .register_writer_id(WriterDetails {
                 writer_id,
+                writer_name: config.port_name,
                 node_id: *service.shared_node().id(),
             }) {
             Some(unique_index) => unique_index,
@@ -240,15 +235,23 @@ impl<
             }
         };
 
-        unsafe {
-            *new_self.shared_state.lock().dynamic_writer_handle.get() = Some(dynamic_writer_handle)
-        };
-        Ok(new_self)
+        unsafe { *shared_state.lock().dynamic_writer_handle.get() = Some(handle) };
+
+        Ok(Self {
+            shared_state,
+            writer_details: unsafe { &*details },
+            lifetime_tag,
+        })
     }
 
     /// Returns the [`UniqueWriterId`] of the [`Writer`]
     pub fn id(&self) -> UniqueWriterId {
-        self.writer_id
+        self.writer_details.writer_id
+    }
+
+    /// Returns the [`PortName`] of the [`Writer`]
+    pub fn name(&self) -> &PortName {
+        &self.writer_details.writer_name
     }
 
     /// Creates a [`EntryHandleMut`] for direct write access to the value. There can be only one
@@ -482,7 +485,7 @@ impl<
     }
 }
 
-/// Wrapper around an uninitiaized entry value that can be used for a zero-copy update.
+/// Wrapper around an uninitialized entry value that can be used for a zero-copy update.
 pub struct EntryValueUninit<
     Service: service::Service,
     KeyType: Send + Sync + Eq + Clone + Debug + 'static + Hash + ZeroCopySend,
@@ -794,7 +797,7 @@ impl<Service: service::Service> __InternalEntryHandleMut<Service> {
     }
 }
 
-/// Wrapper around an uninitiaized entry value that can be used for a zero-copy update. Used
+/// Wrapper around an uninitialized entry value that can be used for a zero-copy update. Used
 /// for the language bindings where key and value type cannot be passed as generics.
 #[doc(hidden)]
 pub struct __InternalEntryValueUninit<Service: service::Service> {

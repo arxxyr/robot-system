@@ -11,17 +11,19 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use iceoryx2_bb_container::queue::RelocatableContainer;
+use iceoryx2_bb_derive_macros::ZeroCopySend;
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_lock_free::mpmc::{
-    container::{Container, ContainerHandle},
-    unique_index_set_enums::ReleaseMode,
-};
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+use iceoryx2_bb_lock_free::mpmc::unique_index_set_enums::ReleaseMode;
 use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
+use iceoryx2_cal::bag::{Bag, BagFamily, BagStateFamily};
 use iceoryx2_log::{error, fatal_panic};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     identifiers::{UniqueClientId, UniqueNodeId, UniquePortId, UniqueServerId},
     port::details::data_segment::DataSegmentType,
+    port::port_name::PortName,
 };
 
 use super::PortCleanupAction;
@@ -29,10 +31,12 @@ use super::PortCleanupAction;
 /// Contains the communication settings of the connected
 /// [`Server`](crate::port::server::Server).
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct ServerDetails {
     /// The [`UniqueServerId`] of the [`Server`](crate::port::server::Server).
     pub server_id: UniqueServerId,
+    /// The [`PortName`] of the [`Server`](crate::port::server::Server).
+    pub server_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Server`](crate::port::server::Server) was created.
     pub node_id: UniqueNodeId,
@@ -55,10 +59,12 @@ pub struct ServerDetails {
 /// Contains the communication settings of the connected
 /// [`Client`](crate::port::client::Client).
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct ClientDetails {
     /// The [`UniqueClientId`] of the [`Client`](crate::port::client::Client).
     pub client_id: UniqueClientId,
+    /// The [`PortName`] of the [`Client`](crate::port::client::Client).
+    pub client_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Client`](crate::port::client::Client) was created.
     pub node_id: UniqueNodeId,
@@ -76,10 +82,13 @@ pub struct ClientDetails {
     /// [`DataSegmentType::Dynamic`] it defines how many segment the
     /// [`Client`](crate::port::client::Client) can have at most.
     pub max_number_of_segments: u8,
+    /// The maximal amount of active request a
+    /// [`Client`](crate::port::client::Client) can send.
+    pub max_active_requests: usize,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, ZeroCopySend)]
 pub(crate) struct DynamicConfigSettings {
     pub number_of_servers: usize,
     pub number_of_clients: usize,
@@ -89,17 +98,17 @@ pub(crate) struct DynamicConfigSettings {
 /// [`crate::service::messaging_pattern::MessagingPattern::RequestResponse`]
 /// based service. Contains dynamic parameters like the connected endpoints etc..
 #[repr(C)]
-#[derive(Debug)]
-pub struct DynamicConfig {
-    pub(crate) servers: Container<ServerDetails>,
-    pub(crate) clients: Container<ClientDetails>,
+#[derive(Debug, ZeroCopySend)]
+pub struct DynamicConfig<B: BagFamily> {
+    pub(crate) servers: B::Bag<ServerDetails>,
+    pub(crate) clients: B::Bag<ClientDetails>,
 }
 
-impl DynamicConfig {
+impl<B: BagFamily> DynamicConfig<B> {
     pub(crate) fn new(config: &DynamicConfigSettings) -> Self {
         Self {
-            servers: unsafe { Container::new_uninit(config.number_of_servers) },
-            clients: unsafe { Container::new_uninit(config.number_of_clients) },
+            servers: unsafe { B::Bag::new_uninit(config.number_of_servers) },
+            clients: unsafe { B::Bag::new_uninit(config.number_of_clients) },
         }
     }
 
@@ -115,8 +124,8 @@ impl DynamicConfig {
     }
 
     pub(crate) fn memory_size(config: &DynamicConfigSettings) -> usize {
-        Container::<ServerDetails>::memory_size(config.number_of_servers)
-            + Container::<ClientDetails>::memory_size(config.number_of_clients)
+        B::Bag::<ServerDetails>::memory_size(config.number_of_servers)
+            + B::Bag::<ClientDetails>::memory_size(config.number_of_clients)
     }
 
     /// Returns how many [`crate::port::client::Client`] ports are currently connected.
@@ -140,7 +149,7 @@ impl DynamicConfig {
             self.servers.recover(
                 node_id.owner_id(),
                 |registered_server| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_server.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Server(registered_server.server_id))
                             == PortCleanupAction::RemovePort
@@ -151,7 +160,7 @@ impl DynamicConfig {
             self.clients.recover(
                 node_id.owner_id(),
                 |registered_client| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_client.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Client(registered_client.client_id))
                             == PortCleanupAction::RemovePort
@@ -161,21 +170,27 @@ impl DynamicConfig {
         }
     }
 
-    pub(crate) fn add_client_id(&self, details: ClientDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_client_id(
+        &self,
+        details: ClientDetails,
+    ) -> Option<(*const ClientDetails, B::BagHandle)> {
         unsafe { self.clients.add(details, details.node_id.owner_id()).ok() }
     }
 
-    pub(crate) fn release_client_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_client_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.clients.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister client from service. This could indicate a corrupted system! [{e:?}]");
         }
     }
 
-    pub(crate) fn add_server_id(&self, details: ServerDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_server_id(
+        &self,
+        details: ServerDetails,
+    ) -> Option<(*const ServerDetails, B::BagHandle)> {
         unsafe { self.servers.add(details, details.node_id.owner_id()).ok() }
     }
 
-    pub(crate) fn release_server_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_server_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.servers.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister server from service. This could indicate a corrupted system! [{e:?}]");
         }

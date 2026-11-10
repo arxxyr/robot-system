@@ -4,11 +4,14 @@
 
 use core::{fmt::Debug, marker::PhantomData, mem::MaybeUninit};
 
+use crate::service::header::payload_header::PayloadHeader;
+use crate::unique_id_generator::UniqueId;
 use alloc::format;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
-use iceoryx2_cal::shm_allocator::{AllocationStrategy, PointerOffset};
+use iceoryx2_cal::shm_allocator::PointerOffset;
 use iceoryx2_cal::zero_copy_connection::{
     ChannelId, EnqueueIssue, StrictChannelStatus, TrySendReceipt,
 };
@@ -37,9 +40,9 @@ const REQUEST_CHANNEL_ID: ChannelId = ChannelId::new(0);
 #[derive(Debug)]
 pub struct StrictServer<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     server: Server<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>,
@@ -47,9 +50,9 @@ pub struct StrictServer<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictServer<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -163,7 +166,7 @@ impl<
     Service: service::Service,
     RequestPayload: Debug + ZeroCopySend,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictServer<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -213,7 +216,7 @@ impl<
     Service: service::Service,
     RequestPayload: Debug + ZeroCopySend,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictServer<Service, [RequestPayload], RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -266,7 +269,7 @@ impl<
 /// Drop 即 finish（归还请求 chunk + 精确 id 的同源关闭），只执行一次。
 pub struct StrictActiveCore<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
 > {
     ptr: RawSample<RequestHeaderInternal, RequestHeader, RequestPayload>,
@@ -281,7 +284,7 @@ pub struct StrictActiveCore<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
 > Debug for StrictActiveCore<Service, RequestPayload, RequestHeader>
 {
@@ -298,7 +301,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
 > Drop for StrictActiveCore<Service, RequestPayload, RequestHeader>
 {
@@ -309,7 +312,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
 > StrictActiveCore<Service, RequestPayload, RequestHeader>
 {
@@ -404,17 +407,18 @@ impl<
     /// 共用 loan 内核：分配响应 chunk 并写内部 header。
     fn loan_parts(&self, number_of_elements: usize) -> Result<LoanedResponse, LoanError> {
         let shared = self.shared.lock();
-        let layout = shared.response_sender.sample_layout(number_of_elements);
+        let layout = shared.response_sender.chunk_layout(number_of_elements);
         let chunk = shared.response_sender.allocate(layout)?;
         let header_ptr: *mut ResponseHeaderInternal = chunk.header.cast();
         unsafe {
             header_ptr.write(ResponseHeaderInternal {
                 node_id: *shared.response_sender.shared_node.id(),
-                server_id: UniqueServerId(UniqueSystemId::from(
+                server_id: UniqueServerId(UniqueId::from_raw_id(
                     shared.response_sender.sender_port_id,
                 )),
                 request_id: self.request_id,
                 number_of_elements: number_of_elements as _,
+                payload_offset: 0,
             });
         }
         Ok(LoanedResponse {
@@ -431,9 +435,9 @@ impl<
 /// Drop（未回复）即 finish 原 Active。
 pub struct StrictActiveRequest<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     core: StrictActiveCore<Service, RequestPayload, RequestHeader>,
@@ -443,9 +447,9 @@ pub struct StrictActiveRequest<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Debug
     for StrictActiveRequest<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
@@ -457,9 +461,9 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictActiveRequest<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -528,7 +532,7 @@ struct LoanedResponse {
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend + Sized,
     ResponseHeader: Default + Debug + ZeroCopySend,
@@ -584,7 +588,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend + 'static,
     ResponseHeader: Default + Debug + ZeroCopySend,
@@ -648,9 +652,9 @@ impl<
 /// 未初始化的唯一回复；持有原 Active 内核。Drop（未发送）先释放本地 loan，再 finish 原 Active。
 pub struct StrictResponseMutUninit<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     response:
@@ -659,9 +663,9 @@ pub struct StrictResponseMutUninit<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Debug
     for StrictResponseMutUninit<
@@ -683,9 +687,9 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictResponseMutUninit<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {
@@ -707,7 +711,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend + Sized,
     ResponseHeader: Debug + ZeroCopySend,
@@ -762,7 +766,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + ZeroCopySend,
     ResponseHeader: Debug + ZeroCopySend,
@@ -822,7 +826,7 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
     ResponsePayload: Debug + Copy + ZeroCopySend,
     ResponseHeader: Debug + ZeroCopySend,
@@ -857,9 +861,9 @@ impl<
 /// 已初始化的唯一回复；持有原 Active 内核。发送或丢弃并释放本地 loan 之后，字段析构才 finish 原 Active。
 pub struct StrictResponseMut<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > {
     ptr: RawSampleMut<ResponseHeaderInternal, ResponseHeader, ResponsePayload>,
@@ -873,9 +877,9 @@ pub struct StrictResponseMut<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Debug
     for StrictResponseMut<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
@@ -891,9 +895,9 @@ impl<
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > Drop
     for StrictResponseMut<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
@@ -906,7 +910,7 @@ impl<
                 .shared
                 .lock()
                 .response_sender
-                .return_loaned_sample(self.offset);
+                .return_loaned_chunk(self.offset);
         }
     }
 }
@@ -920,9 +924,9 @@ pub struct StrictSent {
 
 impl<
     Service: service::Service,
-    RequestPayload: Debug + ZeroCopySend + ?Sized,
+    RequestPayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     RequestHeader: Debug + ZeroCopySend,
-    ResponsePayload: Debug + ZeroCopySend + ?Sized,
+    ResponsePayload: Debug + ZeroCopySend + IceoryxSend + ?Sized,
     ResponseHeader: Debug + ZeroCopySend,
 > StrictResponseMut<Service, RequestPayload, RequestHeader, ResponsePayload, ResponseHeader>
 {

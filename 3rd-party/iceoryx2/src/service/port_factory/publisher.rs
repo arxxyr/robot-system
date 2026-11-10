@@ -58,14 +58,15 @@ use crate::{
     port::{
         BackpressureFn, BackpressureHandler, DegradationAction, DegradationFn, DegradationHandler,
         backpressure_strategy::BackpressureStrategy,
+        port_name::PortName,
         publisher::{Publisher, PublisherCreateError},
     },
-    service,
+    service::{self, marker::Flatbuffer},
 };
 use alloc::format;
 use core::fmt::Debug;
-use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::shm_allocator::AllocationStrategy;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
+use iceoryx2_bb_elementary_traits::{iceoryx_send::IceoryxSend, zero_copy_send::ZeroCopySend};
 use iceoryx2_log::fail;
 use tiny_fn::tiny_fn;
 
@@ -99,6 +100,7 @@ pub(crate) struct LocalPublisherConfig {
     pub(crate) backpressure_strategy: BackpressureStrategy,
     pub(crate) initial_max_slice_len: usize,
     pub(crate) allocation_strategy: AllocationStrategy,
+    pub(crate) port_name: PortName,
 }
 
 /// Factory to create a new [`Publisher`] port/endpoint for
@@ -108,7 +110,7 @@ pub(crate) struct LocalPublisherConfig {
 pub struct PortFactoryPublisher<
     'factory,
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > {
     pub(crate) config: LocalPublisherConfig,
@@ -120,7 +122,7 @@ pub struct PortFactoryPublisher<
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for PortFactoryPublisher<'_, Service, Payload, UserHeader>
 {
@@ -128,7 +130,7 @@ unsafe impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > PortFactoryPublisher<'_, Service, Payload, UserHeader>
 {
@@ -150,7 +152,7 @@ impl<
 impl<
     'factory,
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > PortFactoryPublisher<'factory, Service, Payload, UserHeader>
 {
@@ -168,6 +170,7 @@ impl<
                 initial_max_slice_len: 1,
                 max_loaned_samples: defaults.publisher_max_loaned_samples,
                 backpressure_strategy: defaults.backpressure_strategy,
+                port_name: PortName::new_empty(),
             },
             degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
             backpressure_handler: None,
@@ -233,6 +236,12 @@ impl<
         self
     }
 
+    /// Sets the [`PortName`] of the  [`Publisher`].
+    pub fn name(mut self, name: &PortName) -> Self {
+        self.config.port_name = *name;
+        self
+    }
+
     /// Creates a new [`Publisher`] or returns a [`PublisherCreateError`] on failure.
     pub fn create(self) -> Result<Publisher<Service, Payload, UserHeader>, PublisherCreateError> {
         let origin = format!("{self:?}");
@@ -255,6 +264,24 @@ impl<Service: service::Service, Payload: Debug + ZeroCopySend, UserHeader: Debug
     /// [`PortFactoryPublisher::initial_max_slice_len()`] is exhausted. This happens when the user
     /// acquires a more than max slice len in [`Publisher::loan_slice()`] or
     /// [`Publisher::loan_slice_uninit()`].
+    pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
+        self.config.allocation_strategy = value;
+        self
+    }
+}
+
+impl<Service: service::Service, Payload: Debug, UserHeader: Debug + ZeroCopySend>
+    PortFactoryPublisher<'_, Service, Flatbuffer<Payload>, UserHeader>
+{
+    /// Sets the maximum initial reserved memory that the underlying allocator reserves
+    /// for the flatbuffer builder.
+    pub fn initial_reserved_memory(mut self, value: usize) -> Self {
+        self.config.initial_max_slice_len = value;
+        self
+    }
+
+    /// Defines the [`AllocationStrategy`] that is used when the underlying flatbuffer builder
+    /// requires more memory and reallocates.
     pub fn allocation_strategy(mut self, value: AllocationStrategy) -> Self {
         self.config.allocation_strategy = value;
         self

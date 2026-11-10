@@ -163,7 +163,7 @@ fn strict_post_push_issue_keeps_original_pending_and_auxiliary_loan() {
             ),
             (
                 PointerOffset::new(
-                    auxiliary.sample_size_for_test() * shared.request_sender.number_of_samples,
+                    auxiliary.sample_size_for_test() * shared.request_sender.number_of_chunks,
                 ),
                 CH0,
                 FixtureTargetError::IndexOutOfRange,
@@ -275,7 +275,7 @@ fn strict_post_push_issue_keeps_original_pending_and_auxiliary_loan() {
     );
     {
         let shared = client.shared_for_test().lock();
-        shared.request_sender.retrieve_returned_samples();
+        shared.request_sender.retrieve_returned_chunks();
         assert_eq!(
             shared
                 .request_sender
@@ -381,7 +381,7 @@ impl<'a> ResponseSeed<'a> {
         let shared = server.shared_for_test().lock();
         let sender = &shared.response_sender;
         let chunk = sender
-            .allocate(sender.sample_layout(1))
+            .allocate(sender.chunk_layout(1))
             .expect("辅助原 response chunk");
         // chunk 成功后立即装入不分配的 RAII 守卫；后续观测失败也能归还本地 loan。
         let seed = Self {
@@ -418,7 +418,7 @@ impl<'a> ResponseSeed<'a> {
         let receipt = cal.try_send_observed(self.offset, self.sample_size, channel);
         // 真入队后先登记真实 IOX 发送引用并记阶段，再做断言；无中间假账窗口。
         if matches!(receipt, TrySendReceipt::Enqueued { .. }) {
-            let (before, _) = sender.borrow_sample(self.offset);
+            let (before, _) = sender.borrow_chunk(self.offset);
             self.phase = SeedPhase::Enqueued;
             self.record(
                 self.phase,
@@ -487,7 +487,7 @@ impl<'a> ResponseSeed<'a> {
             "辅助归还逐件 FIFO，不能误算失败 B"
         );
         let before = sender.sample_reference_count_for_test(self.offset);
-        sender.release_sample(self.offset);
+        sender.release_chunk(self.offset);
         self.phase = SeedPhase::Reclaimed;
         let after = sender.sample_reference_count_for_test(self.offset);
         self.record(self.phase, before, after);
@@ -501,7 +501,7 @@ impl Drop for ResponseSeed<'_> {
         let shared = self.server.shared_for_test().lock();
         let sender = &shared.response_sender;
         let before = sender.sample_reference_count_for_test(self.offset);
-        sender.return_loaned_sample(self.offset);
+        sender.return_loaned_chunk(self.offset);
         let after = sender.sample_reference_count_for_test(self.offset);
         // 保留实际退出阶段；异常时不冒 reclaim、不再次 release 远端借用。
         self.events.borrow_mut().push(SeedEvent {
@@ -563,7 +563,7 @@ fn run_completion_failure(pending_first: bool) {
             shared.response_sender.loan_counter.load(Ordering::Relaxed),
             5
         );
-        assert_eq!(shared.response_sender.number_of_samples, 5);
+        assert_eq!(shared.response_sender.number_of_chunks, 5);
     }
     assert_eq!(response.send(), Ok(StrictSent { issue: None }));
     let reply = original.receive().expect("真接收 B").expect("B Response");
@@ -574,7 +574,7 @@ fn run_completion_failure(pending_first: bool) {
     assert_eq!(reply.header().request_id, original_id);
     {
         let shared = client.shared_for_test().lock();
-        shared.request_sender.retrieve_returned_samples();
+        shared.request_sender.retrieve_returned_chunks();
         assert_eq!(
             shared
                 .request_sender
@@ -591,11 +591,11 @@ fn run_completion_failure(pending_first: bool) {
             .response_receiver
             .cal_receiver_pinned_for_test(original.pin_for_test());
         assert_eq!(receiver.buffer_size(), 1);
-        assert_eq!(receiver.max_borrowed_samples(), 2);
+        assert_eq!(receiver.max_borrowed_chunks(), 2);
         assert_eq!(receiver.number_of_channels(), channels);
         assert_eq!(receiver.borrow_count(original_channel), 1);
         assert_eq!(
-            receiver.buffer_size() + receiver.max_borrowed_samples() + 1,
+            receiver.buffer_size() + receiver.max_borrowed_chunks() + 1,
             COMPLETION_CAPACITY
         );
     }

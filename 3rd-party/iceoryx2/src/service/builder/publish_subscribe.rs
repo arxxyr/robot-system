@@ -16,33 +16,40 @@
 //!
 use core::marker::PhantomData;
 
-use alloc::format;
-
+use crate::config::Config;
+use crate::service::resource::type_definition::TypeDefinition;
+use iceoryx2_bb_container::string::String;
 use iceoryx2_bb_elementary::alignment::Alignment;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_cal::dynamic_storage::DynamicStorageCreateError;
-use iceoryx2_cal::serialize::Serialize;
-use iceoryx2_cal::static_storage::StaticStorageLocked;
+use iceoryx2_bb_flatbuffers::{TypeName, is_binary_flatbuffer_schema};
 use iceoryx2_log::{fail, fatal_panic, warn};
 
+use super::ServiceState;
+use crate::service::builder::{
+    DynamicConfigCreationArgs, ServiceCreateError, ServiceOpenError, StaticServiceResources,
+};
 use crate::service::dynamic_config::publish_subscribe::DynamicConfigSettings;
 use crate::service::header::publish_subscribe::Header;
+use crate::service::marker::{CustomHeaderMarker, CustomPayloadMarker, Flatbuffer};
 use crate::service::port_factory::publish_subscribe;
+use crate::service::resource::publish_subscribe::{
+    PublishSubscribeResourceConfig, PublishSubscribeResources,
+};
 use crate::service::static_config::messaging_pattern::MessagingPattern;
 use crate::service::*;
 use crate::service::{self, dynamic_config::MessagingPatternSettings};
-
-use super::{CustomHeaderMarker, CustomPayloadMarker, OpenDynamicStorageFailure, ServiceState};
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 
 use self::{
     attribute::{AttributeSpecifier, AttributeVerifier},
     message_type_details::{MessageTypeDetails, TypeDetail, TypeVariant},
 };
-use builder::RETRY_LIMIT;
 
 /// Errors that can occur when an existing [`MessagingPattern::PublishSubscribe`] [`Service`] shall be opened.
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum PublishSubscribeOpenError {
+    /// An interrupt signal was received.
+    Interrupt,
     /// Service could not be openen since it does not exist
     DoesNotExist,
     /// Errors that indicate either an implementation issue or a wrongly configured system.
@@ -69,7 +76,7 @@ pub enum PublishSubscribeOpenError {
     IncompatibleOverflowBehavior,
     /// The process has not enough permissions to open the [`Service`]
     InsufficientPermissions,
-    /// Some underlying resources of the [`Service`] are either missing, corrupted or unaccessible.
+    /// Some underlying resources of the [`Service`] are either missing, corrupted or inaccessible.
     ServiceInCorruptedState,
     /// The [`Service`]s creation timeout has passed and it is still not initialized. Can be caused
     /// by a process that crashed during [`Service`] creation.
@@ -80,6 +87,18 @@ pub enum PublishSubscribeOpenError {
     /// When the call creation call is repeated with a little delay the [`Service`] should be
     /// recreatable.
     IsMarkedForDestruction,
+    /// The [`Node`](crate::node::Node) service tag could not be created. Required to track resources of dead nodes when cleaning them up.
+    UnableToCreateServiceTag,
+    /// The iceoryx2 service version does not match the one of the [`Service`].
+    VersionMismatch,
+    /// When using a serialized format such as FlatBuffers, the iceoryx2 service
+    /// requires the type definition. By default, it uses the lookup path defined in
+    /// the config. If no type definition file was specified in the service builder
+    /// and no file could be found, this error is returned.
+    UnableToAcquireTypeDefinition,
+    /// When using a serialized format such as Flatbuffers, the iceoryx2 service requires a specific
+    /// type definition format. If the wrong type definition format was provided, this error is returned.
+    InvalidTypeDefinition,
 }
 
 impl core::fmt::Display for PublishSubscribeOpenError {
@@ -90,23 +109,104 @@ impl core::fmt::Display for PublishSubscribeOpenError {
 
 impl core::error::Error for PublishSubscribeOpenError {}
 
-impl From<ServiceAvailabilityState> for PublishSubscribeOpenError {
-    fn from(value: ServiceAvailabilityState) -> Self {
+impl From<ServiceState> for PublishSubscribeOpenError {
+    fn from(value: ServiceState) -> Self {
         match value {
-            ServiceAvailabilityState::IncompatibleTypes => {
-                PublishSubscribeOpenError::IncompatibleTypes
-            }
-            ServiceAvailabilityState::ServiceState(ServiceState::IncompatibleMessagingPattern) => {
+            ServiceState::IncompatiblePayload => PublishSubscribeOpenError::IncompatibleTypes,
+            ServiceState::IncompatibleMessagingPattern => {
                 PublishSubscribeOpenError::IncompatibleMessagingPattern
             }
-            ServiceAvailabilityState::ServiceState(ServiceState::InsufficientPermissions) => {
+            ServiceState::InsufficientPermissions => {
                 PublishSubscribeOpenError::InsufficientPermissions
             }
-            ServiceAvailabilityState::ServiceState(ServiceState::HangsInCreation) => {
-                PublishSubscribeOpenError::HangsInCreation
+            ServiceState::Interrupt => PublishSubscribeOpenError::Interrupt,
+            ServiceState::HangsInCreation => PublishSubscribeOpenError::HangsInCreation,
+            ServiceState::Corrupted => PublishSubscribeOpenError::ServiceInCorruptedState,
+            ServiceState::InternalFailure => PublishSubscribeOpenError::InternalFailure,
+            ServiceState::VersionMismatch => PublishSubscribeOpenError::VersionMismatch,
+        }
+    }
+}
+
+impl From<ServiceOpenError> for PublishSubscribeOpenError {
+    fn from(value: ServiceOpenError) -> Self {
+        match value {
+            ServiceOpenError::DoesNotExist => PublishSubscribeOpenError::DoesNotExist,
+            ServiceOpenError::ExceedsMaxNumberOfNodes => {
+                PublishSubscribeOpenError::ExceedsMaxNumberOfNodes
             }
-            ServiceAvailabilityState::ServiceState(ServiceState::Corrupted) => {
+            ServiceOpenError::HangsInCreation => PublishSubscribeOpenError::HangsInCreation,
+            ServiceOpenError::IncompatibleMessagingPattern => {
+                PublishSubscribeOpenError::IncompatibleMessagingPattern
+            }
+            ServiceOpenError::IncompatiblePayload => PublishSubscribeOpenError::IncompatibleTypes,
+            ServiceOpenError::InsufficientPermissions => {
+                PublishSubscribeOpenError::InsufficientPermissions
+            }
+            ServiceOpenError::InternalFailure => PublishSubscribeOpenError::InternalFailure,
+            ServiceOpenError::IsMarkedForDestruction => {
+                PublishSubscribeOpenError::IsMarkedForDestruction
+            }
+            ServiceOpenError::ServiceInCorruptedState => {
                 PublishSubscribeOpenError::ServiceInCorruptedState
+            }
+            ServiceOpenError::UnableToCreateServiceTag => {
+                PublishSubscribeOpenError::UnableToCreateServiceTag
+            }
+            ServiceOpenError::VersionMismatch => PublishSubscribeOpenError::VersionMismatch,
+            ServiceOpenError::Interrupt => PublishSubscribeOpenError::Interrupt,
+            ServiceOpenError::UnableToAcquireTypeDefinition => {
+                PublishSubscribeOpenError::UnableToAcquireTypeDefinition
+            }
+            ServiceOpenError::InvalidTypeDefinition => {
+                PublishSubscribeOpenError::InvalidTypeDefinition
+            }
+        }
+    }
+}
+
+impl From<PublishSubscribeOpenError> for ServiceOpenError {
+    fn from(value: PublishSubscribeOpenError) -> Self {
+        match value {
+            PublishSubscribeOpenError::DoesNotExist => ServiceOpenError::DoesNotExist,
+            PublishSubscribeOpenError::ExceedsMaxNumberOfNodes => {
+                ServiceOpenError::ExceedsMaxNumberOfNodes
+            }
+            PublishSubscribeOpenError::HangsInCreation => ServiceOpenError::HangsInCreation,
+            PublishSubscribeOpenError::IncompatibleMessagingPattern => {
+                ServiceOpenError::IncompatibleMessagingPattern
+            }
+            PublishSubscribeOpenError::IncompatibleTypes => ServiceOpenError::IncompatiblePayload,
+            PublishSubscribeOpenError::InsufficientPermissions => {
+                ServiceOpenError::InsufficientPermissions
+            }
+            PublishSubscribeOpenError::IsMarkedForDestruction => {
+                ServiceOpenError::IsMarkedForDestruction
+            }
+            PublishSubscribeOpenError::ServiceInCorruptedState => {
+                ServiceOpenError::ServiceInCorruptedState
+            }
+            PublishSubscribeOpenError::UnableToCreateServiceTag => {
+                ServiceOpenError::UnableToCreateServiceTag
+            }
+            PublishSubscribeOpenError::VersionMismatch => ServiceOpenError::VersionMismatch,
+            PublishSubscribeOpenError::Interrupt => ServiceOpenError::Interrupt,
+            PublishSubscribeOpenError::InternalFailure
+            | PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfNodes
+            | PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfPublishers
+            | PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfSubscribers
+            | PublishSubscribeOpenError::DoesNotSupportRequestedMinBufferSize
+            | PublishSubscribeOpenError::DoesNotSupportRequestedMinHistorySize
+            | PublishSubscribeOpenError::DoesNotSupportRequestedMinSubscriberBorrowedSamples
+            | PublishSubscribeOpenError::IncompatibleAttributes
+            | PublishSubscribeOpenError::IncompatibleOverflowBehavior => {
+                ServiceOpenError::InternalFailure
+            }
+            PublishSubscribeOpenError::UnableToAcquireTypeDefinition => {
+                ServiceOpenError::UnableToAcquireTypeDefinition
+            }
+            PublishSubscribeOpenError::InvalidTypeDefinition => {
+                ServiceOpenError::InvalidTypeDefinition
             }
         }
     }
@@ -115,7 +215,9 @@ impl From<ServiceAvailabilityState> for PublishSubscribeOpenError {
 /// Errors that can occur when a new [`MessagingPattern::PublishSubscribe`] [`Service`] shall be created.
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum PublishSubscribeCreateError {
-    /// Some underlying resources of the [`Service`] are either missing, corrupted or unaccessible.
+    /// An interrupt signal was received.
+    Interrupt,
+    /// Some underlying resources of the [`Service`] are either missing, corrupted or inaccessible.
     ServiceInCorruptedState,
     /// Invalid [`Service`] configuration provided. The
     /// [`Subscriber`](crate::port::subscriber::Subscriber)s buffer size must be at least the size
@@ -132,6 +234,20 @@ pub enum PublishSubscribeCreateError {
     /// The [`Service`]s creation timeout has passed and it is still not initialized. Can be caused
     /// by a process that crashed during [`Service`] creation.
     HangsInCreation,
+    /// The [`Node`](crate::node::Node) service tag could not be created. Required to track resources of dead nodes when cleaning them up.
+    UnableToCreateServiceTag,
+    /// The [`Service`]s config could not be created and written to the static service configuration.
+    ServiceConfigCouldNotBeCreated,
+    /// When using a serialized format such as FlatBuffers, the iceoryx2 service
+    /// requires the type definition. By default, it uses the lookup path defined in
+    /// the config. If no type definition file was specified in the service builder
+    /// and no file could be found, this error is returned.
+    UnableToAcquireTypeDefinition,
+    /// When using a serialized format such as Flatbuffers, the iceoryx2 service requires a specific
+    /// type definition format. If the wrong type definition format was provided, this error is returned.
+    InvalidTypeDefinition,
+    /// The [`UniqueServiceId`] could not be generated.
+    UnableToGenerateUniqueServiceId,
 }
 
 impl core::fmt::Display for PublishSubscribeCreateError {
@@ -142,30 +258,93 @@ impl core::fmt::Display for PublishSubscribeCreateError {
 
 impl core::error::Error for PublishSubscribeCreateError {}
 
-impl From<ServiceAvailabilityState> for PublishSubscribeCreateError {
-    fn from(value: ServiceAvailabilityState) -> Self {
+impl From<ServiceCreateError> for PublishSubscribeCreateError {
+    fn from(value: ServiceCreateError) -> Self {
         match value {
-            ServiceAvailabilityState::IncompatibleTypes
-            | ServiceAvailabilityState::ServiceState(ServiceState::IncompatibleMessagingPattern) => {
-                PublishSubscribeCreateError::AlreadyExists
-            }
-            ServiceAvailabilityState::ServiceState(ServiceState::InsufficientPermissions) => {
+            ServiceCreateError::AlreadyExists => PublishSubscribeCreateError::AlreadyExists,
+            ServiceCreateError::InsufficientPermissions => {
                 PublishSubscribeCreateError::InsufficientPermissions
             }
-            ServiceAvailabilityState::ServiceState(ServiceState::HangsInCreation) => {
-                PublishSubscribeCreateError::HangsInCreation
+            ServiceCreateError::InternalFailure => PublishSubscribeCreateError::InternalFailure,
+            ServiceCreateError::IsBeingCreatedByAnotherInstance => {
+                PublishSubscribeCreateError::IsBeingCreatedByAnotherInstance
             }
-            ServiceAvailabilityState::ServiceState(ServiceState::Corrupted) => {
+            ServiceCreateError::ServiceConfigCouldNotBeCreated => {
+                PublishSubscribeCreateError::ServiceConfigCouldNotBeCreated
+            }
+            ServiceCreateError::ServiceInCorruptedState => {
                 PublishSubscribeCreateError::ServiceInCorruptedState
+            }
+            ServiceCreateError::UnableToCreateServiceTag => {
+                PublishSubscribeCreateError::UnableToCreateServiceTag
+            }
+            ServiceCreateError::Interrupt => PublishSubscribeCreateError::Interrupt,
+            ServiceCreateError::UnableToAcquireTypeDefinition => {
+                PublishSubscribeCreateError::UnableToAcquireTypeDefinition
+            }
+            ServiceCreateError::InvalidTypeDefinition => {
+                PublishSubscribeCreateError::InvalidTypeDefinition
+            }
+            ServiceCreateError::UnableToGenerateUniqueServiceId => {
+                PublishSubscribeCreateError::UnableToGenerateUniqueServiceId
             }
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-enum ServiceAvailabilityState {
-    ServiceState(ServiceState),
-    IncompatibleTypes,
+impl From<PublishSubscribeCreateError> for ServiceCreateError {
+    fn from(value: PublishSubscribeCreateError) -> Self {
+        match value {
+            PublishSubscribeCreateError::AlreadyExists => ServiceCreateError::AlreadyExists,
+            PublishSubscribeCreateError::InsufficientPermissions => {
+                ServiceCreateError::InsufficientPermissions
+            }
+            PublishSubscribeCreateError::IsBeingCreatedByAnotherInstance => {
+                ServiceCreateError::IsBeingCreatedByAnotherInstance
+            }
+            PublishSubscribeCreateError::ServiceConfigCouldNotBeCreated => {
+                ServiceCreateError::ServiceConfigCouldNotBeCreated
+            }
+            PublishSubscribeCreateError::ServiceInCorruptedState => {
+                ServiceCreateError::ServiceInCorruptedState
+            }
+            PublishSubscribeCreateError::UnableToCreateServiceTag => {
+                ServiceCreateError::UnableToCreateServiceTag
+            }
+            PublishSubscribeCreateError::Interrupt => ServiceCreateError::Interrupt,
+            PublishSubscribeCreateError::InternalFailure
+            | PublishSubscribeCreateError::HangsInCreation
+            | PublishSubscribeCreateError::SubscriberBufferMustBeLargerThanHistorySize => {
+                ServiceCreateError::InternalFailure
+            }
+            PublishSubscribeCreateError::UnableToAcquireTypeDefinition => {
+                ServiceCreateError::UnableToAcquireTypeDefinition
+            }
+            PublishSubscribeCreateError::InvalidTypeDefinition => {
+                ServiceCreateError::InvalidTypeDefinition
+            }
+            PublishSubscribeCreateError::UnableToGenerateUniqueServiceId => {
+                ServiceCreateError::UnableToGenerateUniqueServiceId
+            }
+        }
+    }
+}
+
+impl From<ServiceState> for PublishSubscribeCreateError {
+    fn from(value: ServiceState) -> Self {
+        match value {
+            ServiceState::IncompatiblePayload
+            | ServiceState::IncompatibleMessagingPattern
+            | ServiceState::VersionMismatch => PublishSubscribeCreateError::AlreadyExists,
+            ServiceState::InsufficientPermissions => {
+                PublishSubscribeCreateError::InsufficientPermissions
+            }
+            ServiceState::HangsInCreation => PublishSubscribeCreateError::HangsInCreation,
+            ServiceState::Corrupted => PublishSubscribeCreateError::ServiceInCorruptedState,
+            ServiceState::InternalFailure => PublishSubscribeCreateError::InternalFailure,
+            ServiceState::Interrupt => PublishSubscribeCreateError::Interrupt,
+        }
+    }
 }
 
 /// Errors that can occur when a [`MessagingPattern::PublishSubscribe`] [`Service`] shall be
@@ -181,8 +360,8 @@ pub enum PublishSubscribeOpenOrCreateError {
     SystemInFlux,
 }
 
-impl From<ServiceAvailabilityState> for PublishSubscribeOpenOrCreateError {
-    fn from(value: ServiceAvailabilityState) -> Self {
+impl From<ServiceState> for PublishSubscribeOpenOrCreateError {
+    fn from(value: ServiceState) -> Self {
         PublishSubscribeOpenOrCreateError::PublishSubscribeOpenError(value.into())
     }
 }
@@ -207,6 +386,17 @@ impl core::fmt::Display for PublishSubscribeOpenOrCreateError {
 
 impl core::error::Error for PublishSubscribeOpenOrCreateError {}
 
+#[derive(Default, Debug, Clone, Copy)]
+struct Verify {
+    number_of_subscribers: bool,
+    number_of_publishers: bool,
+    subscriber_max_buffer_size: bool,
+    subscriber_max_borrowed_samples: bool,
+    publisher_history_size: bool,
+    enable_safe_overflow: bool,
+    max_nodes: bool,
+}
+
 /// Builder to create new [`MessagingPattern::PublishSubscribe`] based [`Service`]s
 ///
 /// # Example
@@ -214,7 +404,7 @@ impl core::error::Error for PublishSubscribeOpenOrCreateError {}
 /// See [`crate::service`]
 #[derive(Debug)]
 pub struct Builder<
-    Payload: Debug + ?Sized + ZeroCopySend,
+    Payload: Debug + IceoryxSend + ?Sized,
     UserHeader: Debug + ZeroCopySend,
     ServiceType: service::Service,
 > {
@@ -222,19 +412,16 @@ pub struct Builder<
     override_alignment: Option<usize>,
     override_payload_type: Option<TypeDetail>,
     override_user_header_type: Option<TypeDetail>,
-    verify_number_of_subscribers: bool,
-    verify_number_of_publishers: bool,
-    verify_subscriber_max_buffer_size: bool,
-    verify_subscriber_max_borrowed_samples: bool,
-    verify_publisher_history_size: bool,
-    verify_enable_safe_overflow: bool,
-    verify_max_nodes: bool,
+    flatbuffer_schema_path: Option<FilePath>,
+    type_definition_name_hint: TypeName,
+    skip_type_definition_verification: bool,
+    verify: Verify,
     _data: PhantomData<Payload>,
     _user_header: PhantomData<UserHeader>,
 }
 
 impl<
-    Payload: Debug + ?Sized + ZeroCopySend,
+    Payload: Debug + IceoryxSend + ?Sized,
     UserHeader: Debug + ZeroCopySend,
     ServiceType: service::Service,
 > Clone for Builder<Payload, UserHeader, ServiceType>
@@ -245,13 +432,10 @@ impl<
             override_alignment: self.override_alignment,
             override_payload_type: self.override_payload_type,
             override_user_header_type: self.override_user_header_type,
-            verify_number_of_subscribers: self.verify_number_of_subscribers,
-            verify_number_of_publishers: self.verify_number_of_publishers,
-            verify_subscriber_max_buffer_size: self.verify_subscriber_max_buffer_size,
-            verify_subscriber_max_borrowed_samples: self.verify_subscriber_max_borrowed_samples,
-            verify_publisher_history_size: self.verify_publisher_history_size,
-            verify_enable_safe_overflow: self.verify_enable_safe_overflow,
-            verify_max_nodes: self.verify_max_nodes,
+            flatbuffer_schema_path: self.flatbuffer_schema_path,
+            type_definition_name_hint: self.type_definition_name_hint,
+            verify: self.verify,
+            skip_type_definition_verification: self.skip_type_definition_verification,
             _data: PhantomData,
             _user_header: PhantomData,
         }
@@ -259,24 +443,35 @@ impl<
 }
 
 impl<
-    Payload: Debug + ?Sized + ZeroCopySend,
+    Payload: Debug + IceoryxSend + ?Sized,
     UserHeader: Debug + ZeroCopySend,
     ServiceType: service::Service,
 > Builder<Payload, UserHeader, ServiceType>
 {
+    fn has_flatbuffer_payload(&self) -> bool {
+        use iceoryx2_bb_elementary_traits::type_name::TypeName;
+
+        match &self.override_payload_type {
+            Some(payload_type) => unsafe {
+                payload_type.type_name().as_str() == Flatbuffer::<()>::type_name()
+            },
+            None => unsafe {
+                <Payload as iceoryx2_bb_elementary_traits::type_name::TypeName>::type_name()
+                    == Flatbuffer::<()>::type_name()
+            },
+        }
+    }
+
     pub(crate) fn new(base: builder::BuilderWithServiceType<ServiceType>) -> Self {
         let mut new_self = Self {
             base,
-            verify_number_of_publishers: false,
-            verify_number_of_subscribers: false,
-            verify_subscriber_max_buffer_size: false,
-            verify_publisher_history_size: false,
-            verify_subscriber_max_borrowed_samples: false,
-            verify_enable_safe_overflow: false,
-            verify_max_nodes: false,
+            verify: Verify::default(),
             override_alignment: None,
             override_payload_type: None,
             override_user_header_type: None,
+            flatbuffer_schema_path: None,
+            type_definition_name_hint: TypeName::new::<Payload>(),
+            skip_type_definition_verification: false,
             _data: PhantomData,
             _user_header: PhantomData,
         };
@@ -308,26 +503,31 @@ impl<
 
     // triggers the underlying is_service_available method to check whether the service described in base is available.
     fn is_service_available(
-        &mut self,
+        &self,
         error_msg: &str,
-    ) -> Result<Option<(StaticConfig, ServiceType::StaticStorage)>, ServiceAvailabilityState> {
+    ) -> Result<Option<StaticServiceResources<ServiceType>>, ServiceState> {
+        let pubsub_service_config = self.config_details();
         match self.base.is_service_available(error_msg) {
             Ok(Some((config, storage))) => {
-                if !self
-                    .config_details()
+                if !pubsub_service_config
                     .message_type_details
                     .is_compatible_to(&config.publish_subscribe().message_type_details)
                 {
-                    fail!(from self, with ServiceAvailabilityState::IncompatibleTypes,
+                    fail!(from self, with ServiceState::IncompatiblePayload,
                         "{} since the service offers the type \"{:?}\" which is not compatible to the requested type \"{:?}\".",
-                        error_msg, &config.publish_subscribe().message_type_details , self.config_details().message_type_details);
+                        error_msg, &config.publish_subscribe().message_type_details , pubsub_service_config.message_type_details);
                 }
 
                 Ok(Some((config, storage)))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(ServiceAvailabilityState::ServiceState(e)),
+            Err(e) => Err(e),
         }
+    }
+
+    #[doc(hidden)]
+    pub fn __internal_config(&self) -> &Config {
+        self.base.shared_node.config()
     }
 
     /// Sets the user header type of the [`Service`].
@@ -348,7 +548,7 @@ impl<
     /// [`Service`] is opened it requires the service to have the defined overflow behavior.
     pub fn enable_safe_overflow(mut self, value: bool) -> Self {
         self.config_details_mut().enable_safe_overflow = value;
-        self.verify_enable_safe_overflow = true;
+        self.verify.enable_safe_overflow = true;
         self
     }
 
@@ -357,7 +557,7 @@ impl<
     /// [`Service`] is opened it defines the minimum required.
     pub fn subscriber_max_borrowed_samples(mut self, value: usize) -> Self {
         self.config_details_mut().subscriber_max_borrowed_samples = value;
-        self.verify_subscriber_max_borrowed_samples = true;
+        self.verify.subscriber_max_borrowed_samples = true;
         self
     }
 
@@ -366,7 +566,7 @@ impl<
     /// [`Service`] is opened it defines the minimum required.
     pub fn history_size(mut self, value: usize) -> Self {
         self.config_details_mut().history_size = value;
-        self.verify_publisher_history_size = true;
+        self.verify.publisher_history_size = true;
         self
     }
 
@@ -375,7 +575,7 @@ impl<
     /// [`Service`] is opened it defines the minimum required.
     pub fn subscriber_max_buffer_size(mut self, value: usize) -> Self {
         self.config_details_mut().subscriber_max_buffer_size = value;
-        self.verify_subscriber_max_buffer_size = true;
+        self.verify.subscriber_max_buffer_size = true;
         self
     }
 
@@ -384,7 +584,7 @@ impl<
     /// [`crate::port::subscriber::Subscriber`] must be at least supported.
     pub fn max_subscribers(mut self, value: usize) -> Self {
         self.config_details_mut().max_subscribers = value;
-        self.verify_number_of_subscribers = true;
+        self.verify.number_of_subscribers = true;
         self
     }
 
@@ -393,7 +593,7 @@ impl<
     /// [`crate::port::publisher::Publisher`] must be at least supported.
     pub fn max_publishers(mut self, value: usize) -> Self {
         self.config_details_mut().max_publishers = value;
-        self.verify_number_of_publishers = true;
+        self.verify.number_of_publishers = true;
         self
     }
 
@@ -402,13 +602,13 @@ impl<
     /// [`Node`](crate::node::Node)s must be at least supported.
     pub fn max_nodes(mut self, value: usize) -> Self {
         self.config_details_mut().max_nodes = value;
-        self.verify_max_nodes = true;
+        self.verify.max_nodes = true;
         self
     }
 
     /// Validates configuration and overrides the invalid setting with meaningful values.
     fn adjust_configuration_to_meaningful_values(&mut self) {
-        let origin = format!("{self:?}");
+        let origin = "publish_subscribe::Builder::adjust_configuration_to_meaningful_values";
         let settings = self.base.service_config.publish_subscribe_mut();
 
         if settings.subscriber_max_borrowed_samples == 0 {
@@ -444,20 +644,21 @@ impl<
 
     fn verify_service_configuration(
         &self,
-        existing_settings: &static_config::StaticConfig,
-        verifier: &AttributeVerifier,
-    ) -> Result<static_config::publish_subscribe::StaticConfig, PublishSubscribeOpenError> {
-        let msg = "Unable to open publish subscribe service";
-
-        let existing_attributes = existing_settings.attributes();
-        if let Err(incompatible_key) = verifier.verify_requirements(existing_attributes) {
+        msg: &str,
+        existing_service_config: &StaticConfig,
+        required_attributes: &AttributeVerifier,
+    ) -> Result<(), PublishSubscribeOpenError> {
+        let required_service_config = &self.base.service_config;
+        let existing_attributes = existing_service_config.attributes();
+        if let Err(incompatible_key) = required_attributes.verify_requirements(existing_attributes)
+        {
             fail!(from self, with PublishSubscribeOpenError::IncompatibleAttributes,
                 "{} due to incompatible service attribute key \"{}\". The following attributes {:?} are required but the service has the attributes {:?}.",
-                msg, incompatible_key, verifier, existing_attributes);
+                msg, incompatible_key, required_attributes, existing_attributes);
         }
 
-        let required_settings = self.base.service_config.publish_subscribe();
-        let existing_settings = match &existing_settings.messaging_pattern {
+        let required_settings = required_service_config.publish_subscribe();
+        let existing_settings = match &existing_service_config.messaging_pattern {
             MessagingPattern::PublishSubscribe(v) => v,
             p => {
                 fail!(from self, with PublishSubscribeOpenError::IncompatibleMessagingPattern,
@@ -465,7 +666,7 @@ impl<
             }
         };
 
-        if self.verify_number_of_publishers
+        if self.verify.number_of_publishers
             && existing_settings.max_publishers < required_settings.max_publishers
         {
             fail!(from self, with PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfPublishers,
@@ -473,7 +674,7 @@ impl<
                                 msg, existing_settings.max_publishers, required_settings.max_publishers);
         }
 
-        if self.verify_number_of_subscribers
+        if self.verify.number_of_subscribers
             && existing_settings.max_subscribers < required_settings.max_subscribers
         {
             fail!(from self, with PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfSubscribers,
@@ -481,7 +682,7 @@ impl<
                                 msg, existing_settings.max_subscribers, required_settings.max_subscribers);
         }
 
-        if self.verify_subscriber_max_buffer_size
+        if self.verify.subscriber_max_buffer_size
             && existing_settings.subscriber_max_buffer_size
                 < required_settings.subscriber_max_buffer_size
         {
@@ -490,7 +691,7 @@ impl<
                                 msg, existing_settings.subscriber_max_buffer_size, required_settings.subscriber_max_buffer_size);
         }
 
-        if self.verify_publisher_history_size
+        if self.verify.publisher_history_size
             && existing_settings.history_size < required_settings.history_size
         {
             fail!(from self, with PublishSubscribeOpenError::DoesNotSupportRequestedMinHistorySize,
@@ -498,7 +699,7 @@ impl<
                                 msg, existing_settings.history_size, required_settings.history_size);
         }
 
-        if self.verify_subscriber_max_borrowed_samples
+        if self.verify.subscriber_max_borrowed_samples
             && existing_settings.subscriber_max_borrowed_samples
                 < required_settings.subscriber_max_borrowed_samples
         {
@@ -507,7 +708,7 @@ impl<
                                 msg, existing_settings.subscriber_max_borrowed_samples, required_settings.subscriber_max_borrowed_samples);
         }
 
-        if self.verify_enable_safe_overflow
+        if self.verify.enable_safe_overflow
             && existing_settings.enable_safe_overflow != required_settings.enable_safe_overflow
         {
             fail!(from self, with PublishSubscribeOpenError::IncompatibleOverflowBehavior,
@@ -515,26 +716,23 @@ impl<
                                 msg);
         }
 
-        if self.verify_max_nodes && existing_settings.max_nodes < required_settings.max_nodes {
+        if self.verify.max_nodes && existing_settings.max_nodes < required_settings.max_nodes {
             fail!(from self, with PublishSubscribeOpenError::DoesNotSupportRequestedAmountOfNodes,
                                 "{} since the service supports only {} nodes but {} are required.",
                                 msg, existing_settings.max_nodes, required_settings.max_nodes);
         }
 
-        Ok(*existing_settings)
+        Ok(())
     }
 
     fn create_impl(
-        &mut self,
+        &self,
         attributes: &AttributeSpecifier,
     ) -> Result<
         publish_subscribe::PortFactory<ServiceType, Payload, UserHeader>,
         PublishSubscribeCreateError,
     > {
-        self.adjust_configuration_to_meaningful_values();
-
         let msg = "Unable to create publish subscribe service";
-
         if !self.config_details().enable_safe_overflow
             && (self.config_details().subscriber_max_buffer_size
                 < self.config_details().history_size)
@@ -543,223 +741,127 @@ impl<
                 "{} since the history size is greater than the subscriber buffer size. The subscriber buffer size must be always greater or equal to the history size in the non-overflowing setup.", msg);
         }
 
-        match self.is_service_available(msg)? {
-            None => {
-                let service_tag = self
-                    .base
-                    .create_node_service_tag(msg, PublishSubscribeCreateError::InternalFailure)?;
-
-                // create static config
-                let static_config = match self.base.create_static_config_storage() {
-                    Ok(c) => c,
-                    Err(StaticStorageCreateError::AlreadyExists) => {
-                        fail!(from self, with PublishSubscribeCreateError::AlreadyExists,
-                           "{} since the service already exists.", msg);
-                    }
-                    Err(StaticStorageCreateError::Creation) => {
-                        fail!(from self, with PublishSubscribeCreateError::IsBeingCreatedByAnotherInstance,
-                            "{} since the service is being created by another instance.", msg);
-                    }
-                    Err(StaticStorageCreateError::InsufficientPermissions) => {
-                        fail!(from self, with PublishSubscribeCreateError::InsufficientPermissions,
-                            "{} since the static service information could not be created due to insufficient permissions.", msg);
-                    }
-                    Err(e) => {
-                        fail!(from self, with PublishSubscribeCreateError::InternalFailure,
-                            "{} since the static service information could not be created due to an internal failure ({:?}).", msg, e);
-                    }
-                };
-
-                let pubsub_config = self.base.service_config.publish_subscribe();
-
-                // create dynamic config
-                let dynamic_config_setting = DynamicConfigSettings {
-                    number_of_publishers: pubsub_config.max_publishers,
-                    number_of_subscribers: pubsub_config.max_subscribers,
-                };
-
-                let dynamic_config = match self.base.create_dynamic_config_storage(
-                    &MessagingPatternSettings::PublishSubscribe(dynamic_config_setting),
-                    dynamic_config::publish_subscribe::DynamicConfig::memory_size(
-                        &dynamic_config_setting,
-                    ),
-                    pubsub_config.max_nodes,
-                ) {
-                    Ok(dynamic_config) => dynamic_config,
-                    Err(DynamicStorageCreateError::AlreadyExists) => {
-                        fail!(from self, with PublishSubscribeCreateError::ServiceInCorruptedState,
-                            "{} since the dynamic config of a previous instance of the service still exists.", msg);
-                    }
-                    Err(DynamicStorageCreateError::InsufficientPermissions) => {
-                        fail!(from self, with PublishSubscribeCreateError::InsufficientPermissions,
-                              "{} since the dynamic config of a previous instance of the service cannot be removed.", msg);
-                    }
-                    Err(e) => {
-                        fail!(from self, with PublishSubscribeCreateError::InternalFailure,
-                            "{} since the dynamic service segment could not be created ({:?}).", msg, e);
-                    }
-                };
-
-                self.base.service_config.attributes = attributes.0.clone();
-                let service_config = fail!(from self,
-                            when ServiceType::ConfigSerializer::serialize(&self.base.service_config),
-                            with PublishSubscribeCreateError::ServiceInCorruptedState,
-                            "{} since the configuration could not be serialized.", msg);
-
-                // only unlock the static details when the service is successfully created
-                let unlocked_static_details = fail!(from self, when static_config.unlock(service_config.as_slice()),
-                            with PublishSubscribeCreateError::ServiceInCorruptedState,
-                            "{} since the configuration could not be written to the static storage.", msg);
-
-                unlocked_static_details.release_ownership();
-                if let Some(service_tag) = service_tag {
-                    service_tag.release_ownership();
-                }
-
-                Ok(publish_subscribe::PortFactory::new(
-                    service::ServiceState::new(
-                        self.base.service_config.clone(),
-                        self.base.shared_node.clone(),
-                        dynamic_config,
-                        unlocked_static_details,
-                        NoResource,
-                    ),
-                ))
-            }
-            Some(_) => {
-                fail!(from self, with PublishSubscribeCreateError::AlreadyExists,
-                    "{} since the service already exists.", msg);
-            }
+        if let Some(schema_path) = &self.flatbuffer_schema_path
+            && !is_binary_flatbuffer_schema(&schema_path.file_name())
+        {
+            fail!(from self,
+                    with PublishSubscribeCreateError::InvalidTypeDefinition,
+                    "{msg} since the type definition must be a binary flatbuffer schema and this file \"{}\" is something else.",
+                    schema_path);
         }
+
+        let generate_dynamic_config = |service_config: &StaticConfig| {
+            let pubsub_config = service_config.publish_subscribe();
+            let dynamic_config_setting = DynamicConfigSettings {
+                number_of_publishers: pubsub_config.max_publishers,
+                number_of_subscribers: pubsub_config.max_subscribers,
+            };
+
+            DynamicConfigCreationArgs {
+                messaging_pattern_settings: MessagingPatternSettings::PublishSubscribe(
+                    dynamic_config_setting,
+                ),
+                additional_size: dynamic_config::publish_subscribe::DynamicConfig::<
+                    ServiceType::Bag,
+                >::memory_size(&dynamic_config_setting),
+                max_number_of_nodes: pubsub_config.max_nodes,
+            }
+        };
+
+        let service_state = self.base.create(
+            msg,
+            attributes,
+            || self.is_service_available(msg),
+            |_| Ok(()),
+            generate_dynamic_config,
+            |service_config| {
+                PublishSubscribeResources::create(
+                    service_config,
+                    &PublishSubscribeResourceConfig::<ServiceType> {
+                        type_definition: TypeDefinition {
+                            use_type_definition: self.has_flatbuffer_payload(),
+                            schema_path: self.flatbuffer_schema_path,
+                            type_name: self.type_definition_name_hint,
+                            skip_type_definition_verification: false,
+                        },
+                        shared_node: self.base.shared_node.clone(),
+                    },
+                )
+            },
+            |_| {},
+            |service_config| {
+                UniqueServiceId::from_publish_subscribe_service::<ServiceType>(
+                    service_config.name(),
+                    self.base.shared_node.config(),
+                )
+            },
+        )?;
+
+        Ok(publish_subscribe::PortFactory::new(service_state))
     }
 
     fn open_impl(
-        &mut self,
-        attributes: &AttributeVerifier,
+        &self,
+        required_attributes: &AttributeVerifier,
     ) -> Result<
         publish_subscribe::PortFactory<ServiceType, Payload, UserHeader>,
         PublishSubscribeOpenError,
     > {
         let msg = "Unable to open publish subscribe service";
 
-        let mut service_open_retry_count = 0;
-        loop {
-            match self.is_service_available(msg)? {
-                None => {
-                    fail!(from self, with PublishSubscribeOpenError::DoesNotExist,
-                        "{} since the service does not exist.", msg);
-                }
-                Some((static_config, static_storage)) => {
-                    let pub_sub_static_config =
-                        self.verify_service_configuration(&static_config, attributes)?;
-
-                    let service_tag = self
-                        .base
-                        .create_node_service_tag(msg, PublishSubscribeOpenError::InternalFailure)?;
-
-                    let dynamic_config = match self.base.open_dynamic_config_storage() {
-                        Ok(v) => v,
-                        Err(OpenDynamicStorageFailure::IsMarkedForDestruction) => {
-                            fail!(from self, with PublishSubscribeOpenError::IsMarkedForDestruction,
-                                "{} since the service is marked for destruction.", msg);
-                        }
-                        Err(OpenDynamicStorageFailure::ExceedsMaxNumberOfNodes) => {
-                            fail!(from self, with PublishSubscribeOpenError::ExceedsMaxNumberOfNodes,
-                                "{} since it would exceed the maximum number of supported nodes.", msg);
-                        }
-                        Err(OpenDynamicStorageFailure::DynamicStorageOpenError(
-                            DynamicStorageOpenError::DoesNotExist,
-                        )) => {
-                            fail!(from self, with PublishSubscribeOpenError::ServiceInCorruptedState,
-                                "{} since the dynamic segment of the service is missing.", msg);
-                        }
-                        Err(e) => {
-                            if self.is_service_available(msg)?.is_none() {
-                                fail!(from self, with PublishSubscribeOpenError::DoesNotExist,
-                                    "{} since the service does not exist.", msg);
-                            }
-
-                            service_open_retry_count += 1;
-
-                            if RETRY_LIMIT < service_open_retry_count {
-                                fail!(from self, with PublishSubscribeOpenError::ServiceInCorruptedState,
-                                "{} since the dynamic service information could not be opened ({:?}). This could indicate a corrupted system or a misconfigured system where services are created/removed with a high frequency.",
-                                msg, e);
-                            }
-
-                            continue;
-                        }
-                    };
-
-                    self.base.service_config.messaging_pattern =
-                        MessagingPattern::PublishSubscribe(pub_sub_static_config);
-
-                    if let Some(service_tag) = service_tag {
-                        service_tag.release_ownership();
-                    }
-
-                    return Ok(publish_subscribe::PortFactory::new(
-                        service::ServiceState::new(
-                            static_config,
-                            self.base.shared_node.clone(),
-                            dynamic_config,
-                            static_storage,
-                            NoResource,
-                        ),
-                    ));
-                }
-            }
+        if let Some(schema_path) = &self.flatbuffer_schema_path
+            && !is_binary_flatbuffer_schema(&schema_path.file_name())
+        {
+            fail!(from self,
+                    with PublishSubscribeOpenError::InvalidTypeDefinition,
+                    "{msg} since the type definition must be a binary flatbuffer schema and this file \"{}\" is something else.",
+                    schema_path);
         }
+
+        let service_state = self.base.open(
+            msg,
+            || self.is_service_available(msg),
+            |existing_service_config| -> Result<(), PublishSubscribeOpenError> {
+                self.verify_service_configuration(msg, existing_service_config, required_attributes)
+            },
+            |service_config| {
+                PublishSubscribeResources::open(
+                    service_config,
+                    &PublishSubscribeResourceConfig::<ServiceType> {
+                        type_definition: TypeDefinition {
+                            use_type_definition: self.has_flatbuffer_payload(),
+                            schema_path: self.flatbuffer_schema_path,
+                            type_name: self.type_definition_name_hint,
+                            skip_type_definition_verification: self
+                                .skip_type_definition_verification,
+                        },
+                        shared_node: self.base.shared_node.clone(),
+                    },
+                )
+            },
+        )?;
+
+        Ok(publish_subscribe::PortFactory::new(service_state))
     }
 
     fn open_or_create_impl(
-        mut self,
-        verifier: &AttributeVerifier,
+        self,
+        attributes: &AttributeVerifier,
     ) -> Result<
         publish_subscribe::PortFactory<ServiceType, Payload, UserHeader>,
         PublishSubscribeOpenOrCreateError,
     > {
         let msg = "Unable to open or create publish subscribe service";
-
-        let mut retry_count = 0;
-        loop {
-            if RETRY_LIMIT < retry_count {
-                fail!(from self,
-                      with PublishSubscribeOpenOrCreateError::SystemInFlux,
-                      "{} since an instance is creating and removing the same service repeatedly.",
-                      msg);
-            }
-            retry_count += 1;
-
-            match self.is_service_available(msg)? {
-                Some(_) => match self.open_impl(verifier) {
-                    Ok(factory) => return Ok(factory),
-                    Err(PublishSubscribeOpenError::DoesNotExist)
-                    // If the service is currently being cleaned up then this process might identify
-                    // the service like this. Therefore, it makes sense to retry it multiple times until
-                    // the external cleanup process if finished.
-                    | Err(PublishSubscribeOpenError::ServiceInCorruptedState)
-                    | Err(PublishSubscribeOpenError::IsMarkedForDestruction) => continue,
-                    Err(e) => return Err(e.into()),
-                },
-                None => {
-                    match self
-                        .create_impl(&AttributeSpecifier(verifier.required_attributes().clone()))
-                    {
-                        Ok(factory) => return Ok(factory),
-                        Err(PublishSubscribeCreateError::AlreadyExists)
-                        // If the service is currently being cleaned up then this process might identify
-                        // the service like this. Therefore, it makes sense to retry it multiple times until
-                        // the external cleanup process if finished.
-                        | Err(PublishSubscribeCreateError::ServiceInCorruptedState)
-                        | Err(PublishSubscribeCreateError::IsBeingCreatedByAnotherInstance) => {
-                            continue;
-                        }
-                        Err(e) => return Err(e.into()),
-                    }
-                }
-            }
-        }
+        self.base.open_or_create(
+            msg,
+            attributes,
+            PublishSubscribeOpenOrCreateError::PublishSubscribeOpenError(
+                PublishSubscribeOpenError::InternalFailure,
+            ),
+            PublishSubscribeOpenOrCreateError::SystemInFlux,
+            |attributes| self.open_impl(attributes),
+            |attributes| self.create_impl(attributes),
+        )
     }
 
     fn adjust_payload_alignment(&mut self) {
@@ -781,13 +883,31 @@ impl<UserHeader: Debug + ZeroCopySend, ServiceType: service::Service>
     Builder<[CustomPayloadMarker], UserHeader, ServiceType>
 {
     #[doc(hidden)]
+    pub fn __internal_type_definition_name_hint(mut self, value: &TypeName) -> Self {
+        self.type_definition_name_hint = *value;
+        self
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn __internal_flatbuffer_schema_path(mut self, path: &FilePath) -> Self {
+        self.flatbuffer_schema_path = Some(*path);
+        self
+    }
+
+    #[doc(hidden)]
     pub unsafe fn __internal_set_payload_type_details(mut self, value: &TypeDetail) -> Self {
         self.override_payload_type = Some(*value);
         self
     }
+
+    #[doc(hidden)]
+    pub unsafe fn __internal_skip_type_definition_verification(mut self) -> Self {
+        self.skip_type_definition_verification = true;
+        self
+    }
 }
 
-impl<Payload: Debug + ?Sized + ZeroCopySend, ServiceType: service::Service>
+impl<Payload: Debug + ?Sized + IceoryxSend + ZeroCopySend, ServiceType: service::Service>
     Builder<Payload, CustomHeaderMarker, ServiceType>
 {
     #[doc(hidden)]
@@ -797,7 +917,7 @@ impl<Payload: Debug + ?Sized + ZeroCopySend, ServiceType: service::Service>
     }
 }
 
-impl<Payload: Debug + ZeroCopySend, UserHeader: Debug + ZeroCopySend, ServiceType: service::Service>
+impl<Payload: IceoryxSend + Debug, UserHeader: Debug + ZeroCopySend, ServiceType: service::Service>
     Builder<Payload, UserHeader, ServiceType>
 {
     fn prepare_config_details(&mut self) {
@@ -839,6 +959,7 @@ impl<Payload: Debug + ZeroCopySend, UserHeader: Debug + ZeroCopySend, ServiceTyp
         publish_subscribe::PortFactory<ServiceType, Payload, UserHeader>,
         PublishSubscribeOpenOrCreateError,
     > {
+        self.adjust_configuration_to_meaningful_values();
         self.prepare_config_details();
         self.open_or_create_impl(verifier)
     }
@@ -884,13 +1005,29 @@ impl<Payload: Debug + ZeroCopySend, UserHeader: Debug + ZeroCopySend, ServiceTyp
         publish_subscribe::PortFactory<ServiceType, Payload, UserHeader>,
         PublishSubscribeCreateError,
     > {
+        self.adjust_configuration_to_meaningful_values();
         self.prepare_config_details();
         self.create_impl(attributes)
     }
 }
 
-impl<Payload: Debug + ZeroCopySend, UserHeader: Debug + ZeroCopySend, ServiceType: service::Service>
-    Builder<[Payload], UserHeader, ServiceType>
+impl<Payload: Debug, UserHeader: Debug + ZeroCopySend, ServiceType: service::Service>
+    Builder<Flatbuffer<Payload>, UserHeader, ServiceType>
+{
+    /// Sets the path to the flatbuffer schema file. If this is not explicitly defined, iceoryx2
+    /// will try to find the best fitting schema file in the configured flatbuffer schema paths
+    /// defined in the config.
+    pub fn flatbuffer_schema_path(mut self, path: &FilePath) -> Self {
+        self.flatbuffer_schema_path = Some(*path);
+        self
+    }
+}
+
+impl<
+    Payload: Debug + IceoryxSend + ZeroCopySend,
+    UserHeader: Debug + ZeroCopySend,
+    ServiceType: service::Service,
+> Builder<[Payload], UserHeader, ServiceType>
 {
     fn prepare_config_details(&mut self) {
         self.config_details_mut().message_type_details =

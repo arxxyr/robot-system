@@ -88,8 +88,17 @@ jobs:
         run: cargo clippy --all --all-targets --all-features -- -D warnings
 
       # 3. 全 feature 测试
+      # W3 需要 release/abort S1；集成测试所需的同源 debug 二进制由 cargo test 生成。
+      - name: 构建 W3 release S1 实件
+        run: cargo build --locked --release -p robot-s1 --bin s1_daemon --all-features
+
       - name: cargo test --workspace --all-features
-        run: cargo test --workspace --all-features
+        env:
+          B4_E2E_BIN_S0_DAEMON: ${{ github.workspace }}/target/debug/s0_daemon
+          B4_E2E_BIN_S1_DAEMON: ${{ github.workspace }}/target/release/s1_daemon
+          B4_E2E_BIN_ROBOT_RPC_GATEWAY: ${{ github.workspace }}/target/debug/robot_rpc_gateway
+          ROBOT_W3_S1_UNWIND_BIN: ${{ github.workspace }}/target/debug/s1_daemon
+        run: cargo test --locked --workspace --all-features
 
       # H2 最终 Disable 的真实 TCP/tonic 预算回归，显式执行以隔离默认单测。
       # 仅绑定本机随机端口；不启动 S0、不访问串口或现场硬件。

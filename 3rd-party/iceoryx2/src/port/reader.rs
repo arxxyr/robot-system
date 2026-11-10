@@ -37,10 +37,13 @@
 
 use crate::constants::MAX_BLACKBOARD_KEY_SIZE;
 use crate::identifiers::UniqueReaderId;
+use crate::port::port_lifetime_tag::PortLifetimeTag;
+use crate::port::port_name::PortName;
 use crate::prelude::EventId;
-use crate::service::builder::CustomKeyMarker;
-use crate::service::builder::blackboard::{BlackboardResources, KeyMemory};
 use crate::service::dynamic_config::blackboard::ReaderDetails;
+use crate::service::marker::CustomKeyMarker;
+use crate::service::port_factory::reader::ReaderConfig;
+use crate::service::resource::blackboard::{BlackboardResources, KeyMemory};
 use crate::service::static_config::message_type_details::{TypeDetail, TypeVariant};
 use crate::service::{self, SharedServiceState};
 use core::alloc::Layout;
@@ -51,14 +54,13 @@ use core::ops::Deref;
 use core::ptr::NonNull;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_elementary::math::align;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
-use iceoryx2_bb_lock_free::mpmc::container::ContainerHandle;
 use iceoryx2_bb_lock_free::spmc::unrestricted_atomic::{
     UnrestrictedAtomic, UnrestrictedAtomicMgmt,
 };
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
+use iceoryx2_cal::bag::BagFamily;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 use iceoryx2_cal::shared_memory::SharedMemory;
 use iceoryx2_log::{fail, fatal_panic};
@@ -107,7 +109,7 @@ struct ReaderSharedState<
     // the struct.
     // Otherwise the process might crash during cleanup, has already removed the tag but other resources
     // are still existing. This would make a cleanup from another process impossible.
-    port_tag: Service::StaticStorage,
+    lifetime_tag: PortLifetimeTag<Service>,
 }
 
 unsafe impl<
@@ -124,12 +126,8 @@ impl<
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
+        unsafe { Abandonable::abandon_in_place(NonNull::from_mut(&mut this.lifetime_tag)) };
     }
 }
 
@@ -147,6 +145,8 @@ pub enum ReaderCreateError {
     FailedToDeployThreadsafetyPolicy,
     /// The tracking port tag, required for cleanup, could not be created.
     UnableToCreatePortTag,
+    /// The [`UniqueReaderId`] could not be generated.
+    UnableToGenerateUniqueReaderId,
 }
 
 impl core::fmt::Display for ReaderCreateError {
@@ -164,8 +164,8 @@ pub struct Reader<
     KeyType: Send + Sync + Eq + Clone + Copy + Debug + 'static + Hash + ZeroCopySend,
 > {
     shared_state: Service::ArcThreadSafetyPolicy<ReaderSharedState<Service, KeyType>>,
-    dynamic_reader_handle: Option<ContainerHandle>,
-    reader_id: UniqueReaderId,
+    dynamic_reader_handle: <Service::Bag as BagFamily>::BagHandle,
+    reader_details: &'static ReaderDetails,
 }
 
 impl<
@@ -176,7 +176,7 @@ impl<
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.shared_state,
             ))
         };
@@ -189,15 +189,13 @@ impl<
 > Drop for Reader<Service, KeyType>
 {
     fn drop(&mut self) {
-        if let Some(handle) = self.dynamic_reader_handle {
-            self.shared_state
-                .lock()
-                .service_state
-                .dynamic_storage()
-                .get()
-                .blackboard()
-                .release_reader_handle(handle)
-        }
+        self.shared_state
+            .lock()
+            .service_state
+            .dynamic_storage()
+            .get()
+            .blackboard()
+            .release_reader_handle(self.dynamic_reader_handle)
     }
 }
 
@@ -208,26 +206,26 @@ impl<
 {
     pub(crate) fn new(
         service: SharedServiceState<Service, BlackboardResources<Service>>,
+        config: ReaderConfig,
     ) -> Result<Self, ReaderCreateError> {
         let origin = "Reader::new()";
         let msg = "Unable to create Reader port";
-        let reader_id = UniqueReaderId::new();
+        let reader_id = fail!(from origin,
+            when UniqueReaderId::new::<Service>(config.port_name, service.shared_node().config()),
+            with ReaderCreateError::UnableToGenerateUniqueReaderId, "{msg} since the UniqueReaderId could not be generated.");
         // !MUST! be the first thing that is created when a new port is instantiated otherwise the
         // port resources might leak if this process is killed in between.
-        let port_tag = match service
-            .shared_node()
-            .create_port_tag(origin, msg, reader_id.0.value())
-        {
-            Ok(port_tag) => port_tag,
-            Err(e) => {
-                fail!(from origin, with ReaderCreateError::UnableToCreatePortTag,
-                        "{msg} since the port tag, that is required for cleanup, could not be created. [{e:?}]");
-            }
-        };
+        let lifetime_tag = PortLifetimeTag::new(
+            origin,
+            msg,
+            reader_id.0.value(),
+            service.shared_node(),
+            ReaderCreateError::UnableToCreatePortTag,
+        )?;
 
         let shared_state =
             <Service as service::Service>::ArcThreadSafetyPolicy::new(ReaderSharedState {
-                port_tag,
+                lifetime_tag,
                 service_state: service.clone(),
                 _key: PhantomData,
             });
@@ -240,25 +238,20 @@ impl<
             }
         };
 
-        let mut new_self = Self {
-            shared_state,
-            reader_id,
-            dynamic_reader_handle: None,
-        };
-
         core::sync::atomic::compiler_fence(Ordering::SeqCst);
 
         // !MUST! be the last task otherwise a reader is added to the dynamic config without the
         // creation of all required resources
-        let dynamic_reader_handle = match service
+        let (details, handle) = match service
             .dynamic_storage()
             .get()
             .blackboard()
-            .add_reader_id(ReaderDetails {
+            .register_reader_id(ReaderDetails {
                 reader_id,
+                reader_name: config.port_name,
                 node_id: *service.shared_node().id(),
             }) {
-            Some(unique_index) => unique_index,
+            Some(v) => v,
             None => {
                 fail!(from origin, with ReaderCreateError::ExceedsMaxSupportedReaders,
                             "{} since it would exceed the maximum supported amount of readers of {}.",
@@ -266,13 +259,21 @@ impl<
             }
         };
 
-        new_self.dynamic_reader_handle = Some(dynamic_reader_handle);
-        Ok(new_self)
+        Ok(Self {
+            shared_state,
+            reader_details: unsafe { &*details },
+            dynamic_reader_handle: handle,
+        })
     }
 
     /// Returns the [`UniqueReaderId`] of the [`Reader`]
     pub fn id(&self) -> UniqueReaderId {
-        self.reader_id
+        self.reader_details.reader_id
+    }
+
+    /// Returns the [`PortName`] of the [`Reader`]
+    pub fn name(&self) -> &PortName {
+        &self.reader_details.reader_name
     }
 
     /// Creates a [`EntryHandle`] for direct read access to the value.

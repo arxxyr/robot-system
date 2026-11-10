@@ -100,17 +100,23 @@ impl StaticConfig {
         }
     }
 
+    pub(crate) fn required_max_borrowed_chunks_per_client(&self) -> Option<usize> {
+        self.max_loaned_requests
+            .checked_add(self.max_active_requests_per_client)?
+            .checked_add(self.max_active_requests_per_client)
+    }
+
     /// RR R2：受检的 client 数据段 chunk 数 `max_servers * (A + A) + client_max_loaned_data`；
     /// 任一步溢出返回 `None`，由构造入口 typed 拒绝。
     pub(crate) fn required_amount_of_chunks_per_client_data_segment(
         &self,
         client_max_loaned_data: usize,
+        client_max_active_requests: usize,
     ) -> Option<usize> {
         // a client sent so many active requests to a server in parallel, and the server can still
         // hold old requests that the client has already dropped: at most 2 * A chunks per server.
-        let chunks_per_server = self
-            .max_active_requests_per_client
-            .checked_add(self.max_active_requests_per_client)?;
+        let chunks_per_server =
+            client_max_active_requests.checked_add(client_max_active_requests)?;
         // all chunks all servers can hold, plus all chunks a client can loan in parallel
         self.max_servers
             .checked_mul(chunks_per_server)?

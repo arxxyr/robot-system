@@ -1393,7 +1393,7 @@ mod tests {
         use crate::test_util::wait_until;
         use robot_core::executor_ctrl::{AdapterErr, AdapterResp, pack_pending_normal};
 
-        let (handle, ctrl, _) = setup(1);
+        let (handle, ctrl, snap_rdr) = setup(1);
         let metrics = Arc::clone(handle.metrics());
 
         assert!(wait_until(Duration::from_millis(500), || {
@@ -1405,8 +1405,19 @@ mod tests {
             wait_until(Duration::from_millis(500), || {
                 ctrl.safety_latched()
                     && metrics.emergency_safety_stop_count.load(Ordering::Relaxed) > stops_before
+                    && ctrl.emergency_action.load(Ordering::Acquire) == emergency_codes::NONE
+                    && !ctrl.authority().snapshot().serial_estop_pending
             }),
             "emergency 500ms 内未 latch"
+        );
+
+        // 两个急停入口均已消费后，再等 tick 尾发布，避免把计数更新误作 pending 已排空。
+        let stopped_tick = snap_rdr.load().tick_seq;
+        assert!(
+            wait_until(Duration::from_millis(500), || {
+                snap_rdr.load().tick_seq > stopped_tick
+            }),
+            "emergency 500ms 内未完成 tick 尾发布"
         );
 
         // 2. **绕过 client 端 A2 start**直接注入 Enable(true) slot

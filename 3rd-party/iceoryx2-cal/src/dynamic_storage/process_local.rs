@@ -17,18 +17,23 @@
 //!
 //! ```
 //! # extern crate iceoryx2_bb_loggers;
+//! use iceoryx2_bb_concurrency::atomic::{AtomicI64, Ordering};
 //! use iceoryx2_bb_posix::access_mode::AccessMode;
 //! use iceoryx2_bb_system_types::file_name::FileName;
 //! use iceoryx2_bb_container::semantic_string::SemanticString;
 //! use iceoryx2_cal::dynamic_storage::process_local::*;
 //! use iceoryx2_cal::named_concept::*;
-//! use core::sync::atomic::{AtomicI64, Ordering};
 //!
 //! let additional_size: usize = 1024;
 //! let storage_name = FileName::new(b"myDynStorage").unwrap();
 //! let storage = Builder::new(&storage_name)
 //!                 .supplementary_size(additional_size)
-//!                 .create(AtomicI64::new(444)).unwrap();
+//!                 .initializer(|value, _| {
+//!                     value.write(AtomicI64::new(444));
+//!                     true
+//!                 })
+//!                 .create()
+//!                 .unwrap();
 //!
 //! // at some other place in the local process, can be another thread
 //! let reader = Builder::<AtomicI64>::new(&storage_name)
@@ -56,7 +61,7 @@ use alloc::vec::Vec;
 
 use iceoryx2_bb_concurrency::atomic::AtomicBool;
 use iceoryx2_bb_concurrency::lazy_lock::LazyLock;
-use iceoryx2_bb_elementary_traits::allocator::BaseAllocator;
+use iceoryx2_bb_elementary_traits::allocator::{Allocate, Deallocate};
 use iceoryx2_bb_memory::heap_allocator::HeapAllocator;
 use iceoryx2_bb_posix::mutex::*;
 use iceoryx2_bb_system_types::file_name::FileName;
@@ -80,13 +85,12 @@ struct StorageEntry {
 
 #[derive(Debug)]
 struct StorageDetails<T> {
-    data_ptr: *mut T,
+    data_ptr: *mut MaybeUninit<T>,
     layout: Layout,
-    call_drop_on_destruction: bool,
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct Configuration<T: Send + Sync + Debug> {
+pub struct Configuration<T: Send + Sync + Debug + ZeroCopySend> {
     suffix: FileName,
     prefix: FileName,
     path_hint: Path,
@@ -94,7 +98,7 @@ pub struct Configuration<T: Send + Sync + Debug> {
     type_name: String,
 }
 
-impl<T: Send + Sync + Debug> Clone for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Clone for Configuration<T> {
     fn clone(&self) -> Self {
         Self {
             suffix: self.suffix,
@@ -106,7 +110,7 @@ impl<T: Send + Sync + Debug> Clone for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> Default for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> Default for Configuration<T> {
     fn default() -> Self {
         Self {
             suffix: Storage::<()>::default_suffix(),
@@ -118,13 +122,13 @@ impl<T: Send + Sync + Debug> Default for Configuration<T> {
     }
 }
 
-impl<T: Send + Sync + Debug> DynamicStorageConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> DynamicStorageConfiguration for Configuration<T> {
     fn type_name(&self) -> &str {
         &self.type_name
     }
 }
 
-impl<T: Send + Sync + Debug> NamedConceptConfiguration for Configuration<T> {
+impl<T: Send + Sync + Debug + ZeroCopySend> NamedConceptConfiguration for Configuration<T> {
     fn prefix(mut self, value: &FileName) -> Self {
         self.prefix = *value;
         self
@@ -169,16 +173,15 @@ impl<T> StorageDetails<T> {
         Layout::from_size_align(size, core::mem::align_of::<T>()).ok()
     }
 
-    fn new(value: T, layout: Layout, call_drop_on_destruction: bool) -> Self {
+    fn new(layout: Layout) -> Self {
         let size = layout.size();
         let new_self = Self {
             data_ptr: fatal_panic!(from "StorageDetails::new", when HeapAllocator::new()
                 .allocate(layout), "Failed to allocate {} bytes for dynamic global storage.", size)
-            .as_ptr() as *mut T,
+            .as_ptr() as *mut MaybeUninit<T>,
             layout,
-            call_drop_on_destruction,
         };
-        unsafe { new_self.data_ptr.write(value) };
+        unsafe { new_self.data_ptr.write(MaybeUninit::uninit()) };
         new_self
     }
 }
@@ -210,20 +213,20 @@ static PROCESS_LOCAL_STORAGE: LazyLock<Mutex<'static, 'static, BTreeMap<FilePath
     });
 
 #[derive(Debug)]
-pub struct Storage<T: Send + Sync + Debug + 'static> {
+pub struct Storage<T: Send + Sync + Debug + 'static + ZeroCopySend> {
     name: FileName,
     data: Arc<StorageDetails<T>>,
     has_ownership: AtomicBool,
     config: Configuration<T>,
 }
 
-impl<T: Send + Sync + Debug + 'static> NamedConcept for Storage<T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> NamedConcept for Storage<T> {
     fn name(&self) -> &FileName {
         &self.name
     }
 }
 
-impl<T: Send + Sync + Debug + 'static> NamedConceptMgmt for Storage<T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> NamedConceptMgmt for Storage<T> {
     type Configuration = Configuration<T>;
 
     fn does_exist_cfg(
@@ -274,22 +277,11 @@ impl<T: Send + Sync + Debug + 'static> NamedConceptMgmt for Storage<T> {
                                 with NamedConceptRemoveError::InternalError,
                                 "{} since the lock could not be acquired.", msg);
 
-        let mut entry = guard.get_mut(&storage_name);
+        let entry = guard.get_mut(&storage_name);
         if entry.is_none() {
             return Ok(false);
         }
 
-        let details = entry
-            .as_mut()
-            .unwrap()
-            .content
-            .clone()
-            .downcast::<StorageDetails<T>>()
-            .unwrap();
-
-        if details.call_drop_on_destruction {
-            unsafe { core::ptr::drop_in_place(details.data_ptr) };
-        }
         Ok(guard.remove(&storage_name).is_some())
     }
 
@@ -300,7 +292,7 @@ impl<T: Send + Sync + Debug + 'static> NamedConceptMgmt for Storage<T> {
     }
 }
 
-impl<T: Send + Sync + Debug + 'static> DynamicStorage<T> for Storage<T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> DynamicStorage<T> for Storage<T> {
     type Builder<'builder> = Builder<'builder, T>;
 
     fn does_support_persistency() -> bool {
@@ -312,7 +304,7 @@ impl<T: Send + Sync + Debug + 'static> DynamicStorage<T> for Storage<T> {
     }
 
     fn get(&self) -> &T {
-        unsafe { &*self.data.data_ptr }
+        unsafe { (*self.data.data_ptr).assume_init_ref() }
     }
 
     fn has_ownership(&self) -> bool {
@@ -331,7 +323,7 @@ impl<T: Send + Sync + Debug + 'static> DynamicStorage<T> for Storage<T> {
     }
 }
 
-impl<T: Send + Sync + Debug + 'static> Abandonable for Storage<T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> Abandonable for Storage<T> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         this.has_ownership.store(false, Ordering::Relaxed);
@@ -339,7 +331,7 @@ impl<T: Send + Sync + Debug + 'static> Abandonable for Storage<T> {
     }
 }
 
-impl<T: Send + Sync + Debug + 'static> Drop for Storage<T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> Drop for Storage<T> {
     fn drop(&mut self) {
         if self.has_ownership() {
             match unsafe { Self::remove_cfg(&self.name, &self.config) } {
@@ -357,25 +349,25 @@ impl<T: Send + Sync + Debug + 'static> Drop for Storage<T> {
 }
 
 #[derive(Debug)]
-pub struct Builder<'builder, T: Send + Sync + Debug> {
+pub struct Builder<'builder, T: Send + Sync + Debug + ZeroCopySend> {
     name: FileName,
     supplementary_size: usize,
     has_ownership: bool,
-    call_drop_on_destruction: bool,
     config: Configuration<T>,
     initializer: Initializer<'builder, T>,
     _phantom_data: PhantomData<T>,
 }
 
-impl<T: Send + Sync + Debug + 'static> NamedConceptBuilder<Storage<T>> for Builder<'_, T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> NamedConceptBuilder<Storage<T>>
+    for Builder<'_, T>
+{
     fn new(storage_name: &FileName) -> Self {
         Self {
             name: *storage_name,
             has_ownership: true,
-            call_drop_on_destruction: true,
             supplementary_size: 0,
             config: Configuration::default(),
-            initializer: Initializer::new(|_, _| true),
+            initializer: Initializer::new(|_, _| false),
             _phantom_data: PhantomData,
         }
     }
@@ -386,7 +378,7 @@ impl<T: Send + Sync + Debug + 'static> NamedConceptBuilder<Storage<T>> for Build
     }
 }
 
-impl<T: Send + Sync + Debug + 'static> Builder<'_, T> {
+impl<T: Send + Sync + Debug + 'static + ZeroCopySend> Builder<'_, T> {
     fn open_impl(
         &self,
         guard: &mut MutexGuard<'static, BTreeMap<FilePath, StorageEntry>>,
@@ -417,7 +409,6 @@ impl<T: Send + Sync + Debug + 'static> Builder<'_, T> {
     fn create_impl(
         &mut self,
         guard: &mut MutexGuard<'static, BTreeMap<FilePath, StorageEntry>>,
-        initial_value: T,
     ) -> Result<Storage<T>, DynamicStorageCreateError> {
         let msg = "Failed to create dynamic storage";
 
@@ -434,13 +425,9 @@ impl<T: Send + Sync + Debug + 'static> Builder<'_, T> {
                 "{} since the storage layout for {} supplementary bytes is not representable.",
                 msg, self.supplementary_size);
         };
-        let storage_details = Arc::new(StorageDetails::new(
-            initial_value,
-            layout,
-            self.call_drop_on_destruction,
-        ));
+        let storage_details = Arc::new(StorageDetails::new(layout));
 
-        let value = storage_details.data_ptr;
+        let value: *mut MaybeUninit<T> = storage_details.data_ptr;
         let supplementary_start = (value as usize + core::mem::size_of::<T>()) as *mut u8;
 
         let mut allocator = BumpAllocator::new(
@@ -480,20 +467,19 @@ impl<T: Send + Sync + Debug + 'static> Builder<'_, T> {
     }
 }
 
-impl<'builder, T: Send + Sync + Debug + 'static> DynamicStorageBuilder<'builder, T, Storage<T>>
-    for Builder<'builder, T>
+impl<'builder, T: Send + Sync + Debug + 'static + ZeroCopySend>
+    DynamicStorageBuilder<'builder, T, Storage<T>> for Builder<'builder, T>
 {
-    fn call_drop_on_destruction(mut self, value: bool) -> Self {
-        self.call_drop_on_destruction = value;
-        self
-    }
-
     fn has_ownership(mut self, value: bool) -> Self {
         self.has_ownership = value;
         self
     }
 
-    fn initializer<F: FnMut(&mut T, &mut BumpAllocator) -> bool + 'builder>(
+    fn enable_global_access(self, _value: bool) -> Self {
+        self
+    }
+
+    fn initializer<F: FnMut(&mut MaybeUninit<T>, &mut BumpAllocator) -> bool + 'builder>(
         mut self,
         value: F,
     ) -> Self {
@@ -520,20 +506,17 @@ impl<'builder, T: Send + Sync + Debug + 'static> DynamicStorageBuilder<'builder,
         self.open_impl(&mut guard)
     }
 
-    fn create(mut self, initial_value: T) -> Result<Storage<T>, DynamicStorageCreateError> {
+    fn create(mut self) -> Result<Storage<T>, DynamicStorageCreateError> {
         let msg = "Failed to create dynamic storage";
         let mut guard = fail!(from self, when PROCESS_LOCAL_STORAGE.lock(),
             with DynamicStorageCreateError::InternalError,
             "{} due to a failure while acquiring the lock.", msg
         );
 
-        self.create_impl(&mut guard, initial_value)
+        self.create_impl(&mut guard)
     }
 
-    fn open_or_create(
-        mut self,
-        initial_value: T,
-    ) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
+    fn open_or_create(mut self) -> Result<Storage<T>, DynamicStorageOpenOrCreateError> {
         let msg = "Failed to open or create dynamic storage";
         let mut guard = fail!(from self, when PROCESS_LOCAL_STORAGE.lock(),
             with DynamicStorageOpenOrCreateError::DynamicStorageOpenError(DynamicStorageOpenError::InternalError),
@@ -542,12 +525,10 @@ impl<'builder, T: Send + Sync + Debug + 'static> DynamicStorageBuilder<'builder,
 
         match self.open_impl(&mut guard) {
             Ok(storage) => Ok(storage),
-            Err(DynamicStorageOpenError::DoesNotExist) => {
-                match self.create_impl(&mut guard, initial_value) {
-                    Ok(storage) => Ok(storage),
-                    Err(e) => Err(e.into()),
-                }
-            }
+            Err(DynamicStorageOpenError::DoesNotExist) => match self.create_impl(&mut guard) {
+                Ok(storage) => Ok(storage),
+                Err(e) => Err(e.into()),
+            },
             Err(e) => Err(e.into()),
         }
     }

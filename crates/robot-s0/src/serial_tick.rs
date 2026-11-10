@@ -1126,7 +1126,12 @@ mod tests {
         let source = mixed_command();
         fixture.step(&source.as_view());
         assert_eq!(&fixture.tick.state.positions[..6], &[0.4; 6]);
-        assert_eq!(&fixture.tick.state.velocities[6..9], &[-100., 100., 50.]);
+        // 本测试验证配置槽位目标的跨层透传，不复制轮位表；角色映射由独立黄金与排列测试验证。
+        let expected_velocities = source.raw_velocities.map(f32::from);
+        assert_eq!(
+            &fixture.tick.state.velocities[6..9],
+            &expected_velocities[6..9]
+        );
         let mut expected = source;
         expected.seq = 0;
         assert_same_command(fixture.adapter.last_command.as_ref().unwrap(), &expected);

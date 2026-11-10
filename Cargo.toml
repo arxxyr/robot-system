@@ -22,16 +22,14 @@ members = [
     "crates/robot-tests",
     "crates/robot-transport",
     "crates/robot-viz",
+    "tools/rr-memory-model",
 ]
-# RR R0（2026-09-14）：iceoryx2 / iceoryx2-cal 0.9.3 以原始发布包 vendor 到 3rd-party/，
-# 经下方 [patch.crates-io] 接入根依赖图。这里显式排除，避免 Cargo 把 workspace 目录内的
-# path 依赖自动收为成员（否则 --workspace / --all-targets 会选中它们的 tests/tests.rs，
-# 而该文件引用未发布的 *_tests_common）。tools/rr-memory-model 保持独立 workspace。
-# 来源与原包缺失事实见 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
+# 第三方补丁源码不作为自有 workspace 成员，其上游测试需要未发布的辅助包。
+# 来源与本地修复见 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
 exclude = [
     "3rd-party/iceoryx2",
     "3rd-party/iceoryx2-cal",
-    "tools/rr-memory-model",
+    "3rd-party/re_protos",
 ]
 
 [workspace.package]
@@ -52,9 +50,9 @@ readme       = "README.md"
 # 的 FFI 绑定；`libc` 加入 §4.2 允许列表的登记见 docs/CHANGELOG.md 2026-04-21。
 # 用户 2026-04-22 显式决定走 1.0 预发布轨道；精确 pin 防 alpha.N → alpha.N+1
 # 的破坏性变更（pre-release SemVer 不保证兼容）。升级 alpha 时同步跑 time.rs 测试。
-libc      = "=1.0.0-alpha.4"
+libc      = "=1.0.0-alpha.5"
 # thiserror：各 crate 的强类型错误定义。
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 # robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 严格对齐（精确 pin，防 minor 漂移）。
 # 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
 flatbuffers = "=25.12.19"
@@ -62,63 +60,65 @@ flatbuffers = "=25.12.19"
 blake3 = "1.8.7"
 # iceoryx2：本机零拷贝 pub-sub（§2.1）。精确 pin 仿 flatbuffers，防 minor 破坏性变更。
 # 烟测见 docs/CHANGELOG.md 2026-04-22 "Step 5 开工决策与 iceoryx2 依赖登记"。
-iceoryx2 = "=0.9.3"
+iceoryx2 = "=0.10.0"
 # 仅供 transport 纯错误映射测试命名上游载荷，不增加生产直接依赖。
-iceoryx2-cal = { version = "=0.9.3", default-features = false }
+iceoryx2-cal = { version = "=0.10.0", default-features = false }
 # 仅 pubsub cleanup 工具用上游 Node ID 解码 PID，避免复制私有位布局。
-iceoryx2-bb-posix = "=0.9.3"
+iceoryx2-bb-posix = "=0.10.0"
 # arc-swap：robot-transport 最新命令槽（IPC 写，执行线程读）；状态反馈另走快照。
-arc-swap = "1.9"
+arc-swap = "1.9.5"
 # tempfile：dev-dependency，给 estop_latch / 其他涉及文件系统的单测用临时目录。
 # 只在 dev-dependencies 位置继承（`tempfile = { workspace = true }` 出现在子 crate 的 dev-deps 段）。
-tempfile = "3.27"
+tempfile = "3.27.0"
 # crossbeam-channel：Step 6 Part 2 非 RT 线程间事件队列（watchdog → ipc_thread，SIGINT → ipc_thread）。
 # MPMC + bounded + try_recv，零依赖无 unsafe。成熟 3.5+ SLoC 库。
-crossbeam-channel = "0.5"
+crossbeam-channel = "0.5.17"
 # hdrhistogram：Step 6 Part 2 iceoryx2_rt_baseline harness 的延迟分布统计。
 # 10 µs - 10 s 动态范围，p50/p99/p999/max 精确到 3 位有效数字即可。
-hdrhistogram = "7.6"
+hdrhistogram = "7.6.0"
 # serde + toml：Step 7 task 25 ConfigIdentity TOML loader（v0.2 阶段限 robot-s0
 # 使用，robot-core 仍恪守 §4.2 零 runtime 依赖；白名单登记见 docs/CHANGELOG.md
 # 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"）。
 # toml 1.x：配置解析与身份散列的兼容性由 config_loader / ConfigIdentity 测试锁定。
-serde = { version = "1", features = ["derive"] }
-toml  = "1.1.5"
+serde = { version = "1.0.229", features = ["derive"] }
+toml  = "1.2.1"
 # serde_json：Step 7 task 29 (2026-04-25) feetech MotorCalibration JSON loader。
 # 限 robot-adapter-feetech 使用，格式与 dimos `scripts/calibrate.py` 输出 1:1 兼容
 # （顶层 {motor_name: {id, drive_mode, homing_offset, range_min, range_max}}）。
 # 白名单登记见 docs/CHANGELOG.md 2026-04-25 "Step 7 task 29 feetech calibration
 # JSON loader"。
-serde_json = "1"
+serde_json = "1.0.154"
 # inventory：static 注册机制（adapter 工厂表）。Step 7 task 27b 落地。
 # 链接器把每个 adapter crate 的 `submit!` 项收到一个 array section，启动期
 # `iter::<&dyn AdapterFactory>()` 遍历。**零 runtime 开销**（无 alloc / 无 IO），
 # 仅在进程启动一次性扫描。白名单登记见 docs/CHANGELOG.md 2026-04-24
 # "Step 7 task 27b matrix + inventory adapter 自注册"。
-inventory = "0.3"
+inventory = "0.3.25"
 # criterion：性能基准 harness。Step 7 task 27c feetech bench 落地。
 # 仅在 [dev-dependencies] 用，不进任何 binary；用 default features 的
 # rayon / plotters 子集，跑 cargo bench 时拉链接。
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 # serialport：跨平台串口 crate（Linux 走 libudev，需 libudev-dev / libudev1）。
 # Step 7 task 28 feetech `real-hw` feature 必需；mock-only 编译路径不 link。
-serialport = "4"
+serialport = "4.10.1"
 # assert_no_alloc：RT 线程 alloc 守卫（robot-core rt-alloc-guard feature +
 # feetech / mock adapter 的 RT 路径断言）。子 crate 一律 `workspace = true`
 # 继承，版本单源在此。
 # 上游默认 disable_release 会移除 AllocDisabler 并让 scope 在 release 中变成空操作。
 # rt_guard 显式启用时两种 profile 都必须真正拒绝分配，且不启用仅告警的 feature。
-assert_no_alloc = { version = "1.1", default-features = false }
+assert_no_alloc = { version = "1.1.2", default-features = false }
 # trybuild：robot-transport 编译期负向测试（UI test snapshot）。dev-only。
-trybuild = "1.0.121"
+trybuild = "1.0.122"
+# 严格 RR 状态机的同源并发模型，仅由测试包继承。
+loom = { version = "=0.7.3", default-features = false }
 # tracing + tracing-subscriber：Rust 生态标准结构化日志（相当于 C++ spdlog）。
 # task-32 (2026-04-25) 日志骨架：所有 bin（s0_daemon / mock_s1 / robotctl /
 # policy_host 等）启动时 `init_tracing()`，RT thread 内严格**禁用**（带 format
 # arg 的 tracing::info! 会 heap alloc，违反 §4.9 RT 铁律 —— CLAUDE.md 禁用表
 # 已列）。字段约定 / 格式配置详 docs/logging.md。白名单登记见 docs/CHANGELOG.md
 # 2026-04-25 "task-32 日志骨架"。
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "json", "ansi", "smallvec", "tracing-log"] }
+tracing            = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "json", "ansi", "smallvec", "tracing-log"] }
 # ctor：binary main 执行前自动运行构造函数（等价 C++ __attribute__((constructor))），
 # 让所有 bin 只要依赖 `robot-logging` 就自动 init tracing subscriber，不用
 # 每个 main 写 `robot_logging::init()`。白名单登记见 docs/CHANGELOG.md 2026-04-25
@@ -126,31 +126,35 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 ctor               = "1.0.13"
 
 # robot-viz 独立观测工具：仅启用 SDK；原生 viewer 由同版外部程序提供。
-rerun = { version = "=0.38.1", default-features = false, features = ["sdk"] }
+rerun = { version = "=0.42.0", default-features = false, features = ["sdk"] }
+# RRD 回读测试与写入 SDK 保持同版。
+re_log_encoding = { version = "=0.42.0", features = ["decoder"] }
+# 验证新版 protoc 生成的 Rerun 描述符，运行时依赖路径仍由 SDK 管理。
+re_protos = { version = "=0.42.0", default-features = false }
 # 外部工具 allocator（冻结设计 §0）；不进入 S0 / S1 的分配路径。
-mimalloc = { version = "0.1", default-features = false }
+mimalloc = { version = "0.1.52", default-features = false }
 
 # RPC 网关及显式启用的集成测试依赖；不进入 S0/S1 daemon 的执行路径。
 # tonic 0.14 feature 重排：`router`（`Server::add_service` 所在的 Routes
 # 构建器）从 transport 拆出，需显式启用。
-tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "router"] }
+tonic = { version = "0.14.9", default-features = false, features = ["codegen", "transport", "router"] }
 # tonic 0.14 起 prost 集成剥离为独立 crate：runtime codec = tonic-prost，
 # codegen = tonic-prost-build（原 tonic feature "prost" / tonic-build 的
 # prost 路径均已移除）。
-tonic-prost = { version = "0.14", default-features = false }
-prost = "0.14"
+tonic-prost = { version = "0.14.9", default-features = false }
+prost = "0.14.4"
 # UUIDv7 生成 + parse（CommandMeta.request_id）。robot-rpc auth + idempotency
 # 用此 crate 校验 request_id 格式。
-uuid = { version = "1.26", default-features = false, features = ["v7", "std"] }
+uuid = { version = "1.29.2", default-features = false, features = ["v7", "std"] }
 # tonic-prost-build：A1-1 (3/3) robot-rpc proto 代码生成（tonic 0.14 起替代
 # tonic-build 的 prost 路径）。仅 robot-rpc/build.rs 用
 # （`[build-dependencies] tonic-prost-build = { workspace = true }`）。
-tonic-prost-build = { version = "0.14", default-features = false }
+tonic-prost-build = { version = "0.14.9", default-features = false }
 # protoc-bin-vendored：vendored protoc binary（避免 host 必须装 protoc）。
 # 跟 vendored flatc 同款隔离策略：编译期一致性 + 跨开发机不依赖系统包。
-protoc-bin-vendored = "3"
+protoc-bin-vendored = "3.3.0"
 # tokio：RPC 网关与显式启用的集成测试运行时，不进 S0/S1 daemon。
-tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。
 robot-core          = { path = "crates/robot-core" }
@@ -163,14 +167,16 @@ robot-transport     = { path = "crates/robot-transport" }
 robot-adapter-mock    = { path = "crates/robot-adapters/mock" }
 robot-adapter-feetech = { path = "crates/robot-adapters/feetech" }
 robot-rpc           = { path = "crates/robot-rpc" }
+robot-s0            = { path = "crates/robot-s0", default-features = false }
+robot-s1            = { path = "crates/robot-s1", default-features = false }
 
-# RR R0（2026-09-14）：两个上游运行时 crate 改由本地 vendor 原件解析——版本仍 =0.9.3，
-# 只有 source 从 crates.io 变成 path，为后续 R1（CAL）/ R2（IOX）严格 RR 修正提供单一
-# 补丁图。其余 iceoryx2-bb-* / pal-* / log* 仍走 crates.io，不升级。原件身份见
-# 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
+# 两个运行时 crate 保留已验证的严格 RR 本地修复，其余上游依赖由根锁文件解析。
+# 升级时须迁移补丁，不能用 registry 原包直接替换。
 [patch.crates-io]
 iceoryx2     = { path = "3rd-party/iceoryx2" }
 iceoryx2-cal = { path = "3rd-party/iceoryx2-cal" }
+# 上游 re_protos 精确绑定旧 protoc；只更新其构建工具版本，协议源码保持上游原件。
+re_protos = { path = "3rd-party/re_protos" }
 
 # Workspace 级 lint 默认。
 # 子 crate 在自己的 Cargo.toml 里写 `[lints] workspace = true` 即可继承。

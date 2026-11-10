@@ -46,9 +46,8 @@ use crate::constants::MAX_BLACKBOARD_KEY_SIZE;
 use crate::identifiers::UniqueServiceId;
 use crate::node::NodeListFailure;
 use crate::service::attribute::AttributeSet;
-use crate::service::builder::CustomKeyMarker;
-use crate::service::builder::blackboard::{BlackboardResources, KeyMemory};
-use crate::service::port_factory::blocking_cleanup_dead_nodes_in_service;
+use crate::service::marker::CustomKeyMarker;
+use crate::service::resource::blackboard::{BlackboardResources, KeyMemory};
 use crate::service::service_hash::ServiceHash;
 use crate::service::service_name::ServiceName;
 use crate::service::{self, ServiceState, SharedServiceState, dynamic_config, static_config};
@@ -57,14 +56,13 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 
 /// The factory for
 /// [`MessagingPattern::Blackboard`](crate::service::messaging_pattern::MessagingPattern::Blackboard).
-/// It can acquire dynamic and static service informations and create
+/// It can acquire dynamic and static service information and create
 /// [`crate::port::reader::Reader`] or [`crate::port::writer::Writer`] ports.
 #[derive(Debug)]
 pub struct PortFactory<
@@ -82,7 +80,7 @@ impl<
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service)) };
     }
 }
 
@@ -93,7 +91,7 @@ impl<
 {
     type Service = Service;
     type StaticConfig = static_config::blackboard::StaticConfig;
-    type DynamicConfig = dynamic_config::blackboard::DynamicConfig;
+    type DynamicConfig = dynamic_config::blackboard::DynamicConfig<Service::Bag>;
 
     fn name(&self) -> &ServiceName {
         self.service.static_config().name()
@@ -115,7 +113,7 @@ impl<
         self.service.static_config().blackboard()
     }
 
-    fn dynamic_config(&self) -> &dynamic_config::blackboard::DynamicConfig {
+    fn dynamic_config(&self) -> &dynamic_config::blackboard::DynamicConfig<Service::Bag> {
         self.service.dynamic_storage().get().blackboard()
     }
 
@@ -137,27 +135,12 @@ impl<
 > PortFactory<Service, KeyType>
 {
     pub(crate) fn new(service: ServiceState<Service, BlackboardResources<Service>>) -> Self {
-        let shared_node = service.shared_node.clone();
-        let new_self = Self {
+        Self {
             service: SharedServiceState {
                 state: Arc::new(service),
             },
             _key: PhantomData,
-        };
-
-        if shared_node
-            .config()
-            .global
-            .service
-            .cleanup_dead_nodes_on_open
-        {
-            blocking_cleanup_dead_nodes_in_service(
-                &new_self,
-                shared_node.config().global.creation_timeout,
-            );
         }
-
-        new_self
     }
 
     /// Returns a [`PortFactoryWriter`] to create a new [`crate::port::writer::Writer`] port.

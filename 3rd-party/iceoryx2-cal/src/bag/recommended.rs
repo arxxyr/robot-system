@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Contributors to the Eclipse Foundation
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
 //
 // See the NOTICE file(s) distributed with this work for additional
 // information regarding copyright ownership.
@@ -10,11 +10,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::dynamic_storage::process_local::Storage;
-use crate::event::common::details::EventImpl;
-use crate::event::common::details::Management;
-use crate::event::signal_mechanism::semaphore::Semaphore;
-use iceoryx2_bb_lock_free::mpmc::bit_set::RelocatableBitSet;
-
-pub type Event =
-    EventImpl<RelocatableBitSet, Semaphore, Storage<Management<RelocatableBitSet, Semaphore>>>;
+/// Provides the recommended
+/// [`BagFamily`](crate::bag::BagFamily) concept implementation
+/// for the target.
+pub type Recommended = crate::bag::lock_free_bag::LockFreeBag;

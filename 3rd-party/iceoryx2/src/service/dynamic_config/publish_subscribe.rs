@@ -26,15 +26,21 @@
 //! # Ok(())
 //! # }
 //! ```
-use iceoryx2_bb_elementary_traits::relocatable_container::RelocatableContainer;
-use iceoryx2_bb_lock_free::mpmc::{container::*, unique_index_set_enums::ReleaseMode};
-use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
-use iceoryx2_log::{error, fatal_panic};
 
 use crate::{
     identifiers::{UniqueNodeId, UniquePortId, UniquePublisherId, UniqueSubscriberId},
     port::details::data_segment::DataSegmentType,
+    port::port_name::PortName,
 };
+use iceoryx2_bb_derive_macros::ZeroCopySend;
+use iceoryx2_bb_elementary::CallbackProgression;
+use iceoryx2_bb_elementary_traits::relocatable_container::RelocatableContainer;
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+use iceoryx2_bb_lock_free::mpmc::unique_index_set_enums::ReleaseMode;
+use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
+use iceoryx2_cal::bag::{Bag, BagFamily, BagStateFamily};
+use iceoryx2_log::{error, fatal_panic};
+use serde::{Deserialize, Serialize};
 
 use super::PortCleanupAction;
 
@@ -48,16 +54,18 @@ pub(crate) struct DynamicConfigSettings {
 /// Contains the communication settings of the connected
 /// [`Publisher`](crate::port::publisher::Publisher).
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct PublisherDetails {
     /// The [`UniquePublisherId`] of the [`Publisher`](crate::port::publisher::Publisher).
     pub publisher_id: UniquePublisherId,
+    /// The [`PortName`] of the [`Publisher`](crate::port::publisher::Publisher).
+    pub publisher_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Publisher`](crate::port::publisher::Publisher) was created.
     pub node_id: UniqueNodeId,
     /// The total number of samples contained in the
     /// [`Publisher`](crate::port::publisher::Publisher)s data segment.
-    pub number_of_samples: usize,
+    pub number_of_chunks: usize,
     /// The current maximum length of a slice.
     pub max_slice_len: usize,
     /// The type of data segment the [`Publisher`](crate::port::publisher::Publisher)
@@ -72,32 +80,39 @@ pub struct PublisherDetails {
 /// Contains the communication settings of the connected
 /// [`Subscriber`](crate::port::subscriber::Subscriber).
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, ZeroCopySend, Serialize, Deserialize)]
 pub struct SubscriberDetails {
     /// The [`UniqueSubscriberId`] of the [`Subscriber`](crate::port::subscriber::Subscriber).
     pub subscriber_id: UniqueSubscriberId,
+    /// The [`PortName`] of the [`Subscriber`](crate::port::subscriber::Subscriber).
+    pub subscriber_name: PortName,
     /// The [`UniqueNodeId`] of the [`Node`](crate::node::Node) under which the
     /// [`Subscriber`](crate::port::subscriber::Subscriber) was created.
     pub node_id: UniqueNodeId,
     /// The size of the receive buffer that stores [`Sample`](crate::sample::Sample).
     pub buffer_size: usize,
+    /// The requested amount of [`Sample`](crate::sample::Sample) to get as history.
+    pub history_request: usize,
 }
 
 /// The dynamic configuration of an
 /// [`crate::service::messaging_pattern::MessagingPattern::PublishSubscribe`]
 /// based service. Contains dynamic parameters like the connected endpoints etc..
 #[repr(C)]
-#[derive(Debug)]
-pub struct DynamicConfig {
-    pub(crate) subscribers: Container<SubscriberDetails>,
-    pub(crate) publishers: Container<PublisherDetails>,
+#[derive(Debug, ZeroCopySend)]
+pub struct DynamicConfig<B>
+where
+    B: BagFamily,
+{
+    pub(crate) subscribers: B::Bag<SubscriberDetails>,
+    pub(crate) publishers: B::Bag<PublisherDetails>,
 }
 
-impl DynamicConfig {
+impl<B: BagFamily> DynamicConfig<B> {
     pub(crate) fn new(config: &DynamicConfigSettings) -> Self {
         Self {
-            subscribers: unsafe { Container::new_uninit(config.number_of_subscribers) },
-            publishers: unsafe { Container::new_uninit(config.number_of_publishers) },
+            subscribers: unsafe { B::Bag::new_uninit(config.number_of_subscribers) },
+            publishers: unsafe { B::Bag::new_uninit(config.number_of_publishers) },
         }
     }
 
@@ -113,8 +128,8 @@ impl DynamicConfig {
     }
 
     pub(crate) fn memory_size(config: &DynamicConfigSettings) -> usize {
-        Container::<SubscriberDetails>::memory_size(config.number_of_subscribers)
-            + Container::<PublisherDetails>::memory_size(config.number_of_publishers)
+        B::Bag::<SubscriberDetails>::memory_size(config.number_of_subscribers)
+            + B::Bag::<PublisherDetails>::memory_size(config.number_of_publishers)
     }
 
     pub(crate) unsafe fn remove_dead_node_id<
@@ -128,7 +143,7 @@ impl DynamicConfig {
             self.publishers.recover(
                 node_id.owner_id(),
                 |registered_publisher| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_publisher.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Publisher(
                             registered_publisher.publisher_id,
@@ -140,7 +155,7 @@ impl DynamicConfig {
             self.subscribers.recover(
                 node_id.owner_id(),
                 |registered_subscriber| {
-                    // additional comparision, since the node_id.owner_id() might be not enough
+                    // additional comparison, since the node_id.owner_id() might be not enough
                     registered_subscriber.node_id == *node_id
                         && port_cleanup_callback(UniquePortId::Subscriber(
                             registered_subscriber.subscriber_id,
@@ -187,7 +202,10 @@ impl DynamicConfig {
         state.for_each(|_, details| callback(details));
     }
 
-    pub(crate) fn add_subscriber_id(&self, details: SubscriberDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_subscriber_id(
+        &self,
+        details: SubscriberDetails,
+    ) -> Option<(*const SubscriberDetails, B::BagHandle)> {
         unsafe {
             self.subscribers
                 .add(details, details.node_id.owner_id())
@@ -195,13 +213,16 @@ impl DynamicConfig {
         }
     }
 
-    pub(crate) fn release_subscriber_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_subscriber_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.subscribers.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister subscriber from service. This could indicate a corrupted system! [{e:?}]");
         }
     }
 
-    pub(crate) fn add_publisher_id(&self, details: PublisherDetails) -> Option<ContainerHandle> {
+    pub(crate) fn register_publisher_id(
+        &self,
+        details: PublisherDetails,
+    ) -> Option<(*const PublisherDetails, B::BagHandle)> {
         unsafe {
             self.publishers
                 .add(details, details.node_id.owner_id())
@@ -209,7 +230,7 @@ impl DynamicConfig {
         }
     }
 
-    pub(crate) fn release_publisher_handle(&self, handle: ContainerHandle) {
+    pub(crate) fn release_publisher_handle(&self, handle: B::BagHandle) {
         if let Err(e) = unsafe { self.publishers.remove(handle, ReleaseMode::Default) } {
             error!(from self, "Unable to deregister publisher from service. This could indicate a corrupted system! [{e:?}]");
         }

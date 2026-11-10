@@ -91,9 +91,9 @@
 //!     .max_notifiers(12)
 //!     .max_listeners(2)
 //!     .event_id_max_value(32)
-//!     .notifier_created_event(EventId::new(999))
+//!     .notifier_created_event(EventId::new(31))
 //!     .notifier_dropped_event(EventId::new(0))
-//!     .notifier_dead_event(EventId::new(2000))
+//!     .notifier_dead_event(EventId::new(30))
 //!     // if the service already exists, open it, otherwise create it
 //!     .open_or_create()?;
 //!
@@ -250,8 +250,14 @@ pub mod ipc;
 /// [`Send`] but at the cost of an additional internal mutex.
 pub mod ipc_threadsafe;
 
+/// Contains marker types to enable additional API features.
+pub mod marker;
+
 pub(crate) mod config_scheme;
 pub(crate) mod naming_scheme;
+
+#[doc(hidden)]
+pub mod resource;
 
 use core::fmt::Debug;
 use core::ptr::NonNull;
@@ -259,25 +265,40 @@ use core::time::Duration;
 
 use alloc::format;
 use alloc::string::String as CoreString;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary::package_version::PackageVersion;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
+use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+use iceoryx2_bb_lock_free::mpmc::counting_bit_set::RelocatableCountingBitSet;
 use iceoryx2_bb_posix::file::AccessMode;
 
 use crate::config;
-use crate::constants::MAX_TYPE_NAME_LENGTH;
-use crate::identifiers::{UniqueNodeId, UniquePortId};
-use crate::node::{NodeListFailure, NodeState, SharedNode};
-use crate::service::config_scheme::{dynamic_config_storage_config, port_tag_config};
+use crate::service::config_scheme::dynamic_config_storage_config;
 use crate::service::dynamic_config::DynamicConfig;
+use crate::service::naming_scheme::dynamic_config_name;
+use crate::service::naming_scheme::static_config_name;
+use crate::service::resource::ServiceResource;
 use crate::service::static_config::*;
-use config_scheme::service_tag_config;
-use iceoryx2_bb_container::semantic_string::SemanticString;
+use crate::{
+    identifiers::{UniqueNodeId, UniquePortId, UniqueServiceId},
+    node::{NodeBuilder, NodeListFailure, NodeState, SharedNode},
+    port::{listener::remove_connection_of_listener, notifier::Notifier},
+    prelude::EventId,
+    service::stale_resource_cleanup::{
+        remove_port_tag, remove_receiver_port_from_all_connections,
+        remove_sender_and_receiver_connections_and_data_segment,
+        remove_sender_connection_and_data_segment, remove_service_tag,
+        remove_static_service_config,
+    },
+    unique_id_generator::*,
+};
+use builder::event::EventOpenError;
+use dynamic_config::PortCleanupAction;
 use iceoryx2_bb_elementary::CallbackProgression;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
+use iceoryx2_cal::bag::BagFamily;
 use iceoryx2_cal::dynamic_storage::{
     DynamicStorage, DynamicStorageBuilder, DynamicStorageOpenError,
 };
@@ -293,7 +314,9 @@ use iceoryx2_cal::shared_memory::{SharedMemory, SharedMemoryForPoolAllocator};
 use iceoryx2_cal::shm_allocator::bump_allocator::BumpAllocator;
 use iceoryx2_cal::static_storage::*;
 use iceoryx2_cal::zero_copy_connection::ZeroCopyConnection;
-use iceoryx2_log::{debug, error, fail, trace, warn};
+use iceoryx2_log::error;
+use iceoryx2_log::{debug, fail, trace, warn};
+use port_factory::{PortFactory, notifier::NotifierConfig};
 use service_hash::ServiceHash;
 
 use self::dynamic_config::DeregisterNodeState;
@@ -303,33 +326,67 @@ use self::service_name::ServiceName;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Error that can be reported when removing a [`Node`](crate::node::Node).
 pub enum ServiceRemoveNodeError {
+    /// An interrupt signal was received.
+    Interrupt,
     /// The iceoryx2 version that created the [`Node`](crate::node::Node) does
     /// not match this iceoryx2 version.
     VersionMismatch,
     /// Errors that indicate either an implementation issue or a wrongly configured system.
     InternalError,
-    /// The [`Node`](crate::node::Node) has opened a [`Service`] that is in a
-    /// corrupted state and therefore it cannot be remove from it.
-    ServiceInCorruptedState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ServiceRemoveTagError {
-    AlreadyRemoved,
-    InternalError,
+    /// The process does not have the permissions to remove the service after last node was removed
     InsufficientPermissions,
 }
 
+impl core::fmt::Display for ServiceRemoveNodeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "ServiceRemoveNodeError::{self:?}")
+    }
+}
+
+impl core::error::Error for ServiceRemoveNodeError {}
+
+impl From<ServiceRemoveError> for ServiceRemoveNodeError {
+    fn from(value: ServiceRemoveError) -> Self {
+        match value {
+            ServiceRemoveError::Interrupt => ServiceRemoveNodeError::Interrupt,
+            ServiceRemoveError::InsufficientPermissions => {
+                ServiceRemoveNodeError::InsufficientPermissions
+            }
+            ServiceRemoveError::VersionMismatch => ServiceRemoveNodeError::VersionMismatch,
+            ServiceRemoveError::InternalError => ServiceRemoveNodeError::InternalError,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PortRemoveTagError {
-    AlreadyRemoved,
+/// Error that can be reported when removing a [`Node`](crate::node::Node).
+pub enum ServiceRemoveError {
+    /// An interrupt signal was received
+    Interrupt,
+    /// The iceoryx2 version that created the [`Node`](crate::node::Node) does
+    /// not match this iceoryx2 version.
+    VersionMismatch,
+    /// Errors that indicate either an implementation issue or a wrongly configured system.
     InternalError,
+    /// The process does not have the permissions to remove the service
     InsufficientPermissions,
 }
+
+impl core::fmt::Display for ServiceRemoveError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "ServiceRemoveError::{self:?}")
+    }
+}
+
+impl core::error::Error for ServiceRemoveError {}
 
 /// Failure that can be reported when the [`ServiceDetails`] are acquired with [`Service::details()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceDetailsError {
+    /// An interrupt signal was raised.
+    Interrupt,
+    /// The process does not have the permissions to acquire the service details
+    InsufficientPermissions,
     /// The underlying static [`Service`] information could not be opened.
     FailedToOpenStaticServiceInfo,
     /// The underlying static [`Service`] information could not be read.
@@ -386,25 +443,20 @@ pub struct ServiceDetails<S: Service> {
     /// The static configuration of the [`Service`] that never changes during the [`Service`]
     /// lifetime.
     pub static_details: StaticConfig,
-    /// The dynamic configuration of the [`Service`] that can conaints runtime informations.
+    /// The dynamic configuration of the [`Service`] that can conaints runtime information.
     pub dynamic_details: Option<ServiceDynamicDetails<S>>,
 }
 
 /// Represents the [`Service`]s state.
 #[derive(Debug)]
 pub struct ServiceState<S: Service, R: ServiceResource> {
-    // For this struct it is important to know that Rust drops fields of a struct in declaration
-    // order - not in memory order!
-
-    // must be destructed first, to prevent services to open it
-    pub(crate) dynamic_storage: S::DynamicStorage<DynamicConfig>,
-    // must be destructed after the dynamic resources
+    pub(crate) dynamic_storage: S::DynamicStorage<DynamicConfig<S::Bag>>,
     pub(crate) additional_resource: R,
     pub(crate) static_config: StaticConfig,
     pub(crate) shared_node: SharedNode<S>,
-    // must be destructed last, otherwise other processes might create a new service with the same
-    // name and their resources are then removed by another process while they are creating them
-    // which would end up in a completely corrupted service
+
+    // IMPORTANT: The static service config must be removed last since it contains the details about all
+    // other resources that also have to be removed. If this is removed earlier, those resources are leaked.
     pub(crate) static_storage: S::StaticStorage,
 }
 
@@ -413,13 +465,11 @@ impl<S: Service, R: ServiceResource> Abandonable for ServiceState<S, R> {
         let this = unsafe { this.as_mut() };
 
         unsafe {
-            S::DynamicStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.dynamic_storage))
+            S::DynamicStorage::abandon_in_place(NonNull::from_mut(&mut this.dynamic_storage))
         };
-        unsafe { R::abandon_in_place(NonNull::iox2_from_mut(&mut this.additional_resource)) };
-        unsafe { SharedNode::<S>::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_node)) };
-        unsafe {
-            S::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.static_storage))
-        };
+        unsafe { R::abandon_in_place(NonNull::from_mut(&mut this.additional_resource)) };
+        unsafe { SharedNode::<S>::abandon_in_place(NonNull::from_mut(&mut this.shared_node)) };
+        unsafe { S::StaticStorage::abandon_in_place(NonNull::from_mut(&mut this.static_storage)) };
     }
 }
 
@@ -440,7 +490,7 @@ impl<S: Service, R: ServiceResource> Abandonable for SharedServiceState<S, R> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         if let Some(state) = Arc::get_mut(&mut this.state) {
-            unsafe { ServiceState::abandon_in_place(NonNull::iox2_from_mut(state)) };
+            unsafe { ServiceState::abandon_in_place(NonNull::from_mut(state)) };
         } else {
             unsafe { core::ptr::drop_in_place(&mut this.state) };
         }
@@ -452,7 +502,7 @@ impl<S: Service, R: ServiceResource> SharedServiceState<S, R> {
         &self.state.static_config
     }
 
-    pub(crate) fn dynamic_storage(&self) -> &S::DynamicStorage<DynamicConfig> {
+    pub(crate) fn dynamic_storage(&self) -> &S::DynamicStorage<DynamicConfig<S::Bag>> {
         &self.state.dynamic_storage
     }
 
@@ -469,7 +519,7 @@ impl<S: Service, R: ServiceResource> ServiceState<S, R> {
     pub(crate) fn new(
         static_config: StaticConfig,
         shared_node: SharedNode<S>,
-        dynamic_storage: S::DynamicStorage<DynamicConfig>,
+        dynamic_storage: S::DynamicStorage<DynamicConfig<S::Bag>>,
         static_storage: S::StaticStorage,
         additional_resource: R,
     ) -> Self {
@@ -491,12 +541,6 @@ impl<S: Service, R: ServiceResource> Drop for ServiceState<S, R> {
         let origin = "ServiceState::drop()";
         let hash = self.static_config.service_hash();
         self.shared_node.registered_services().remove(hash, |handle| {
-            if let Err(e) = remove_service_tag::<S>(self.shared_node.id(), hash, self.shared_node.config())
-            {
-                debug!(from origin, "The service tag could not be removed from the node {:?} ({:?}).",
-                        self.shared_node.id(), e);
-            }
-
             match self.dynamic_storage.get().deregister_node_id(handle) {
                 Ok(DeregisterNodeState::HasOwners) => {
                     trace!(from origin, "close service: {} ({:?})",
@@ -514,38 +558,32 @@ impl<S: Service, R: ServiceResource> Drop for ServiceState<S, R> {
                         "Unable to deregister node {} from service. This could indicate a corrupted system! [{e:?}]", self.shared_node.id())
                 }
             }
+
+            // The service tag must be removed after the node was deregistered from the dynamic
+            // config. If this is reordered one has to search through all available services to
+            // ensure that the node is not connected to another service.
+            if let Err(e) = remove_service_tag::<S>(self.shared_node.id(), hash, self.shared_node.config())
+            {
+                debug!(from origin, "The service tag could not be removed from the node {:?} ({:?}).",
+                        self.shared_node.id(), e);
+            }
         });
     }
 }
 
 #[doc(hidden)]
 pub mod internal {
-    use builder::event::EventOpenError;
-    use dynamic_config::PortCleanupAction;
-    use iceoryx2_bb_container::string::*;
-    use iceoryx2_log::error;
-    use port_factory::PortFactory;
-
     use crate::{
-        identifiers::{UniqueNodeId, UniquePortId},
-        node::NodeBuilder,
-        port::{listener::remove_connection_of_listener, notifier::Notifier},
-        prelude::EventId,
-        service::stale_resource_cleanup::{
-            remove_data_segment_of_port, remove_receiver_port_from_all_connections,
-            remove_sender_port_from_all_connections,
-        },
+        port::port_name::PortName, service::resource::RemoveStaleResourcesError,
+        service::resource::remove_stale_service_resources,
+        service::stale_resource_cleanup::ServiceRemoveTagError,
     };
 
     use super::*;
-
-    #[derive(Debug)]
-    struct CleanupFailure;
-
     fn send_dead_node_signal<S: Service>(service_hash: &ServiceHash, config: &config::Config) {
         let origin = "send_dead_node_signal()";
 
-        let service_details = match __internal_details::<S>(config, &service_hash.0.into()) {
+        let service_details = match __internal_details::<S>(config, service_hash) {
             Ok(Some(service_details)) => service_details,
             Ok(None) => return,
             Err(e) => {
@@ -595,7 +633,10 @@ pub mod internal {
 
         let notifier = match Notifier::new_without_auto_event_emission(
             service.service,
-            EventId::new(0),
+            NotifierConfig {
+                default_event_id: EventId::new(0),
+                port_name: PortName::new_empty(),
+            },
         ) {
             Ok(notifier) => notifier,
             Err(e) => {
@@ -615,97 +656,127 @@ pub mod internal {
         trace!(from origin, "Send dead node signal on service {}.", service_name);
     }
 
-    fn remove_sender_connection_and_data_segment<S: Service>(
-        id: u128,
-        config: &config::Config,
-        origin: &str,
-        port_name: &str,
-    ) -> Result<(), CleanupFailure> {
-        unsafe { remove_sender_port_from_all_connections::<S>(id, config) }.map_err(|e| {
-            debug!(from origin,
-                "Failed to remove the {} ({:?}) from all of its connections ({:?}).",
-                port_name, id, e);
-            CleanupFailure
-        })?;
-
-        unsafe { remove_data_segment_of_port::<S>(id, config) }.map_err(|e| {
-            debug!(from origin,
-                "Failed to remove the {} ({:?}) data segment ({:?}).",
-                port_name, id, e);
-            CleanupFailure
-        })?;
-
-        Ok(())
-    }
-
-    fn remove_sender_and_receiver_connections_and_data_segment<S: Service>(
-        id: u128,
-        config: &config::Config,
-        origin: &str,
-        port_name: &str,
-    ) -> Result<(), CleanupFailure> {
-        remove_sender_connection_and_data_segment::<S>(id, config, origin, port_name)?;
-        unsafe { remove_receiver_port_from_all_connections::<S>(id, config) }.map_err(|e| {
-            debug!(from origin,
-                    "Failed to remove the {} ({:?}) from all of its incoming connections ({:?}).",
-                    port_name, id, e);
-            CleanupFailure
-        })?;
-
-        Ok(())
-    }
-
-    fn remove_additional_blackboard_resources<S: Service>(
-        config: &config::Config,
-        blackboard_name: &FileName,
-        blackboard_payload_config: &<S::BlackboardPayload as NamedConceptMgmt>::Configuration,
-        blackboard_mgmt_name: &StaticString<MAX_TYPE_NAME_LENGTH>,
-        origin: &str,
-        msg: &str,
-    ) {
-        match unsafe {
-            <S::BlackboardPayload as NamedConceptMgmt>::remove_cfg(
-                blackboard_name,
-                blackboard_payload_config,
-            )
-        } {
-            Ok(true) => {
-                trace!(from origin, "Remove blackboard payload segment.");
-            }
-            _ => {
-                error!(from origin,
-                                  "{} since the blackboard payload segment cannot be removed - service seems to be in a corrupted state.", msg);
-            }
-        }
-
-        // u64 is just a placeholder needed for the DynamicStorageConfiguration; it is
-        // overwritten right below
-        let mut blackboard_mgmt_config =
-            crate::service::config_scheme::blackboard_mgmt_config::<S, u64>(config);
-        // Safe since the same type name is set when creating the BlackboardMgmt in
-        // Creator::create_impl so we can safely remove the concept.
-        unsafe {
-            <S::BlackboardMgmt<u64> as DynamicStorage<u64>>::__internal_set_type_name_in_config(
-                &mut blackboard_mgmt_config,
-                blackboard_mgmt_name.as_str(),
-            )
-        };
-        match unsafe {
-            <S::BlackboardMgmt<u64> as NamedConceptMgmt>::remove_cfg(
-                blackboard_name,
-                &blackboard_mgmt_config,
-            )
-        } {
-            Ok(true) => {
-                trace!(from origin, "Remove blackboard mgmt segment.");
-            }
-            _ => {
-                error!(from origin, "{} since the blackboard mgmt segment cannot be removed - service seems to be in a corrupted state.", msg);
-            }
-        }
-    }
-
     pub trait ServiceInternal<S: Service> {
+        /// # Safety
+        ///
+        /// * No other process shall using the service currently.
+        ///
+        #[doc(hidden)]
+        unsafe fn __internal_force_remove_service(
+            service_name: &ServiceName,
+            config: &config::Config,
+            messaging_pattern: MessagingPattern,
+        ) -> Result<bool, ServiceRemoveError> {
+            let origin = "Service::remove()";
+            let msg = format!("Unable to remove all resources of the service \"{service_name}\"");
+            let service_hash =
+                ServiceHash::new::<S::ServiceNameHasher>(service_name, messaging_pattern);
+            match read_static_service_config::<S>(config, &service_hash) {
+                Ok(Some(static_config)) => {
+                    unsafe { S::__internal_remove_service(&static_config, config)? };
+
+                    Ok(true)
+                }
+                Ok(None) => Ok(false),
+                Err(e) => {
+                    warn!(from origin, "{msg} since the static config could not be read. [{e:?}]");
+
+                    match unsafe { remove_static_service_config::<S>(config, &service_hash) } {
+                        Ok(v) => Ok(v),
+                        Err(NamedConceptRemoveError::InsufficientPermissions) => {
+                            fail!(from origin, with ServiceRemoveError::InsufficientPermissions,
+                                "{msg} due to insufficient permissions.");
+                        }
+                        Err(NamedConceptRemoveError::Interrupt) => {
+                            fail!(from origin, with ServiceRemoveError::Interrupt,
+                                "{msg} since an interrupt signal was received.");
+                        }
+                        Err(NamedConceptRemoveError::InternalError) => {
+                            fail!(from origin, with ServiceRemoveError::InternalError,
+                                "{msg} due to an internal error.");
+                        }
+                    }
+                }
+            }
+        }
+
+        /// # Safety
+        ///
+        /// * No other process shall using the service currently.
+        ///
+        #[doc(hidden)]
+        unsafe fn __internal_remove_service(
+            service_config: &StaticConfig,
+            config: &config::Config,
+        ) -> Result<(), ServiceRemoveError> {
+            let origin = "Service::remove()";
+            let msg = "Unable to remove all service resources";
+            let unique_service_id = service_config.unique_service_id();
+            let service_hash = service_config.service_hash();
+
+            match unsafe { remove_stale_service_resources::<S>(config, service_config) } {
+                Ok(()) => (),
+                Err(RemoveStaleResourcesError::InterruptedBySignal) => {
+                    fail!(from origin, with ServiceRemoveError::Interrupt,
+                       "{msg} since the service resources could not be removed since the operation was interrupted by a signal.");
+                }
+                Err(RemoveStaleResourcesError::InsufficientPermissions) => {
+                    fail!(from origin, with ServiceRemoveError::InsufficientPermissions,
+                        "{msg} since the service resources could not be removed due to insufficient permissions.");
+                }
+                Err(RemoveStaleResourcesError::InternalFailure) => {
+                    fail!(from origin, with ServiceRemoveError::InternalError,
+                        "{msg} since the service resources could not be removed due to an internal failure.");
+                }
+            }
+
+            let segment_name = dynamic_config_name(unique_service_id);
+            match unsafe {
+                <S::DynamicStorage<DynamicConfig<S::Bag>> as NamedConceptMgmt>::remove_cfg(
+                    &segment_name,
+                    &dynamic_config_storage_config::<S>(config),
+                )
+            } {
+                Ok(_) => (),
+                Err(NamedConceptRemoveError::InsufficientPermissions) => {
+                    fail!(from origin, with ServiceRemoveError::InsufficientPermissions,
+                        "{msg} for {service_hash} since the dynamic config could not be removed due to insufficient permissions.");
+                }
+                Err(NamedConceptRemoveError::Interrupt) => {
+                    fail!(from origin, with ServiceRemoveError::Interrupt,
+                        "{msg} for {service_hash} since an interrupt signal was received.");
+                }
+                Err(NamedConceptRemoveError::InternalError) => {
+                    fail!(from origin, with ServiceRemoveError::InsufficientPermissions,
+                        "{msg} for {service_hash} since the dynamic config could not be removed due to an internal error.");
+                }
+            }
+
+            match unsafe {
+                // IMPORTANT: The static service config must be removed last.
+                remove_static_service_config::<S>(config, service_hash)
+            } {
+                Ok(_) => {
+                    trace!(from origin, "Remove unused service.");
+                }
+                Err(NamedConceptRemoveError::InsufficientPermissions) => {
+                    fail!(from origin, with ServiceRemoveError::InsufficientPermissions,
+                        "{msg} for {service_hash} due to insufficient permissions.");
+                }
+                Err(NamedConceptRemoveError::InternalError) => {
+                    fail!(from origin, with ServiceRemoveError::InternalError,
+                        "{msg} for {service_hash} due to an internal error.");
+                }
+                Err(NamedConceptRemoveError::Interrupt) => {
+                    fail!(from origin, with ServiceRemoveError::Interrupt,
+                        "{msg} for {service_hash} since an interrupt signal was received.");
+                }
+            }
+
+            Ok(())
+        }
+
+        #[doc(hidden)]
         fn __internal_remove_node_from_service(
             node_id: &UniqueNodeId,
             service_hash: &ServiceHash,
@@ -715,12 +786,53 @@ pub mod internal {
                 format!("Service::remove_node_from_service({node_id:?}, {service_hash:?})");
             let msg = "Unable to remove node from service";
 
-            let dynamic_config = match open_dynamic_config::<S>(config, service_hash) {
+            let remove_service_tag = || match remove_service_tag::<S>(node_id, service_hash, config)
+            {
+                Ok(()) | Err(ServiceRemoveTagError::AlreadyRemoved) => Ok(()),
+                Err(ServiceRemoveTagError::InsufficientPermissions) => {
+                    fail!(from origin, with ServiceRemoveNodeError::InsufficientPermissions,
+                        "{msg} since the service tag could not be removed due to insufficient permissions.");
+                }
+                Err(ServiceRemoveTagError::Interrupt) => {
+                    fail!(from origin, with ServiceRemoveNodeError::Interrupt,
+                        "{msg} since the service tag could not be removed since an interrupt signal was raised.");
+                }
+                Err(ServiceRemoveTagError::InternalError) => {
+                    fail!(from origin, with ServiceRemoveNodeError::InternalError,
+                        "{msg} since the service tag could not be removed due to an internal error.");
+                }
+            };
+
+            let static_config = match read_static_service_config::<S>(config, service_hash) {
+                Ok(Some(config)) => config,
+                Ok(None) => {
+                    warn!(from origin, "Trying to remove node {} from non-existing service {}",
+                        node_id, service_hash);
+                    return remove_service_tag();
+                }
+                Err(e) => {
+                    fail!(from origin, with ServiceRemoveNodeError::InternalError,
+                        "{msg} since the static service config could not be read. [{e:?}]");
+                }
+            };
+
+            let dynamic_config = match open_dynamic_config::<S>(
+                config,
+                static_config.unique_service_id(),
+            ) {
                 Ok(Some(c)) => c,
                 Ok(None) => {
-                    fail!(from origin,
-                          with ServiceRemoveNodeError::ServiceInCorruptedState,
-                          "{} since the dynamic service segment is missing - service seems to be in a corrupted state.", msg);
+                    warn!(from origin,
+                        "Found corrupted service {service_hash}. Trying to remove it completely");
+                    match unsafe { Self::__internal_remove_service(&static_config, config) } {
+                        Ok(()) => {
+                            return remove_service_tag();
+                        }
+                        Err(e) => {
+                            fail!(from origin, with e.into(),
+                                    "{msg} since the corrupted service could not be removed. [{e:?}]");
+                        }
+                    }
                 }
                 Err(ServiceDetailsError::VersionMismatch) => {
                     fail!(from origin, with ServiceRemoveNodeError::VersionMismatch,
@@ -792,7 +904,7 @@ pub mod internal {
                     UniquePortId::Writer(ref _id) => {}
                 };
 
-                if let Err(e) = remove_port_tag::<S>(node_id, &port_id, config) {
+                if let Err(e) = remove_port_tag::<S>(node_id, port_id.value(), config) {
                     debug!(from origin,  "Failed to remove the port tag for port {:?}. [{e:?}]", port_id);
                     return PortCleanupAction::SkipPort;
                 }
@@ -810,85 +922,14 @@ pub mod internal {
             };
 
             if remove_service {
-                // check if service was a blackboard service to remove its additional resources
-                let blackboard_name =
-                    crate::service::naming_scheme::blackboard_name(service_hash.as_str());
-                let blackboard_payload_config =
-                    crate::service::config_scheme::blackboard_data_config::<S>(config);
-                let blackboard_payload = <S::BlackboardPayload as NamedConceptMgmt>::does_exist_cfg(
-                    &blackboard_name,
-                    &blackboard_payload_config,
-                );
-                let mut is_blackboard = false;
-                let mut blackboard_mgmt_name = StaticString::<MAX_TYPE_NAME_LENGTH>::new();
-                if let Ok(true) = blackboard_payload {
-                    is_blackboard = true;
-
-                    let details = match __internal_details::<S>(config, &service_hash.0.into()) {
-                        Ok(Some(d)) => d,
-                        _ => {
-                            fail!(from origin,
-                                  with ServiceRemoveNodeError::ServiceInCorruptedState,
-                                  "{} due to a failure while acquiring the service details.", msg);
-                        }
-                    };
-                    blackboard_mgmt_name =
-                        details.static_details.blackboard().type_details.type_name;
-                }
-
-                match unsafe {
-                    // IMPORTANT: The static service config must be removed first. If it cannot be
-                    // removed, the process may lack sufficient permissions and should not remove
-                    // any other resources.
-                    remove_static_service_config::<S>(config, &service_hash.0.into())
-                } {
-                    Ok(_) => {
-                        trace!(from origin, "Remove unused service.");
-
-                        // remove additional blackboard resources
-                        if is_blackboard {
-                            remove_additional_blackboard_resources::<S>(
-                                config,
-                                &blackboard_name,
-                                &blackboard_payload_config,
-                                &blackboard_mgmt_name,
-                                &origin,
-                                msg,
-                            );
-                        }
-
-                        dynamic_config.acquire_ownership()
-                    }
-                    Err(e) => {
-                        error!(from origin, "Unable to remove static config of unused service ({:?}).",
-                            e);
-                    }
-                }
+                unsafe { Self::__internal_remove_service(&static_config, config)? };
             } else if number_of_dead_node_notifications != 0 {
                 send_dead_node_signal::<S>(service_hash, config);
             }
 
-            Ok(())
+            remove_service_tag()
         }
     }
-}
-
-/// Represents additional resources a service could use and have to be cleaned up when no owners
-/// are left
-pub trait ServiceResource: Abandonable {
-    /// Acquires the ownership of the additional resources. When the objects go out of scope the
-    /// underlying resources will be removed.
-    fn acquire_ownership(&self);
-}
-
-#[derive(Debug)]
-pub(crate) struct NoResource;
-impl ServiceResource for NoResource {
-    fn acquire_ownership(&self) {}
-}
-
-impl Abandonable for NoResource {
-    unsafe fn abandon_in_place(_this: NonNull<Self>) {}
 }
 
 /// Represents a service. Used to create or open new services with the
@@ -896,7 +937,7 @@ impl Abandonable for NoResource {
 /// Contains the building blocks a [`Service`] requires to create the underlying resources and
 /// establish communication.
 #[allow(private_bounds)]
-pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
+pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone + Send + Sync {
     /// Every service name will be hashed, to allow arbitrary [`ServiceName`]s with as less
     /// restrictions as possible. The hash of the [`ServiceName`] is the [`Service`]s uuid.
     type ServiceNameHasher: Hash;
@@ -909,11 +950,16 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
 
     /// Defines the construct used to store the data that can be changed at runtime but
     /// persist after a process crashed.
-    type PersistentDynamicStorage<T: Debug + Send + Sync + 'static>: DynamicStorage<T>;
+    type PersistentDynamicStorage<T: Debug + Send + Sync + ZeroCopySend + 'static>: DynamicStorage<
+        T,
+    >;
+
+    /// Defines the construct containing unordered data at fixed positions use to track resource ownership
+    type Bag: BagFamily;
 
     /// Defines the construct used to store the [`Service`]s dynamic configuration. This
     /// contains for instance all endpoints and other dynamic details.
-    type DynamicStorage<T: Debug + Send + Sync + 'static>: DynamicStorage<T>;
+    type DynamicStorage<T: Debug + Send + Sync + ZeroCopySend + 'static>: DynamicStorage<T>;
 
     /// The memory used to store the payload.
     type SharedMemory: SharedMemoryForPoolAllocator;
@@ -925,7 +971,7 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
     type Connection: ZeroCopyConnection;
 
     /// The mechanism used to signal events between endpoints.
-    type Event: Event;
+    type Event: Event<RelocatableCountingBitSet>;
 
     /// Monitoring mechanism to detect dead processes.
     type Monitoring: Monitoring;
@@ -942,10 +988,13 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
     type ArcThreadSafetyPolicy<T: Send + Debug + Abandonable>: ArcSyncPolicy<T>;
 
     /// Defines the construct used to store the management data of the blackboard service.
-    type BlackboardMgmt<T: Send + Sync + Debug + 'static>: DynamicStorage<T>;
+    type BlackboardMgmt<T: Send + Sync + Debug + ZeroCopySend + 'static>: DynamicStorage<T>;
 
     /// Defines the construct used to store the payload data of the blackboard service.
     type BlackboardPayload: SharedMemory<BumpAllocator>;
+
+    /// Mechanism to generate IDs that are unique, at least within a single process.
+    type UniqueId: UniqueIdGenerator;
 
     /// Checks if a service under a given [`config::Config`] does exist
     ///
@@ -1002,7 +1051,7 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
     ) -> Result<Option<ServiceDetails<Self>>, ServiceDetailsError> {
         let service_hash =
             ServiceHash::new::<Self::ServiceNameHasher>(service_name, messaging_pattern);
-        __internal_details::<Self>(config, &service_hash.0.into())
+        __internal_details::<Self>(config, &service_hash)
     }
 
     /// Returns a list of all services created under a given [`config::Config`].
@@ -1036,10 +1085,18 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
                 "{} due to a failure while collecting all active services for config: {:?}", msg, config);
 
         for uuid in &service_uuids {
-            if let Ok(Some(service_details)) = __internal_details::<Self>(config, uuid) {
-                if callback(service_details) == CallbackProgression::Stop {
-                    break;
+            let hash = match ServiceHash::from_bytes(uuid) {
+                Ok(hash) => hash,
+                Err(e) => {
+                    warn!(from origin,
+                        "{msg} since there static configs of service where the name ({uuid}) violates the naming rule. [{e:?}]");
+                    continue;
                 }
+            };
+            if let Ok(Some(service_details)) = __internal_details::<Self>(config, &hash)
+                && callback(service_details) == CallbackProgression::Stop
+            {
+                break;
             }
         }
 
@@ -1047,74 +1104,23 @@ pub trait Service: Debug + Sized + internal::ServiceInternal<Self> + Clone {
     }
 }
 
-pub(crate) unsafe fn remove_static_service_config<S: Service>(
-    config: &config::Config,
-    uuid: &FileName,
-) -> Result<bool, NamedConceptRemoveError> {
-    let msg = "Unable to remove static service config";
-    let origin = "Service::remove_static_service_config()";
-    let static_storage_config = config_scheme::static_config_storage_config::<S>(config);
-
-    match unsafe {
-        <S::StaticStorage as NamedConceptMgmt>::remove_cfg(uuid, &static_storage_config)
-    } {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            fail!(from origin, with e, "{msg} due to ({:?}).", e);
-        }
-    }
-}
-
 #[doc(hidden)]
 pub fn __internal_details<S: Service>(
     config: &config::Config,
-    uuid: &FileName,
+    service_hash: &ServiceHash,
 ) -> Result<Option<ServiceDetails<S>>, ServiceDetailsError> {
     let msg = "Unable to acquire service details";
     let origin = "Service::details()";
-    let static_storage_config = config_scheme::static_config_storage_config::<S>(config);
-
-    let reader = match <<S::StaticStorage as StaticStorage>::Builder as NamedConceptBuilder<
-        S::StaticStorage,
-    >>::new(uuid)
-    .config(&static_storage_config.clone())
-    .has_ownership(false)
-    .open(Duration::ZERO)
-    {
-        Ok(reader) => reader,
-        Err(StaticStorageOpenError::DoesNotExist)
-        | Err(StaticStorageOpenError::InitializationNotYetFinalized) => return Ok(None),
+    let service_config = match read_static_service_config::<S>(config, service_hash) {
+        Ok(Some(c)) => c,
+        Ok(None) => return Ok(None),
         Err(e) => {
-            fail!(from origin, with ServiceDetailsError::FailedToOpenStaticServiceInfo,
-                        "{} due to a failure while opening the static service info \"{}\" for reading ({:?})",
-                        msg, uuid, e);
+            fail!(from origin, with e,
+                "{msg} since the static service config could not be read. [{e:?}]");
         }
     };
 
-    let mut content = CoreString::from_utf8(vec![b' '; reader.len() as usize]).unwrap();
-    if let Err(e) = reader.read(unsafe { content.as_mut_vec().as_mut_slice() }) {
-        fail!(from origin, with ServiceDetailsError::FailedToReadStaticServiceInfo,
-                "{} since the static service info \"{}\" could not be read ({:?}).",
-                msg, uuid, e );
-    }
-
-    let service_config =
-        match S::ConfigSerializer::deserialize::<StaticConfig>(unsafe { content.as_mut_vec() }) {
-            Ok(service_config) => service_config,
-            Err(e) => {
-                fail!(from origin, with ServiceDetailsError::FailedToDeserializeStaticServiceInfo,
-                    "{} since the static service info \"{}\" could not be deserialized ({:?}).",
-                       msg, uuid, e );
-            }
-        };
-
-    if uuid.as_bytes() != service_config.service_hash().0.as_bytes() {
-        fail!(from origin, with ServiceDetailsError::ServiceInInconsistentState,
-                "{} since the service {:?} has an inconsistent hash of {} according to config {:?}",
-                msg, service_config, uuid, config);
-    }
-
-    let dynamic_config = open_dynamic_config::<S>(config, service_config.service_hash())?;
+    let dynamic_config = open_dynamic_config::<S>(config, service_config.unique_service_id())?;
     let dynamic_details = if let Some(d) = dynamic_config {
         let mut nodes = vec![];
         d.get().list_node_ids(|node_id| {
@@ -1124,7 +1130,7 @@ pub fn __internal_details<S: Service>(
                 | Err(NodeListFailure::InsufficientPermissions)
                 | Err(NodeListFailure::Interrupt) => (),
                 Err(NodeListFailure::InternalError) => {
-                    debug!(from origin, "Unable to acquire NodeState for service \"{:?}\"", uuid);
+                    debug!(from origin, "Unable to acquire NodeState for service \"{:?}\"", service_hash);
                 }
             };
             CallbackProgression::Continue
@@ -1140,22 +1146,100 @@ pub fn __internal_details<S: Service>(
     }))
 }
 
-fn open_dynamic_config<S: Service>(
+fn read_static_service_config<S: Service>(
     config: &config::Config,
     service_hash: &ServiceHash,
-) -> Result<Option<S::DynamicStorage<DynamicConfig>>, ServiceDetailsError> {
+) -> Result<Option<StaticConfig>, ServiceDetailsError> {
+    let msg = "Unable to acquire service details";
+    let origin = "Service::details()";
+    let static_storage_config = config_scheme::static_config_storage_config::<S>(config);
+    let name = static_config_name(service_hash);
+    let reader = match <<S::StaticStorage as StaticStorage>::Builder as NamedConceptBuilder<
+        S::StaticStorage,
+    >>::new(&name)
+    .config(&static_storage_config.clone())
+    .has_ownership(false)
+    .open(Duration::ZERO)
+    {
+        Ok(reader) => reader,
+        Err(StaticStorageOpenError::DoesNotExist)
+        | Err(StaticStorageOpenError::InitializationNotYetFinalized) => return Ok(None),
+        Err(StaticStorageOpenError::Interrupt) => {
+            fail!(from origin,
+                  with ServiceDetailsError::Interrupt,
+                  "{} since an interrupt signal was raised while opening the static service info \"{}\" for reading.",
+                  msg, name);
+        }
+        Err(StaticStorageOpenError::InsufficientPermissions) => {
+            fail!(from origin,
+                with ServiceDetailsError::InsufficientPermissions,
+                "{} since the process does not have the permission to acquire the service details.", msg);
+        }
+        Err(e) => {
+            fail!(from origin,
+                  with ServiceDetailsError::FailedToOpenStaticServiceInfo,
+                  "{} due to a failure while opening the static service info \"{}\" for reading ({:?})",
+                  msg, name, e);
+        }
+    };
+
+    let mut content = CoreString::from_utf8(vec![b' '; reader.len() as usize]).unwrap();
+    match reader.read(unsafe { content.as_mut_vec().as_mut_slice() }) {
+        Ok(_) => (),
+        Err(StaticStorageReadError::Interrupt) => {
+            fail!(from origin, with ServiceDetailsError::Interrupt,
+                    "{} since an interrupt signal was raised while reading the static service info \"{}\".",
+                    msg, name);
+        }
+        Err(e) => {
+            fail!(from origin, with ServiceDetailsError::FailedToReadStaticServiceInfo,
+                    "{} since the static service info \"{}\" could not be read ({:?}).",
+                    msg, name, e );
+        }
+    }
+
+    let service_config =
+        match S::ConfigSerializer::deserialize::<StaticConfig>(unsafe { content.as_mut_vec() }) {
+            Ok(service_config) => service_config,
+            Err(e) => {
+                fail!(from origin, with ServiceDetailsError::FailedToDeserializeStaticServiceInfo,
+                    "{} since the static service info \"{}\" could not be deserialized ({:?}).",
+                       msg, name, e );
+            }
+        };
+
+    if service_hash != service_config.service_hash() {
+        fail!(from origin, with ServiceDetailsError::ServiceInInconsistentState,
+                "{} since the service {:?} has an inconsistent hash of {} according to config {:?}",
+                msg, service_config, service_hash, config);
+    }
+
+    if service_config.iceoryx2_version() != PackageVersion::get() {
+        fail!(from origin, with ServiceDetailsError::VersionMismatch,
+            "{} since the service was created with iceoryx2 version {} but this process expects iceoryx2 version {}.", msg, service_config.iceoryx2_version(), PackageVersion::get());
+    }
+
+    Ok(Some(service_config))
+}
+
+type DynamicConfigStorage<S> = <S as Service>::DynamicStorage<DynamicConfig<<S as Service>::Bag>>;
+fn open_dynamic_config<S: Service>(
+    config: &config::Config,
+    service_id: UniqueServiceId,
+) -> Result<Option<DynamicConfigStorage<S>>, ServiceDetailsError> {
     let origin = format!(
         "Service::open_dynamic_details<{}>({:?})",
         core::any::type_name::<S>(),
-        service_hash
+        service_id
     );
     let msg = "Unable to open the services dynamic config";
+    let segment_name = dynamic_config_name(service_id);
     match
-            <<S::DynamicStorage<DynamicConfig> as DynamicStorage<
-                    DynamicConfig,
+            <<DynamicConfigStorage<S> as DynamicStorage<
+                    DynamicConfig<S::Bag>,
                 >>::Builder<'_> as NamedConceptBuilder<
-                    S::DynamicStorage<DynamicConfig>,
-                >>::new(&service_hash.0.into())
+                    DynamicConfigStorage<S>,
+                >>::new(&segment_name)
                     .config(&dynamic_config_storage_config::<S>(config))
                 .has_ownership(false)
                 .open(AccessMode::ReadWrite) {
@@ -1169,75 +1253,5 @@ fn open_dynamic_config<S: Service>(
                 fail!(from origin, with ServiceDetailsError::InternalError,
                     "{} due to an internal failure while opening the services dynamic config.", msg);
             }
-    }
-}
-
-pub(crate) fn remove_service_tag<S: Service>(
-    node_id: &UniqueNodeId,
-    service_hash: &ServiceHash,
-    config: &config::Config,
-) -> Result<(), ServiceRemoveTagError> {
-    let origin = format!(
-        "remove_service_tag<{}>({:?}, service_hash: {:?})",
-        core::any::type_name::<S>(),
-        node_id,
-        service_hash
-    );
-
-    match unsafe {
-        <S::StaticStorage as NamedConceptMgmt>::remove_cfg(
-            &service_hash.0.into(),
-            &service_tag_config::<S>(config, node_id),
-        )
-    } {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            fail!(from origin, with ServiceRemoveTagError::AlreadyRemoved,
-                    "The service's tag for the node was already removed. This may indicate a corrupted system!");
-        }
-        Err(NamedConceptRemoveError::InternalError) => {
-            fail!(from origin, with ServiceRemoveTagError::InternalError,
-                "Unable to remove the service's tag for the node due to an internal error.");
-        }
-        Err(NamedConceptRemoveError::InsufficientPermissions) => {
-            fail!(from origin, with ServiceRemoveTagError::InsufficientPermissions,
-                "Unable to remove the service's tag for the node due to insufficient permissions.");
-        }
-    }
-}
-
-pub(crate) fn remove_port_tag<S: Service>(
-    node_id: &UniqueNodeId,
-    port_id: &UniquePortId,
-    config: &config::Config,
-) -> Result<(), PortRemoveTagError> {
-    let origin = format!(
-        "remove_port_tag<{}>({:?}, port_id: {:?})",
-        core::any::type_name::<S>(),
-        node_id,
-        port_id
-    );
-    let name = FileName::new(port_id.value().to_string().as_bytes())
-        .expect("A number is always a valid file name.");
-
-    match unsafe {
-        <S::StaticStorage as NamedConceptMgmt>::remove_cfg(
-            &name,
-            &port_tag_config::<S>(config, node_id),
-        )
-    } {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            fail!(from origin, with PortRemoveTagError::AlreadyRemoved,
-                    "The port's tag for the node was already removed. This may indicate a corrupted system!");
-        }
-        Err(NamedConceptRemoveError::InternalError) => {
-            fail!(from origin, with PortRemoveTagError::InternalError,
-                "Unable to remove the port's tag for the node due to an internal error.");
-        }
-        Err(NamedConceptRemoveError::InsufficientPermissions) => {
-            fail!(from origin, with PortRemoveTagError::InsufficientPermissions,
-                "Unable to remove the port's tag for the node due to insufficient permissions.");
-        }
     }
 }
