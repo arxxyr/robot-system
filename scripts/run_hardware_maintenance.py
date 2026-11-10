@@ -123,7 +123,10 @@ ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
 ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
                    'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
                    '不提供混合动作的新鲜锚点或动作授权')
-GRIPPER_RELEASE_SCOPE = '仅右夹爪物理6：新鲜静止初值到固定GP1400单程张开，增量须1..32，不回初值；GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验'
+GRIPPER_RELEASE = {'goal_raw':1600,'maximum_increment_raw':256}
+GRIPPER_RELEASE_SCOPE = (f'仅右夹爪物理6：原校准范围内新鲜静止初值到固定GP{GRIPPER_RELEASE["goal_raw"]}单程张开，'
+                         f'增量须1..{GRIPPER_RELEASE["maximum_increment_raw"]}，不回初值；'
+                         'GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验')
 LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
                       'Present_Position':(56,2),'Present_Velocity':(58,2)}
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
@@ -764,7 +767,7 @@ def gripper_release_contract(bindings):
                 for ref in bindings.get('refs',[]))
             and RIGHT_PULSE_TRACE['path'] in bindings.get('binary_paths',[]),'右夹爪抓帧缺冻结strace身份')
     return {'scope':GRIPPER_RELEASE_SCOPE,'target':['right',6,'right_arm_gripper'],
-            'goal_raw':1400,'maximum_increment_raw':32,'tolerance_raw':4,'observation_budget_ms':800,
+            **GRIPPER_RELEASE,'tolerance_raw':4,'observation_budget_ms':800,
             'return_to_initial':False,'calibration':dict(calibration)}
 
 
@@ -1233,7 +1236,7 @@ class ProbeEngine:
         return errors
 
     def witness_position(self, side, motor, target, anchor, stage, evidence, *, started_ns=None,
-                         check_ready=lambda:None,expected_direction=0):
+                         check_ready=lambda:None,expected_direction=0,maximum_excursion_raw=32):
         started=self.io.now() if started_ns is None else started_ns
         deadline = started + self.plan["position_wait_ms"] * 1_000_000
         row={'stage':stage,'status':'FAIL','target_raw':target,'anchor_raw':anchor,
@@ -1247,7 +1250,7 @@ class ProbeEngine:
             check_ready()
             row['samples'].append({'stamp_ns':stamp,'position_raw':position,'signed_error_raw':position-target})
             row.update(finished_ns=stamp,elapsed_ns=stamp-started,final_signed_error_raw=position-target)
-            if abs(position-anchor)>32:
+            if abs(position-anchor)>maximum_excursion_raw:
                 row['failure_code']='POSITION_EXCURSION_LIMIT'
                 raise PositionAccuracyError(row)
             if expected_direction*(position-anchor)<0:
@@ -1280,7 +1283,8 @@ class ProbeEngine:
                     and self.read('right',6,'Torque_Enable')==0
                     and self.read('right',6,'Present_Velocity')==0,'右夹爪模式/断扭/静止状态漂移')
             value=self.read('right',6,'Present_Position')
-            require(type(value) is int and 0<=value<=4095 and 0<goal-value<=32
+            require(type(value) is int and calibration['range_min']<=value<goal<=calibration['range_max']
+                    and 0<goal-value<=contract['maximum_increment_raw']
                     and (initial is None or value==initial),'右夹爪初值/增量/稳定性不符，不重算目标')
             return value
         try:
@@ -1294,7 +1298,8 @@ class ProbeEngine:
             require(self.read('right',6,'Goal_Position')==goal,'右夹爪GP精确读回不匹配')
             require(self.read('right',6,'Torque_Enable')==1,'右夹爪GP写后自动使能未确认')
             samples=self.witness_position('right',6,goal,initial,'release',row['position_accuracy']['stages'],
-                        started_ns=row['goal_write_attempt_ns'],check_ready=ready,expected_direction=1)
+                        started_ns=row['goal_write_attempt_ns'],check_ready=ready,expected_direction=1,
+                        maximum_excursion_raw=contract['maximum_increment_raw'])
             require(samples[-1]['position_raw']>initial,'右夹爪没有向原始值增大方向实际移动')
             row['position_accuracy']['status']='PASS'
         except PositionAccuracyError as failure:
@@ -2586,7 +2591,7 @@ def classify_position_snapshot(values,before,probes):
             continue
         probe=targets.get((side,motor))
         if probe is not None and (probe['kind'] in ('position','position_hold') and 'anchor_raw' in probe
-                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==1400):
+                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==GRIPPER_RELEASE['goal_raw']):
             anchor=probe['goal_raw'] if probe['kind']=='position_release' else probe['anchor_raw']
             if goal!=anchor or abs(actual-anchor)>4:
                 issues.append({'code':'POSITION_FINAL_ANCHOR_ERROR','status':'FAIL','motor':key,'target_raw':anchor,
@@ -2759,7 +2764,7 @@ def validate_snapshot(values, before=None, probes=(), *, engine=None):
         old=before[key]
         probe=targets.get((side,motor))
         if probe is not None and (probe['kind'] in ('position','position_hold') and 'anchor_raw' in probe
-                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==1400):
+                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==GRIPPER_RELEASE['goal_raw']):
             target=probe['goal_raw'] if probe['kind']=='position_release' else probe['anchor_raw']
             require(row['Goal_Position']==target
                     and abs(row['Present_Position']-target)<=4,f'最终锚点未确认：{key}')

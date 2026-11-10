@@ -118,7 +118,7 @@ class ProbeTests(unittest.TestCase):
                   'binary_paths':[m.RIGHT_PULSE_TRACE['path']]}
         root='/home/loosqk/robot-checks/release-fixture'
         plan=m.make_plan(bindings,root+'/run','release-fixture',root,right_gripper_release=True)
-        executor=FakeIO(step=8);executor.position=executor.goal=1371
+        executor=FakeIO(step=64);executor.position=executor.goal=1396
         original=executor.poke
         def auto_enable(side,motor,action,register,value=None,cleanup=False):
             result=original(side,motor,action,register,value,cleanup)
@@ -131,18 +131,18 @@ class ProbeTests(unittest.TestCase):
         executor,engine,calibration=self.release_fixture()
         m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
         row=engine.rows[0]
-        self.assertEqual((row['status'],row['initial_raw'],row['goal_raw']),('PASS',1371,1400))
-        self.assertEqual((executor.position,executor.goal,executor.torque),(1400,1400,0))
+        self.assertEqual((row['status'],row['initial_raw'],row['goal_raw']),('PASS',1396,1600))
+        self.assertEqual((executor.position,executor.goal,executor.torque),(1600,1600,0))
         writes=[call for call in executor.calls if len(call)==6 and call[2]=='write']
         self.assertEqual([(call[3],call[4],call[5]) for call in writes],
-                         [('Goal_Position',1400,False),('Torque_Enable',0,True)])
+                         [('Goal_Position',1600,False),('Torque_Enable',0,True)])
         self.assertEqual({call[:2] for call in executor.calls if len(call)==6},{('right',6)})
         witness=row['position_accuracy']['stages']['release']
         self.assertEqual(witness['started_ns'],row['goal_write_attempt_ns'])
         self.assertEqual(witness['deadline_ns']-witness['started_ns'],800_000_000)
         before=idle_rows();after=copy.deepcopy(before)
-        before['right:6'].update(Present_Position=1371,Goal_Position=1371)
-        after['right:6'].update(Present_Position=1400,Goal_Position=1400)
+        before['right:6'].update(Present_Position=1396,Goal_Position=1396)
+        after['right:6'].update(Present_Position=1600,Goal_Position=1600)
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
         m.validate_snapshot(after,before,engine.rows)
         self.assertEqual(len(engine.rows),1)
@@ -165,11 +165,15 @@ class ProbeTests(unittest.TestCase):
         executor.poke=drift
         with self.assertRaises(ValueError):engine.gripper_release(calibration)
         self.assertEqual(executor.torque,0)
-        self.assertNotIn(('right',6,'write','Goal_Position',1400,False),executor.calls)
+        self.assertNotIn(('right',6,'write','Goal_Position',1600,False),executor.calls)
         self.assertNotIn(('right',6,'write','Torque_Enable',1,False),executor.calls)
         self.assertIn(('right',6,'write','Torque_Enable',0,True),executor.calls)
         with self.assertRaises(ValueError):engine.gripper_release(calibration)
         with self.assertRaises(ValueError):run_main(['--right-gripper-release','--position-target','head-1'])
+        for initial in (1383,2848):
+            executor,engine,calibration=self.release_fixture();executor.position=initial
+            with self.subTest(initial=initial),self.assertRaises(ValueError):engine.gripper_release(calibration)
+            self.assertFalse(any(call[2:4]==('write','Goal_Position') for call in executor.calls if len(call)==6))
 
     def test_right_gripper_unknown_write_ack_still_disables_once_without_retry_or_return(self):
         executor,engine,calibration=self.release_fixture();original=executor.poke
@@ -179,11 +183,11 @@ class ProbeTests(unittest.TestCase):
             return result
         executor.poke=unknown
         with self.assertRaises(ValueError):engine.gripper_release(calibration)
-        self.assertEqual((executor.goal,executor.torque),(1400,0))
-        self.assertEqual(executor.calls.count(('right',6,'write','Goal_Position',1400,False)),1)
+        self.assertEqual((executor.goal,executor.torque),(1600,0))
+        self.assertEqual(executor.calls.count(('right',6,'write','Goal_Position',1600,False)),1)
         self.assertEqual(executor.calls.count(('right',6,'write','Torque_Enable',0,True)),1)
         self.assertNotIn(('right',6,'write','Torque_Enable',1,False),executor.calls)
-        self.assertNotIn(('right',6,'write','Goal_Position',1371,True),executor.calls)
+        self.assertNotIn(('right',6,'write','Goal_Position',1396,True),executor.calls)
 
     def test_right_gripper_late_target_read_fails_budget_from_first_goal_write(self):
         executor,engine,calibration=self.release_fixture();original=executor.poke;executor.step=None
@@ -197,7 +201,7 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(failure['started_ns'],row['goal_write_attempt_ns'])
         self.assertEqual(failure['final_signed_error_raw'],0)
         self.assertGreater(failure['elapsed_ns'],800_000_000)
-        self.assertEqual((executor.position,executor.torque),(1400,0))
+        self.assertEqual((executor.position,executor.torque),(1600,0))
 
     def test_position_and_wheel_positive(self):
         a=FakeIO(); e=m.ProbeEngine(a,PLAN)

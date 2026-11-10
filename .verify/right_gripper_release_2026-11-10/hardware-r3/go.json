@@ -1,0 +1,35 @@
+{
+  "schema": "MAINTENANCE_GO_V2",
+  "issued_by": "root",
+  "plan_sha256": "0aebc9dbc7ddb3bd784707f116466ff1cfd79fba60cb48dfca8d8f73dfb4644a",
+  "artifact_root": "/home/loosqk/robot-checks/right-gripper-release-20261110-r3",
+  "issued_at_ns": 1794292811134122116,
+  "expires_at_ns": 1794292941016115733,
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b"
+  },
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1794292341016115733
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "confirmed_at_ns": 1794292341016115733
+    }
+  },
+  "source": "同轮持续看护：call_da1bef4077534531b71ed649e3f3400a 全部仍就绪，可立即执行一次；r2结束后用户追加明确动作请求：太小了，程度大一点。保留原现场时间戳，不续期。",
+  "user_answer": "太小了，程度大一点",
+  "motion_scope": "仅右夹爪ID6，原范围内起点到raw1600单程，最大增量256；GP写起800ms/±4，随后独立断扭及原整机停止检查"
+}

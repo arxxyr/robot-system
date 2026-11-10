@@ -23,7 +23,7 @@
 
 2026-11-09 分别仅 ID9、仅 ID7 的20秒测试及现场确认，证明其对应自身左、右轮，结束后三轮完全停止。配置收敛提交 `36e663f` 在 Orin 通过319项不同 Rust、153项 Python 测试及 fmt/Clippy；此软件候选未部署、未做新实机动作。单轮通过不代替混合、默认 S0 或整车联动验收；原 run 因固件合同 `DEFERRED` 的整体 FAIL 保留。
 
-当前右3肘关节仍为 `PP2992 > 2991`，用户确认靠近端点；不能 clamp 或放宽限位来冒充原位保持。右6夹爪完成一次小幅张开，用户确认结束静止，`PP1371→1392` 已落入原范围 `[1384,2847]`，整机停止及身份检查通过。原帧显示只写 `GP1400` 后使能便为1，旧脚本因预期仍断扭而提前收尾，最终偏差−8超过±4，原 `FAIL` 保留。单夹爪入口已简化为首次GP写即动作起点、随后观测及断扭；修正仅完成软件验证，未重测。历史混合失败与 `NEEDS_MANUAL_POWER_CUT` 不回填。左腕 `I=1`、头部 `P=32` 仍是临时已测候选，左1偶发根因 `UNKNOWN`。
+当前右3肘关节仍为 `PP2992 > 2991`，用户确认靠近端点；不能 clamp 或放宽限位来冒充原位保持。右6夹爪已按用户要求加大张开：目标 `GP1600`，反馈 `1397→1596`，573毫秒内达到原±4要求；现场确认明显张开、结束静止，断扭、整机停止及身份检查通过。入口从首次GP写开始计时，只允许原校准范围 `[1384,2847]` 内起点和正向增量≤256，不回闭合位置、不改速度/PID/限位。此前修正动作起点后的 `GP1400` 复测亦通过；最初因GP写自动使能而提前收尾的 `FAIL` 与原帧保留。历史混合失败与 `NEEDS_MANUAL_POWER_CUT` 不回填。左腕 `I=1`、头部 `P=32` 仍是临时已测候选，左1偶发根因 `UNKNOWN`。
 
 ## 实机合同与近期顺序
 
@@ -39,7 +39,7 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 
 - 当前映射：[配置软件验证](../.verify/wheel_config_mapping_2026-11-09/summary.json)、[ID9左轮实机](../.verify/right_wheel_mapping_2026-11-09/summary.json)、[ID7右轮实机](../.verify/wheel_id7_mapping_2026-11-09/summary.json)。
 - 右臂范围：[软件及准备](../.verify/arm_range_readonly_2026-11-09/summary.json)、[本次18项原帧与越界结果](../.verify/arm_range_readonly_2026-11-09/hardware/summary.json)。
-- 单右夹爪：[原帧、现场观察与停止结果](../.verify/right_gripper_release_2026-11-10/hardware/summary.json)。
+- 单右夹爪：[本次加大张开与停止结果](../.verify/right_gripper_release_2026-11-10/hardware-r3/summary.json)、[最初失败原件](../.verify/right_gripper_release_2026-11-10/hardware/summary.json)。
 - 混合与停止：[维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[工作线程离线验证](../.verify/s0_hal_worker_2026-11-03/summary.json)、[历史混合失败](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)、[历史反馈与目视矛盾](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)。后续结果不回写旧失败或未知归因。
 - 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。

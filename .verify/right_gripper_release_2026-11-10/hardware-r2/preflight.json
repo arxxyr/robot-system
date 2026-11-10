@@ -1,0 +1,7 @@
+{
+  "result": "PASS",
+  "commands": 26,
+  "refs": 77,
+  "uart_access": false,
+  "go_exists": false
+}

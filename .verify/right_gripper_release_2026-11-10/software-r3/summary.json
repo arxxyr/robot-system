@@ -1,0 +1,15 @@
+{
+  "scope": "仅右6固定目标1600、最大正向增量256，原校准范围内起点；原800ms/±4和停止门保持",
+  "source_sha256": "c3226d070b8509bd54ce4607bdc55b0bb7bc30a9eb3a83637ecc1eb2b4e8e7f2",
+  "orin_maintenance_tests": 173,
+  "skipped": 0,
+  "fmt": "PASS",
+  "clippy": "PASS",
+  "rustc": "1.102.0-nightly (ac8310ba6 2026-11-09)",
+  "review": "PASS",
+  "first_test_attempt": "测试放在/tmp导致fixtures/默认config路径缺失；原日志first-path-error.log保留，正确目录布局后173项全过，未修改判据",
+  "hardware_result": "../hardware-r3/summary.json",
+  "parameters_changed": false,
+  "d15": "OPEN/DEFERRED",
+  "deployable": false
+}
