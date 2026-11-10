@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use robot_core::time::{MockClock, MonoRawNs};
@@ -283,6 +284,61 @@ fn hung_helper_poll_is_nonblocking_and_forced_stop_reaps_the_child() {
     assert!(start.elapsed() < Duration::from_secs(2));
     assert!(adapter.child.is_none());
     assert_reaped(pid);
+    adapter.stop().unwrap();
+}
+
+fn delayed_release_helper(directory: &Path) -> ! {
+    static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+    extern "C" fn request_release(_: libc::c_int) {
+        STOP_REQUESTED.store(true, Ordering::Release);
+    }
+    // SAFETY：此隔离子进程的handler只写无锁原子标志。
+    assert_ne!(
+        unsafe {
+            libc::signal(
+                libc::SIGTERM,
+                request_release as *const () as libc::sighandler_t,
+            )
+        },
+        libc::SIG_ERR
+    );
+    fs::write(directory.join("ready"), b"").unwrap();
+    while !STOP_REQUESTED.load(Ordering::Acquire) {
+        thread::sleep(Duration::from_millis(1));
+    }
+    // 模拟cap.read返回及释放超过旧100ms；不用业务MockClock推进来伪造等待。
+    thread::sleep(Duration::from_millis(200));
+    fs::write(directory.join("released"), b"").unwrap();
+    // 不返回test harness，避免父侧已关闭stdout后测试输出干扰退出码。
+    std::process::exit(0)
+}
+
+#[test]
+fn cooperative_slow_frame_release_succeeds_and_reaps_without_advancing_robot_clock() {
+    if let Some(directory) = std::env::var_os("ROBOT_CAMERA_DELAYED_RELEASE_DIR") {
+        delayed_release_helper(&PathBuf::from(directory));
+    }
+    let (mut adapter, clock, directory) = fixture();
+    adapter.config.fps = 5;
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args([
+        "--exact",
+        "camera::tests::cooperative_slow_frame_release_succeeds_and_reaps_without_advancing_robot_clock",
+        "--nocapture",
+    ]);
+    command.env("ROBOT_CAMERA_DELAYED_RELEASE_DIR", directory.path());
+    adapter.spawn(command).unwrap();
+    let pid = adapter.child.as_ref().unwrap().id();
+    assert!(wait_until(Duration::from_secs(2), || directory
+        .path()
+        .join("ready")
+        .exists()));
+    let before = clock.now();
+    adapter.stop().unwrap();
+    assert!(directory.path().join("released").exists());
+    assert!(adapter.child.is_none());
+    assert_reaped(pid);
+    assert_eq!(clock.now(), before);
     adapter.stop().unwrap();
 }
 

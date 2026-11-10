@@ -19,7 +19,7 @@ const READ_BUDGET: usize = 256 * 1024;
 const MAX_READ_CALLS: usize = 64;
 /// 为已有 16 MiB 图像 sample 档位预留消息头空间。
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024 - 4096;
-const STOP_POLLS: usize = 50;
+const STOP_POLLS: u128 = 50;
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -283,13 +283,18 @@ impl SensorAdapter for OpenCvCameraAdapter {
         }
         // 先请求正常释放，再关闭读端解除可能卡住的像素写入。
         self.stdout = None;
-        if let Some(status) = wait_bounded(&mut child) {
+        // 保留原100ms，再给两帧返回/释放时间；按原2ms轮询粒度向上取整。
+        let frame_polls = Duration::from_secs(2)
+            .as_nanos()
+            .div_ceil(u128::from(self.config.fps))
+            .div_ceil(STOP_POLL_INTERVAL.as_nanos());
+        if let Some(status) = wait_bounded(&mut child, STOP_POLLS + frame_polls) {
             return exit_result(status, true);
         }
         if let Err(error) = child.kill() {
             tracing::error!(%error, "相机 SIGKILL 发送失败");
         }
-        if wait_bounded(&mut child).is_some() {
+        if wait_bounded(&mut child, STOP_POLLS).is_some() {
             return Err(RobotError::HardwareFault("相机辅助进程已强制终止并回收"));
         }
         // 未完成回收时保留句柄，调用方不能把错误记成停止成功。
@@ -306,9 +311,9 @@ impl Drop for OpenCvCameraAdapter {
     }
 }
 
-fn wait_bounded(child: &mut Child) -> Option<ExitStatus> {
+fn wait_bounded(child: &mut Child, polls: u128) -> Option<ExitStatus> {
     // 这是 OS 子进程回收的轮询上限，不推进业务时钟或依赖 MockClock 前进。
-    for _ in 0..STOP_POLLS {
+    for _ in 0..polls {
         match child.try_wait() {
             Ok(Some(status)) => return Some(status),
             Ok(None) => thread::sleep(STOP_POLL_INTERVAL),
