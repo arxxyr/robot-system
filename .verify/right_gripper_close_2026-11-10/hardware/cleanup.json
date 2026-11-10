@@ -1,0 +1,68 @@
+{
+  "owned_pids_absent": 393,
+  "all_children_reaped": true,
+  "holder_checks": [
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00",
+      "elevated": true,
+      "free": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00",
+      "elevated": true,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+      "elevated": true,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+      "elevated": true,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+      "elevated": true,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "elevated": false,
+      "free": true
+    },
+    {
+      "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+      "elevated": true,
+      "free": true
+    }
+  ],
+  "tmux_absent": true,
+  "uart_access": false
+}

@@ -1,0 +1,54 @@
+{
+  "scope": "仅右夹爪ID6复用同一流程单程开合；本次合回1397后用户接受5计数偏差，软件容差限定右6为±5",
+  "source_sha256": "877259dbd8898a5e009ff16862d144e4a3c36b9da3662cb0e10da7eb0f05ac1d",
+  "plan_sha256": "5922b4c964075922b4aba2e11c4f88df5f6efccb3fd5a2c3516410be8ebe8e17",
+  "software": {
+    "orin_maintenance_tests": 175,
+    "skipped": 0,
+    "fmt": "PASS",
+    "clippy": "PASS",
+    "review": "PASS"
+  },
+  "hardware_result": "FAIL",
+  "readiness": "本次新GO已消费，动作及清场完成，不复用授权",
+  "parameters_changed": false,
+  "d15": "OPEN/DEFERRED",
+  "deployable": false,
+  "hardware": {
+    "initial_raw": 1596,
+    "goal_raw": 1397,
+    "last_observed_raw": 1402,
+    "signed_error_raw": 5,
+    "original_tolerance_raw": 4,
+    "original_result": "FAIL",
+    "stop": "PASS",
+    "identity": "PASS",
+    "manual_power_cut_required": false,
+    "physical_observation": "明显合拢，结束后静止",
+    "cleanup": "hardware/cleanup.json"
+  },
+  "user_disposition": {
+    "verbatim": "应该是误差，5可以接受",
+    "acceptance": "用户接受本次右夹爪5计数偏差，原始FAIL保持",
+    "scope": "仅右6单程开合软件容差改±5；其他关节±4、800ms及停止门保持",
+    "first_sample_within_5_ms": 444.762085,
+    "software_validation": {
+      "result": "PASS",
+      "orin_maintenance_tests": 175,
+      "skipped": 0,
+      "fmt": "PASS",
+      "clippy": "PASS",
+      "review": "PASS",
+      "script_sha256": "6485529d5e965680a765a48edf6e1edb4b17a046d293be0219d989c0bebdd4a7",
+      "logs": "tolerance-update/quality/",
+      "new_hardware_run": false
+    },
+    "new_motion": "NOT_RUN"
+  },
+  "executed_source": {
+    "base_commit": "509202fe8f827521dc3cc3cad79015f59e81c69c",
+    "patch": "executed-script.patch",
+    "sha256": "877259dbd8898a5e009ff16862d144e4a3c36b9da3662cb0e10da7eb0f05ac1d",
+    "patch_format": "统一差异无上下文，基线509202f上使用git apply --unidiff-zero"
+  }
+}

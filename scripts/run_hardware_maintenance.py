@@ -123,10 +123,14 @@ ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
 ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
                    'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
                    '不提供混合动作的新鲜锚点或动作授权')
-GRIPPER_RELEASE = {'goal_raw':1600,'maximum_increment_raw':256}
-GRIPPER_RELEASE_SCOPE = (f'仅右夹爪物理6：原校准范围内新鲜静止初值到固定GP{GRIPPER_RELEASE["goal_raw"]}单程张开，'
-                         f'增量须1..{GRIPPER_RELEASE["maximum_increment_raw"]}，不回初值；'
-                         'GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验')
+GRIPPER_TOLERANCE_RAW = 5
+GRIPPER_MAX_INCREMENT_RAW = 256
+GRIPPER_TARGETS = {goal:{'goal_raw':goal,'direction':direction,
+    'scope':(f'仅右夹爪物理6：原校准范围内新鲜静止初值到固定GP{goal}单程{action}，'
+             f'绝对增量须1..{GRIPPER_MAX_INCREMENT_RAW}，不回初值；'
+             'GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验')}
+    for goal,action,direction in ((1600,'张开',1),(1397,'合回',-1))}
+GRIPPER_RELEASE_SCOPE = GRIPPER_TARGETS[1600]['scope']
 LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
                       'Present_Position':(56,2),'Present_Velocity':(58,2)}
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
@@ -758,7 +762,8 @@ def select_position_targets(names=None):
     return [POSITION_TARGETS[name] for name in names]
 
 
-def gripper_release_contract(bindings):
+def gripper_release_contract(bindings,goal=1600):
+    require(type(goal) is int and goal in GRIPPER_TARGETS,'右夹爪仅接受固定整数目标1600或1397')
     calibration=bindings.get('calibrations',{}).get('right_arm_gripper')
     require(isinstance(calibration,dict) and calibration.get('id')==6
             and calibration.get('drive_mode')==0 and calibration.get('range_min')==1384
@@ -766,15 +771,17 @@ def gripper_release_contract(bindings):
     require(any(all(ref.get(key)==value for key,value in RIGHT_PULSE_TRACE.items())
                 for ref in bindings.get('refs',[]))
             and RIGHT_PULSE_TRACE['path'] in bindings.get('binary_paths',[]),'右夹爪抓帧缺冻结strace身份')
-    return {'scope':GRIPPER_RELEASE_SCOPE,'target':['right',6,'right_arm_gripper'],
-            **GRIPPER_RELEASE,'tolerance_raw':4,'observation_budget_ms':800,
+    return {**GRIPPER_TARGETS[goal],'target':['right',6,'right_arm_gripper'],
+            'maximum_increment_raw':GRIPPER_MAX_INCREMENT_RAW,'tolerance_raw':GRIPPER_TOLERANCE_RAW,'observation_budget_ms':800,
             'return_to_initial':False,'calibration':dict(calibration)}
 
 
 def validate_gripper_release_plan(plan):
-    require(plan.get('right_gripper_release')==gripper_release_contract(plan['bindings'])
-            and plan.get('position_targets')==[] and plan.get('scope')==GRIPPER_RELEASE_SCOPE
-            and plan.get('position_wait_ms')==800 and plan.get('return_tolerance_raw')==4
+    contract=plan.get('right_gripper_release')
+    require(isinstance(contract,dict),'缺少右夹爪单程合同')
+    require(contract==gripper_release_contract(plan['bindings'],contract.get('goal_raw'))
+            and plan.get('position_targets')==[] and plan.get('scope')==contract['scope']
+            and plan.get('position_wait_ms')==800 and plan.get('return_tolerance_raw')==GRIPPER_TOLERANCE_RAW
             and not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold','bus2_arm_range_only')),
             '右夹爪单程计划禁止混合其他动作或改动固定合同')
@@ -817,7 +824,10 @@ def position_targets_from_plan(plan):
 
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
-              left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False):
+              left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
+              gripper_goal=1600):
+    require(type(gripper_goal) is int and gripper_goal in GRIPPER_TARGETS
+            and (right_gripper_release or gripper_goal==1600),'夹爪目标仅用于本次固定单右6动作')
     require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
             '新单轮选择仅接受front或left')
     require(not (right_wheel_pulse and wheel_pulse_target is not None),'旧右轮入口与具名轮选择不能混用')
@@ -889,8 +899,9 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
                              '无寄存器写入，不判整机停止或物理安全，不解除D15或生产验收']
         validate_arm_range_plan(plan)
     if right_gripper_release:
-        plan['right_gripper_release']=gripper_release_contract(bindings)
-        plan['scope']=GRIPPER_RELEASE_SCOPE
+        plan['right_gripper_release']=gripper_release_contract(bindings,gripper_goal)
+        plan['scope']=plan['right_gripper_release']['scope']
+        plan['return_tolerance_raw']=GRIPPER_TOLERANCE_RAW
         validate_gripper_release_plan(plan)
     return plan
 
@@ -1268,7 +1279,7 @@ class ProbeEngine:
         raise PositionAccuracyError(row)
 
     def gripper_release(self, calibration):
-        """闭合端只向固定范围内目标张开；不复用往返锚点或改变标定。"""
+        """按固定目标单程张开或合回；不复用往返锚点或改变标定。"""
         require(not self.rows,'右夹爪单程只允许本次唯一动作')
         validate_gripper_release_plan(self.plan)
         self.check_gate()
@@ -1283,8 +1294,8 @@ class ProbeEngine:
                     and self.read('right',6,'Torque_Enable')==0
                     and self.read('right',6,'Present_Velocity')==0,'右夹爪模式/断扭/静止状态漂移')
             value=self.read('right',6,'Present_Position')
-            require(type(value) is int and calibration['range_min']<=value<goal<=calibration['range_max']
-                    and 0<goal-value<=contract['maximum_increment_raw']
+            require(type(value) is int and calibration['range_min']<=value<=calibration['range_max']
+                    and 0<(goal-value)*contract['direction']<=contract['maximum_increment_raw']
                     and (initial is None or value==initial),'右夹爪初值/增量/稳定性不符，不重算目标')
             return value
         try:
@@ -1298,9 +1309,9 @@ class ProbeEngine:
             require(self.read('right',6,'Goal_Position')==goal,'右夹爪GP精确读回不匹配')
             require(self.read('right',6,'Torque_Enable')==1,'右夹爪GP写后自动使能未确认')
             samples=self.witness_position('right',6,goal,initial,'release',row['position_accuracy']['stages'],
-                        started_ns=row['goal_write_attempt_ns'],check_ready=ready,expected_direction=1,
+                        started_ns=row['goal_write_attempt_ns'],check_ready=ready,expected_direction=contract['direction'],
                         maximum_excursion_raw=contract['maximum_increment_raw'])
-            require(samples[-1]['position_raw']>initial,'右夹爪没有向原始值增大方向实际移动')
+            require((samples[-1]['position_raw']-initial)*contract['direction']>0,'右夹爪没有向目标方向实际移动')
             row['position_accuracy']['status']='PASS'
         except PositionAccuracyError as failure:
             row['position_accuracy']['status']='FAIL';row['accuracy_failure']=failure.evidence;error=repr(failure)
@@ -1309,7 +1320,7 @@ class ProbeEngine:
         finally:
             row['cleanup_errors']=self.safe_off('right',6,False)
             row['error']=error;row['status']='PASS' if error is None and not row['cleanup_errors'] else 'FAIL'
-        require(row['status']=='PASS',f'右夹爪单程松开失败：{row}')
+        require(row['status']=='PASS',f'右夹爪单程动作失败：{row}')
 
     def position(self, side, motor, name, calibration):
         self.check_gate()
@@ -2591,11 +2602,12 @@ def classify_position_snapshot(values,before,probes):
             continue
         probe=targets.get((side,motor))
         if probe is not None and (probe['kind'] in ('position','position_hold') and 'anchor_raw' in probe
-                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==GRIPPER_RELEASE['goal_raw']):
+                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw') in GRIPPER_TARGETS):
             anchor=probe['goal_raw'] if probe['kind']=='position_release' else probe['anchor_raw']
-            if goal!=anchor or abs(actual-anchor)>4:
+            tolerance=GRIPPER_TOLERANCE_RAW if probe['kind']=='position_release' else 4
+            if goal!=anchor or abs(actual-anchor)>tolerance:
                 issues.append({'code':'POSITION_FINAL_ANCHOR_ERROR','status':'FAIL','motor':key,'target_raw':anchor,
-                               'actual_raw':actual,'goal_raw':goal,'signed_error_raw':actual-anchor,'tolerance_raw':4})
+                               'actual_raw':actual,'goal_raw':goal,'signed_error_raw':actual-anchor,'tolerance_raw':tolerance})
         else:
             if type(old.get('Goal_Position')) is not int or type(old.get('Present_Position')) is not int:
                 issues.append({'code':'POSITION_BASELINE_UNKNOWN','status':'UNKNOWN','motor':key})
@@ -2697,6 +2709,8 @@ def classify_run_result(report):
             validate_gripper_release_plan(report['plan'])
             require([(p['side'],p['motor'],p['kind']) for p in probes]==[('right',6,'position_release')],
                     '右夹爪单程探针必须唯一为物理6')
+            require(probes[0].get('goal_raw')==report['plan']['right_gripper_release']['goal_raw'],
+                    '右夹爪探针目标与本次计划不符')
         except BaseException:
             return 'FAIL'
         return 'PASS'
@@ -2764,10 +2778,11 @@ def validate_snapshot(values, before=None, probes=(), *, engine=None):
         old=before[key]
         probe=targets.get((side,motor))
         if probe is not None and (probe['kind'] in ('position','position_hold') and 'anchor_raw' in probe
-                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw')==GRIPPER_RELEASE['goal_raw']):
+                                 or probe['kind']=='position_release' and (side,motor)==('right',6) and probe.get('goal_raw') in GRIPPER_TARGETS):
             target=probe['goal_raw'] if probe['kind']=='position_release' else probe['anchor_raw']
+            tolerance=GRIPPER_TOLERANCE_RAW if probe['kind']=='position_release' else 4
             require(row['Goal_Position']==target
-                    and abs(row['Present_Position']-target)<=4,f'最终锚点未确认：{key}')
+                    and abs(row['Present_Position']-target)<=tolerance,f'最终锚点未确认：{key}')
         else:
             require(row['Goal_Position']==old['Goal_Position'],f'非目标GoalPosition变化：{key}')
             if probe is None:
@@ -2993,29 +3008,32 @@ def main(argv=None):
                         help='仅FW3.10/Phase12：六臂原位保持及物理9 raw+500/20秒；复用整机停止后验')
     parser.add_argument('--bus2-arm-range-only',action='store_true',
                         help='仅右臂1..6逐ID SYNC_READ TE/PV/PP，共18读；记录校准范围，不写电机、不判停止')
-    parser.add_argument('--right-gripper-release',action='store_true',
-                        help=GRIPPER_RELEASE_SCOPE)
+    grippers=parser.add_mutually_exclusive_group()
+    grippers.add_argument('--right-gripper-release',action='store_true',help=GRIPPER_RELEASE_SCOPE)
+    grippers.add_argument('--right-gripper-close',action='store_true',help=GRIPPER_TARGETS[1397]['scope'])
     options=parser.parse_args(argv)
     configure_bus_mapping(options.bus_config)
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
     wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None
     pulse_requested=options.right_wheel_pulse or wheel_target is not None
+    gripper_requested=options.right_gripper_release or options.right_gripper_close
+    gripper_goal=1397 if options.right_gripper_close else 1600
     require(not options.zero_stop_check or pulse_requested,'零速保持使能检查只能附加到单轮pulse')
     require(sum((bool(pulse_requested),options.right_wheel_feedback_only,options.front_wheel_feedback_only,
                  options.left_wheel_feedback_only,options.bus2_mixed_raw_hold,options.bus2_arm_range_only,
-                 options.right_gripper_release))<=1
+                 gripper_requested))<=1
             and not ((pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
                       or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold or options.bus2_arm_range_only
-                      or options.right_gripper_release)
+                      or gripper_requested)
                      and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
     selected_targets = [] if (pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
                              or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold
-                             or options.bus2_arm_range_only or options.right_gripper_release) else select_position_targets(options.position_target)
+                             or options.bus2_arm_range_only or gripper_requested) else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
                           'position_targets':selected_targets,
-                          'scope':GRIPPER_RELEASE_SCOPE if options.right_gripper_release else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
+                          'scope':GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
                    options.position_target,right_wheel_pulse=options.right_wheel_pulse,
@@ -3023,7 +3041,7 @@ def main(argv=None):
                    zero_stop_check=options.zero_stop_check,front_wheel_feedback_only=options.front_wheel_feedback_only,
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
-                   right_gripper_release=options.right_gripper_release)
+                   right_gripper_release=gripper_requested,gripper_goal=gripper_goal)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

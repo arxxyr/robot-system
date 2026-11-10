@@ -1,0 +1,3 @@
+ scripts/run_hardware_maintenance.py        | 80 ++++++++++++++++----------
+ scripts/tests/test_hardware_maintenance.py | 90 ++++++++++++++++++++++++------
+ 2 files changed, 122 insertions(+), 48 deletions(-)
