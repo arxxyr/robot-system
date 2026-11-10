@@ -1,5 +1,6 @@
 use super::*;
 use observation::{MotionWheel, WheelSample};
+use robot_core::time::{DurationNs, MockClock, MonoRawNs};
 
 fn arguments(output: &str) -> Vec<String> {
     [
@@ -490,5 +491,55 @@ fn motion_rejects_wrong_window_reverse_velocity_and_unselected_wheel_motion() {
                 .accept(&wrong, &config, &anchor)
                 .is_err()
         );
+    }
+}
+
+#[test]
+fn final_estop_records_only_one_publish_without_claiming_persistence() {
+    let clock = MockClock::new(MonoRawNs(100));
+    // 已过期的 GO 不能阻止结束时的安全收紧；这里不触碰运动授权路径。
+    let mut report = json!({"go_expires_at_unix_ns": 0});
+    let mut sent = 0;
+    publish_final_estop(&mut report, &clock, |body, stamp| {
+        sent += 1;
+        let event = flatbuffers::root::<msg::EStopEvent>(body).unwrap();
+        assert_eq!(stamp, 100);
+        assert_eq!(event.stamp_ns(), stamp);
+        assert_eq!(event.reason(), Some("默认S0混合验收完成"));
+        assert!(!event.latched(), "producer 不能冒充 S0 已 fsync 的确认");
+        clock.advance(DurationNs(5));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(sent, 1);
+    assert_eq!(report["final_estop_attempt_ns"], 100);
+    assert_eq!(report["final_estop_publish_return_ns"], 105);
+    assert_eq!(report["final_estop_published"], true);
+}
+
+#[test]
+fn final_estop_publication_failure_preserves_the_original_error_and_fail_result() {
+    let clock = MockClock::new(MonoRawNs(100));
+    let mut report = json!({"result": "FAIL", "torque_off_confirmed": true});
+    let error = publish_final_estop(&mut report, &clock, |_, _| {
+        Err("夹具发布失败原错误".to_owned())
+    })
+    .unwrap_err();
+    assert_eq!(error, "夹具发布失败原错误");
+    assert_eq!(report["result"], "FAIL");
+    assert_eq!(report["torque_off_confirmed"], true);
+    assert_eq!(report["final_estop_attempt_ns"], 100);
+    assert_eq!(report["final_estop_publish_return_ns"], Value::Null);
+    assert_eq!(report["final_estop_published"], false);
+}
+
+#[test]
+fn success_and_failure_estop_requests_do_not_claim_s0_disk_acknowledgement() {
+    for reason in ["默认S0混合验收完成", "默认S0混合验收失败或中断"] {
+        let body = sender_estop_body(reason, 100);
+        let event = flatbuffers::root::<msg::EStopEvent>(&body).unwrap();
+        assert_eq!(event.reason(), Some(reason));
+        assert_eq!(event.source(), Some("supervised-s0-mixed"));
+        assert!(!event.latched(), "请求不能冒充 S0 已持久化的确认");
     }
 }

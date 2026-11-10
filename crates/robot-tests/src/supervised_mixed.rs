@@ -1031,7 +1031,34 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
     }
     report["torque_off_confirmed"] = json!(true);
     confirm_dropped_zero(io, report)?;
+    io.sequence += 1;
+    publish_final_estop(report, &SystemClock, |body, stamp| {
+        publish(&mut io.estop, body, io.sequence, stamp)
+    })
+}
+
+fn publish_final_estop(
+    report: &mut Value,
+    clock: &dyn RobotClock,
+    send: impl FnOnce(&[u8], u64) -> Result<(), String>,
+) -> Result<(), String> {
+    // Disable、实际断扭及日志尾窗已经完成；即使 GO 过期也只收紧，不再启用。
+    let started = clock.now().0;
+    report["final_estop_attempt_ns"] = json!(started);
+    report["final_estop_publish_return_ns"] = Value::Null;
+    report["final_estop_published"] = json!(false);
+    let body = sender_estop_body("默认S0混合验收完成", started);
+    send(&body, started)?;
+    report["final_estop_publish_return_ns"] = json!(clock.now().0);
+    report["final_estop_published"] = json!(true);
+    // Safe/TEoff 和旧关节 stamp 不能确认此次 EStop；外层须等双 latch 后再退出 daemon。
     Ok(())
+}
+
+fn sender_estop_body(reason: &str, stamp_ns: u64) -> Vec<u8> {
+    // latched 是 S0 已持久化的确认语义；成功与失败发送端都不可知，必须填 false。
+    // IPC 接收此事件仍会触发 EStop 收紧与持久化义务，不以该字段授予或阻止动作。
+    build_helpers::build_estop_event(reason, stamp_ns, "supervised-s0-mixed", false)
 }
 
 fn confirm_dropped_zero(io: &mut Session, report: &mut Value) -> Result<(), String> {
@@ -1066,12 +1093,7 @@ fn finalize_error(io: &mut Session, controls: &mut Controls, report: &mut Value)
     if let Err(error) = io.command(0, started, started.saturating_add(FRESH_NS)) {
         errors.push(format!("零目标：{error}"));
     }
-    let body = build_helpers::build_estop_event(
-        "默认S0混合验收失败或中断",
-        started,
-        "supervised-s0-mixed",
-        true,
-    );
+    let body = sender_estop_body("默认S0混合验收失败或中断", started);
     io.sequence += 1;
     if let Err(error) = publish(&mut io.estop, &body, io.sequence, started) {
         errors.push(format!("EStop：{error}"));
@@ -1152,7 +1174,7 @@ fn run(
     mut file: File,
     observer: Observations,
 ) -> Result<bool, String> {
-    let mut report = json!({"schema":"SUPERVISED_S0_MIXED_V1","result":"FAIL","config":args.config,"hardware_id":config.hardware,"layout_id":config.layout.layout_id,"selected_motor_id":config.layout.motor_ids[config.selected],"wheel_ids":config.wheel_ids,"go_expires_at_unix_ns":args.expires_unix_ns,"outer_maintenance_plan_go_locks_connected":false,"full_hardware_acceptance":false,"deployable":false,"motion_position_verified":false,"motion_velocity_raw":"NOT_EVALUATED","physical_motion":"NOT_OBSERVED","stop51":"NOT_RUN","cycles":[],"motion_samples":[],"zero_samples":[],"disable_retired":false,"torque_off_confirmed":false,"cleanup_errors":[],"manual_power_cut_required":false});
+    let mut report = json!({"schema":"SUPERVISED_S0_MIXED_V1","result":"FAIL","config":args.config,"hardware_id":config.hardware,"layout_id":config.layout.layout_id,"selected_motor_id":config.layout.motor_ids[config.selected],"wheel_ids":config.wheel_ids,"go_expires_at_unix_ns":args.expires_unix_ns,"outer_maintenance_plan_go_locks_connected":false,"full_hardware_acceptance":false,"deployable":false,"motion_position_verified":false,"motion_velocity_raw":"NOT_EVALUATED","physical_motion":"NOT_OBSERVED","stop51":"NOT_RUN","cycles":[],"motion_samples":[],"zero_samples":[],"disable_retired":false,"torque_off_confirmed":false,"final_estop_attempt_ns":null,"final_estop_publish_return_ns":null,"final_estop_published":false,"cleanup_errors":[],"manual_power_cut_required":false});
     let initialized = (|| {
         Ok::<_, String>((
             Signals::install()?,

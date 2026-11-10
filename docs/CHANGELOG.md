@@ -10,6 +10,14 @@
 
 ---
 
+## 2026-11-10 · 默认 S0 混合控制接入现有维护入口
+
+现有 `run_hardware_maintenance.py --s0-mixed-hold` 绑定默认daemon、发送器和同份TOML，复用原PLAN/GO、初始四锁与17电机检查。左双锁保持，右侧经原rx-trust授权后交给默认S0；仅六臂固定保持＋配置前轮raw500/20秒，随后原零速观察和Disable。发送器通过既有事件发布末EStop，`latched=false`表达尚未获持久化确认；外层读取双latch为1、确认进程真实退出并取回右锁后，才恢复原STOP51。未知收尾、子报告manual标记和证据错误保持粘性；不扩大raw合同、运动时限、停止容差或现场授权。
+
+此路径允许右侧保护文件由原writer合法rename，不能套旧维护的全程inode不变规则。latch writer原有规范权限为0640；仅在本轮运行/收尾、同device的新inode接受该值，其他身份与值检查保持。持有原双latch只读FD至最终复核，防止合法多次rename后inode被文件系统重用，既不写现场保护文件，也不修改持久化实现。发送器轮数组遵循TOML槽位顺序，与旧维护的前/左/右角色顺序分开校验，物理映射不变。两个原模拟串口案例复用真实daemon/sender、四锁、marker与latch；外systemd/USB未在该夹具执行，STOP51由软件模型提供，不能代替实机停止验收。原件与初次失败见 `.verify/s0_maintenance_bridge_2026-11-10/`；D15仍为OPEN/DEFERRED，deployable=false。
+
+Orin定向验证为62项Rust、201项维护测试及2项PTY通过，3项既有可选夹具跳过；实际fmt、根目录及发送器特性Clippy通过。26项只读接入检查、PLAN_ONLY和启动脚本准备完成；本轮未打开物理UART、未创建GO、未部署服务。
+
 ## 2026-11-10 · 默认 S0 的有界混合发送软件入口
 
 在已有 `supervised_demo` 增加显式 `supervised-s0` 特性与 `--s0-mixed-hold` 模式，使用既有IPC附着S0，不打开串口或扩展RPC。冻结新鲜六臂反馈目标，按TOML选择前轮，固定400次/+500/20秒，随后原三组零速观察和类型化Disable。每帧来源有效期沿既有200毫秒鲜度并截于首次Enable起21秒；它是异步IPC目标的有效期，不冒充原直接维护的50毫秒UART写截止。发送周期仍为绝对50毫秒、错过不补发；20秒以首次非零发送attempt起算，发送时间不冒充设备切换确认。

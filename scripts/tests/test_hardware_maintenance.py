@@ -4120,4 +4120,376 @@ class MixedRawTests(unittest.TestCase):
             with self.subTest(field=field),self.assertRaises(ValueError):self.parse(row)
 
 
+class S0MixedBridgeTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        self.root=Path(temporary.name).resolve();self.output=self.root/'output';self.output.mkdir()
+        self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH,LEFT_BUS_FIXTURE_PATH)
+        def reference(path):
+            info=path.stat();raw=path.read_bytes()
+            return {'path':str(path),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
+                    'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode),'device':info.st_dev,
+                    'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,
+                    'nlink':info.st_nlink,'symlink':False}
+        self.reference=reference
+        calibration=self.root/'calibration.json';calibration.write_text('{}')
+        config=write_bus_fixture(self.root/'robot.toml')
+        config.write_text('[robot]\nid="bridge_fixture"\nconfig_version="test"\n'+config.read_text()+
+                          '\nid="right_arm_full_with_base"\nauto_enable=false\nfeetech_bus2_mixed_raw=true\n'
+                          'calibration_paths='+json.dumps([str(calibration)])+'\n')
+        m.configure_bus_mapping(config,LEFT_BUS_FIXTURE_PATH)
+        self.bindings={'schema':'MAINTENANCE_BINDINGS_V1',
+            'host':{'hostname':'fixture','uid':os.getuid(),'gid':os.getgid(),'boot_id':'fixture-boot'},
+            'tool':{'path':'/not-uart','sha256':m.TOOL_SHA,'bytes':m.TOOL_BYTES},
+            'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
+            'refs':[reference(calibration)],'binary_paths':[],'protection':{},
+            's0_hardware_id':'right_arm_full_with_base'}
+        for name in ('s0_daemon','supervised_demo'):
+            ref=feedback_reference(self.root/name)
+            self.bindings[name]=ref;self.bindings['refs'].append(ref);self.bindings['binary_paths'].append(ref['path'])
+        for side in m.SERIALS:
+            directory=self.root/side;directory.mkdir();self.bindings['protection'][side]={}
+            for name in ('rx_trust.lock','estop_latch.lock','rx_trust_marker','rx_trust_marker.bak','estop_latch','estop_latch.bak'):
+                path=directory/name;path.write_bytes(b'1\n');self.bindings['protection'][side][name]=reference(path)
+        with patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent):
+            self.plan=m.make_plan(self.bindings,self.output,'bridge',self.root,s0_mixed_hold=True)
+        self.expiry=600_000_000_000
+
+    def receipt(self):
+        contract=self.plan['s0_mixed_hold'];start=1_100_000_000;enabled=1_000_000_000;zero=start+20_000_000_000
+        anchor_stamp=enabled
+        cycles=[]
+        for index in range(400):
+            attempt=start+index*50_000_000
+            source=min(attempt+200_000_000,enabled+21_000_000_000)
+            if index==0:source=min(source,anchor_stamp+200_000_000)
+            cycles.append({'cycle':index,'scheduled_ns':attempt,'publish_attempt_ns':attempt,
+                'publish_return_ns':attempt+1000,'local_deadline_ns':attempt+50_000_000,
+                'source_deadline_ns':source})
+        wheels=contract['wheel_ids'];selected=contract['selected_motor_id']
+        motion=[{'window':index,'started_ns':start+index*250_000_000,
+                 'finished_ns':start+index*250_000_000+1_000_000,
+                 'wheels':[{'id':motor,'position':(1000+index*80)%4096 if motor==selected else 1000,
+                            'velocity':500 if motor==selected else 0} for motor in wheels]} for index in range(1,80)]
+        samples=[{'started_ns':zero+offset*1_000_000,'finished_ns':zero+offset*1_000_000+1_000_000,
+                  'wheels':[{'id':motor,'torque':1,'goal':0,'velocity':0} for motor in wheels]} for offset in (50,250,450)]
+        return {'schema':'SUPERVISED_S0_MIXED_V1','result':'SOFTWARE_PATH_PASS','config':contract['config']['path'],
+            'hardware_id':contract['hardware_id'],'layout_id':123,'selected_motor_id':selected,'wheel_ids':wheels,
+            'go_expires_at_unix_ns':self.expiry,'cleanup_errors':[],'manual_power_cut_required':False,
+            'motion_position_verified':True,'motion_velocity_raw':'PASS','disable_retired':True,
+            'torque_off_confirmed':True,'diagnostics_dropped_zero_verified':True,'final_estop_published':True,
+            'physical_motion':'NOT_OBSERVED','stop51':'NOT_RUN','full_hardware_acceptance':False,'deployable':False,
+            'anchor':{'raw':[1000]*9,'target':[0.0]*9,'stamp_ns':anchor_stamp},'enable_attempt_ns':enabled,
+            'nonzero_start_ns':start,'nonzero_end_ns':zero,'zero_attempt_ns':zero,'zero_end_ns':zero+500_000_000,
+            'zero_publish_return_ns':zero+1000,'final_estop_attempt_ns':zero+600_000_000,
+            'final_estop_publish_return_ns':zero+600_001_000,'finished_ns':zero+600_002_000,
+            'cycles':cycles,'motion_samples':motion,'zero_samples':samples,'position_travel_raw':78*80}
+
+    def test_plan_only_cli_and_plan_exclude_legacy_actions_and_sensor_helpers(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不得启动')),contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(run_main(['--s0-mixed-hold']),0)
+        self.assertEqual(json.loads(out.getvalue())['scope'],m.S0_MIXED_SCOPE)
+        for kwargs in ({'bus2_mixed_raw_hold':True},{'right_wheel_pulse':True},{'position_target_names':['head-1']}):
+            with self.subTest(kwargs=kwargs),patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.output,'bridge',self.root,s0_mixed_hold=True,**kwargs)
+        config=Path(m.BUS_CONFIG['path']);original=config.read_text()
+        config.write_text(original+'\n[[sensor]]\nhardware_id="right_arm_full_with_base"\n')
+        with self.assertRaises(ValueError):m.s0_mixed_contract(self.bindings)
+        config.write_text(original.replace('auto_enable=false','auto_enable=true'))
+        with self.assertRaises(ValueError):m.s0_mixed_contract(self.bindings)
+
+    def test_receipt_checks_fixed_time_raw_identity_and_distinct_sender_anchor_contract(self):
+        result=self.receipt()
+        self.assertEqual(m.parse_s0_mixed_result(json.dumps(result),self.plan,self.expiry),result)
+        for key,value in (('schema','FEETECH_MIXED_WHEEL_V1'),('hardware_id','other'),('selected_motor_id',7),
+                          ('manual_power_cut_required',True),('final_estop_published',False),('disable_retired',False),
+                          ('diagnostics_dropped_zero_verified',False),('zero_attempt_ns',result['zero_attempt_ns']-1),
+                          ('zero_end_ns',result['zero_end_ns']+1),('motion_velocity_raw','NOT_EVALUATED')):
+            bad=copy.deepcopy(result);bad[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):m.parse_s0_mixed_result(json.dumps(bad),self.plan,self.expiry)
+        for mutate in (lambda row:row['cycles'].pop(),lambda row:row['cycles'][5].update(scheduled_ns=0),
+                       lambda row:row['cycles'][1].update(source_deadline_ns=row['cycles'][1]['source_deadline_ns']-1),
+                       lambda row:row['cycles'][0].update(source_deadline_ns=row['cycles'][0]['publish_attempt_ns']+200_000_000),
+                       lambda row:row['motion_samples'][0].update(started_ns=row['nonzero_start_ns']+500_000_000,
+                                                                   finished_ns=row['nonzero_start_ns']+500_000_000),
+                       lambda row:row['motion_samples'][1]['wheels'][0].update(velocity=0xffff),
+                       lambda row:row['zero_samples'][0]['wheels'][0].update(torque=0),
+                       lambda row:row['zero_samples'][2]['wheels'][0].update(velocity=500)):
+            bad=copy.deepcopy(result);mutate(bad)
+            with self.assertRaises(ValueError):m.parse_s0_mixed_result(json.dumps(bad),self.plan,self.expiry)
+        result['zero_samples'][0]['wheels'][0]['velocity']=500
+        self.assertEqual(m.parse_s0_mixed_result(json.dumps(result),self.plan,self.expiry),result)
+
+    def test_s0_wheels_follow_configuration_slots_and_leave_legacy_role_order_unchanged(self):
+        config=Path(m.BUS_CONFIG['path']);text=config.read_text();hardware=m.tomllib.loads(text)['hardware'][0]
+        names=[*m.MIXED_ARM_NAMES,'base_right_wheel','base_front_wheel','base_left_wheel']
+        text=text.replace(json.dumps(hardware['joints']),json.dumps(names))
+        text=text.replace(json.dumps(hardware['motor_ids']),json.dumps(list(range(1,10))))
+        config.write_text(text);m.configure_bus_mapping(config,LEFT_BUS_FIXTURE_PATH)
+        contract=m.s0_mixed_contract(self.bindings)
+        self.assertEqual(contract['wheel_ids'],[7,8,9]);self.assertEqual(contract['selected_motor_id'],8)
+        self.assertEqual(m.wheel_ids(),[8,9,7])
+
+    def test_right_persistent_rename_and_lock_pid_are_allowed_but_left_or_lock_inode_changes_fail(self):
+        right=self.bindings['protection']['right'];left=self.bindings['protection']['left']
+        Path(right['rx_trust.lock']['path']).write_text('12345\n')
+        marker=Path(right['rx_trust_marker']['path']);replacement=marker.with_name('new-marker')
+        replacement.write_bytes(b'1\n');replacement.replace(marker)
+        m.verify_s0_protection(self.bindings,'final')
+        Path(right['estop_latch']['path']).write_bytes(b'0\n')
+        m.verify_s0_protection(self.bindings,'running')
+        with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
+        Path(right['estop_latch']['path']).write_bytes(b'1\n')
+        Path(left['rx_trust.lock']['path']).write_text('changed\n')
+        with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
+        Path(left['rx_trust.lock']['path']).write_bytes(b'1\n')
+        lock=Path(right['rx_trust.lock']['path']);replacement.write_bytes(b'1\n');replacement.replace(lock)
+        with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
+
+    def test_ready_requires_complete_exact_original_line_with_bounded_pending(self):
+        pending,ready=m.s0_ready_chunk(b'',b'No config\nboot_ready spawned_ns=1 first_exit_ns=2 ready_ns=3')
+        self.assertFalse(ready)
+        pending,ready=m.s0_ready_chunk(pending,b'\n')
+        self.assertTrue(ready);self.assertEqual(pending,b'')
+        for raw in (b'prefix boot_ready spawned_ns=1 first_exit_ns=2 ready_ns=3\n',b'boot_ready\n'):
+            self.assertFalse(m.s0_ready_chunk(b'',raw)[1])
+        with self.assertRaises(ValueError):m.s0_ready_chunk(b'x'*65536,b'x')
+
+    def test_only_replaced_right_latch_inode_accepts_writer_0640_on_the_original_device(self):
+        right=self.bindings['protection']['right']
+        for name in ('estop_latch','estop_latch.bak'):
+            path=Path(right[name]['path']);path.chmod(0o600);right[name]=self.reference(path)
+        m.verify_s0_protection(self.bindings,'final')
+        for name in ('estop_latch','estop_latch.bak'):
+            with self.subTest(name=name):
+                path=Path(right[name]['path']);path.chmod(0o640)
+                with self.assertRaisesRegex(ValueError,'保护文件身份/权限变化'):
+                    m.verify_s0_protection(self.bindings,'running')
+                path.chmod(0o600)
+                replacement=self.root/'new-latch';replacement.write_bytes(b'1\n');replacement.chmod(0o640)
+                replacement.replace(path)
+                for phase in ('running','final'):
+                    evidence=m.verify_s0_protection(self.bindings,phase)
+                    row=next(row for row in evidence if row['path']==str(path))
+                    self.assertEqual((row['device'],row['mode']),(right[name]['device'],0o640))
+                    self.assertNotEqual(row['inode'],right[name]['inode'])
+                right[name]['device']+=1
+                with self.assertRaisesRegex(ValueError,'保护文件身份/权限变化'):
+                    m.verify_s0_protection(self.bindings,'final')
+                right[name]['device']-=1
+        for name in ('rx_trust_marker','rx_trust_marker.bak'):
+            Path(right[name]['path']).write_bytes(b'0\n')
+        with self.assertRaisesRegex(ValueError,'保护文件身份/权限变化'):
+            m.verify_s0_protection(self.bindings,'authorized')
+
+    def test_eacces_identity_uses_original_privileged_snapshot_and_preserves_unknown(self):
+        identity={'pid':123,'start_ticks':0,'boot_id':'boot','pgid':123,'uids':[os.getuid()]*4,
+                  'exe':'/bound/daemon','argv':['/bound/daemon']}
+        executor=SimpleNamespace(output=self.output,process_snapshots=[])
+        probe=lambda _:None
+        helper=SimpleNamespace(read_process=lambda _:{'status':'permission'},privileged_process_probe=probe)
+        def snapshot(*args,**kwargs):
+            self.assertEqual(args[0],123);self.assertIs(kwargs['probe_runner'],probe)
+            return {'related':[identity],'unreadable':[],'clean':False,'ordinary_denied':[{'pid':123}]}
+        helper.process_snapshot=snapshot
+        self.assertEqual(m.s0_process_identity(executor,helper,123),identity)
+        self.assertEqual(executor.process_snapshots[-1]['ordinary_denied'],[{'pid':123}])
+        helper.process_snapshot=lambda *args,**kwargs:{'related':[identity],'unreadable':[{'pid':999}]}
+        with self.assertRaises(ValueError):m.s0_process_identity(executor,helper,123)
+        helper.read_process=lambda _:{'status':'vanished'}
+        with self.assertRaises(ValueError):m.s0_process_identity(executor,helper,123)
+
+    def test_running_process_allowance_is_full_identity_only_and_never_changes_raw_clean(self):
+        identity={'pid':123,'start_ticks':0,'boot_id':'boot','pgid':123,'uids':[os.getuid()]*4,
+                  'exe':'/bound/daemon','argv':['/bound/daemon','--config','/bound/config']}
+        executor=SimpleNamespace(output=self.output,process_snapshots=[])
+        def helper(row,unreadable=()):
+            return SimpleNamespace(privileged_process_probe=lambda _:None,
+                process_snapshot=lambda *args,**kwargs:{'clean':False,'related':[row],'unreadable':list(unreadable)})
+        snapshot=m.inspect_processes(executor,self.bindings,helper(identity),owned=[identity])
+        self.assertFalse(snapshot['clean']);self.assertTrue(snapshot['s0_owned_only'])
+        for key,value in (('pid',124),('start_ticks',1),('boot_id','other'),('pgid',125),
+                          ('uids',[0]*4),('exe','/other'),('argv',['/other'])):
+            bad={**identity,key:value}
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                m.inspect_processes(executor,self.bindings,helper(bad),owned=[identity])
+        with self.assertRaises(ValueError):
+            m.inspect_processes(executor,self.bindings,helper(identity,[{'pid':999}]),owned=[identity])
+
+    def run_bridge(self,fault=None,*,pin_latches=False):
+        events=[];identities={};daemon_locks=[];contract=self.plan['s0_mixed_hold']
+        pin_fds={};actual_open=os.open
+        latch_paths={self.bindings['protection']['right'][name]['path'] for name in ('estop_latch','estop_latch.bak')}
+        def open_pin(path,flags,*args,**kwargs):
+            fd=actual_open(path,flags,*args,**kwargs)
+            if pin_latches and str(path) in latch_paths:
+                self.assertEqual(flags,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+                self.assertEqual(m.fcntl.fcntl(fd,m.fcntl.F_GETFL)&os.O_ACCMODE,os.O_RDONLY)
+                self.assertTrue(m.fcntl.fcntl(fd,m.fcntl.F_GETFD)&m.fcntl.FD_CLOEXEC)
+                pin_fds[str(path)]=fd
+            return fd
+        executor=m.RealExecutor(self.bindings['tool'],self.output);self.addCleanup(executor.journal.close)
+        executor.t=0;executor.now=lambda:executor.t
+        executor.sleep=lambda seconds,cleanup=False:setattr(executor,'t',executor.t+round(seconds*1e9))
+        engine=m.ProbeEngine(executor,self.plan);report={'plan':self.plan}
+        def locked(path):
+            with Path(path).open('rb') as stream:
+                try:m.fcntl.flock(stream,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
+                except BlockingIOError:return True
+                m.fcntl.flock(stream,m.fcntl.LOCK_UN);return False
+        def locks_present(side):
+            return all(locked(self.bindings['protection'][side][name]['path']) for name in ('rx_trust.lock','estop_latch.lock'))
+        class Process:
+            def __init__(process,pid,argv):
+                process.pid=pid;process.done=False;process.argv=list(argv);process.signals=[]
+                identities[pid]={'pid':pid,'start_ticks':12,'boot_id':'fixture-boot','pgid':pid,
+                    'uids':[os.getuid()]*4,'exe':argv[0],'argv':list(argv)}
+            def poll(process):return 0 if process.done else None
+            def send_signal(process,signum):
+                events.append(('signal',signum));process.signals.append(signum)
+            def wait(process,timeout):
+                events.append(('wait',timeout))
+                if fault=='daemon_timeout':raise subprocess.TimeoutExpired(process.argv,timeout)
+                process.done=True;identities.pop(process.pid,None)
+                for stream in daemon_locks:stream.close()
+                return 0
+        def spawn(argv,**kwargs):
+            events.append(('spawn',));self.assertTrue(locks_present('left'));self.assertFalse(locks_present('right'))
+            process=Process(910001,argv)
+            for name in ('rx_trust.lock','estop_latch.lock'):
+                path=Path(self.bindings['protection']['right'][name]['path'])
+                stream=path.open('r+b');daemon_locks.append(stream);m.fcntl.flock(stream,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
+                stream.seek(0);stream.truncate();stream.write(f'{process.pid}\n'.encode());stream.flush()
+            for name in ('rx_trust_marker','rx_trust_marker.bak'):
+                Path(self.bindings['protection']['right'][name]['path']).write_bytes(b'1\n')
+            kwargs['stdout'].write(b'No config\nboot_ready spawned_ns=1 first_exit_ns=2 ready_ns=3\n');kwargs['stdout'].flush()
+            if fault=='daemon_bind':identities[process.pid]['argv']=['wrong']
+            return process
+        def command(argv,**kwargs):
+            if kwargs.get('s0_control'):
+                operation=argv[2];events.append((operation,))
+                self.assertTrue(locks_present('left'))
+                self.assertFalse(locked(self.bindings['protection']['right']['rx_trust.lock']['path']))
+                if operation=='authorize':self.assertTrue(locked(self.bindings['protection']['right']['estop_latch.lock']['path']))
+                if operation=='authorize' and pin_latches:
+                    self.assertEqual(set(pin_fds),latch_paths)
+                    for name in ('estop_latch','estop_latch.bak'):
+                        ref=self.bindings['protection']['right'][name];info=os.fstat(pin_fds[ref['path']])
+                        self.assertEqual((info.st_dev,info.st_ino,info.st_nlink),(ref['device'],ref['inode'],1))
+                for name in ('rx_trust_marker','rx_trust_marker.bak'):
+                    Path(self.bindings['protection']['right'][name]['path']).write_bytes(b'0\n' if operation=='authorize' else b'1\n')
+                if operation=='authorize' and fault=='authorize':raise ValueError('授权已生效但回执失败')
+                return ''
+            self.assertTrue(kwargs.get('s0_sender'));events.append(('sender',));self.assertTrue(locks_present('left'))
+            self.assertTrue(locks_present('right'));executor.child=Process(910002,argv);executor.s0_sender_started=True
+            executor.s0_bind_process(executor.child,argv,'sender');kwargs['mixed_stop_check']()
+            result=self.receipt()
+            if fault=='sender':result.update(result='FAIL',error='未知收尾',manual_power_cut_required=True)
+            for name in ('estop_latch','estop_latch.bak'):
+                ref=self.bindings['protection']['right'][name];path=Path(ref['path'])
+                if pin_latches:
+                    for value in (b'0\n',b'1\n'):
+                        replacement=self.root/'replacement-latch';replacement.write_bytes(value);replacement.chmod(0o640)
+                        replacement.replace(path)
+                        info=os.fstat(pin_fds[ref['path']])
+                        self.assertEqual((info.st_dev,info.st_ino,info.st_nlink),(ref['device'],ref['inode'],0))
+                        self.assertNotEqual(path.stat().st_ino,info.st_ino)
+                        self.assertEqual(os.pread(pin_fds[ref['path']],2,0),b'1\n')
+                else:path.write_bytes(b'0\n' if fault=='latch' else b'1\n')
+            Path(argv[argv.index('--output')+1]).write_text(json.dumps(result))
+            identities.pop(executor.child.pid);executor.child=None
+            executor.commands.append({'reaped':True,'exit_code':1 if fault=='sender' else 0})
+            if fault=='sender_stop':raise ValueError('原stopcheck拒绝')
+            return ''
+        executor.command=command
+        helper=SimpleNamespace(clean_environment=lambda env:dict(env),
+            read_process=lambda pid:{'status':'observed','identity':identities[pid]},
+            privileged_process_probe=lambda _:None,
+            process_snapshot=lambda *args,**kwargs:{'clean':not identities,'related':list(identities.values()),'unreadable':[]})
+        def holder(*args,**kwargs):
+            events.append(('holder',));self.assertFalse(identities)
+            self.assertTrue(locks_present('left'));self.assertTrue(locks_present('right'));return {}
+        def check_owned(*args):self.assertTrue(locks_present('right'))
+        with contextlib.ExitStack() as stack:
+            locks={}
+            for side in m.SERIALS:
+                for name in ('rx_trust.lock','estop_latch.lock'):
+                    stream=stack.enter_context(Path(self.bindings['protection'][side][name]['path']).open('rb'))
+                    m.fcntl.flock(stream,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB);locks[(side,name)]=stream
+            with (patch.object(m.os,'open',side_effect=open_pin),
+                  patch.object(m.subprocess,'Popen',side_effect=spawn),patch.object(m,'validate_go'),
+                  patch.object(m,'verify_s0_daemon_locks',side_effect=check_owned),
+                  patch.object(m,'inspect_holder',side_effect=holder),patch.object(m.time,'time_ns',return_value=0)):
+                if fault:
+                    with self.assertRaises((ValueError,KeyError)) as caught:
+                        m.run_s0_mixed_hold(engine,{'expires_at_ns':self.expiry},helper,locks,report)
+                    events.append(('primary_error',str(caught.exception)))
+                else:m.run_s0_mixed_hold(engine,{'expires_at_ns':self.expiry},helper,locks,report)
+            self.assertTrue(locks_present('left'))
+            for fd in pin_fds.values():
+                with self.assertRaises(OSError):os.fstat(fd)
+        for stream in daemon_locks:
+            if not stream.closed:stream.close()
+        return executor,engine,report,events
+
+    def test_handoff_keeps_left_locks_authorizes_before_daemon_and_reaps_before_uart_permission(self):
+        executor,engine,report,events=self.run_bridge()
+        self.assertEqual(events[:3],[('authorize',),('spawn',),('sender',)])
+        self.assertLess(events.index(('signal',signal.SIGTERM)),events.index(('wait',8.0)))
+        self.assertLess(events.index(('wait',8.0)),events.index(('holder',)))
+        self.assertTrue(executor.s0_post_ready);self.assertIsNone(executor.s0_daemon)
+        self.assertEqual(len(engine.rows),7);self.assertFalse(engine.manual_cut)
+        self.assertTrue(all(row['anchor_source']=='sender_frozen_joint_state' for row in engine.rows[:6]))
+        self.assertFalse(any('hold_verification' in row for row in engine.rows))
+        self.assertTrue(report['s0_daemon']['reaped'])
+
+    def test_original_latch_fds_survive_two_renames_and_close_after_final_protection_check(self):
+        for name in ('estop_latch','estop_latch.bak'):
+            ref=self.bindings['protection']['right'][name];path=Path(ref['path']);path.chmod(0o600)
+            self.bindings['protection']['right'][name]=self.reference(path)
+        executor,engine,report,events=self.run_bridge(pin_latches=True)
+        self.assertTrue(executor.s0_post_ready);self.assertFalse(engine.manual_cut)
+        for name in ('estop_latch','estop_latch.bak'):
+            path=self.bindings['protection']['right'][name]['path']
+            row=next(row for row in report['s0_final_protection'] if row['path']==path)
+            self.assertEqual(row['mode'],0o640)
+            self.assertNotEqual(row['inode'],self.bindings['protection']['right'][name]['inode'])
+
+    def test_authorize_unknown_outcome_revokes_once_before_any_daemon_or_sender(self):
+        executor,engine,report,events=self.run_bridge('authorize')
+        self.assertEqual(events[:2],[('authorize',),('revoke',)])
+        self.assertFalse(any(event[0] in ('spawn','sender') for event in events));self.assertTrue(executor.s0_post_ready)
+
+    def test_unreaped_daemon_blocks_uart_and_keeps_handle_without_kill(self):
+        executor,engine,report,events=self.run_bridge('daemon_timeout')
+        self.assertFalse(executor.s0_post_ready);self.assertIsNotNone(executor.s0_daemon);self.assertTrue(engine.manual_cut)
+        self.assertFalse(any(event[0]=='holder' for event in events))
+        self.assertEqual([event for event in events if event[0]=='signal'],[('signal',signal.SIGTERM)])
+
+    def test_bind_failure_still_terminates_and_waits_for_its_owned_daemon(self):
+        executor,engine,report,events=self.run_bridge('daemon_bind')
+        self.assertIn(('signal',signal.SIGTERM),events);self.assertIn(('wait',8.0),events)
+        self.assertIsNone(executor.s0_daemon);self.assertTrue(engine.manual_cut)
+        self.assertTrue(report['s0_cleanup_errors']);self.assertFalse(any(event[0]=='sender' for event in events))
+
+    def test_sender_unknown_cleanup_stays_manual_even_after_files_and_locks_return(self):
+        executor,engine,report,events=self.run_bridge('sender')
+        self.assertTrue(executor.s0_post_ready);self.assertTrue(engine.manual_cut)
+        self.assertTrue(report['s0_sender_result']['manual_power_cut_required'])
+
+    def test_sender_report_is_collected_after_stopcheck_error_without_clearing_original_failure(self):
+        executor,engine,report,events=self.run_bridge('sender_stop')
+        self.assertIn(('primary_error','原stopcheck拒绝'),events)
+        self.assertTrue(engine.manual_cut);self.assertTrue(executor.s0_post_ready)
+        self.assertEqual(report['s0_sender_result']['result'],'SOFTWARE_PATH_PASS')
+        path=Path(report['s0_sender_result_ref']['path']);raw=path.read_bytes()
+        self.assertEqual(report['s0_sender_result_ref']['sha256'],hashlib.sha256(raw).hexdigest())
+        self.assertEqual(report['s0_sender_result_ref']['bytes'],len(raw))
+
+    def test_latch_not_persisted_still_reaps_daemon_and_forbids_uart(self):
+        executor,engine,report,events=self.run_bridge('latch')
+        self.assertIsNone(executor.s0_daemon);self.assertTrue(engine.manual_cut);self.assertFalse(executor.s0_post_ready)
+        self.assertIn(('wait',8.0),events)
+
+
 if __name__=='__main__': unittest.main(verbosity=2)
