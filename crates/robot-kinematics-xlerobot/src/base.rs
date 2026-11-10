@@ -1,6 +1,6 @@
 //! `XLeRobot` 三轮全向底盘的纯 SI 运动学。
 //!
-//! 机身坐标为前进 `vx`、左移 `vy`、逆时针 `wz`；轮序固定为前轮8、左轮9、右轮7。
+//! 机身坐标为前进 `vx`、左移 `vy`、逆时针 `wz`；数组顺序固定为前轮、左轮、右轮。
 //! 设轮半径为 `r`，底盘中心到轮的半径为 `L`，`a = sqrt(3)/2`：
 //!
 //! ```text
@@ -18,9 +18,6 @@
 
 use std::fmt;
 
-/// 数组轮速的唯一合法电机顺序：前轮8、左轮9、右轮7。
-pub const XLEROBOT_WHEEL_IDS: [u8; 3] = [8, 9, 7];
-
 /// 机身平面速度；字段分别使用米/秒、米/秒、弧度/秒。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlanarBodyVelocity {
@@ -37,35 +34,29 @@ pub struct PlanarBodyVelocity {
 /// 字段允许直接构造，公开转换方法仍逐项拒绝 NaN/无穷大。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct XLeRobotWheelVelocities {
-    /// 前轮，电机8。
+    /// 前轮。
     pub front_rad_s: f64,
-    /// 左轮，电机9。
+    /// 左轮。
     pub left_rad_s: f64,
-    /// 右轮，电机7。
+    /// 右轮。
     pub right_rad_s: f64,
 }
 
 impl XLeRobotWheelVelocities {
-    /// 从严格电机顺序构造；错序、重复 ID 和非有限轮速都拒绝。
-    pub fn from_motor_order(
-        ids: [u8; 3],
-        velocities_rad_s: [f64; 3],
-    ) -> Result<Self, BaseKinematicsError> {
-        if ids != XLEROBOT_WHEEL_IDS {
-            return Err(BaseKinematicsError::InvalidWheelIds { received: ids });
-        }
+    /// 按前、左、右角色顺序构造；拒绝非有限轮速。
+    pub fn from_role_order(velocities_rad_s: [f64; 3]) -> Result<Self, BaseKinematicsError> {
         let [front_rad_s, left_rad_s, right_rad_s] = velocities_rad_s;
         let wheels = Self {
             front_rad_s,
             left_rad_s,
             right_rad_s,
         };
-        wheels.to_motor_order()?;
+        wheels.to_role_order()?;
         Ok(wheels)
     }
 
-    /// 重检有限值后，按前8、左9、右7顺序输出弧度/秒数组。
-    pub fn to_motor_order(self) -> Result<[f64; 3], BaseKinematicsError> {
+    /// 重检有限值后，按前、左、右角色顺序输出弧度/秒数组。
+    pub fn to_role_order(self) -> Result<[f64; 3], BaseKinematicsError> {
         let values = [self.front_rad_s, self.left_rad_s, self.right_rad_s];
         if values.iter().any(|value| !value.is_finite()) {
             return Err(BaseKinematicsError::NonFiniteWheelVelocity);
@@ -83,7 +74,7 @@ pub struct LimitedWheelVelocities {
     pub scale: f64,
 }
 
-/// 参数、输入、轮序或数值表示错误；不分配堆内存。
+/// 参数、输入或数值表示错误；不分配堆内存。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaseKinematicsError {
     /// 轮半径必须有限且严格为正。
@@ -96,11 +87,6 @@ pub enum BaseKinematicsError {
     NonFiniteBodyVelocity,
     /// 至少一个轮速输入分量为 NaN/无穷大。
     NonFiniteWheelVelocity,
-    /// 电机 ID 必须精确为前8、左9、右7。
-    InvalidWheelIds {
-        /// 收到的完整顺序，保留错序/重复 ID 证据。
-        received: [u8; 3],
-    },
     /// 中间/输出非有限、缩放下溢为零，或舍入后超过轮速上限。
     UnrepresentableCalculation,
 }
@@ -113,9 +99,6 @@ impl fmt::Display for BaseKinematicsError {
             Self::InvalidMaxWheelVelocity => formatter.write_str("最大轮角速度必须有限且严格为正"),
             Self::NonFiniteBodyVelocity => formatter.write_str("机身速度含非有限值"),
             Self::NonFiniteWheelVelocity => formatter.write_str("轮角速度含非有限值"),
-            Self::InvalidWheelIds { received } => {
-                write!(formatter, "轮电机顺序必须为[8,9,7]，收到{received:?}")
-            }
             Self::UnrepresentableCalculation => {
                 formatter.write_str("计算结果无法有限表示或满足轮速上限")
             }
@@ -185,7 +168,7 @@ impl XLeRobotOmniKinematics {
         &self,
         wheels: XLeRobotWheelVelocities,
     ) -> Result<PlanarBodyVelocity, BaseKinematicsError> {
-        let [front, left, right] = wheels.to_motor_order()?;
+        let [front, left, right] = wheels.to_role_order()?;
         let difference = finite(left - right)?;
         let lateral = finite(finite(finite(2.0 * front)? - left)? - right)?;
         let sum = finite(finite(front + left)? + right)?;
@@ -206,7 +189,7 @@ impl XLeRobotOmniKinematics {
         body: PlanarBodyVelocity,
     ) -> Result<LimitedWheelVelocities, BaseKinematicsError> {
         let wheels = self.body_to_wheels(body)?;
-        let [front, left, right] = wheels.to_motor_order()?;
+        let [front, left, right] = wheels.to_role_order()?;
         let peak = front.abs().max(left.abs()).max(right.abs());
         if peak <= self.max_wheel_rad_s {
             return Ok(LimitedWheelVelocities { wheels, scale: 1.0 });
@@ -224,7 +207,7 @@ impl XLeRobotOmniKinematics {
         };
         let mut limited = scaled(scale)?;
         if limited
-            .to_motor_order()?
+            .to_role_order()?
             .iter()
             .any(|value| value.abs() > self.max_wheel_rad_s)
         {
@@ -235,7 +218,7 @@ impl XLeRobotOmniKinematics {
             }
             limited = scaled(scale)?;
             if limited
-                .to_motor_order()?
+                .to_role_order()?
                 .iter()
                 .any(|value| value.abs() > self.max_wheel_rad_s)
             {
@@ -304,7 +287,7 @@ mod tests {
     }
 
     fn assert_wheels(actual: XLeRobotWheelVelocities, expected: [f64; 3]) {
-        for (actual, expected) in actual.to_motor_order().unwrap().into_iter().zip(expected) {
+        for (actual, expected) in actual.to_role_order().unwrap().into_iter().zip(expected) {
             assert_close(actual, expected);
         }
     }
@@ -319,29 +302,13 @@ mod tests {
     }
 
     #[test]
-    fn strict_motor_order_and_named_array_mapping() {
-        assert_eq!(XLEROBOT_WHEEL_IDS, [8, 9, 7]);
-        let value = XLeRobotWheelVelocities::from_motor_order([8, 9, 7], [1.0, 2.0, 3.0]).unwrap();
+    fn role_order_and_named_array_mapping() {
+        let value = XLeRobotWheelVelocities::from_role_order([1.0, 2.0, 3.0]).unwrap();
         assert_close(value.front_rad_s, 1.0);
         assert_close(value.left_rad_s, 2.0);
         assert_close(value.right_rad_s, 3.0);
         assert_eq!(value, wheels([1.0, 2.0, 3.0]));
         assert_wheels(value, [1.0, 2.0, 3.0]);
-        for ids in [
-            [7, 8, 9],
-            [8, 7, 9],
-            [9, 7, 8],
-            [7, 9, 8],
-            [9, 8, 7],
-            [8, 8, 9],
-            [8, 7, 7],
-            [0, 7, 9],
-        ] {
-            assert_eq!(
-                XLeRobotWheelVelocities::from_motor_order(ids, [1.0, 2.0, 3.0]),
-                Err(BaseKinematicsError::InvalidWheelIds { received: ids })
-            );
-        }
     }
 
     #[test]
@@ -425,7 +392,7 @@ mod tests {
         let negative = model.body_to_wheels(body([-0.4, 0.3, -0.2])).unwrap();
         assert_wheels(
             negative,
-            positive.to_motor_order().unwrap().map(|value| -value),
+            positive.to_role_order().unwrap().map(|value| -value),
         );
         assert_body(model.wheels_to_body(negative).unwrap(), [-0.4, 0.3, -0.2]);
         assert_body(
@@ -482,7 +449,7 @@ mod tests {
         assert!(
             limited
                 .wheels
-                .to_motor_order()
+                .to_role_order()
                 .unwrap()
                 .iter()
                 .all(|value| value.abs() <= 1.0)
@@ -509,7 +476,7 @@ mod tests {
         assert!(
             limited
                 .wheels
-                .to_motor_order()
+                .to_role_order()
                 .unwrap()
                 .iter()
                 .all(|value| value.abs() <= 0.1)
@@ -518,7 +485,7 @@ mod tests {
             limited.wheels,
             wheels(
                 original
-                    .to_motor_order()
+                    .to_role_order()
                     .unwrap()
                     .map(|value| value * limited.scale)
             )
@@ -574,11 +541,11 @@ mod tests {
                 let mut input = [0.0; 3];
                 input[index] = value;
                 assert_eq!(
-                    XLeRobotWheelVelocities::from_motor_order(XLEROBOT_WHEEL_IDS, input),
+                    XLeRobotWheelVelocities::from_role_order(input),
                     Err(BaseKinematicsError::NonFiniteWheelVelocity)
                 );
                 assert_eq!(
-                    wheels(input).to_motor_order(),
+                    wheels(input).to_role_order(),
                     Err(BaseKinematicsError::NonFiniteWheelVelocity)
                 );
                 assert_eq!(

@@ -153,10 +153,23 @@ impl Fixture {
     fn unstarted() -> Self {
         let mut config: RobotConfigToml =
             toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
-        // 只复用既有名称/ID映射；该历史配置的全Position factory不用于此测试。
-        let hardware = config.hardware.remove(0);
+        // 此模块的黄金帧使用显式固定夹具；实际配置换位由分组/adapter映射测试覆盖。
+        let mut hardware = config.hardware.remove(0);
+        hardware.joints = [
+            "right_arm_shoulder_pan",
+            "right_arm_shoulder_lift",
+            "right_arm_elbow_flex",
+            "right_arm_wrist_flex",
+            "right_arm_wrist_roll",
+            "right_arm_gripper",
+            "base_right_wheel",
+            "base_front_wheel",
+            "base_left_wheel",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        hardware.motor_ids = IDS.to_vec();
         let layout = XleRobotBus2Layout::from_hardware(&hardware).unwrap();
-        assert_eq!(hardware.motor_ids, IDS);
         let motors: HashMap<_, _> = hardware
             .joints
             .iter()
@@ -186,10 +199,12 @@ impl Fixture {
             motors,
         )
         .unwrap();
-        let profiles = [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
+        let profiles = std::array::from_fn(|index| {
+            let role = [WheelRole::Front, WheelRole::Left, WheelRole::Right][index];
+            let motor_id = WHEELS[index];
             Sts3215RawWheelProfile::try_bind(
                 WheelObservation {
-                    motor_id: role.motor_id(),
+                    motor_id,
                     model: 777,
                     mode: 1,
                     phase: 12,
@@ -199,6 +214,7 @@ impl Fixture {
                     }),
                 },
                 role,
+                motor_id,
             )
             .unwrap()
         });

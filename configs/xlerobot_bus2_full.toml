@@ -124,6 +124,8 @@ joints      = [
     "base_front_wheel",
     "base_left_wheel",
 ]
+# joints 与 motor_ids 逐槽配对，是当前轮角色到物理ID的唯一配置来源。
+# 换轮位只调整此处配对；轮校准在既有四种轮键中按ID取完整记录。
 motor_ids   = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",

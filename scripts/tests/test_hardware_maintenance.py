@@ -1,5 +1,7 @@
 """爸爸，维护收尾确定性测试；只用假寄存器及自有短命子进程，不访问硬件。"""
 import contextlib
+import atexit
+import itertools
 import copy
 import hashlib
 import io
@@ -19,9 +21,27 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import run_hardware_maintenance as m
 
 
+# 测试显式提供独立TOML，不把工作树默认配置变成隐藏fixture。
+BUS_FIXTURE_DIRECTORY=tempfile.TemporaryDirectory()
+atexit.register(BUS_FIXTURE_DIRECTORY.cleanup)
+BUS_FIXTURE_PATH=Path(BUS_FIXTURE_DIRECTORY.name)/'bus2.toml'
+
+
+def write_bus_fixture(path,ids=(8,9,7)):
+    names=[*m.MIXED_ARM_NAMES,*(f'base_{role}_wheel' for role in m.WHEEL_ROLES)]
+    path.write_text('[[hardware]]\nadapter = "feetech_sts3215"\naddress = '+json.dumps(m.DEVICES['right'])+
+                    '\njoints = '+json.dumps(names)+'\nmotor_ids = '+json.dumps([*range(1,7),*ids])+'\n')
+    return path
+
+
+m.configure_bus_mapping(write_bus_fixture(BUS_FIXTURE_PATH))
+def run_main(args):
+    return m.main(['--bus-config',str(BUS_FIXTURE_PATH),*args])
+
+
 def stop_contracts():
-    return {f'{prefix}{motor}_stop_contract':m.left_stop_contract(motor=motor)
-            for motor,prefix in m.WHEEL_STOP_TARGETS.items()}
+    return {'bus_config':dict(m.BUS_CONFIG),**{f'{prefix}{motor}_stop_contract':m.left_stop_contract(motor=motor)
+            for motor,prefix in m.WHEEL_STOP_TARGETS.items()}}
 
 
 PLAN = {'position_targets':m.TARGETS, 'position_delta_raw':24,'minimum_excursion_raw':12,'return_tolerance_raw':4,
@@ -251,7 +271,7 @@ class OwnerTests(unittest.TestCase):
 
     def test_default_plan_only_never_spawns(self):
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不许启动child')),contextlib.redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(m.main([]),0)
+            self.assertEqual(run_main([]),0)
         self.assertEqual(json.loads(output.getvalue())['actions_started'],0)
 
     def test_actual_cli_default_plan_only_exit_zero(self):
@@ -684,7 +704,7 @@ class ClassificationTests(unittest.TestCase):
     def test_cli_selected_plan_only_lists_requested_order_without_child(self):
         with (patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不許child')) as launch,
               contextlib.redirect_stdout(io.StringIO()) as output):
-            self.assertEqual(m.main(['--position-target','head-2','--position-target','right-wrist']),0)
+            self.assertEqual(run_main(['--position-target','head-2','--position-target','right-wrist']),0)
         reply=json.loads(output.getvalue())
         self.assertEqual(reply['actions_started'],0)
         self.assertEqual(reply['position_targets'],[['left',8,'head_motor_2'],['right',5,'right_arm_wrist_roll']])
@@ -1121,6 +1141,27 @@ class RightPulseTests(unittest.TestCase):
             else:
                 with self.assertRaises(ValueError):m.run_right_wheel_pulse(engine)
         return engine.right_pulse
+
+    def test_toml_permutations_alone_move_named_single_wheel_target_and_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH)
+            path=Path(directory)/'bus2.toml'
+            for ids in itertools.permutations((7,8,9)):
+                m.configure_bus_mapping(write_bus_fixture(path,ids))
+                for role,motor in zip(m.WHEEL_ROLES,ids):
+                    with self.subTest(ids=ids,role=role):
+                        executor,engine=self.engine(role)
+                        result=self.perform(executor,engine)
+                        self.assertEqual((result['motor'],result['name']),(motor,f'base_{role}_wheel'))
+                        self.assertEqual(engine.plan['right_wheel_pulse']['target'],['right',motor,f'base_{role}_wheel'])
+                        self.assertIn(f'仅{m.WHEEL_LABELS[role]}{motor}',engine.plan['scope'])
+                        nonzero=[packet for packet in executor.sdk_packets
+                                 if len(packet)==11 and packet[4:7]==[131,46,2] and packet[8:10]==[244,1]]
+                        self.assertTrue(nonzero)
+                        self.assertTrue(all(packet[7]==motor for packet in nonzero))
+                        self.assertEqual(m.WHEEL_STOP_TARGETS[motor],role)
+                        self.assertEqual(engine.plan[f'{role}{motor}_stop_contract']['target'],
+                                         ['right',motor,f'base_{role}_wheel'])
 
     def stability_engine(self,wheel,phase,trigger=50,*,positions=None,velocities=None):
         executor,engine=self.engine(wheel)
@@ -2026,7 +2067,7 @@ class RightPulseTests(unittest.TestCase):
             'source':'仅测试夹具','physical':{side:dict(facts) for side in m.SERIALS}}
         go['physical']['right'].update(all_three_wheels_off_ground=True,base_stably_supported=True,
             continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
-            base_confirmation_scope=m.RIGHT_PULSE_SCOPE,base_confirmation_answer='夹具就绪')
+            base_confirmation_scope=m.pulse_scope('right'),base_confirmation_answer='夹具就绪')
         m.validate_go(go,plan,200)
         for field,value in (('base_confirmation_scope','旧500ms'),('continuous_wheel_observation',False)):
             bad=copy.deepcopy(go);bad['physical']['right'][field]=value
@@ -2143,6 +2184,30 @@ class WheelFeedbackTests(unittest.TestCase):
 
     def engine(self,*,front=False,left=False):
         return m.ProbeEngine(FeedbackIO(motor=9 if left else 8 if front else 7),self.plan(front=front,left=left))
+
+    def test_toml_permutations_follow_readonly_names_and_keep_physical_id_policy(self):
+        self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH)
+        path=self.root/'bus2.toml'
+        for ids in itertools.permutations((7,8,9)):
+            m.configure_bus_mapping(write_bus_fixture(path,ids))
+            for role,motor in zip(m.WHEEL_ROLES,ids):
+                with self.subTest(ids=ids,role=role):
+                    plan=self.plan(front=role=='front',left=role=='left')
+                    self.assertEqual(m.feedback_entry(plan),(f'{role}_wheel_feedback_only',motor))
+                    io=FeedbackIO(motor=motor);engine=m.ProbeEngine(io,plan)
+                    if motor==7:m.run_right_wheel_feedback(engine,lambda:None)
+                    else:m.run_front_wheel_feedback(engine,lambda:None,motor=motor)
+                    row=engine.rows[0]
+                    self.assertEqual((row['motor'],row['name']),(motor,f'base_{role}_wheel'))
+                    self.assertTrue(row['kind'].startswith(f'{role}{motor}_'))
+                    self.assertEqual(row['status'],'PASS' if motor==7 else 'DIAGNOSTIC_CAPTURED')
+                    io=FeedbackIO(motor=motor);io.velocities=[500]*5
+                    engine=m.ProbeEngine(io,plan)
+                    if motor==7:
+                        with self.assertRaises(ValueError):m.run_right_wheel_feedback(engine,lambda:None)
+                    else:
+                        m.run_front_wheel_feedback(engine,lambda:None,motor=motor)
+                        self.assertEqual(engine.rows[0]['status'],'DIAGNOSTIC_CAPTURED')
 
     def snapshot_engine(self,pv=0,guard=False,*,wheel_pv=None):
         rows=idle_rows();rows['right:7']['Present_Velocity']=pv
@@ -2608,7 +2673,7 @@ class WheelFeedbackTests(unittest.TestCase):
                 with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
             with self.assertRaises((ValueError,KeyError)):m.validate_go({},self.plan(),0)
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(m.main(['--right-wheel-feedback-only']),0)
+                self.assertEqual(run_main(['--right-wheel-feedback-only']),0)
             self.assertEqual(json.loads(out.getvalue())['actions_started'],0)
             child.assert_not_called()
 
@@ -2616,7 +2681,7 @@ class WheelFeedbackTests(unittest.TestCase):
         plan=self.plan();go=self.go(plan,100);m.validate_go(go,plan,200)
         for field in ('base_confirmation_scope','continuous_wheel_observation','confirmed_at_ns'):
             bad=copy.deepcopy(go)
-            bad['physical']['right'][field]=m.RIGHT_PULSE_SCOPE if field=='base_confirmation_scope' else False
+            bad['physical']['right'][field]=m.pulse_scope('right') if field=='base_confirmation_scope' else False
             with self.assertRaises(ValueError):m.validate_go(bad,plan,200)
         go['expires_at_ns']=601_000_000_100
         with self.assertRaises(ValueError):m.validate_go(go,plan,200)
@@ -2740,7 +2805,7 @@ class WheelFeedbackTests(unittest.TestCase):
                          ['--front-wheel-feedback-only','--position-target','head-1'],
                          ['--front-wheel-feedback-only','--zero-stop-check'],['--front-wheel-feedback-only','--execute']):
                 with self.assertRaises(ValueError):m.main(args)
-            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--front-wheel-feedback-only']),0)
+            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(run_main(['--front-wheel-feedback-only']),0)
             self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
         engine=self.engine(front=True);m.run_front_wheel_feedback(engine,lambda:None)
         for key,value in (('kind','right7_stop_stability'),('same_frame',True),('anchor_raw',100),
@@ -2889,8 +2954,8 @@ class WheelFeedbackTests(unittest.TestCase):
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('前置不得child')) as child:
             for extra in (['--front-wheel-feedback-only'],['--right-wheel-feedback-only'],['--right-wheel-pulse'],
                           ['--wheel-pulse','front'],['--position-target','head-1'],['--zero-stop-check'],['--execute']):
-                with self.assertRaises(ValueError):m.main(['--left-wheel-feedback-only',*extra])
-            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(m.main(['--left-wheel-feedback-only']),0)
+                with self.assertRaises(ValueError):run_main(['--left-wheel-feedback-only',*extra])
+            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(run_main(['--left-wheel-feedback-only']),0)
             self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
         engine=self.engine(left=True)
         with self.assertRaises(ValueError):m.run_front_wheel_feedback(engine,lambda:None)
@@ -2963,20 +3028,21 @@ class MixedRawTests(unittest.TestCase):
                  'source_deadline_ns':first+(index+1)*50_000_000} for index in range(400)]
         cycles[0]={'started_ns':first-1_000_000,'finished_ns':first+2_000_000,
                    'source_deadline_ns':first+49_000_000}
-        return {'schema':'FEETECH_MIXED_LEFT9_V1','operation':'mixed-hold-left9','result':'PASS','error':None,
+        return {'schema':'FEETECH_MIXED_WHEEL9_V1','operation':'mixed-hold-wheel9','result':'PASS','error':None,
             'serial_device':m.DEVICES['right'],
             'arm_calibration_path':self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path'],
-            'go_expires_at_unix_ns':self.expiry,'motor_ids':[1,2,3,4,5,6,8,9,7],
-            'wheel_ids':[8,9,7],'wheel_raw_goal':[0,500,0],'pulse_duration_ns':20_000_000_000,
+            'go_expires_at_unix_ns':self.expiry,'motor_ids':self.plan['bus2_mixed_raw_hold']['motor_ids'],
+            'wheel_ids':m.wheel_ids(),'wheel_raw_goal':[500 if motor==9 else 0 for motor in m.wheel_ids()],'pulse_duration_ns':20_000_000_000,
             'zero_window_ns':500_000_000,'enable_budget_ns':21_000_000_000,'cycle_count':400,
             'loaded_calibration':list(self.calibration.values()),
             'arm_anchors':[{'motor_id':motor,'raw':1000,'goal_raw':1000,'calibration_min':0,
                 'calibration_max':4095,'sampled_ns':first-50_000_000} for motor in range(1,7)],
-            'wheel_anchors':[{'motor_id':motor,'raw':1000,'sampled_ns':first-20_000_000} for motor in (8,7)],
+            'wheel_anchors':[{'motor_id':motor,'raw':1000,'sampled_ns':first-20_000_000} for motor in m.wheel_ids() if motor!=9],
             'arm_final':[{'motor_id':motor,'raw':1000} for motor in range(1,7)],'cycles':cycles,
             'wheel_samples':[{'started_ns':cycles[index*5]['started_ns']+1_000_000,
                 'finished_ns':cycles[index*5]['started_ns']+2_000_000,
-                'position_raw':[1000,(4000+index*5)%4096,1000],'velocity_word':[0,500,0],
+                'position_raw':[(4000+index*5)%4096 if motor==9 else 1000 for motor in m.wheel_ids()],
+                'velocity_word':[500 if motor==9 else 0 for motor in m.wheel_ids()],
                 'arm_position_raw':[1000]*6} for index in range(1,80)],
             'zero_samples':[{'started_ns':zero_done+offset,'finished_ns':zero_done+offset+1_000_000,
                 'torque_enable':1,'goal_velocity_word':0,'present_velocity_word':word}
@@ -3025,6 +3091,65 @@ class MixedRawTests(unittest.TestCase):
             else:m.run_motion_probes(engine,self.bindings,self.plan)
         return engine
 
+    @unittest.skipUnless(os.environ.get('ROBOT_MIXED_SOFTWARE_FIXTURE'),'未提供同源Rust内存串口成功回执')
+    def test_actual_rust_memory_serial_receipt_passes_strict_python_parser(self):
+        row=m.strict_json(Path(os.environ['ROBOT_MIXED_SOFTWARE_FIXTURE']).read_text())
+        self.assertEqual(row['arm_calibration_path'],'/tmp/mixed-software-arm-calibration.json')
+        self.assertEqual(row['serial_device'],m.DEVICES['right'])
+        # Rust测试以虚拟校准路径输出；只将该身份接到本测试已绑定的相同六臂校准。
+        row['arm_calibration_path']=self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path']
+        self.expiry=row['go_expires_at_unix_ns']
+        self.assertEqual(self.parse(row),row)
+        bad=copy.deepcopy(row);bad['wheel_ids']=[8,7,9]
+        with self.assertRaises(ValueError):self.parse(bad)
+
+
+    def test_only_toml_changes_all_mixed_slots_argv_feedback_names_and_invalidates_old_go(self):
+        self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH)
+        original_directory=self.directory;path=original_directory/'bus2.toml'
+        previous_plan=previous_go=None
+        for ids in itertools.permutations((7,8,9)):
+            m.configure_bus_mapping(write_bus_fixture(path,ids))
+            self.directory=original_directory/('order-'+''.join(map(str,ids)));self.directory.mkdir()
+            self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True)
+            go=WheelFeedbackTests.go(self,self.plan,1000)
+            m.validate_go(go,self.plan,2000)
+            if previous_plan is not None:
+                with self.assertRaises(ValueError):m.validate_go(previous_go,previous_plan,2000)
+                with self.assertRaises(ValueError):m.validate_go(previous_go,self.plan,2000)
+            previous_plan,previous_go=copy.deepcopy(self.plan),copy.deepcopy(go)
+            with self.subTest(ids=ids):
+                engine=self.perform()
+                contract=self.plan['bus2_mixed_raw_hold']
+                self.assertEqual(contract['wheel_ids'],list(ids))
+                self.assertEqual(contract['motor_ids'],[*range(1,7),*ids])
+                self.assertEqual(contract['wheel_raw_goal'],[500 if motor==9 else 0 for motor in ids])
+                argv=engine.mixed_wire_evidence['original_argv']
+                self.assertEqual(argv[-2:],['--wheel-ids',','.join(map(str,ids))])
+                self.assertEqual(argv[2:4],['9','mixed-hold-wheel9'])
+                selected_role=m.WHEEL_STOP_TARGETS[9]
+                self.assertEqual(engine.rows[-1]['name'],f'base_{selected_role}_wheel')
+                self.assertEqual(engine.rows[-1]['motor'],9)
+                for role,motor in zip(m.WHEEL_ROLES,ids):
+                    self.assertEqual(self.plan[f'{role}{motor}_stop_contract']['target'],
+                                     ['right',motor,f'base_{role}_wheel'])
+        self.directory=original_directory
+        path.write_bytes(path.read_bytes()+b'# bytes changed without mapping change\n')
+        with self.assertRaisesRegex(ValueError,'字节身份变化'):m.validate_go(go,self.plan,2000)
+        with patch.object(m,'RealExecutor',side_effect=AssertionError('配置篡改不得构造执行器')):
+            with self.assertRaisesRegex(ValueError,'字节身份变化'):m.execute(self.plan,go,original_directory/'go.json')
+
+    def test_invalid_bus_config_is_rejected_before_plan_or_child(self):
+        self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH)
+        path=self.directory/'bad-bus2.toml'
+        valid=write_bus_fixture(path).read_text()
+        for old,new in (('[1, 2, 3, 4, 5, 6, 8, 9, 7]','[1, 2, 3, 4, 5, 6, 8, 8, 7]'),
+                        ('[1, 2, 3, 4, 5, 6, 8, 9, 7]','[2, 1, 3, 4, 5, 6, 8, 9, 7]'),
+                        ('base_front_wheel','unknown_wheel'),('base_right_wheel','base_left_wheel')):
+            path.write_text(valid.replace(old,new))
+            with self.subTest(new=new),self.assertRaises(ValueError):m.configure_bus_mapping(path)
+        with self.assertRaises(FileNotFoundError):m.configure_bus_mapping(self.directory/'missing.toml')
+
     def test_mixed_plan_binds_new_refs_exact_targets_and_rejects_all_old_mode_combinations(self):
         self.assertEqual(m.position_targets_from_plan(self.plan),[])
         self.assertEqual(self.plan['bus2_mixed_raw_hold']['allowed_raw_targets'],[0,500])
@@ -3050,8 +3175,8 @@ class MixedRawTests(unittest.TestCase):
             if mutation=='old_order':bad['bus2_mixed_raw_hold']['wheel_ids']=[8,7,9]
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.position_targets_from_plan(bad)
         with patch.object(m.subprocess,'Popen',side_effect=AssertionError('不许启动')):
-            with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(m.main(['--bus2-mixed-raw-hold']),0)
-            with self.assertRaises(ValueError):m.main(['--bus2-mixed-raw-hold','--execute'])
+            with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(run_main(['--bus2-mixed-raw-hold']),0)
+            with self.assertRaises(ValueError):run_main(['--bus2-mixed-raw-hold','--execute'])
 
     def test_mixed_go_requires_original_ten_minute_scope_and_current_wheel_facts(self):
         go={'schema':'MAINTENANCE_GO_V2','issued_by':'root','artifact_root':self.root,
@@ -3064,7 +3189,7 @@ class MixedRawTests(unittest.TestCase):
         m.validate_go(go,self.plan,2000)
         for mutation in ('scope','ttl','watch','old_plan'):
             bad=copy.deepcopy(go)
-            if mutation=='scope':bad['physical']['right']['base_confirmation_scope']=m.RIGHT_PULSE_SCOPE
+            if mutation=='scope':bad['physical']['right']['base_confirmation_scope']=m.pulse_scope('right')
             if mutation=='ttl':bad['expires_at_ns']=bad['issued_at_ns']+600_000_000_001
             if mutation=='watch':bad['physical']['right']['continuous_wheel_observation']=False
             if mutation=='old_plan':

@@ -1,0 +1,4 @@
+    Checking robot-core v0.1.2 (/home/loosqk/robot-checks/wheel-config-mapping-20261110/software-source/crates/robot-core)
+    Checking robot-logging v0.1.2 (/home/loosqk/robot-checks/wheel-config-mapping-20261110/software-source/crates/robot-logging)
+    Checking robot-adapter-feetech v0.1.2 (/home/loosqk/robot-checks/wheel-config-mapping-20261110/software-source/crates/robot-adapters/feetech)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 3.04s

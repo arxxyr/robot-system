@@ -13,16 +13,16 @@ use robot_core::error::RobotError;
 use robot_core::serial_services::BusOpClass;
 use robot_core::time::{Deadline, MonoRawNs};
 
-pub(super) const JOINTS: [(&str, u8); 9] = [
-    ("right_arm_shoulder_pan", 1),
-    ("right_arm_shoulder_lift", 2),
-    ("right_arm_elbow_flex", 3),
-    ("right_arm_wrist_flex", 4),
-    ("right_arm_wrist_roll", 5),
-    ("right_arm_gripper", 6),
-    ("base_front_wheel", 8),
-    ("base_left_wheel", 9),
-    ("base_right_wheel", 7),
+const JOINTS: [&str; 9] = [
+    "right_arm_shoulder_pan",
+    "right_arm_shoulder_lift",
+    "right_arm_elbow_flex",
+    "right_arm_wrist_flex",
+    "right_arm_wrist_roll",
+    "right_arm_gripper",
+    "base_front_wheel",
+    "base_left_wheel",
+    "base_right_wheel",
 ];
 
 #[derive(Clone, Copy)]
@@ -35,6 +35,12 @@ impl Profiles {
         match self {
             Self::Nominal(p) => p[index].contract().role,
             Self::ObservedRaw(p) => p[index].role(),
+        }
+    }
+    fn motor_id(self, index: usize) -> u8 {
+        match self {
+            Self::Nominal(p) => p[index].motor_id(),
+            Self::ObservedRaw(p) => p[index].motor_id(),
         }
     }
     fn accepts(self, index: usize, raw: i16) -> bool {
@@ -51,7 +57,8 @@ impl Profiles {
                 Sts3215WheelProfile::try_bind(observation, p[index].contract()).is_ok()
             }
             Self::ObservedRaw(p) => {
-                Sts3215RawWheelProfile::try_bind(observation, p[index].role()).is_ok()
+                Sts3215RawWheelProfile::try_bind(observation, p[index].role(), p[index].motor_id())
+                    .is_ok()
             }
         }
     }
@@ -75,31 +82,40 @@ impl MixedBus2 {
         }
         let mut slots = [0; 9];
         let mut seen = 0_u16;
+        let mut seen_ids = 0_u16;
         for (slot, (name, id)) in names.iter().zip(ids).enumerate() {
-            let Some(logical) = JOINTS.iter().position(|&(expected_name, expected_id)| {
-                name == expected_name && *id == expected_id
-            }) else {
+            let Some(logical) = JOINTS
+                .iter()
+                .position(|&expected_name| name == expected_name)
+            else {
                 return Err(RobotError::InvalidParameter("混合右总线名称与电机ID不匹配"));
             };
-            if seen & (1 << logical) != 0 {
+            if (logical < 6 && usize::from(*id) != logical + 1)
+                || (logical >= 6 && !(7..=9).contains(id))
+            {
+                return Err(RobotError::InvalidParameter("混合右总线名称与电机ID不匹配"));
+            }
+            if seen & (1 << logical) != 0 || seen_ids & (1 << id) != 0 {
                 return Err(RobotError::InvalidParameter("混合右总线存在重复关节"));
             }
             seen |= 1 << logical;
+            seen_ids |= 1 << id;
             slots[logical] = slot;
         }
+        let wheel_ids = [slots[6], slots[7], slots[8]].map(|slot| ids[slot]);
         for (index, role) in [WheelRole::Front, WheelRole::Left, WheelRole::Right]
             .into_iter()
             .enumerate()
         {
-            if profiles.role(index) != role {
+            if profiles.role(index) != role || profiles.motor_id(index) != wheel_ids[index] {
                 return Err(RobotError::InvalidParameter(
-                    "三轮profile顺序必须为前8、左9、右7",
+                    "三轮profile必须按前、左、右角色绑定配置电机ID",
                 ));
             }
         }
         Ok(Self {
             arm_ids: [1, 2, 3, 4, 5, 6],
-            wheel_ids: [8, 9, 7],
+            wheel_ids,
             arm_slots: slots[..6].try_into().unwrap(),
             wheel_slots: slots[6..].try_into().unwrap(),
             position_mask: slots[..6].iter().fold(0, |mask, slot| mask | (1 << slot)),
@@ -111,7 +127,7 @@ impl MixedBus2 {
 
 impl<T: SerialTransport> FeetechAdapter<T> {
     /// 显式软件入口；只复用一条总线连接，默认 factory 不调用。
-    /// profile 顺序固定为前8、左9、右7；raw 目标不进行 SI 换算。
+    /// profile 顺序固定为前、左、右，电机ID取自配置；raw 目标不进行 SI 换算。
     /// # Errors
     /// 原构造错误、九关节映射或profile角色错误。Phase12无法构造合法profile。
     pub fn new_bus2_mixed(
@@ -442,15 +458,19 @@ mod tests {
         }
     }
 
-    fn profiles() -> [Sts3215WheelProfile; 3] {
-        [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
+    const FIXTURE_WHEEL_IDS: [u8; 3] = [8, 9, 7];
+
+    fn profiles(wheel_ids: [u8; 3]) -> [Sts3215WheelProfile; 3] {
+        std::array::from_fn(|index| {
+            let role = [WheelRole::Front, WheelRole::Left, WheelRole::Right][index];
+            let motor_id = wheel_ids[index];
             let firmware = FirmwareVersion {
                 major: 3,
                 minor: 10,
             };
             Sts3215WheelProfile::try_bind(
                 WheelObservation {
-                    motor_id: role.motor_id(),
+                    motor_id,
                     model: 777,
                     mode: 1,
                     phase: 4,
@@ -458,10 +478,33 @@ mod tests {
                 },
                 WheelContract {
                     role,
+                    motor_id,
                     firmware,
                     phase: 4,
                     raw_limit: 500,
                 },
+            )
+            .unwrap()
+        })
+    }
+
+    fn raw_profiles(wheel_ids: [u8; 3]) -> [Sts3215RawWheelProfile; 3] {
+        std::array::from_fn(|index| {
+            let role = [WheelRole::Front, WheelRole::Left, WheelRole::Right][index];
+            let motor_id = wheel_ids[index];
+            Sts3215RawWheelProfile::try_bind(
+                WheelObservation {
+                    motor_id,
+                    model: 777,
+                    mode: 1,
+                    phase: 12,
+                    firmware: Some(FirmwareVersion {
+                        major: 3,
+                        minor: 10,
+                    }),
+                },
+                role,
+                motor_id,
             )
             .unwrap()
         })
@@ -483,10 +526,6 @@ mod tests {
         ) -> (Self, Result<(), RobotError>) {
             Self::with_profile(ids, fail, phase, bad_mode, false)
         }
-        #[allow(
-            clippy::too_many_lines,
-            reason = "完整构造与顺序握手夹具保留在一处，避免为104行拆成另一套连接模拟"
-        )]
         fn with_profile(
             ids: [u8; 9],
             fail: u8,
@@ -494,15 +533,33 @@ mod tests {
             bad_mode: bool,
             raw: bool,
         ) -> (Self, Result<(), RobotError>) {
+            Self::with_mapping(ids, fail, phase, bad_mode, raw, FIXTURE_WHEEL_IDS)
+        }
+
+        #[allow(
+            clippy::too_many_lines,
+            reason = "保持完整内存串口握手夹具，避免拆分连接时序"
+        )]
+        fn with_mapping(
+            ids: [u8; 9],
+            fail: u8,
+            phase: u8,
+            bad_mode: bool,
+            raw: bool,
+            wheel_ids: [u8; 3],
+        ) -> (Self, Result<(), RobotError>) {
             let names: Vec<String> = ids
                 .iter()
                 .map(|id| {
-                    JOINTS
-                        .iter()
-                        .find(|(_, expected)| expected == id)
-                        .unwrap()
-                        .0
-                        .to_owned()
+                    let logical = if *id <= 6 {
+                        usize::from(*id) - 1
+                    } else {
+                        6 + wheel_ids
+                            .iter()
+                            .position(|wheel_id| wheel_id == id)
+                            .unwrap()
+                    };
+                    JOINTS[logical].to_owned()
                 })
                 .collect();
             let motors = names
@@ -539,28 +596,9 @@ mod tests {
                 },
             };
             let mut adapter = if raw {
-                FeetechAdapter::new_bus2_mixed_raw(
-                    config,
-                    bus,
-                    [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
-                        Sts3215RawWheelProfile::try_bind(
-                            WheelObservation {
-                                motor_id: role.motor_id(),
-                                model: 777,
-                                mode: 1,
-                                phase: 12,
-                                firmware: Some(FirmwareVersion {
-                                    major: 3,
-                                    minor: 10,
-                                }),
-                            },
-                            role,
-                        )
-                        .unwrap()
-                    }),
-                )
+                FeetechAdapter::new_bus2_mixed_raw(config, bus, raw_profiles(wheel_ids))
             } else {
-                FeetechAdapter::new_bus2_mixed(config, bus, profiles())
+                FeetechAdapter::new_bus2_mixed(config, bus, profiles(wheel_ids))
             }
             .unwrap();
             for id in 1..=9 {
@@ -576,7 +614,7 @@ mod tests {
                 }
             }
             if !bad_mode {
-                for id in [8, 9, 7] {
+                for id in wheel_ids {
                     for byte in [phase, 3, 10] {
                         handle.push_rx(&read_status(id, &[byte]));
                     }
@@ -633,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_layout_accepts_left_nine_right_seven_and_rejects_legacy_labels() {
+    fn mixed_layout_requires_profiles_to_match_the_configured_role_ids() {
         let mut names = [
             "right_arm_shoulder_pan",
             "right_arm_shoulder_lift",
@@ -647,11 +685,104 @@ mod tests {
         ]
         .map(str::to_owned);
         let ids = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-        let layout = MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles())).unwrap();
+        let layout =
+            MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles(FIXTURE_WHEEL_IDS))).unwrap();
         assert_eq!(layout.wheel_ids, [8, 9, 7]);
         assert_eq!(layout.wheel_slots, [7, 8, 6]);
         names.swap(6, 8);
-        assert!(MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles())).is_err());
+        assert!(
+            MixedBus2::bind(&names, &ids, Profiles::Nominal(profiles(FIXTURE_WHEEL_IDS))).is_err()
+        );
+    }
+
+    #[test]
+    fn mixed_config_remapping_changes_wire_ids_for_all_wheel_permutations() {
+        for wheel_ids in [
+            [7, 8, 9],
+            [7, 9, 8],
+            [8, 7, 9],
+            [8, 9, 7],
+            [9, 7, 8],
+            [9, 8, 7],
+        ] {
+            // 名称槽位不变，只改配置表内逐槽对应的ID。
+            let ids = [1, 2, 3, 4, 5, 6, wheel_ids[2], wheel_ids[0], wheel_ids[1]];
+            for raw in [false, true] {
+                let phase = if raw { 12 } else { 4 };
+                let (mut f, connected) =
+                    Fixture::with_mapping(ids, 0, phase, false, raw, wheel_ids);
+                connected.unwrap();
+                assert_eq!(
+                    &f.adapter.joint_names[6..],
+                    &["base_right_wheel", "base_front_wheel", "base_left_wheel"]
+                );
+                let _ = f.handle.drain_tx();
+                let mut command = f.command();
+                let layout = f.adapter.mixed_bus2.unwrap();
+                let goals = if raw { [0, 500, 0] } else { [500, -500, 0] };
+                for (slot, goal) in layout.wheel_slots.into_iter().zip(goals) {
+                    command.raw_velocities[slot] = goal;
+                }
+                f.adapter.write_command(&command.as_view()).unwrap();
+                let bytes = f.handle.drain_tx();
+                let output = frames(&bytes);
+                assert_eq!(output.len(), 2);
+                let [front, left, right] = wheel_ids;
+                let expected = if raw {
+                    [0x83, 46, 2, front, 0, 0, left, 0xf4, 1, right, 0, 0]
+                } else {
+                    [0x83, 46, 2, front, 0xf4, 1, left, 0xf4, 0x81, right, 0, 0]
+                };
+                assert_eq!(&output[0][4..16], &expected);
+                assert_eq!(&output[1][4..7], &[0x83, 42, 2]);
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_layout_rejects_duplicate_missing_and_misbound_wheel_profiles() {
+        let names = JOINTS.map(str::to_owned);
+        let ids = [1, 2, 3, 4, 5, 6, 8, 9, 7];
+        for profiles in [
+            Profiles::Nominal(profiles([8, 7, 9])),
+            Profiles::ObservedRaw(raw_profiles([8, 7, 9])),
+        ] {
+            assert!(MixedBus2::bind(&names, &ids, profiles).is_err());
+        }
+        let mut nominal = profiles(FIXTURE_WHEEL_IDS);
+        nominal.swap(0, 1);
+        let mut raw = raw_profiles(FIXTURE_WHEEL_IDS);
+        raw.swap(0, 1);
+        for profiles in [Profiles::Nominal(nominal), Profiles::ObservedRaw(raw)] {
+            assert!(MixedBus2::bind(&names, &ids, profiles).is_err());
+        }
+        for variant in 0..5 {
+            let mut invalid_names = names.clone();
+            let mut invalid_ids = ids;
+            match variant {
+                0 => invalid_names[8] = invalid_names[7].clone(),
+                1 => invalid_names[8] = "unknown_wheel".to_owned(),
+                2 => invalid_ids[8] = invalid_ids[7],
+                3 => invalid_ids[8] = 10,
+                _ => invalid_ids[0] = 2,
+            }
+            assert!(
+                MixedBus2::bind(
+                    &invalid_names,
+                    &invalid_ids,
+                    Profiles::Nominal(profiles(FIXTURE_WHEEL_IDS))
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            MixedBus2::bind(
+                &names[..8],
+                &ids[..8],
+                Profiles::Nominal(profiles(FIXTURE_WHEEL_IDS))
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -670,24 +801,7 @@ mod tests {
             let (mut f, connected) = Fixture::new(ids, 0, 4, false);
             connected.unwrap();
             let layout = f.adapter.mixed_bus2.as_mut().unwrap();
-            layout.profiles = Profiles::ObservedRaw(
-                [WheelRole::Front, WheelRole::Left, WheelRole::Right].map(|role| {
-                    Sts3215RawWheelProfile::try_bind(
-                        WheelObservation {
-                            motor_id: role.motor_id(),
-                            model: 777,
-                            mode: 1,
-                            phase: 12,
-                            firmware: Some(FirmwareVersion {
-                                major: 3,
-                                minor: 10,
-                            }),
-                        },
-                        role,
-                    )
-                    .unwrap()
-                }),
-            );
+            layout.profiles = Profiles::ObservedRaw(raw_profiles(FIXTURE_WHEEL_IDS));
             f.adapter.calibrations = ids
                 .into_iter()
                 .map(|id| crate::MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())

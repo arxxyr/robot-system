@@ -1,0 +1,66 @@
+{
+  "result": "SOFTWARE_PASS",
+  "scope": "现有三轮7/8/9的轮位只由TOML joints/motor_ids配置；不扩展机器人构型、总线或运动合同",
+  "config": "configs/xlerobot_bus2_full.toml",
+  "current_mapping": {
+    "front": 8,
+    "left": 9,
+    "right": 7
+  },
+  "implementation": [
+    "S0与Feetech按配置角色和ID解析槽位；profile显式绑定配置ID",
+    "运动学只处理前/左/右，不含物理ID",
+    "轮校准在既有四种轮键中按ID唯一取原记录，缺失/重复/非法ID拒绝",
+    "维护入口运行期解析同一TOML，计划绑定路径/字节数/SHA，改变配置使旧计划和GO失效",
+    "混合入口mixed-hold-wheel9仍仅向物理9写非零，零速/反馈/断扭顺序按配置派生"
+  ],
+  "validation": {
+    "environment": "Orin隔离detached工作树，复用既有target",
+    "rustc": "rustc 1.102.0-nightly (ac8310ba6 2026-11-09)",
+    "fmt": "PASS",
+    "clippy_workspace": "PASS",
+    "clippy_real_hw": "PASS",
+    "rust_passed_by_log": {
+      "kinematics": 30,
+      "feetech": 240,
+      "poke": 21,
+      "s0-groups": 8,
+      "s0-wire": 4,
+      "s0-worker": 16,
+      "s0-mock-only": 8
+    },
+    "rust_distinct_methods": 319,
+    "mock_only_repeated_methods_not_counted": 8,
+    "python_passed": 153,
+    "python_skipped": 0,
+    "coverage": [
+      "三轮六种排列与配置槽位重排",
+      "配置期望ID和真实profile观察错配拒绝",
+      "配置身份变化及旧GO拒绝",
+      "正常与故障零速、全九断扭同映射",
+      "真实SDK模拟串口；真实Rust内存串口成功JSON经Python严格解析"
+    ],
+    "exit_code": 0
+  },
+  "local_attempts": {
+    "s0_on_macos": "未执行测试：既有Linux cfg模块及libc::O_PATH导致17项编译错误；未改平台门，Orin定向验证已通过",
+    "python_initial": "一项测试把模板scope常量当最终scope，已修正测试；本地最终153项151通过、SDK及Rust fixture两项跳过，Orin153全通过"
+  },
+  "review": {
+    "model": "gpt-6-astra",
+    "result": "PASS",
+    "closed_findings": [
+      "profile及factory轮ID范围限制",
+      "两处固定零速帧改为按配置派生",
+      "mixed Python guard按物理9反查角色"
+    ]
+  },
+  "source_verification": "source-manifest.json",
+  "cleanup": "cleanup.json",
+  "hardware_actions": "NOT_RUN",
+  "service_deployment": "NOT_RUN",
+  "motor_parameter_writes": 0,
+  "default_s0_mixed_integration": "NOT_IMPLEMENTED_BY_THIS_CHANGE",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false
+}

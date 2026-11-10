@@ -33,7 +33,6 @@ use robot_core::time::{DurationNs, RobotClock, SystemClock};
 use serde_json::{Value, json};
 
 const DEVICE: &str = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00";
-const IDS: [u8; 9] = [1, 2, 3, 4, 5, 6, 8, 9, 7];
 const NAMES: [&str; 9] = [
     "right_arm_shoulder_pan",
     "right_arm_shoulder_lift",
@@ -95,6 +94,7 @@ impl Drop for Signals {
 
 /// Unix GO只在入口映射一次；所有内部期限使用同一RobotClock，不把父MONOTONIC当RAW。
 struct Guard {
+    ids: [u8; 9],
     clock: Arc<dyn RobotClock>,
     authority: ControlAuthority,
     expires_unix: u64,
@@ -121,7 +121,12 @@ impl Guard {
         )
         .map_err(|_| "Unix时钟溢出".into())
     }
-    fn new(clock: Arc<dyn RobotClock>, expires_unix: u64) -> Result<Self, String> {
+    fn new(
+        clock: Arc<dyn RobotClock>,
+        expires_unix: u64,
+        wheel_ids: [u8; 3],
+    ) -> Result<Self, String> {
+        let ids = motor_ids(wheel_ids)?;
         let unix = Self::unix_now()?;
         let remaining = expires_unix
             .checked_sub(unix)
@@ -132,6 +137,7 @@ impl Guard {
             .checked_add(remaining.min(28_000_000_000))
             .ok_or("GO本地期限溢出")?;
         Ok(Self {
+            ids,
             clock,
             authority: ControlAuthority::new(AuthorityInit::new(
                 false,
@@ -325,10 +331,15 @@ impl<T: SerialTransport> Port<T> {
             // 安全收尾只接受已固定三轮GV0或完整九TE0，不能借cleanup写GP/TE1。
             let zero = bytes.len() == 17
                 && bytes[2..7] == [254, 13, 131, 46, 2]
-                && bytes[7..16] == [8, 0, 0, 9, 0, 0, 7, 0, 0];
+                && self.guard.ids[6..]
+                    .iter()
+                    .enumerate()
+                    .all(|(i, id)| bytes[7 + i * 3..10 + i * 3] == [*id, 0, 0]);
             let off = bytes.len() == 26
                 && bytes[2..7] == [254, 22, 131, 40, 1]
-                && IDS
+                && self
+                    .guard
+                    .ids
                     .iter()
                     .enumerate()
                     .all(|(i, id)| bytes[7 + i * 2] == *id && bytes[8 + i * 2] == 0);
@@ -354,7 +365,10 @@ impl<T: SerialTransport> Port<T> {
         }
         if bytes.len() == 17
             && bytes[4..7] == [131, 46, 2]
-            && bytes[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0]
+            && self.guard.ids[6..].iter().enumerate().all(|(i, id)| {
+                bytes[7 + i * 3..10 + i * 3]
+                    == [*id, if *id == 9 { 244 } else { 0 }, u8::from(*id == 9)]
+            })
         {
             let _ = self.guard.nonzero_attempt.compare_exchange(
                 0,
@@ -363,7 +377,8 @@ impl<T: SerialTransport> Port<T> {
                 Ordering::SeqCst,
             );
         }
-        self.pv_response = bytes.len() == 17 && bytes[4..7] == [130, 58, 2] && bytes[7..16] == IDS;
+        self.pv_response =
+            bytes.len() == 17 && bytes[4..7] == [130, 58, 2] && bytes[7..16] == self.guard.ids;
         Ok(())
     }
     fn returned(&self) -> Result<(), FeetechError> {
@@ -397,7 +412,10 @@ impl<T: SerialTransport> SerialTransport for Port<T> {
             let mut words = [0; 9];
             for (index, packet) in bytes.as_chunks::<8>().0.iter().enumerate() {
                 let status = parse_status(packet)?;
-                if status.id != IDS[index] || status.error != 0 || status.params.len() != 2 {
+                if status.id != self.guard.ids[index]
+                    || status.error != 0
+                    || status.params.len() != 2
+                {
                     return Err(FeetechError::Aborted(AbortReason::Revoked));
                 }
                 words[index] = u16::from_le_bytes(status.params.try_into().unwrap());
@@ -429,10 +447,10 @@ impl<T: SerialTransport> SerialTransport for Port<T> {
     }
 }
 
-fn profile(role: WheelRole) -> Sts3215RawWheelProfile {
+fn profile(role: WheelRole, motor_id: u8) -> Sts3215RawWheelProfile {
     Sts3215RawWheelProfile::try_bind(
         WheelObservation {
-            motor_id: role.motor_id(),
+            motor_id,
             model: 777,
             mode: 1,
             phase: 12,
@@ -442,6 +460,7 @@ fn profile(role: WheelRole) -> Sts3215RawWheelProfile {
             }),
         },
         role,
+        motor_id,
     )
     .unwrap()
 }
@@ -483,7 +502,8 @@ fn write_cycle<T: SerialTransport + 'static>(
     for (index, anchor) in anchors.into_iter().enumerate() {
         command.positions[index] = raw_to_rad(anchor);
     }
-    command.raw_velocities[7] = raw;
+    let selected = guard.ids.iter().position(|id| *id == 9).unwrap();
+    command.raw_velocities[selected] = raw;
     adapter
         .write_command(&command.as_view())
         .map_err(|e| e.to_string())
@@ -499,9 +519,14 @@ fn run<T: SerialTransport + 'static>(
     calibrations: &[MotorCalibration],
     report: &mut Value,
 ) -> Result<(), String> {
+    let ids = guard.ids;
+    let selected = ids.iter().position(|id| *id == 9).unwrap();
+    let held_slots = (6..9).filter(|slot| ids[*slot] != 9).collect::<Vec<_>>();
+    let held_ids = held_slots.iter().map(|slot| ids[*slot]).collect::<Vec<_>>();
+    bind_report(report, &ids);
     let motors: HashMap<_, _> = NAMES
         .iter()
-        .zip(IDS)
+        .zip(ids)
         .map(|(name, id)| (name.to_string(), Motor::new(id).unwrap()))
         .collect();
     let port = Port {
@@ -515,7 +540,7 @@ fn run<T: SerialTransport + 'static>(
         preempt: Some(guard.clone()),
         diag: Some(guard.clone()),
         call_deadline: Duration::from_millis(50),
-        adapter_name: "mixed-left9-maintenance",
+        adapter_name: "mixed-wheel9-maintenance",
         joint_names: NAMES.iter().map(ToString::to_string).collect(),
         calibrations: calibrations.to_owned(),
     };
@@ -523,9 +548,9 @@ fn run<T: SerialTransport + 'static>(
         config,
         bus,
         [
-            profile(WheelRole::Front),
-            profile(WheelRole::Left),
-            profile(WheelRole::Right),
+            profile(WheelRole::Front, ids[6]),
+            profile(WheelRole::Left, ids[7]),
+            profile(WheelRole::Right, ids[8]),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -590,16 +615,16 @@ fn run<T: SerialTransport + 'static>(
         let (anchors, sampled_ns) = adapter.mixed_arm_anchor().ok_or("缺少enable实际固定锚点")?;
         let goals = adapter.mixed_arm_goal_readback().ok_or("缺少实际GP读回")?;
         for index in 0..6 {
-            report["arm_anchors"].as_array_mut().unwrap().push(json!({"motor_id":IDS[index],"raw":anchors[index],"goal_raw":goals[index],"sampled_ns":sampled_ns,"calibration_min":calibrations[index].range_min,"calibration_max":calibrations[index].range_max}));
+            report["arm_anchors"].as_array_mut().unwrap().push(json!({"motor_id":ids[index],"raw":anchors[index],"goal_raw":goals[index],"sampled_ns":sampled_ns,"calibration_min":calibrations[index].range_min,"calibration_max":calibrations[index].range_max}));
         }
         let mut wheel_anchors = [0; 2];
         let wheel_sampled = guard.clock.now().0;
         adapter.bus().set_op_class(BusOpClass::PeriodicRead);
         adapter
             .bus()
-            .sync_read_by_id_into("Present_Position", &[8, 7], &mut wheel_anchors)
+            .sync_read_by_id_into("Present_Position", &held_ids, &mut wheel_anchors)
             .map_err(|e| e.to_string())?;
-        for (id, raw) in [8, 7].into_iter().zip(wheel_anchors) {
+        for (id, raw) in held_ids.into_iter().zip(wheel_anchors) {
             if !(0..=4095).contains(&raw) {
                 return Err("未驱动轮基线超界".into());
             }
@@ -657,25 +682,25 @@ fn run<T: SerialTransport + 'static>(
                         return Err("六臂偏离固定锚点超过4计数".into());
                     }
                 }
-                if raw.iter().any(|r| !(0..=4095).contains(r)) || words[7] > 1000 {
+                if raw.iter().any(|r| !(0..=4095).contains(r)) || words[selected] > 1000 {
                     return Err("运动反馈原值越界或方向异常".into());
                 }
-                for (index, slot) in [6, 8].into_iter().enumerate() {
+                for (index, slot) in held_slots.iter().copied().enumerate() {
                     if !matches!(words[slot], 0 | 50 | 0x8032)
                         || (raw[slot] - wheel_anchors[index]).abs() > 4
                     {
                         return Err("未驱动轮反馈超出原非目标范围".into());
                     }
                 }
-                positive_pv |= words[7] > 0;
+                positive_pv |= words[selected] > 0;
                 if let Some(last) = previous {
-                    let step = (raw[7] - last).rem_euclid(4096);
+                    let step = (raw[selected] - last).rem_euclid(4096);
                     if step > 512 {
-                        return Err("左轮相邻位移越界或逆向".into());
+                        return Err("物理9相邻位移越界或逆向".into());
                     }
                     travel += step;
                 }
-                previous = Some(raw[7]);
+                previous = Some(raw[selected]);
             }
             let finished = guard.clock.now().0;
             report["cycles"].as_array_mut().unwrap().push(
@@ -689,7 +714,7 @@ fn run<T: SerialTransport + 'static>(
         );
         guard.wait(first.checked_add(PULSE).ok_or("20秒期限溢出")?)?;
         if travel <= 0 || !positive_pv {
-            return Err("左轮20秒未得到正向位置变化".into());
+            return Err("物理9在20秒未得到正向位置变化".into());
         }
         let zero_started = guard.clock.now().0;
         report["timing"]["zero_started_ns"] = json!(zero_started);
@@ -699,7 +724,10 @@ fn run<T: SerialTransport + 'static>(
         adapter.bus().set_op_class(BusOpClass::PeriodicWrite);
         adapter
             .bus()
-            .sync_write_by_id("Goal_Velocity", &[(8, 0), (9, 0), (7, 0)])
+            .sync_write_by_id(
+                "Goal_Velocity",
+                &ids[6..].iter().map(|id| (*id, 0)).collect::<Vec<_>>(),
+            )
             .map_err(|e| e.to_string())?;
         let zero_finished = guard.clock.now().0;
         report["timing"]["zero_finished_ns"] = json!(zero_finished);
@@ -747,9 +775,10 @@ fn run<T: SerialTransport + 'static>(
     adapter.bus().set_op_class(BusOpClass::Safety);
     if attempted != 0 {
         report["cleanup"]["zero_attempted"] = json!(true);
-        let zero = adapter
-            .bus()
-            .sync_write_by_id("Goal_Velocity", &[(8, 0), (9, 0), (7, 0)]);
+        let zero = adapter.bus().sync_write_by_id(
+            "Goal_Velocity",
+            &ids[6..].iter().map(|id| (*id, 0)).collect::<Vec<_>>(),
+        );
         report["cleanup"]["zero_ok"] = json!(zero.is_ok());
         if let Err(failed) = zero {
             error.get_or_insert_with(|| failed.to_string());
@@ -798,7 +827,7 @@ fn run<T: SerialTransport + 'static>(
                 adapter.bus().set_op_class(BusOpClass::PeriodicRead);
                 match adapter.bus().sync_read_by_id_into(
                     "Present_Position",
-                    &IDS[..6],
+                    &ids[..6],
                     &mut final_raw,
                 ) {
                     Ok(()) => {
@@ -806,7 +835,7 @@ fn run<T: SerialTransport + 'static>(
                             report["arm_final"]
                                 .as_array_mut()
                                 .unwrap()
-                                .push(json!({"motor_id":IDS[index],"raw":raw}));
+                                .push(json!({"motor_id":ids[index],"raw":raw}));
                         }
                         if let Some((anchors, _)) = adapter.mixed_arm_anchor()
                             && final_raw
@@ -831,21 +860,58 @@ fn run<T: SerialTransport + 'static>(
     }
 }
 
+fn motor_ids(wheel_ids: [u8; 3]) -> Result<[u8; 9], String> {
+    let mut sorted = wheel_ids;
+    sorted.sort_unstable();
+    if sorted != [7, 8, 9] {
+        return Err("三轮ID必须唯一且集合恰为7/8/9".into());
+    }
+    Ok([1, 2, 3, 4, 5, 6, wheel_ids[0], wheel_ids[1], wheel_ids[2]])
+}
+
+fn parse_wheel_ids(value: &str) -> Result<[u8; 3], String> {
+    let parsed = value
+        .split(',')
+        .map(str::parse::<u8>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "三轮ID解析失败")?;
+    let wheel_ids: [u8; 3] = parsed
+        .try_into()
+        .map_err(|_| "必须显式提供前/左/右三个ID")?;
+    motor_ids(wheel_ids)?;
+    Ok(wheel_ids)
+}
+
+fn bind_report(report: &mut Value, ids: &[u8; 9]) {
+    report["motor_ids"] = json!(ids);
+    report["wheel_ids"] = json!(&ids[6..]);
+    report["wheel_raw_goal"] = json!(
+        ids[6..]
+            .iter()
+            .map(|id| if *id == 9 { 500 } else { 0 })
+            .collect::<Vec<_>>()
+    );
+}
+
 fn empty_report(args: &[String]) -> Value {
-    json!({"schema":"FEETECH_MIXED_LEFT9_V1","operation":"mixed-hold-left9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":IDS,"wheel_ids":[8,9,7],"wheel_raw_goal":[0,500,0],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
+    json!({"schema":"FEETECH_MIXED_WHEEL9_V1","operation":"mixed-hold-wheel9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
 }
 
 pub(super) fn main(args: &[String]) -> ExitCode {
     let mut report = empty_report(args);
     let result = (|| {
-        if args.len() != 8
+        if args.len() != 10
             || args[1] != DEVICE
             || args[2] != "9"
             || args[4] != "--arm-calibration"
             || args[6] != "--go-expires-at-ns"
+            || args[8] != "--wheel-ids"
         {
             return Err("固定mixed维护参数不匹配".into());
         }
+        let wheel_ids = parse_wheel_ids(&args[9])?;
+        let ids = motor_ids(wheel_ids)?;
+        bind_report(&mut report, &ids);
         let expiry = args[7].parse::<u64>().map_err(|_| "GO Unix期限解析失败")?;
         report["go_expires_at_unix_ns"] = json!(expiry);
         let mut loaded =
@@ -854,7 +920,7 @@ pub(super) fn main(args: &[String]) -> ExitCode {
             return Err("右臂标定必须恰为固定六电机".into());
         }
         let mut calibrations = Vec::with_capacity(9);
-        for (name, id) in NAMES[..6].iter().zip(&IDS[..6]) {
+        for (name, id) in NAMES[..6].iter().zip(&ids[..6]) {
             let cal = loaded.remove(*name).ok_or("缺少固定右臂标定")?;
             if cal.id != *id {
                 return Err("右臂标定ID不匹配".into());
@@ -862,12 +928,12 @@ pub(super) fn main(args: &[String]) -> ExitCode {
             report["loaded_calibration"].as_array_mut().unwrap().push(json!({"id":cal.id,"range_min":cal.range_min,"range_max":cal.range_max,"homing_offset":cal.homing_offset,"drive_mode":cal.drive_mode}));
             calibrations.push(cal);
         }
-        for id in &IDS[6..] {
+        for id in &ids[6..] {
             calibrations
                 .push(MotorCalibration::new(*id, 0, 0, 0, 4095).map_err(|e| e.to_string())?);
         }
         let _signals = Signals::install()?;
-        let guard = Arc::new(Guard::new(Arc::new(SystemClock::new()), expiry)?);
+        let guard = Arc::new(Guard::new(Arc::new(SystemClock::new()), expiry, wheel_ids)?);
         guard
             .check()
             .map_err(|e| format!("UART前授权检查拒绝:{e:?}"))?;
@@ -916,6 +982,7 @@ mod tests {
     }
 
     struct Sim {
+        ids: [u8; 9],
         clock: Arc<MockClock>,
         rx: VecDeque<u8>,
         frames: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -983,7 +1050,7 @@ mod tests {
             if self.scenario == 8
                 && self.nonzero
                 && bytes[4..7] == [131, 46, 2]
-                && bytes[15] == 0
+                && bytes[7..16].chunks_exact(3).all(|row| row[1..] == [0, 0])
                 && self.torque[9] == 1
             {
                 return Err(FeetechError::TransportWrite(std::io::Error::other(
@@ -1005,7 +1072,7 @@ mod tests {
                 }
                 130 => {
                     if bytes[5] == 56
-                        && bytes[7..bytes.len() - 1] == IDS
+                        && bytes[7..bytes.len() - 1] == self.ids
                         && self.nonzero
                         && self.velocity[9] == 500
                     {
@@ -1091,8 +1158,19 @@ mod tests {
     }
 
     #[test]
+    fn wheel_mapping_requires_three_unique_explicit_ids() {
+        for value in ["", "7,8", "7,8,9,10", "7,7,9", "6,8,9", "7,8,x"] {
+            assert!(parse_wheel_ids(value).is_err(), "{value}");
+        }
+        for wheel_ids in [[7, 8, 9], [9, 7, 8], [8, 9, 7]] {
+            let text = wheel_ids.map(|id| id.to_string()).join(",");
+            assert_eq!(parse_wheel_ids(&text).unwrap(), wheel_ids);
+        }
+    }
+
+    #[test]
     fn mixed_failure_before_run_retains_zero_cycles_and_no_effects() {
-        let error = Guard::new(Arc::new(MockClock::default()), 0)
+        let error = Guard::new(Arc::new(MockClock::default()), 0, [8, 9, 7])
             .err()
             .expect("过期GO在run和串口打开之前拒绝");
         let mut report = empty_report(&[]);
@@ -1119,8 +1197,19 @@ mod tests {
 
     #[test]
     fn fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop() {
-        assert!(Guard::new(Arc::new(MockClock::default()), 0).is_err());
-        for scenario in 0..=10 {
+        assert!(Guard::new(Arc::new(MockClock::default()), 0, [8, 9, 7]).is_err());
+        for (wheel_ids, scenario) in [
+            [8, 9, 7],
+            [8, 7, 9],
+            [9, 8, 7],
+            [9, 7, 8],
+            [7, 8, 9],
+            [7, 9, 8],
+        ]
+        .into_iter()
+        .flat_map(|ids| (0..=10).map(move |scenario| (ids, scenario)))
+        {
+            let ids = motor_ids(wheel_ids).unwrap();
             INTERRUPTED.store(false, Ordering::SeqCst);
             let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000)));
             let checked_clock: Arc<dyn RobotClock> = if scenario == 0 {
@@ -1129,7 +1218,12 @@ mod tests {
                 clock.clone()
             };
             let guard = Arc::new(
-                Guard::new(checked_clock, Guard::unix_now().unwrap() + 600_000_000_000).unwrap(),
+                Guard::new(
+                    checked_clock,
+                    Guard::unix_now().unwrap() + 600_000_000_000,
+                    wheel_ids,
+                )
+                .unwrap(),
             );
             let frames = Arc::new(Mutex::new(Vec::new()));
             let mut position = [2047; 10];
@@ -1137,6 +1231,7 @@ mod tests {
                 position[6] = 1371;
             }
             let sim = Sim {
+                ids,
                 clock: clock.clone(),
                 rx: VecDeque::new(),
                 frames: frames.clone(),
@@ -1148,7 +1243,7 @@ mod tests {
                 nonzero: false,
                 zero_samples: 0,
             };
-            let mut cals = IDS
+            let mut cals = ids
                 .into_iter()
                 .map(|id| MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
                 .collect::<Vec<_>>();
@@ -1178,23 +1273,36 @@ mod tests {
                 .expect("独立完整九TE0");
             assert_eq!(
                 frames[stop][7..25],
-                IDS.into_iter().flat_map(|id| [id, 0]).collect::<Vec<_>>()
+                ids.into_iter().flat_map(|id| [id, 0]).collect::<Vec<_>>()
             );
             if scenario == 0 {
-                assert_eq!(report["wheel_ids"], json!([8, 9, 7]));
-                assert_eq!(report["wheel_raw_goal"], json!([0, 500, 0]));
+                assert_eq!(report["wheel_ids"], json!(wheel_ids));
+                assert_eq!(
+                    report["wheel_raw_goal"],
+                    json!(wheel_ids.map(|id| if id == 9 { 500 } else { 0 }))
+                );
                 let velocity_frames = frames
                     .iter()
                     .filter(|frame| frame.len() == 17 && frame[4..7] == [131, 46, 2])
                     .collect::<Vec<_>>();
-                assert!(
-                    velocity_frames
-                        .iter()
-                        .any(|frame| { frame[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0] })
-                );
+                assert!(velocity_frames.iter().any(|frame| {
+                    frame[7..16]
+                        == wheel_ids
+                            .into_iter()
+                            .flat_map(|id| [id, if id == 9 { 244 } else { 0 }, u8::from(id == 9)])
+                            .collect::<Vec<_>>()
+                }));
                 assert!(velocity_frames.iter().all(|frame| {
-                    frame[7..16] == [8, 0, 0, 9, 244, 1, 7, 0, 0]
-                        || frame[7..16] == [8, 0, 0, 9, 0, 0, 7, 0, 0]
+                    frame[7..16]
+                        == wheel_ids
+                            .into_iter()
+                            .flat_map(|id| [id, if id == 9 { 244 } else { 0 }, u8::from(id == 9)])
+                            .collect::<Vec<_>>()
+                        || frame[7..16]
+                            == wheel_ids
+                                .into_iter()
+                                .flat_map(|id| [id, 0, 0])
+                                .collect::<Vec<_>>()
                 }));
                 let actual_first = report["timing"]["first_nonzero_ns"].as_u64().unwrap();
                 assert!(report["cycles"][0]["started_ns"].as_u64().unwrap() < actual_first);
@@ -1205,13 +1313,15 @@ mod tests {
                 assert!(
                     report["timing"]["zero_started_ns"].as_u64().unwrap() >= actual_first + PULSE
                 );
-                if let Some(path) = std::env::var_os("ROBOT_MIXED_SOFTWARE_FIXTURE") {
+                if let Some(path) = std::env::var_os("ROBOT_MIXED_SOFTWARE_FIXTURE")
+                    .filter(|_| wheel_ids == [8, 9, 7])
+                {
                     report["result"] = json!("PASS");
                     report["serial_device"] = json!(DEVICE);
                     report["arm_calibration_path"] =
                         json!("/tmp/mixed-software-arm-calibration.json");
                     report["go_expires_at_unix_ns"] = json!(guard.expires_unix);
-                    report["loaded_calibration"] = json!(IDS[..6].iter().map(|id| json!({"id":id,"range_min":0,"range_max":4095,"homing_offset":0,"drive_mode":0})).collect::<Vec<_>>());
+                    report["loaded_calibration"] = json!(ids[..6].iter().map(|id| json!({"id":id,"range_min":0,"range_max":4095,"homing_offset":0,"drive_mode":0})).collect::<Vec<_>>());
                     std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
                 }
                 assert_eq!(report["cycles"].as_array().unwrap().len(), 400);

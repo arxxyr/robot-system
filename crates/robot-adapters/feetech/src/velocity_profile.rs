@@ -18,18 +18,6 @@ pub enum WheelRole {
     Right,
 }
 
-impl WheelRole {
-    /// 当前XLeRobot三轮固定ID，调用方必须另绑正确总线。
-    #[must_use]
-    pub const fn motor_id(self) -> u8 {
-        match self {
-            Self::Front => 8,
-            Self::Left => 9,
-            Self::Right => 7,
-        }
-    }
-}
-
 /// 厂家地址0/1的固件版本原始字节，不等同于文档平台version字段。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FirmwareVersion {
@@ -51,6 +39,7 @@ pub struct WheelObservation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WheelContract {
     pub role: WheelRole,
+    pub motor_id: u8,
     pub firmware: FirmwareVersion,
     pub phase: u8,
     pub raw_limit: u16,
@@ -99,7 +88,7 @@ pub enum WheelProfileError {
 impl fmt::Display for WheelProfileError {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WrongMotorId => out.write_str("轮角色与固定电机ID不匹配"),
+            Self::WrongMotorId => out.write_str("轮电机ID不在7到9内或与配置期望不匹配"),
             Self::WrongModel => out.write_str("轮电机型号不是STS3215/777"),
             Self::WrongMode => out.write_str("轮电机不是恒速模式1"),
             Self::FirmwareMissing => out.write_str("缺少固件版本只读观察"),
@@ -132,6 +121,7 @@ pub struct Sts3215WheelProfile {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sts3215RawWheelProfile {
     role: WheelRole,
+    motor_id: u8,
 }
 
 impl Sts3215RawWheelProfile {
@@ -140,8 +130,9 @@ impl Sts3215RawWheelProfile {
     pub fn try_bind(
         observed: WheelObservation,
         role: WheelRole,
+        expected_motor_id: u8,
     ) -> Result<Self, WheelProfileError> {
-        if observed.motor_id != role.motor_id() {
+        if !(7..=9).contains(&expected_motor_id) || observed.motor_id != expected_motor_id {
             return Err(WheelProfileError::WrongMotorId);
         }
         if observed.model != MODEL_NUMBER_STS3215 {
@@ -161,12 +152,20 @@ impl Sts3215RawWheelProfile {
         if observed.phase != 12 {
             return Err(WheelProfileError::PhaseMismatch);
         }
-        Ok(Self { role })
+        Ok(Self {
+            role,
+            motor_id: expected_motor_id,
+        })
     }
 
     #[must_use]
     pub const fn role(self) -> WheelRole {
         self.role
+    }
+
+    #[must_use]
+    pub const fn motor_id(self) -> u8 {
+        self.motor_id
     }
 
     /// 该实证合同只容许已测的零速和正向500，不把上限解释为连续范围。
@@ -193,7 +192,7 @@ impl Sts3215WheelProfile {
         observed: WheelObservation,
         expected: WheelContract,
     ) -> Result<Self, WheelProfileError> {
-        if observed.motor_id != expected.role.motor_id() {
+        if !(7..=9).contains(&expected.motor_id) || observed.motor_id != expected.motor_id {
             return Err(WheelProfileError::WrongMotorId);
         }
         if observed.model != MODEL_NUMBER_STS3215 {
@@ -234,6 +233,11 @@ impl Sts3215WheelProfile {
     #[must_use]
     pub const fn contract(self) -> WheelContract {
         self.contract
+    }
+
+    #[must_use]
+    pub const fn motor_id(self) -> u8 {
+        self.contract.motor_id
     }
 
     #[must_use]
@@ -293,10 +297,18 @@ mod tests {
 
     const FIXTURE_FIRMWARE: FirmwareVersion = FirmwareVersion { major: 1, minor: 2 };
 
+    fn fixture_motor_id(role: WheelRole) -> u8 {
+        match role {
+            WheelRole::Front => 8,
+            WheelRole::Left => 9,
+            WheelRole::Right => 7,
+        }
+    }
+
     fn inputs(role: WheelRole, phase: u8, raw_limit: u16) -> (WheelObservation, WheelContract) {
         (
             WheelObservation {
-                motor_id: role.motor_id(),
+                motor_id: fixture_motor_id(role),
                 model: 777,
                 mode: 1,
                 phase,
@@ -304,6 +316,7 @@ mod tests {
             },
             WheelContract {
                 role,
+                motor_id: fixture_motor_id(role),
                 firmware: FIXTURE_FIRMWARE,
                 phase,
                 raw_limit,
@@ -317,30 +330,52 @@ mod tests {
     }
 
     #[test]
-    fn wheel_roles_bind_front_eight_left_nine_and_right_seven() {
-        for (role, id, wrong_id) in [
-            (WheelRole::Front, 8, 7),
-            (WheelRole::Left, 9, 7),
-            (WheelRole::Right, 7, 9),
-        ] {
-            assert_eq!(role.motor_id(), id);
-            let (mut observed, contract) = inputs(role, 4, 500);
-            observed.motor_id = id;
-            assert!(Sts3215WheelProfile::try_bind(observed, contract).is_ok());
+    fn wheel_profiles_bind_explicit_configured_ids_for_every_role() {
+        for role in [WheelRole::Front, WheelRole::Left, WheelRole::Right] {
+            for id in [7, 8, 9] {
+                let (mut observed, mut contract) = inputs(role, 4, 500);
+                observed.motor_id = id;
+                contract.motor_id = id;
+                let nominal = Sts3215WheelProfile::try_bind(observed, contract).unwrap();
+                assert_eq!(nominal.motor_id(), id);
+                observed.phase = 12;
+                observed.firmware = Some(FirmwareVersion {
+                    major: 3,
+                    minor: 10,
+                });
+                let raw = Sts3215RawWheelProfile::try_bind(observed, role, id).unwrap();
+                assert_eq!((raw.role(), raw.motor_id()), (role, id));
+                observed.motor_id = 1;
+                assert_eq!(
+                    Sts3215RawWheelProfile::try_bind(observed, role, id),
+                    Err(WheelProfileError::WrongMotorId)
+                );
+                observed.phase = 4;
+                assert_eq!(
+                    Sts3215WheelProfile::try_bind(observed, contract),
+                    Err(WheelProfileError::WrongMotorId)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wheel_profiles_reject_ids_outside_the_wheel_bus_range() {
+        for motor_id in [0, 1, 6, 10, 254, 255] {
+            let (mut observed, mut contract) = inputs(WheelRole::Front, 4, 500);
+            observed.motor_id = motor_id;
+            contract.motor_id = motor_id;
+            assert_eq!(
+                Sts3215WheelProfile::try_bind(observed, contract),
+                Err(WheelProfileError::WrongMotorId)
+            );
             observed.phase = 12;
             observed.firmware = Some(FirmwareVersion {
                 major: 3,
                 minor: 10,
             });
-            assert!(Sts3215RawWheelProfile::try_bind(observed, role).is_ok());
-            observed.motor_id = wrong_id;
             assert_eq!(
-                Sts3215RawWheelProfile::try_bind(observed, role),
-                Err(WheelProfileError::WrongMotorId)
-            );
-            observed.phase = 4;
-            assert_eq!(
-                Sts3215WheelProfile::try_bind(observed, contract),
+                Sts3215RawWheelProfile::try_bind(observed, WheelRole::Front, motor_id),
                 Err(WheelProfileError::WrongMotorId)
             );
         }
@@ -350,7 +385,7 @@ mod tests {
     fn observed_raw_contract_is_exact_and_does_not_relax_nominal_phase() {
         for role in [WheelRole::Front, WheelRole::Left, WheelRole::Right] {
             let observation = WheelObservation {
-                motor_id: role.motor_id(),
+                motor_id: fixture_motor_id(role),
                 model: 777,
                 mode: 1,
                 phase: 12,
@@ -359,7 +394,9 @@ mod tests {
                     minor: 10,
                 }),
             };
-            let profile = Sts3215RawWheelProfile::try_bind(observation, role).unwrap();
+            let profile =
+                Sts3215RawWheelProfile::try_bind(observation, role, fixture_motor_id(role))
+                    .unwrap();
             for raw in i16::MIN..=i16::MAX {
                 assert_eq!(profile.accepts(raw), matches!(raw, 0 | 500));
             }
@@ -392,13 +429,16 @@ mod tests {
                     ..observation
                 },
             ] {
-                assert!(Sts3215RawWheelProfile::try_bind(bad, role).is_err());
+                assert!(
+                    Sts3215RawWheelProfile::try_bind(bad, role, fixture_motor_id(role)).is_err()
+                );
             }
             assert_eq!(
                 Sts3215WheelProfile::try_bind(
                     observation,
                     WheelContract {
                         role,
+                        motor_id: observation.motor_id,
                         firmware: observation.firmware.unwrap(),
                         phase: 12,
                         raw_limit: 500
