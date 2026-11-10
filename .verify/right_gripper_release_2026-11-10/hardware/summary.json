@@ -1,0 +1,36 @@
+{
+  "executed_commit": "5ab06f32d3b4ef579b1cfe1a304ac0e31f7ce2bb",
+  "executed_script_sha256": "f582f34c12da99715293c5a06fbe881b82ce85dcf229abe2c3c343b2d7485e42",
+  "original_result": "FAIL",
+  "physical_observation": "用户确认右夹爪小幅张开，结束静止",
+  "right6": {
+    "before_pp": 1371,
+    "after_pp": 1392,
+    "goal": 1400,
+    "error": -8,
+    "tolerance": 4,
+    "gp_write_also_enabled": true,
+    "explicit_te1_commands": 0,
+    "final_te": 0,
+    "final_pv": 0
+  },
+  "wire_review": "两份strace共12帧校验正确；GP命令只发Ping、Model读和GP1400，收尾命令只发Ping、Model读和TE0",
+  "stop": "PASS",
+  "identity": "PASS",
+  "manual_power_cut_required": false,
+  "cleanup": "cleanup.json",
+  "limitations": "本次小幅动作及静止经目视确认；精度未通过，保留原FAIL。修正GP动作起点后仅软件验证，不重跑。",
+  "d15": "OPEN/DEFERRED",
+  "deployable": false,
+  "software_fix": {
+    "script_sha256": "a4e43075b959cb0916327cb833431c145db24f84208499a03c0d04d880229eb2",
+    "change": "仅本机右6按首次GP写作为动作起点，取消额外TE1；独立TE0及原停止门保留",
+    "orin_tests": 173,
+    "skipped": 0,
+    "fmt": "PASS",
+    "clippy": "PASS",
+    "review": "PASS",
+    "hardware_retest": "NOT_RUN",
+    "logs": "../software-fix/"
+  }
+}

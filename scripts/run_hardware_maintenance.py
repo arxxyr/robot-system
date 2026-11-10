@@ -123,7 +123,7 @@ ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
 ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
                    'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
                    '不提供混合动作的新鲜锚点或动作授权')
-GRIPPER_RELEASE_SCOPE = '仅右夹爪物理6：新鲜静止初值到固定GP1400单程张开，增量须1..32，不回初值；使能尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验'
+GRIPPER_RELEASE_SCOPE = '仅右夹爪物理6：新鲜静止初值到固定GP1400单程张开，增量须1..32，不回初值；GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验'
 LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
                       'Present_Position':(56,2),'Present_Velocity':(58,2)}
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
@@ -1288,16 +1288,13 @@ class ProbeEngine:
                     '右夹爪原标定或固定目标范围变化')
             initial=stopped_at();row['initial_raw']=initial
             self.io.sleep(.05);stopped_at(initial)
-            ready();self.write('right',6,'Goal_Position',goal)
-            require(self.read('right',6,'Goal_Position')==goal,'右夹爪预置GP精确读回不匹配')
-            self.io.sleep(.05);stopped_at(initial)
-            require(self.read('right',6,'Goal_Position')==goal,'右夹爪使能前GP漂移')
-            ready();row['enable_attempt_ns']=self.io.now()
-            row['observation_deadline_ns']=row['enable_attempt_ns']+800_000_000
-            self.write('right',6,'Torque_Enable',1)
-            require(self.read('right',6,'Torque_Enable')==1,'右夹爪上扭读回不匹配')
+            ready();row['goal_write_attempt_ns']=self.io.now()
+            row['observation_deadline_ns']=row['goal_write_attempt_ns']+800_000_000
+            self.write('right',6,'Goal_Position',goal)
+            require(self.read('right',6,'Goal_Position')==goal,'右夹爪GP精确读回不匹配')
+            require(self.read('right',6,'Torque_Enable')==1,'右夹爪GP写后自动使能未确认')
             samples=self.witness_position('right',6,goal,initial,'release',row['position_accuracy']['stages'],
-                        started_ns=row['enable_attempt_ns'],check_ready=ready,expected_direction=1)
+                        started_ns=row['goal_write_attempt_ns'],check_ready=ready,expected_direction=1)
             require(samples[-1]['position_raw']>initial,'右夹爪没有向原始值增大方向实际移动')
             row['position_accuracy']['status']='PASS'
         except PositionAccuracyError as failure:
