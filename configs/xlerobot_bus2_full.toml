@@ -1,117 +1,17 @@
-# 历史全 Position 配置（2026-10-23 接入复核）：不是本轮 Position/raw Velocity 混合入口。
-# 当前三轮的最近实机 Mode=1；不要按下述历史 Stage 2 步骤改 Mode/Lock 或启动本配置。
-# mixed 使用显式 new_bus2_mixed，Phase12 合同及维护动作入口尚未接通；当前边界见 CLAUDE.md。
-#
-# XLeRobot bus2 全栈 9-motor 真机闭环验证配置（task #15 Stage 2）。
-#
-# Stage 1（`xlerobot_bus2_right_arm_full.toml`）只驱动右臂 6 motor，base 三
-# 个 wheel 在物理上挂在同一根串口但**不在 daemon 配置里**，因此 daemon
-# 不向它们 sync_read / sync_write。Stage 2 要把 base 三个 wheel 也接到
-# daemon —— **adapter 启用** + **sync_read 拉 9 个 Present_Position** +
-# **sync_write 推 9 个 Goal_Position**，从而真正回答："多 motor SerialRT
-# 路径在 9-motor 全栈下还稳吗？"
-#
-# 但 base wheel **不能跟着右臂一起摆 ballet**（dimos 把它们当连续旋转
-# wheel 用，正弦摆动 = 整车颠簸，可能撞坏）。所以 mock_s1 这一边走
-# **mask 模式**（`--frozen-joints 6,7,8`）：base 三轮的 target 始终 = 启动
-# 期 anchor 读到的当前位置，sync_write 写出去后电机原地不动；右臂 6 关
-# 节正常 ±5° 正弦。
-#
-# ## Stage 2 真机闭环目标
-#
-# 1. daemon factory 报 `motors 9 | ids [1..=9]` + `calibration=loaded`。
-# 2. 启动期所有 9 motor 的 `Torque_Enable` 变化只发生在 enable(true) /
-#    safety_stop_fast 这两条 broadcast 上。
-# 3. ballet 期间右臂 motor 1-5 + gripper 6 走正弦 ±5°；base motor 7-9
-#    `Present_Position` post-shutdown 与 baseline 偏差 < 30 raw（≈ 2.6°，
-#    考虑到读 anchor 的几十 ms 内 wheel 自重微动 + sync_write 跟踪误差）。
-# 4. EStop 后 9 motor `Torque_Enable` 全 0（broadcast 真断扭覆盖 base）。
-# 5. latch 重启 / 第二次 EStop 链路与 Stage 1 同款。
-#
-# ⚠️ Stage 2 真机闭环原始验证（详 `docs/handoffs/2026-04-26_3.md`）发生在
-# strict 守门之前；当时的 "手动 ClearEStop" 步骤 = `rm latch + restart`。
-# 该路径已不再合法 —— reviewer round 4 阻断 2 + round 5 引入 strict
-# fail-closed；A1-5 commit `45df648` 撤掉 `--allow-empty-latch` opt-in
-# 后 strict 是 latch 缺失唯一行为。**A1-5 后唯一解除路径** = v0.3 A1
-# `ClearEStop` control action（gRPC `RobotControl::ClearEStop` / Web /
-# 本地维护面板都是同一 control action 的 transport 入口，带 maintainer+
-# auth + confirmation + idempotency + audit；详
-# `docs/handoffs/v0.3_a1_4_clear_estop_smoke.md` §5 + `docs/CHANGELOG.md`
-# 2026-04-28 "v0.3 A1-5" 偏离登记 + 2026-04-26 "v0.3 entry：`ClearEStop
-# RPC` 文案的控制动作解释"）。首次部署运维流程 = 显式 provision `0\n`
-# 到 latch primary + bak（详 `scripts/systemd/README.md` "首次部署 —
-# latch provision **必读**" 节）。
-#
-# ## bus2 拓扑（dimos `04_踩坑记录.md`）
-#
-# ```
-# /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00 → 右臂 + 底盘
-# right_arm.json → ID 1..=6（pan/lift/elbow/wrist_flex/wrist_roll/gripper）
-# base_left9_right7.json → ID 7..=9（base_right_wheel / base_front_wheel / base_left_wheel）
-# 新文件按 ID 保留校准原值并纠正左右标签；旧 base.json 保留，base_back_wheel 仅兼容前轮 ID8。
-# ```
-#
-# ## base wheel 操作模式风险（必读）
-#
-# dimos 服务运行期间 base wheel 通常被设到 STS3215 的 **wheel/velocity 模式**
-# （`Operating_Mode=1`，`Goal_Position` 寄存器被解释为 `Goal_Speed`）。dimos
-# service stop 不会把 `Operating_Mode` 切回 0（位置模式），motor 自身保持上
-# 次设置。
-#
-# 我们的 `FeetechAdapter` 只写 `Goal_Position`，**不**触碰 `Operating_Mode`。
-# 所以 Stage 2 跑前**必须先**确认 base wheel 是 `Operating_Mode=0`（位置
-# 模式），否则 sync_write Goal_Position 会被解释为速度命令 → wheel 持续旋
-# 转 → 整车跑掉。
-#
-# **EEPROM 写保护**：`Operating_Mode` 在 EEPROM 区（`crates/robot-adapters/
-# feetech/src/registers.rs::EEPROM_REGISTERS`）。写之前必须 `Torque_Enable=0`
-# **且** `Lock=0`，否则写包被 motor 静默拒绝（看不到错误，但 readback 还是
-# 旧值）。完整序列见 Stage 2 runbook §2.2，要点：
-#
-# 1. `read Operating_Mode` 拿 baseline（**寄存器名**就是这个，不是 `Mode`；
-#    `feetech_poke` 是精确查表，写错名直接 `unknown register` fail）。
-# 2. `write Torque_Enable 0`
-# 3. `write Lock 0`         ← EEPROM 解锁
-# 4. `write Operating_Mode 0`
-# 5. `read Operating_Mode` 复读断言 == 0（不是 0 = 序列没生效，停下排查）。
-# 6. `write Lock 1`（可选；让后续 daemon enable(true) 时不会意外改其它
-#    EEPROM 寄存器）。
-#
-# 跑完 Stage 2 后**不需要**手动改回 wheel mode —— dimos 启动时会自己设
-# `Operating_Mode=1`。
-#
-# ## 启动期防飞
-#
-# 同 Stage 1：`FeetechAdapter::enable(true)` follow-current 序列让 9 motor
-# 的 Goal 在扭接上瞬间追平 Present；mock_s1 anchor 让正弦 bias = 当前位
-# 置；frozen base 三轮始终 target = bias[7..9]，**不**叠加正弦。
-#
-# ## right_arm + base 各 motor range（dimos）
-#
-# 单位 raw（4096 = 360°）。±5° ≈ ±57 raw。
-#
-# | joint              | id | range_raw    | rad_range          |
-# |---|---|---|---|
-# | right_arm_shoulder_pan  | 1 | [1024, 3072] | [-π/2, +π/2]   |
-# | right_arm_shoulder_lift | 2 | 同上          | 同上            |
-# | right_arm_elbow_flex    | 3 | 同上          | 同上            |
-# | right_arm_wrist_flex    | 4 | 同上          | 同上            |
-# | right_arm_wrist_roll    | 5 | 同上          | 同上            |
-# | right_arm_gripper       | 6 | [1384, 2847] | [-1.02, +1.23]  |
-# | base_right_wheel        | 7 | [0, 4095]    | [-π, +π]        |
-# | base_front_wheel        | 8 | [0, 4095]    | [-π, +π]        |
-# | base_left_wheel         | 9 | [0, 4095]    | [-π, +π]        |
-#
-# base wheel 的 [0, 4095] 是连续旋转 motor 的标定写法（任意位置都合法）。
-# 它们 frozen 后 target = bias，silent clamp 一定不会触发。
+# XLeRobot右总线：六臂位置＋三轮原始速度，共用一个S0/串口/停止域。
+# 前/左/右角色由下方joints与motor_ids逐槽配对；不得从数组下标猜轮位。
+# 维护入口与默认S0的实机验收分别记录，当前不得自动启用。
 
 [robot]
 id             = "xlerobot_bus2_full"
-config_version = "0.2.0-task15-stage2"
+config_version = "0.2.0-s0-mixed-raw"
 
 [[hardware]]
 id          = "right_arm_full_with_base"
 adapter     = "feetech_sts3215"
+auto_enable = false
+# 仅已测FW3.10/Phase12的raw 0/+500；连接只读核对，不改电机参数。
+feetech_bus2_mixed_raw = true
 address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
 joints      = [
     "right_arm_shoulder_pan",

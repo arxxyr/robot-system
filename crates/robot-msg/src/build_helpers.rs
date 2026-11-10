@@ -169,9 +169,42 @@ pub fn build_joint_command(
             priority,
             source_task_id,
             on_timeout,
+            raw_velocities: None,
         },
     );
     fbb.finish(cmd, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 构造显式位置/raw 速度混合命令；两个向量均沿 `JointLayout` 配置槽位。
+/// `target` 只承载位置 rad，轮槽必须为零；`raw_velocities` 的臂槽必须为零。
+/// 接收端负责校验配置、维度、允许的 raw 值及时间窗口；超时固定 Hold。
+#[must_use]
+pub fn build_mixed_joint_command(
+    layout_id: u64,
+    target: &[f64],
+    raw_velocities: &[i16],
+    deadline_ns: u64,
+    priority: u8,
+    source_task_id: u64,
+) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(256);
+    let target = fbb.create_vector(target);
+    let raw_velocities = fbb.create_vector(raw_velocities);
+    let command = JointCommand::create(
+        &mut fbb,
+        &JointCommandArgs {
+            layout_id,
+            mode: ControlMode::MixedPositionRawVelocity,
+            target: Some(target),
+            deadline_ns,
+            priority,
+            source_task_id,
+            on_timeout: StaleAction::Hold,
+            raw_velocities: Some(raw_velocities),
+        },
+    );
+    fbb.finish(command, None);
     fbb.finished_data().to_vec()
 }
 

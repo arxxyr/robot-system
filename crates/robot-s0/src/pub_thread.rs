@@ -43,7 +43,9 @@ use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyS
 use robot_transport::iceoryx2::Iceoryx2Publisher;
 use robot_transport::{RtSnapshotReader, traits::Publisher};
 
+use crate::io_thread::{CameraFrames, camera_frame_valid};
 use crate::state_machine::S0StateSnapshot;
+use robot_transport::error::TransportError;
 
 // ============================================================================
 // Config / Metrics / Handle
@@ -86,6 +88,9 @@ pub struct PubThreadMetrics {
     pub joint_state_errors: AtomicU64,
     pub heartbeat_published: AtomicU64,
     pub heartbeat_errors: AtomicU64,
+    pub camera_published: AtomicU64,
+    pub camera_errors: AtomicU64,
+    pub camera_dropped: AtomicU64,
     /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
     /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
     /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
@@ -103,6 +108,7 @@ pub struct IpcPublishers {
 /// 在线程内按原顺序持有发布端口与 Node；兼容测试输入不创建第二 Node。
 pub struct OwnedIpcPublishers {
     publishers: IpcPublishers,
+    camera: Option<CameraPublisher>,
     _node: Option<iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>>,
 }
 impl OwnedIpcPublishers {
@@ -113,17 +119,43 @@ impl OwnedIpcPublishers {
     ) -> Self {
         Self {
             publishers,
+            camera: None,
             _node: Some(node),
         }
+    }
+
+    /// 单路相机与原 state/heartbeat 共用本线程和同一个 Node。
+    #[must_use]
+    pub fn with_camera(
+        mut self,
+        publisher: Iceoryx2Publisher<markers::ImageHeader>,
+        frame_id: String,
+        frames: Arc<CameraFrames>,
+    ) -> Self {
+        self.camera = Some(CameraPublisher {
+            publisher,
+            frame_id,
+            frames,
+            seq: 0,
+        });
+        self
     }
 }
 impl From<IpcPublishers> for OwnedIpcPublishers {
     fn from(publishers: IpcPublishers) -> Self {
         Self {
             publishers,
+            camera: None,
             _node: None,
         }
     }
+}
+
+struct CameraPublisher {
+    publisher: Iceoryx2Publisher<markers::ImageHeader>,
+    frame_id: String,
+    frames: Arc<CameraFrames>,
+    seq: u64,
 }
 
 /// `pub_thread` 启动后返回的控制 handle。
@@ -131,11 +163,11 @@ pub struct PubThreadHandle {
     join: JoinHandle<()>,
     stop: Arc<AtomicBool>,
     metrics: Arc<PubThreadMetrics>,
-    ready: crate::ipc_thread::ReadyReader<std::convert::Infallible>,
+    ready: crate::ipc_thread::ReadyReader<TransportError>,
 }
 
 impl PubThreadHandle {
-    pub fn poll_ready(&mut self) -> crate::ipc_thread::ReadyState<'_, std::convert::Infallible> {
+    pub fn poll_ready(&mut self) -> crate::ipc_thread::ReadyState<'_, TransportError> {
         self.ready.poll()
     }
     pub fn request_stop(&self) {
@@ -192,6 +224,34 @@ where
     F: FnOnce() -> P + Send + 'static,
     P: Into<OwnedIpcPublishers>,
 {
+    spawn_pub_thread_with_camera(
+        cfg,
+        clock,
+        move || Ok(publishers_factory()),
+        rt_snap_rdr,
+        state_rdr,
+        rt_ctrl,
+        diag,
+        stop,
+    )
+}
+
+/// 相机发布端也在线程 factory 内创建；其创建错误经原 Ready 通道拒绝启动。
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_pub_thread_with_camera<F, P>(
+    cfg: PubThreadConfig,
+    clock: Arc<dyn RobotClock>,
+    publishers_factory: F,
+    rt_snap_rdr: RtSnapshotReader<RtSnapshot>,
+    state_rdr: RtSnapshotReader<S0StateSnapshot>,
+    rt_ctrl: Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    diag: Option<Arc<crate::diag::SerialDiagRing>>,
+    stop: Arc<AtomicBool>,
+) -> std::io::Result<PubThreadHandle>
+where
+    F: FnOnce() -> Result<P, TransportError> + Send + 'static,
+    P: Into<OwnedIpcPublishers>,
+{
     #[cfg(feature = "test-comm-fault-hook")]
     crate::comm_fault_hook::before_spawn("pub")?;
     let metrics = Arc::new(PubThreadMetrics::default());
@@ -205,13 +265,20 @@ where
     let join = thread::Builder::new()
         .name("s0_pub_thread".into())
         .spawn(move || {
-            let mut pubs: OwnedIpcPublishers = publishers_factory().into();
+            let mut pubs: OwnedIpcPublishers = match publishers_factory() {
+                Ok(publishers) => publishers.into(),
+                Err(error) => {
+                    let _ = ready_tx.try_send(Err(error));
+                    return;
+                }
+            };
             let _ = ready_tx.try_send(Ok(()));
             drop(ready_tx);
             run_loop(
                 &cfg,
                 clock.as_ref(),
                 &mut pubs.publishers,
+                pubs.camera.as_mut(),
                 &rt_snap_rdr,
                 &state_rdr,
                 &rt_ctrl,
@@ -238,6 +305,7 @@ fn run_loop(
     cfg: &PubThreadConfig,
     clock: &dyn RobotClock,
     pubs: &mut IpcPublishers,
+    mut camera: Option<&mut CameraPublisher>,
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
     rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
@@ -287,9 +355,88 @@ fn run_loop(
             last_hb_ns = now;
         }
 
+        // 最多消费一张最新图像；绝不等待采集，state/heartbeat 总是优先。
+        if let Some(camera) = camera.as_deref_mut() {
+            publish_camera_frame(camera, cfg.s0_source_id, clock, metrics);
+        }
+
         metrics.tick_count.fetch_add(1, Ordering::Relaxed);
         thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
     }
+}
+
+fn publish_camera_frame(
+    camera: &mut CameraPublisher,
+    source_id: u32,
+    clock: &dyn RobotClock,
+    metrics: &PubThreadMetrics,
+) {
+    let Some(frame) = camera.frames.try_take() else {
+        return;
+    };
+    if !camera_frame_valid(&frame, clock.now().0) || !camera.frames.is_active() {
+        metrics.camera_dropped.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
+    let body = build_camera_header(&frame, &camera.frame_id);
+    let size = 1024 + body.len() + frame.data.len();
+    let result = camera.publisher.loan(size).and_then(|mut sample| {
+        sample.set_seq(camera.seq);
+        sample.set_source_id(source_id);
+        sample.set_stamp_ns(frame.stamp_ns);
+        sample.set_body_bytes(&body);
+        sample.set_blob_bytes(&frame.data);
+        sample.publish()
+    });
+    match result {
+        Ok(()) => {
+            camera.seq = camera.seq.wrapping_add(1);
+            metrics.camera_published.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(_) => {
+            metrics.camera_errors.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+fn build_camera_header(frame: &crate::camera::CameraFrame, frame_id: &str) -> Vec<u8> {
+    use robot_msg::msg::{
+        BlobDesc, BlobDescArgs, BlobLayout, Compression, Dtype, Endian, ImageHeader,
+        ImageHeaderArgs,
+    };
+    let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(256);
+    let shape = builder.create_vector(&[frame.height, frame.width, 3]);
+    let blob = BlobDesc::create(
+        &mut builder,
+        &BlobDescArgs {
+            size: u64::try_from(frame.data.len()).expect("相机帧长度已受16MiB上限校验"),
+            alignment: 1,
+            dtype: Dtype::U8,
+            shape: Some(shape),
+            layout: BlobLayout::HWC,
+            endian: Endian::Little,
+            compression: Compression::None_,
+            ..BlobDescArgs::default()
+        },
+    );
+    let encoding = builder.create_string("bgr8");
+    let order = builder.create_string("BGR");
+    let frame_id = builder.create_string(frame_id);
+    let header = ImageHeader::create(
+        &mut builder,
+        &ImageHeaderArgs {
+            blob: Some(blob),
+            width: frame.width,
+            height: frame.height,
+            encoding: Some(encoding),
+            step: frame.step,
+            color_order: Some(order),
+            stamp_ns: frame.stamp_ns,
+            frame_id: Some(frame_id),
+        },
+    );
+    builder.finish(header, None);
+    builder.finished_data().to_vec()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -677,6 +824,7 @@ mod tests {
     struct Topics {
         state: String,
         heartbeat: String,
+        camera: String,
     }
 
     fn fresh_topics() -> Topics {
@@ -685,17 +833,32 @@ mod tests {
         Topics {
             state: format!("{base}/state"),
             heartbeat: format!("{base}/hb"),
+            camera: format!("{base}/camera"),
         }
     }
 
     struct Observers {
         joint_state: Iceoryx2Subscriber<markers::JointState>,
         heartbeat: Iceoryx2Subscriber<markers::Heartbeat>,
+        camera: Option<Iceoryx2Subscriber<markers::ImageHeader>>,
         _node: iceoryx2::prelude::Node<IxService>,
     }
 
     #[allow(clippy::type_complexity)]
     fn bring_up() -> (
+        PubThreadHandle,
+        RtSnapshotPublisher<RtSnapshot>,
+        RtSnapshotPublisher<S0StateSnapshot>,
+        Observers,
+        Arc<crate::hard_rt_ctrl::HardRtCtrlInner>,
+    ) {
+        bring_up_with_camera(None)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn bring_up_with_camera(
+        camera: Option<Arc<CameraFrames>>,
+    ) -> (
         PubThreadHandle,
         RtSnapshotPublisher<RtSnapshot>,
         RtSnapshotPublisher<S0StateSnapshot>,
@@ -710,6 +873,9 @@ mod tests {
         let hb_sub =
             make_sub::<markers::Heartbeat>(&sub_node, &topics.heartbeat, TopicClass::Heartbeat)
                 .unwrap();
+        let camera_sub = camera.as_ref().map(|_| {
+            make_sub::<markers::ImageHeader>(&sub_node, &topics.camera, TopicClass::Sensor).unwrap()
+        });
 
         let (rt_pub, rt_rdr) = RtSnapshotPublisher::<RtSnapshot>::new(RtSnapshot::default());
         let (state_pub, state_rdr) =
@@ -732,13 +898,23 @@ mod tests {
             let heartbeat =
                 make_pub::<markers::Heartbeat>(&pub_node, &hb_topic, TopicClass::Heartbeat)
                     .unwrap();
-            OwnedIpcPublishers::new(
+            let image_pub = camera.as_ref().map(|_| {
+                make_pub::<markers::ImageHeader>(&pub_node, &topics.camera, TopicClass::Sensor)
+                    .unwrap()
+            });
+            let owned = OwnedIpcPublishers::new(
                 IpcPublishers {
                     joint_state,
                     heartbeat,
                 },
                 pub_node,
-            )
+            );
+            match (image_pub, camera) {
+                (Some(image_pub), Some(frames)) => {
+                    owned.with_camera(image_pub, "test_camera".into(), frames)
+                }
+                _ => owned,
+            }
         };
 
         // task-30 v9 / M7 阶段 5：默认共享 ctrl，safety_state = TorqueUnknown。
@@ -771,6 +947,7 @@ mod tests {
             Observers {
                 joint_state: js_sub,
                 heartbeat: hb_sub,
+                camera: camera_sub,
                 _node: sub_node,
             },
             rt_ctrl,
@@ -797,6 +974,251 @@ mod tests {
         panic!("drain_latest timed out after {max:?}");
     }
 
+    fn camera_test_frame(stamp_ns: u64) -> crate::camera::CameraFrame {
+        crate::camera::CameraFrame {
+            width: 2,
+            height: 1,
+            step: 6,
+            stamp_ns,
+            data: vec![1, 2, 3, 4, 5, 6],
+        }
+    }
+
+    #[test]
+    fn camera_frame_reaches_real_sensor_pubsub_with_original_stamp_and_bgr_blob() {
+        let frames = Arc::new(CameraFrames::default());
+        let (handle, _rt, _state, mut observers, _ctrl) =
+            bring_up_with_camera(Some(Arc::clone(&frames)));
+        let stamp = SystemClock.now().0;
+        frames.replace(camera_test_frame(stamp));
+        let lease = drain_latest(observers.camera.as_mut().unwrap(), Duration::from_secs(2));
+        let view = lease.view().unwrap();
+        let image: robot_msg::msg::ImageHeader = view.body.get();
+        assert_eq!(view.header.stamp_ns(), stamp);
+        assert_eq!(image.stamp_ns(), stamp);
+        assert_eq!((image.width(), image.height(), image.step()), (2, 1, 6));
+        assert_eq!(image.encoding(), Some("bgr8"));
+        assert_eq!(image.color_order(), Some("BGR"));
+        assert_eq!(image.frame_id(), Some("test_camera"));
+        assert_eq!(
+            image
+                .blob()
+                .unwrap()
+                .shape()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(view.blob.unwrap().bytes(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(handle.metrics().camera_published.load(Ordering::Relaxed), 1);
+        handle.request_stop();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn camera_stale_or_invalidated_frame_is_not_published() {
+        let topic = fresh_topics().camera;
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut subscriber =
+            make_sub::<markers::ImageHeader>(&node, &topic, TopicClass::Sensor).unwrap();
+        let publisher =
+            make_pub::<markers::ImageHeader>(&node, &topic, TopicClass::Sensor).unwrap();
+        let frames = Arc::new(CameraFrames::default());
+        let mut camera = CameraPublisher {
+            publisher,
+            frame_id: "test_camera".into(),
+            frames: Arc::clone(&frames),
+            seq: 0,
+        };
+        let metrics = PubThreadMetrics::default();
+        let clock = MockClock::new(MonoRawNs(crate::io_thread::CAMERA_MAX_AGE_NS + 1));
+        frames.replace(camera_test_frame(0));
+        publish_camera_frame(&mut camera, 1, &clock, &metrics);
+        assert_eq!(metrics.camera_dropped.load(Ordering::Relaxed), 1);
+        frames.replace(camera_test_frame(100));
+        frames.clear();
+        clock.set(MonoRawNs(100));
+        publish_camera_frame(&mut camera, 1, &clock, &metrics);
+        assert_eq!(metrics.camera_published.load(Ordering::Relaxed), 0);
+        assert!(subscriber.latest().unwrap().is_none());
+    }
+
+    struct FrameTakenClock {
+        frames: Arc<CameraFrames>,
+        clock: MockClock,
+    }
+
+    impl RobotClock for FrameTakenClock {
+        fn now(&self) -> MonoRawNs {
+            assert!(
+                self.frames.try_take().is_none(),
+                "图像验证须先取帧再读取当前时钟"
+            );
+            self.clock.now()
+        }
+        fn sleep_until(&self, deadline: robot_core::time::Deadline) {
+            self.clock.sleep_until(deadline);
+        }
+        fn sleep_for(&self, duration: robot_core::time::DurationNs) {
+            self.clock.sleep_for(duration);
+        }
+    }
+
+    #[test]
+    fn camera_publish_uses_clock_after_take_when_frame_arrives_after_state_tick_time() {
+        let topic = fresh_topics().camera;
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut subscriber =
+            make_sub::<markers::ImageHeader>(&node, &topic, TopicClass::Sensor).unwrap();
+        assert!(subscriber.latest().unwrap().is_none());
+        let publisher =
+            make_pub::<markers::ImageHeader>(&node, &topic, TopicClass::Sensor).unwrap();
+        publisher.update_connections().unwrap();
+        let frames = Arc::new(CameraFrames::default());
+        let clock = FrameTakenClock {
+            frames: Arc::clone(&frames),
+            clock: MockClock::new(MonoRawNs(100)),
+        };
+        let state_tick_ns = clock.now().0;
+        clock.clock.set(MonoRawNs(101));
+        let frame = camera_test_frame(101);
+        assert!(!camera_frame_valid(&frame, state_tick_ns));
+        frames.replace(frame);
+        let mut camera = CameraPublisher {
+            publisher,
+            frame_id: "test_camera".into(),
+            frames,
+            seq: 0,
+        };
+        let metrics = PubThreadMetrics::default();
+        publish_camera_frame(&mut camera, 1, &clock, &metrics);
+        let lease = drain_latest(&mut subscriber, Duration::from_secs(2));
+        let view = lease.view().unwrap();
+        let image: robot_msg::msg::ImageHeader = view.body.get();
+        assert_eq!(image.stamp_ns(), 101);
+        assert_eq!(view.header.stamp_ns(), 101);
+        assert_eq!(metrics.camera_published.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.camera_dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn camera_publisher_factory_error_rejects_ready_without_panicking() {
+        use crate::ipc_thread::ReadyState;
+        let (original, _rt, _state, _observers, ctrl) = bring_up();
+        let (_, rt_reader) = RtSnapshotPublisher::new(RtSnapshot::default());
+        let (_, state_reader) = RtSnapshotPublisher::new(S0StateSnapshot::default());
+        let mut handle = spawn_pub_thread_with_camera(
+            PubThreadConfig::default(),
+            Arc::new(SystemClock),
+            || Err::<IpcPublishers, _>(TransportError::Backend("模拟相机publisher创建失败".into())),
+            rt_reader,
+            state_reader,
+            ctrl,
+            None,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            handle.is_finished()
+        }));
+        assert!(
+            matches!(handle.poll_ready(), ReadyState::Failed(TransportError::Backend(message)) if message == "模拟相机publisher创建失败")
+        );
+        handle.join().unwrap();
+        original.request_stop();
+        original.join().unwrap();
+    }
+
+    struct BlockingCamera {
+        entered: Option<std::sync::mpsc::SyncSender<()>>,
+        release: std::sync::mpsc::Receiver<()>,
+        stopped: Arc<AtomicBool>,
+    }
+
+    impl robot_core::adapter::SensorAdapter for BlockingCamera {
+        type Frame = crate::camera::CameraFrame;
+        fn start(&mut self) -> Result<(), robot_core::error::RobotError> {
+            Ok(())
+        }
+        fn poll_frame(
+            &mut self,
+            _deadline: robot_core::time::Deadline,
+        ) -> Result<Option<Self::Frame>, robot_core::error::RobotError> {
+            if let Some(entered) = self.entered.take() {
+                entered.send(()).unwrap();
+                // 仅故障隔离夹具故意阻塞；生产 adapter 始终非阻塞。
+                thread::sleep(Duration::from_millis(100));
+                self.release.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            Ok(None)
+        }
+        fn stop(&mut self) -> Result<(), robot_core::error::RobotError> {
+            self.stopped.store(true, Ordering::Release);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn blocked_camera_io_does_not_block_pub_state_or_heartbeat() {
+        let frames = Arc::new(CameraFrames::default());
+        let (publisher, _rt, _state, _observers, _ctrl) =
+            bring_up_with_camera(Some(Arc::clone(&frames)));
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || publisher
+                .metrics()
+                .heartbeat_published
+                .load(Ordering::Relaxed)
+                > 0
+        ));
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let stopped = Arc::new(AtomicBool::new(false));
+        let camera = BlockingCamera {
+            entered: Some(entered_tx),
+            release: release_rx,
+            stopped: Arc::clone(&stopped),
+        };
+        let io = crate::io_thread::spawn_io_thread_with_camera(
+            crate::io_thread::IoThreadConfig::default(),
+            Arc::new(SystemClock),
+            Arc::new(AtomicBool::new(false)),
+            Some(Box::new(camera)),
+            frames,
+        )
+        .unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let heartbeat = publisher
+            .metrics()
+            .heartbeat_published
+            .load(Ordering::Relaxed);
+        let state = publisher
+            .metrics()
+            .joint_state_published
+            .load(Ordering::Relaxed);
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || publisher
+                .metrics()
+                .heartbeat_published
+                .load(Ordering::Relaxed)
+                > heartbeat
+                && publisher
+                    .metrics()
+                    .joint_state_published
+                    .load(Ordering::Relaxed)
+                    > state
+        ));
+        assert_eq!(io.metrics().tick_count.load(Ordering::Relaxed), 0);
+        release_tx.send(()).unwrap();
+        io.request_stop();
+        io.join().unwrap();
+        assert!(stopped.load(Ordering::Acquire));
+        publisher.request_stop();
+        publisher.join().unwrap();
+    }
+
     #[test]
     fn spawn_then_stop_cleanly() {
         let (handle, _rt_pub, _state_pub, _observers, _rt_ctrl) = bring_up();
@@ -819,6 +1241,9 @@ mod tests {
         jsb.positions[0] = 0.1;
         jsb.positions[1] = 0.2;
         jsb.positions[2] = 0.3;
+        // 未标定速度和未测量力矩必须经过快照及真实发布仍为不可用，不能变成0。
+        jsb.velocities[1] = f32::NAN;
+        jsb.torques[1] = f32::NAN;
         let snap = RtSnapshot {
             state: jsb,
             tick_seq: 99,
@@ -836,6 +1261,8 @@ mod tests {
         assert!((positions[0] - 0.1).abs() < 1e-3);
         assert!((positions[1] - 0.2).abs() < 1e-3);
         assert!((positions[2] - 0.3).abs() < 1e-3);
+        assert!(fb.velocity_rps().unwrap().get(1).is_nan());
+        assert!(fb.effort_nm().unwrap().get(1).is_nan());
 
         handle.request_stop();
         handle.join().unwrap();

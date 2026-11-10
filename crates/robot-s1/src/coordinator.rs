@@ -48,7 +48,7 @@ use core::time::Duration;
 
 use flatbuffers::root;
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
-use robot_msg::build_helpers::{build_heartbeat, build_joint_command};
+use robot_msg::build_helpers::{build_heartbeat, build_joint_command, build_mixed_joint_command};
 use robot_msg::markers;
 use robot_msg::msg::{ControlMode, JointState as FbJointState, StaleAction};
 use robot_transport::error::TransportError;
@@ -333,6 +333,9 @@ pub struct HardwareSection {
     /// `joints` 按 config 顺序一一对应。**必填无 default**——缺失 = TOML
     /// parse 错误（S1 config 错误族 exit 3）。
     pub motor_ids: Vec<u8>,
+    /// 与 S0 从同一 TOML 读取；混合总线保活只保持臂位置，三轮 raw 恒为零。
+    #[serde(default)]
+    pub feetech_bus2_mixed_raw: bool,
 }
 
 /// `[[hardware]]` 段的 wrapper（同一 TOML 可有多个 hardware section）。
@@ -400,6 +403,15 @@ pub fn parse_hardware_section_from_toml(
         }
         seen_ids[usize::from(motor_id)] = true;
     }
+    if section.feetech_bus2_mixed_raw
+        && (section.id != "right_arm_full_with_base"
+            || section.joints.len() != 9
+            || !(1..=9).all(|id| seen_ids[id]))
+    {
+        return Err(ConfigError::Toml(
+            "混合总线需要完整右臂九槽及 ID1..9".into(),
+        ));
+    }
     Ok(section)
 }
 
@@ -465,6 +477,36 @@ pub fn build_hold_command(
         deadline_ns,
         cfg.priority,
         cfg.on_timeout,
+        source_task_id,
+    )
+}
+
+/// 按同份硬件配置构造保活/位置命令；混合模式只允许臂位置，三轮均停止。
+/// 输入仍是完整配置槽位的位置向量；轮位置被清零，绝不解释为 raw 速度。
+#[must_use]
+pub fn build_hardware_hold_command(
+    cfg: &CoordinatorConfig,
+    hardware: &HardwareSection,
+    layout_id: u64,
+    positions: &[f64],
+    source_task_id: u64,
+    now_ns: u64,
+) -> Vec<u8> {
+    if !hardware.feetech_bus2_mixed_raw {
+        return build_hold_command(cfg, layout_id, positions, source_task_id, now_ns);
+    }
+    let mut arm_positions = positions.to_vec();
+    for (target, &motor_id) in arm_positions.iter_mut().zip(&hardware.motor_ids) {
+        if motor_id >= 7 {
+            *target = 0.0;
+        }
+    }
+    build_mixed_joint_command(
+        layout_id,
+        &arm_positions,
+        &[0; 9],
+        now_ns.saturating_add(cfg.deadline_offset_ns()),
+        cfg.priority,
         source_task_id,
     )
 }
@@ -1003,7 +1045,6 @@ where
     C: RobotClock,
 {
     let cfg = coordinator.config();
-    let layout_id = coordinator.layout_id();
     let bias = coordinator.anchor_bias();
     let loop_metrics = coordinator.loop_metrics();
 
@@ -1077,7 +1118,7 @@ where
                     // bit-equivalent to B1 path（reviewer 阻断 4 锁定的
                     // "no-active-action 路径必须等价 B1"仍成立）。
                     let target = coordinator.idle_hold_target();
-                    let body = build_hold_command(cfg, layout_id, &target, state.cmd_seq, now_ns);
+                    let body = coordinator.hold_command(&target, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
                         &body,
@@ -1090,7 +1131,7 @@ where
                 CoordinatorState::Degraded { .. } => {
                     // Degraded hold cmd：target = 启动 anchor_bias，**不**
                     // 解锁（D3 行为矩阵末行；Idle 与 Degraded 自此分源）。
-                    let body = build_hold_command(cfg, layout_id, bias, state.cmd_seq, now_ns);
+                    let body = coordinator.hold_command(bias, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
                         &body,
@@ -1249,6 +1290,9 @@ pub enum ProfileError {
          s1_daemon constructs the solver (Q-IK10b (i))"
     )]
     MissingSolver { backend: String },
+    /// 混合总线尚未适配的 backend 在启动期拒绝，不能发回旧 Position wire。
+    #[error("混合总线尚不支持 backend {backend:?}")]
+    UnsupportedMixedBackend { backend: String },
 }
 
 /// 顶层 wrapper：daemon `--config` 文件内含 `[s1.profile]` 子段；
@@ -1362,6 +1406,13 @@ pub fn validate_profile_section(
     for name in &profile.backends {
         if !registry.has(name) {
             return Err(ProfileError::UnknownBackend { name: name.clone() });
+        }
+        if hardware.feetech_bus2_mixed_raw
+            && !matches!(name.as_str(), "hold_pose" | "scripted" | "mock_dwell")
+        {
+            return Err(ProfileError::UnsupportedMixedBackend {
+                backend: name.clone(),
+            });
         }
     }
     if profile.command_mode != "joint_position" {
@@ -1760,6 +1811,17 @@ impl Coordinator {
     #[must_use]
     pub fn idle_hold_target(&self) -> Vec<f64> {
         self.lock_inner().idle_hold_target.clone()
+    }
+
+    fn hold_command(&self, positions: &[f64], seq: u64, now_ns: u64) -> Vec<u8> {
+        build_hardware_hold_command(
+            &self.config,
+            &self.hardware,
+            self.layout_id,
+            positions,
+            seq,
+            now_ns,
+        )
     }
 
     /// 借用本 coordinator 的 [`CoordinatorConfig`]（构造期固化，不再变）。
@@ -2372,6 +2434,67 @@ hold_strategy      = "anchor"
 
     // ----- build_hold_command -----
 
+    fn mixed_test_hardware() -> HardwareSection {
+        let text = include_str!("../../../configs/xlerobot_bus2_full.toml")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("feetech_bus2_mixed_raw"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .replace(
+                "[[hardware]]",
+                "[[hardware]]\nfeetech_bus2_mixed_raw = true",
+            );
+        parse_hardware_section_from_toml(&text, "right_arm_full_with_base").unwrap()
+    }
+
+    #[test]
+    fn mixed_hardware_flag_defaults_false_and_requires_full_bus() {
+        let text = "[[hardware]]\nid='arm'\njoints=['j']\nmotor_ids=[1]";
+        let hardware = parse_hardware_section_from_toml(text, "arm").unwrap();
+        assert!(!hardware.feetech_bus2_mixed_raw);
+        assert!(mixed_test_hardware().feetech_bus2_mixed_raw);
+        let invalid = "[[hardware]]\nid='right_arm_full_with_base'\njoints=['j']\nmotor_ids=[1]\nfeetech_bus2_mixed_raw=true";
+        assert!(parse_hardware_section_from_toml(invalid, "right_arm_full_with_base").is_err());
+    }
+
+    #[test]
+    fn mixed_hardware_hold_zeroes_wheel_targets_without_reinterpreting_them_as_raw() {
+        let mut hardware = mixed_test_hardware();
+        hardware.joints.reverse();
+        hardware.motor_ids.reverse();
+        let positions: Vec<_> = hardware
+            .motor_ids
+            .iter()
+            .map(|&id| if id <= 6 { f64::from(id) / 10.0 } else { 500.0 })
+            .collect();
+        let cfg = CoordinatorConfig {
+            on_timeout: StaleAction::Zero,
+            ..CoordinatorConfig::default()
+        };
+        let bytes = build_hardware_hold_command(&cfg, &hardware, 0xCAFE, &positions, 42, 100);
+        let command = root::<FbJointCommand>(&bytes).unwrap();
+        assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+        assert_eq!(command.on_timeout(), StaleAction::Hold);
+        assert_eq!(command.target().unwrap().len(), 9);
+        assert_eq!(
+            command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+            [0; 9]
+        );
+        for (slot, &id) in hardware.motor_ids.iter().enumerate() {
+            assert_eq!(
+                command.target().unwrap().get(slot),
+                if id <= 6 { positions[slot] } else { 0.0 }
+            );
+        }
+        assert_eq!(command.source_task_id(), 42);
+        assert_eq!(command.deadline_ns(), 500_000_100);
+        hardware.feetech_bus2_mixed_raw = false;
+        assert_eq!(
+            build_hardware_hold_command(&cfg, &hardware, 0xCAFE, &positions, 42, 100),
+            build_hold_command(&cfg, 0xCAFE, &positions, 42, 100),
+        );
+    }
+
     #[test]
     fn build_hold_command_field_alignment() {
         let cfg = CoordinatorConfig::default();
@@ -2957,6 +3080,19 @@ joints  = ["j0"]
     }
 
     static PROFILE_STUB_MOCK: ProfileTestBackend = ProfileTestBackend { name: "mock_dwell" };
+
+    #[test]
+    fn mixed_profile_rejects_unadapted_backend_at_startup() {
+        static IK: ProfileTestBackend = ProfileTestBackend { name: "ik" };
+        let registry = BackendRegistry::from_explicit(&[&IK]);
+        let profile = ProfileSection {
+            backends: vec!["ik".into()],
+            command_mode: "joint_position".into(),
+        };
+        assert!(
+            matches!(validate_profile_section(&profile, &registry, &mixed_test_hardware(), 9), Err(ProfileError::UnsupportedMixedBackend { backend }) if backend == "ik")
+        );
+    }
     static PROFILE_STUB_OTHER: ProfileTestBackend = ProfileTestBackend { name: "other" };
 
     fn registry_with_mock_dwell() -> BackendRegistry {
@@ -2975,6 +3111,7 @@ joints  = ["j0"]
             id: "test_arm".into(),
             joints: (0..joint_count).map(|i| format!("j{i}")).collect(),
             motor_ids: (1..=u8::try_from(joint_count).expect("test joint_count fits u8")).collect(),
+            feetech_bus2_mixed_raw: false,
         }
     }
 
@@ -3463,6 +3600,7 @@ backends = 42
             id: "test_arm".into(),
             joints: vec!["j0".into()],
             motor_ids: vec![1],
+            feetech_bus2_mixed_raw: false,
         };
         let registry =
             BackendRegistry::from_explicit(&[&SCRIPTED_BACKEND as &'static dyn ActionBackend]);
@@ -4186,6 +4324,7 @@ backends = 42
                     id: "arm".into(),
                     joints: vec!["j0".into(), "j1".into()],
                     motor_ids: vec![1, 2],
+                    feetech_bus2_mixed_raw: false,
                 },
                 LAYOUT,
                 ANCHOR.to_vec(),

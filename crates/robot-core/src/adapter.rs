@@ -20,6 +20,19 @@
 //! 各 adapter crate 自己喂（Part 1 只 mock，不需要 inventory）。
 
 use crate::error::RobotError;
+use crate::time::Deadline;
+
+/// 只读传感器生命周期；采集仅在普通优先级的 `s0_io_thread` 执行。
+///
+/// `Frame` 的所有权由实现声明，不要求沿用执行器的定长 POD 快照。
+/// 没有新帧时返回 `Ok(None)`；不得用旧帧冒充新的采集结果。
+pub trait SensorAdapter: Send {
+    type Frame;
+
+    fn start(&mut self) -> Result<(), RobotError>;
+    fn poll_frame(&mut self, deadline: Deadline) -> Result<Option<Self::Frame>, RobotError>;
+    fn stop(&mut self) -> Result<(), RobotError>;
+}
 
 // ============================================================================
 // 分类枚举
@@ -91,7 +104,7 @@ pub struct AdapterInfo {
 /// 未经证据的纳秒断言）。
 pub const MAX_JOINTS: usize = 32;
 
-/// S0 内部的写入范围/混合目标标记；跨进程命令仍为 `All`，不改变 wire schema。
+/// S0 内部的写入范围/混合目标标记；普通wire命令为 `All`，显式混合命令依配置解码。
 /// 掩码按 adapter 的配置槽位排列，不直接以电机 ID 作位号。
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum JointSelection {

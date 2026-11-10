@@ -2,6 +2,7 @@
 
 #![cfg(all(target_os = "linux", feature = "test-comm-fault-hook"))]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -25,6 +26,56 @@ const HELPER_STOP_BITMAP: u64 = (1 << WorkerKind::ClearEStopRr as u8)
     | (1 << WorkerKind::Pub as u8)
     | (1 << WorkerKind::Io as u8);
 
+#[derive(Clone, Copy)]
+enum CameraFixture {
+    Frames,
+    Eof,
+    NoFrames,
+}
+
+impl CameraFixture {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Frames => "frames",
+            Self::Eof => "eof",
+            Self::NoFrames => "no-frames",
+        }
+    }
+}
+
+// 仅标准库协议夹具；由真实 OpenCvCameraAdapter 启动，不导入 cv2 或打开设备。
+const CAMERA_HELPER: &str = r"
+import os
+from pathlib import Path
+import signal
+import struct
+import sys
+import time
+
+directory = Path(__file__).parent
+mode = Path(sys.argv[sys.argv.index('--device') + 1]).name
+
+def stop(_signum, _frame):
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, stop)
+try:
+    (directory / 'camera-pid').write_text(str(os.getpid()))
+    if mode == 'eof':
+        raise SystemExit(0)
+    while mode == 'no-frames' or not (directory / 'camera-go').exists():
+        time.sleep(0.01)
+    while True:
+        stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+        if not (directory / 'camera-first-frame').exists():
+            (directory / 'camera-first-frame').write_text(str(stamp))
+        sys.stdout.buffer.write(struct.pack('<4sIIIQ', b'RCAM', 2, 1, 6, stamp) + bytes([1, 2, 3, 4, 5, 6]))
+        sys.stdout.buffer.flush()
+        time.sleep(0.05)
+finally:
+    (directory / 'camera-stopped').write_text('stopped')
+";
+
 struct Process {
     child: Child,
     page: ObservationPage,
@@ -44,13 +95,25 @@ impl Process {
         fail: Option<&str>,
         ipc_exit_before_enable: bool,
     ) -> Self {
-        Self::spawn_inner(joints, extra, pause, fail, ipc_exit_before_enable, &[])
+        Self::spawn_inner(
+            joints,
+            extra,
+            pause,
+            fail,
+            ipc_exit_before_enable,
+            &[],
+            None,
+        )
     }
 
     /// S48 A3b：standalone（显式移除 `WATCHDOG_USEC` / `NOTIFY_SOCKET`）并注入
     /// 额外 `ROBOT_TEST_*` 环境变量，用于快照版本耗尽回归。
     fn spawn_standalone_with_env(joints: usize, envs: &[(&str, String)]) -> Self {
-        Self::spawn_inner(joints, &[], None, None, false, envs)
+        Self::spawn_inner(joints, &[], None, None, false, envs, None)
+    }
+
+    fn spawn_with_camera(camera: CameraFixture) -> Self {
+        Self::spawn_inner(6, &[], None, None, false, &[], Some(camera))
     }
 
     fn spawn_inner(
@@ -60,6 +123,7 @@ impl Process {
         fail: Option<&str>,
         ipc_exit_before_enable: bool,
         envs: &[(&str, String)],
+        camera: Option<CameraFixture>,
     ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let robot_id = format!(
@@ -75,6 +139,24 @@ impl Process {
             let contents = std::fs::read_to_string(&config)
                 .unwrap()
                 .replace("auto_enable=false", "auto_enable=true");
+            std::fs::write(&config, contents).unwrap();
+        }
+        if let Some(camera) = camera {
+            let python = PathBuf::from("/usr/bin/python3");
+            assert!(python.is_file(), "相机协议夹具需要固定 /usr/bin/python3");
+            let helper = directory.path().join("camera_fixture.py");
+            let device = directory.path().join(camera.name());
+            std::fs::write(&helper, CAMERA_HELPER).unwrap();
+            let mut contents = std::fs::read_to_string(&config).unwrap();
+            // TOML Value 的格式化保留字符串引号和转义，不能改成路径 Display。
+            let device = toml::Value::String(device.to_str().unwrap().to_owned());
+            let python = toml::Value::String(python.to_str().unwrap().to_owned());
+            let helper = toml::Value::String(helper.to_str().unwrap().to_owned());
+            write!(
+                contents,
+                "\n[camera]\nhardware_id=\"arm\"\nid=\"fixture_camera\"\ndevice={device}\npython={python}\nhelper={helper}\nwidth=2\nheight=1\nfps=20\n"
+            )
+            .unwrap();
             std::fs::write(&config, contents).unwrap();
         }
         let latch = directory.path().join("latch");
@@ -133,6 +215,44 @@ impl Process {
 
     fn log_path(&self) -> PathBuf {
         self.directory.as_ref().unwrap().path().join("s0.log")
+    }
+
+    fn camera_file(&self, name: &str) -> PathBuf {
+        self.directory.as_ref().unwrap().path().join(name)
+    }
+
+    fn wait_camera_started(&mut self) {
+        let deadline = SystemClock.now().0 + 5_000_000_000;
+        while !self.camera_file("camera-pid").is_file() {
+            assert!(
+                self.child.try_wait().unwrap().is_none(),
+                "相机 helper 启动前 daemon 退出：{}",
+                self.log()
+            );
+            assert!(
+                SystemClock.now().0 < deadline,
+                "等待相机 helper 超时：{}",
+                self.log()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn assert_camera_reaped(&self) {
+        assert!(
+            self.camera_file("camera-stopped").is_file(),
+            "相机 helper 必须走正常停止 finally：{}",
+            self.log()
+        );
+        let pid: u32 = std::fs::read_to_string(self.camera_file("camera-pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            !PathBuf::from(format!("/proc/{pid}")).exists(),
+            "相机 helper {pid} 尚未回收：{}",
+            self.log()
+        );
     }
 
     fn log(&self) -> String {
@@ -288,6 +408,82 @@ fn initialization_and_all_eight_workers_gate_first_bus_io() {
         assert_eq!(observed.fired_checkpoint, 0);
         process.stop();
     }
+}
+
+#[test]
+fn configured_camera_commits_ready_only_after_a_real_helper_frame() {
+    let mut process = Process::spawn_with_camera(CameraFixture::Frames);
+    process.wait_camera_started();
+    let before = process.page.snapshot();
+    assert!(
+        !before.ready_reached,
+        "尚未放行首帧，不能 READY：{before:?}"
+    );
+    assert_eq!(before.ready_ns, 0);
+    std::fs::write(process.camera_file("camera-go"), b"go").unwrap();
+    let ready = process.wait_ready(5000);
+    let frame_ns: u64 = std::fs::read_to_string(process.camera_file("camera-first-frame"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(frame_ns >= ready.spawned_ns);
+    assert!(
+        ready.ready_ns >= frame_ns,
+        "首帧必须早于真实 READY：frame={frame_ns} {ready:?}"
+    );
+    process.stop();
+    let stopped = process.page.snapshot();
+    assert_eq!(stopped.stop_bitmap, 0xff);
+    assert_eq!(stopped.residual_bitmap, 0);
+    assert_eq!(stopped.exit_residual_bitmap, 0);
+    process.assert_camera_reaped();
+}
+
+#[test]
+fn camera_helper_eof_before_first_frame_exits_without_ready_and_reaps() {
+    let mut process = Process::spawn_with_camera(CameraFixture::Eof);
+    assert_eq!(process.wait_exit(5000), 1);
+    let observed = process.page.snapshot();
+    assert_initialized(&observed);
+    assert!(!observed.ready_reached);
+    assert_eq!(observed.ready_ns, 0);
+    assert_eq!(observed.runtime_armed_ns, 0);
+    assert_eq!(observed.stop_bitmap, 0xff);
+    assert_eq!(observed.exit_residual_bitmap, 0);
+    assert!(
+        process.log().contains("相机首帧初始化失败，拒绝READY"),
+        "{}",
+        process.log()
+    );
+    process.assert_camera_reaped();
+}
+
+#[test]
+fn camera_without_frames_exits_at_original_startup_deadline_without_ready_and_reaps() {
+    let mut process = Process::spawn_with_camera(CameraFixture::NoFrames);
+    process.wait_camera_started();
+    let timeout_ms = (absolute_boot_budget(6).0 + SHUTDOWN_MARGIN.0) / 1_000_000;
+    assert_eq!(process.wait_exit(timeout_ms), 1);
+    let observed = process.page.snapshot();
+    assert_initialized(&observed);
+    assert!(!observed.ready_reached);
+    assert_eq!(observed.ready_ns, 0);
+    assert_eq!(observed.runtime_armed_ns, 0);
+    assert_eq!(observed.stop_bitmap, 0xff);
+    assert_eq!(observed.exit_residual_bitmap, 0);
+    assert_eq!(observed.fired_checkpoint, 0);
+    let elapsed = observed.before_process_exit_ns - observed.main_start_ns;
+    assert!(
+        (absolute_boot_budget(6).0..=absolute_boot_budget(6).0 + SHUTDOWN_MARGIN.0)
+            .contains(&elapsed),
+        "无首帧必须沿原启动截止退出，不能提前或重启预算：{observed:?}"
+    );
+    assert!(
+        process.log().contains("启动物理/ACK 截止失败"),
+        "{}",
+        process.log()
+    );
+    process.assert_camera_reaped();
 }
 
 #[test]

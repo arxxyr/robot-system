@@ -68,7 +68,7 @@ impl std::fmt::Debug for AdapterBuildServices {
 
 /// 启动期 build adapter 的最小上下文。
 ///
-/// 字段都是借用，调用方负责生命周期。`AdapterFactory::build` 不持有 context
+/// 字符串与切片字段均为借用，调用方负责生命周期。`AdapterFactory::build` 不持有 context
 /// 引用 —— 仅在调用栈上读 + 拷出需要的字段。
 ///
 /// **字段扩展规则**：每加一个字段都要保证旧 factory 忽略不读不破坏；新 factory
@@ -106,6 +106,9 @@ pub struct AdapterBuildContext<'a> {
     /// 各位置关节的校准边界容差（raw），与 `joint_names` 同序；空切片表示全0。
     /// 仅用于软件校准边界，不改变电机参数、动作到位精度或速度判据。
     pub calibration_range_tolerances_raw: &'a [u16],
+    /// 显式启用右总线六臂 Position＋三轮0/+500 raw合同；false保留全Position。
+    /// 仅 `feetech_sts3215` 消费，不赋予运行权限或修改电机参数。
+    pub feetech_bus2_mixed_raw: bool,
 }
 
 /// adapter 工厂 trait。每个 adapter crate 实现 + 用 `inventory::submit!` 注册一个
@@ -296,6 +299,7 @@ mod tests {
             motor_ids: &[],
             calibration_paths: &[],
             calibration_range_tolerances_raw: &[],
+            feetech_bus2_mixed_raw: false,
         };
         let adapter = f.build(&ctx).unwrap();
         assert_eq!(adapter.info().name, "stub_adapter");
@@ -332,6 +336,7 @@ mod tests {
             motor_ids: &ids,
             calibration_paths: &cal_paths,
             calibration_range_tolerances_raw: &[0, 20],
+            feetech_bus2_mixed_raw: true,
         };
         assert_eq!(ctx.instance_name, "left_arm");
         assert_eq!(ctx.adapter_kind, "robot_core_test_stub");
@@ -341,5 +346,6 @@ mod tests {
         assert_eq!(ctx.calibration_paths.len(), 2);
         assert_eq!(ctx.calibration_paths[0], "/tmp/left_arm.json");
         assert_eq!(ctx.calibration_range_tolerances_raw, &[0, 20]);
+        assert!(ctx.feetech_bus2_mixed_raw);
     }
 }

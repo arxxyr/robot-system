@@ -2,18 +2,18 @@
 
 更新：2026-11-10（UTC）。本页集中记录当前边界与下一步；架构以 [冻结设计](00_design.md) 为准，过往轮次从 [历史索引](handoffs/README.md) 按需查阅。
 
-执行器契约、总线内分组和 raw 混合目标已有软件实现；默认混合入口与相机采集尚未接通，不能称全身 HAL 已完成。**D15 `OPEN/DEFERRED`，`deployable=false`。**
+执行器默认混合接线和单路相机软件实现已完成；头部 D435i 彩色流的真实 S0 采集/发布/退出已通过；两条执行器总线的默认 S0 实机验收尚待完成，不能称全身 HAL 已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
 
 ## 完成边界
 
 | 部分 | 已有能力 | 未完成或限制 |
 |---|---|---|
-| 执行器契约 | `ManipulatorAdapter` 的连接、命令、状态、模式、启停和限位；`SerialRtAdapter` 停止读回 | `BaseAdapter`、`SensorAdapter` 仍是设计契约；RPC、CLI、上层聚合不属本轮 HAL |
-| 总线内分组 | 左臂1–6＋头7/8的 Position 分组；右臂1–6位置＋三轮 raw 速度混合目标 | 17电机由两个 daemon 各管一条总线；各自唯一串口所有者、SerialRT writer、命令流、控制权和停止域，无独立组会话 |
-| 混合接线 | 显式维护入口复用真实 FeetechAdapter | 默认 factory/wire 未接混合，wire 仍为 `JointSelection::All`；未标定速度、未测量力矩不提供 SI 值 |
-| 软件链路 | 内存串口已覆盖命令槽→真实 SerialRT worker→SerialTick→FeetechAdapter→快照，以及保持、全九停止与退出 | 内存测试不证明真实调度或默认入口；另已完成下述受监督前轮混合维护实机验收 |
-| 发布与观测 | `RtSnapshot`→`JointState`/`Heartbeat`；观测桥只读 | Pub 无相机接线；画面不等于物理动作或安全确认 |
-| 相机 | `ImageHeader + blob` 消息、传输与观测测试基础已有 | SoftRT IO 仍为空轮询；缺 `SensorAdapter` 实现、采集、帧资源所有权及发布接线；图像保留独立帧接口，不阻塞执行器 |
+| 执行器契约 | 既有 `ManipulatorAdapter`/`SerialRtAdapter` 的连接、命令、状态、启停、限位和停止读回 | 底盘沿同总线的显式 raw 速度槽；尚无标定后的 SI 速度合同，不另建 `BaseAdapter` 实现 |
+| 总线内分组 | 左臂1–6＋头7/8 Position 分组；右臂1–6位置＋三轮 raw 速度 | 17电机由两个 daemon 各管一条总线；各自保留唯一串口所有者、命令流、控制权和停止域 |
+| 混合接线 | TOML 显式选择原 raw factory；新增混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 内存串口验证 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；默认 S0 非零轮动实机尚未验收 |
+| 状态反馈 | `JointState`/`Heartbeat` 保留；混合实例未标定速度、未测力矩为 NaN，不把 raw/占位0当SI量 | 内部寄存器原值仍用于诊断和停止；NaN 不作为静止证据 |
+| 相机契约 | `SensorAdapter`＋独立拥有像素的 BGR 帧；现有 SoftRT 线程接收、Pub 发布 `ImageHeader + blob` | 先接头部 D435i 的单路 RGB；深度、IMU、腕部相机及多相机同步未接入 |
+| 相机生命周期 | 首个合法新帧后就绪；帧间超时清帧并回收，发布不等待采集；退出和父死回收已软件验证 | 帧时间为采集读取完成时刻，非硬件曝光时刻；真实采集结果单独记录，不宣称全链零拷贝 |
 
 ## 轮位与阻塞
 
@@ -29,13 +29,15 @@
 
 2026-11-10 使用容差配置完成六右臂原位保持＋前轮ID8 `+500/20秒`：400周期，零速反馈450→0→0，原位、断扭、17电机停止及身份检查均通过，现场确认前轮持续转动、右臂保持原位、结束后三轮全部停止。此次受监督维护路径通过，不代替关节往返精度、默认S0入口或整车联动验收。此前同日左9混合测试的反馈与停止通过，但用户未观察，仍为 `NOT_OBSERVED`；未重复左轮。两次原帧分别保存在 `.verify/mixed_front_2026-11-10/hardware/`、`.verify/mixed_tolerance_preparation_2026-11-10/hardware/` 及 Orin 对应目录，历史失败不回写。
 
+本轮软件验证：Orin 共967个不同 Rust 测试方法、9项 Python 测试通过，fmt→根目录/真实硬件特性 Clippy 通过；首次筛选未命中的4项混合工作线程测试已按实际模块名补跑。首次相机因 Python 启动钩子向二进制流打印SDK版本而拒绝就绪，已用隔离启动修正并实机复验；失败原件保留。源码尚未安装到正式控制服务。
+
 ## 实机合同与近期顺序
 
 raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无 SI 换算，不放行名义 profile。三轮停止快照14读要求首末 TE/GV0、PV仅0/±50、1秒五组 PP 跨度≤1且包含快照位置，总预算1.5秒，原字保留。20秒动作、21秒启用上限、500毫秒零速观察及各阶段原判据不放宽，不向其他电机或未批准阶段推广。TE1零速前两组沿原0..1000及−50观察，末组只接受0/±50；SDK初始/断扭后仅±50同连接触发一次新14读，0沿原路径，断扭后保留原1秒观察，不续GO/21秒预算，失败不重试。见[SDK停止复核合同](../.verify/sdk_wheel_stop_stability_2026-10-22_r1/summary.json)。
 
-1. 逐电机校准边界容差及混合选轮的软件验证已完成；前轮混合维护路径的实际动作与停止已通过。本轮收尾后不追加动作。
-2. 下一步按实际授权接默认 S0 入口并独立验收，保留总线唯一所有者、原时效、失败粘性及停止规则；不能用本次维护工具通过替代默认链路验收。
-3. 随后沿 SoftRT 与 `ImageHeader + blob` 接单条相机流，验证采集、发布、退出、不阻塞执行器及连续采集。
+1. 前轮混合维护的实际动作与停止已通过；本轮已接默认 factory/wire 和 S1 的混合保持路径，两份实机配置均显式 `auto_enable=false`。
+2. 头部相机实时 USB 型号为 **D435i**，序列号 `043323051347`；RGB 对应配置中的稳定 by-path（当前枚举 `/dev/video8`），采集目标为640×480、15 FPS。真实输出 FPS/帧龄须由订阅端测量，驱动报告值不代替发布实测。
+3. 真实 D435i＋模拟执行器的 S0 已连续收到145帧（约10秒，14.47 FPS），最大帧龄20.86毫秒、心跳最大间隔21.93毫秒；画面已检查，daemon/订阅器退出码均0，相机设备释放。FPS不是收尾门槛，不继续调优。该结果不替代真实执行器并行测试。下一步只准备默认 S0 的执行器实机验收。现有20秒维护入口直接调用 adapter，不能仅替换二进制冒充 daemon 验收；非零混合命令仍缺受原监管约束的发送入口。准备完成后再通知动作、确认现场，不复用此前 GO。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
@@ -47,4 +49,5 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 - 混合与停止：[维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[工作线程离线验证](../.verify/s0_hal_worker_2026-11-03/summary.json)、[历史混合失败](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)、[历史反馈与目视矛盾](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)。后续结果不回写旧失败或未知归因。
 - 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。
+- 本轮软件与相机证据：`.verify/s0_body_hal_2026-11-10/`，Orin `/home/loosqk/robot-checks/s0-body-hal-20261110/`；原失败日志保留。
 - 线程与图像：[SerialRT](../crates/robot-s0/src/serial_io_thread.rs)、[驱动夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)、[SoftRT IO](../crates/robot-s0/src/io_thread.rs)、[发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。

@@ -54,6 +54,9 @@ pub struct RobotConfigToml {
     pub hardware: Vec<HardwareSection>,
     #[serde(default)]
     pub sensor: Vec<SensorSection>,
+    /// 单个明确绑定硬件实例的相机流；省略时保持原无相机行为。
+    #[serde(default)]
+    pub camera: Option<CameraSection>,
     /// `[monitor]` 段（task-31 B'b 加）：系统健康采样配置。缺省时 `s0_daemon`
     /// 跑默认值（5 s 间隔 / `top_n=5` / 空 `interested_processes`）。
     #[serde(default)]
@@ -65,6 +68,69 @@ pub struct RobotConfigToml {
 pub struct RobotSection {
     pub id: String,
     pub config_version: String,
+}
+
+/// 单路 `OpenCV` 相机配置；独立解释器及 helper 路径明确，不借用 shell 环境。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CameraSection {
+    pub hardware_id: String,
+    pub id: String,
+    pub device: PathBuf,
+    pub python: PathBuf,
+    pub helper: PathBuf,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+}
+
+impl CameraSection {
+    #[must_use]
+    pub fn camera_config(&self) -> crate::camera::CameraConfig {
+        crate::camera::CameraConfig {
+            id: self.id.clone(),
+            device: self.device.clone(),
+            python: self.python.clone(),
+            helper: self.helper.clone(),
+            width: self.width,
+            height: self.height,
+            fps: self.fps,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CameraSectionError {
+    #[error("[camera] hardware_id={id} 没有匹配的硬件实例")]
+    UnknownHardwareId { id: String },
+    #[error("[camera] 配置无效：{0}")]
+    InvalidConfig(robot_core::error::RobotError),
+}
+
+pub fn validate_camera_section(cfg: &RobotConfigToml) -> Result<(), CameraSectionError> {
+    let Some(camera) = &cfg.camera else {
+        return Ok(());
+    };
+    if resolve_hardware_section(cfg, &camera.hardware_id).is_none() {
+        return Err(CameraSectionError::UnknownHardwareId {
+            id: camera.hardware_id.clone(),
+        });
+    }
+    camera
+        .camera_config()
+        .validate()
+        .map_err(CameraSectionError::InvalidConfig)
+}
+
+/// 仅匹配的 S0 硬件实例拥有相机；其他实例不会打开同一设备。
+#[must_use]
+pub fn resolve_camera_section<'a>(
+    cfg: &'a RobotConfigToml,
+    hardware_id: &str,
+) -> Option<&'a CameraSection> {
+    cfg.camera
+        .as_ref()
+        .filter(|camera| camera.hardware_id == hardware_id)
 }
 
 /// `[[hardware]]` 段：v0.2 通用字段；hardware-specific 字段（`baud` /
@@ -88,6 +154,9 @@ pub struct HardwareSection {
     /// 与 `joints/motor_ids` 同序的校准边界容差（raw）；省略为全0。
     #[serde(default)]
     pub calibration_range_tolerances_raw: Option<Vec<u16>>,
+    /// 显式启用右总线六臂位置＋三轮0/+500 raw合同；省略保持旧Position路径。
+    #[serde(default)]
+    pub feetech_bus2_mixed_raw: bool,
     /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
     /// 不再走 extras）。`None`（缺省）= **true**（保留 `s0_daemon` 既有无条件启动
     /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
@@ -139,6 +208,10 @@ pub enum HardwareSectionError {
     DupMotorId { id: String, motor_id: u8 },
     #[error("[[hardware]] id={id}: 校准边界容差须与 joints 等长且每项在0..=4095")]
     InvalidCalibrationTolerances { id: String },
+    #[error("[[hardware]] id={id}: feetech_bus2_mixed_raw仅适用于feetech_sts3215")]
+    MixedRawRequiresFeetech { id: String },
+    #[error("[[hardware]] id={id}: 位置/raw混合模式需要完整、匹配的右总线布局")]
+    InvalidMixedBus2Layout { id: String },
 }
 
 impl HardwareSectionError {
@@ -165,6 +238,9 @@ impl ConfigLoadError {
 ///
 /// 见 [`HardwareSectionError`] 五 variant。
 pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSectionError> {
+    if hw.feetech_bus2_mixed_raw && hw.adapter != "feetech_sts3215" {
+        return Err(HardwareSectionError::MixedRawRequiresFeetech { id: hw.id.clone() });
+    }
     if hw.joints.len() > robot_core::adapter::MAX_JOINTS {
         return Err(HardwareSectionError::TooManyJoints {
             actual: hw.joints.len(),
@@ -207,6 +283,10 @@ pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSec
             });
         }
         seen_ids[usize::from(motor_id)] = true;
+    }
+    if hw.feetech_bus2_mixed_raw {
+        crate::grouped_position::XleRobotBus2Layout::from_hardware(hw)
+            .map_err(|_| HardwareSectionError::InvalidMixedBus2Layout { id: hw.id.clone() })?;
     }
     Ok(())
 }
@@ -305,6 +385,12 @@ pub enum ConfigLoadError {
         #[source]
         source: toml::de::Error,
     },
+    #[error("相机配置无效 ({path}): {source}")]
+    Camera {
+        path: PathBuf,
+        #[source]
+        source: CameraSectionError,
+    },
 }
 
 // ============================================================================
@@ -336,6 +422,10 @@ pub fn load_robot_config(path: &Path) -> Result<LoadedConfig, ConfigLoadError> {
             path: path.to_path_buf(),
             source,
         })?;
+    validate_camera_section(&parsed).map_err(|source| ConfigLoadError::Camera {
+        path: path.to_path_buf(),
+        source,
+    })?;
 
     let identity = compute_v02_partial_identity(&raw_bytes, &parsed.robot);
 
@@ -396,6 +486,54 @@ streams = ["color", "depth"]
         let mut f = tempfile::NamedTempFile::new().unwrap();
         f.write_all(toml.as_bytes()).unwrap();
         f
+    }
+
+    const CAMERA_TOML: &str = r#"
+[camera]
+hardware_id = "left_arm"
+id = "head_cam"
+device = "/dev/v4l/by-id/test-camera"
+python = "/opt/robot-camera/bin/python"
+helper = "/opt/robot/scripts/camera_capture.py"
+width = 640
+height = 480
+fps = 30
+"#;
+
+    #[test]
+    fn camera_section_is_optional_and_bound_to_one_hardware_instance() {
+        let baseline = load_robot_config(write_temp(SAMPLE_TOML).path()).unwrap();
+        assert!(baseline.parsed.camera.is_none());
+        let configured =
+            load_robot_config(write_temp(&format!("{SAMPLE_TOML}\n{CAMERA_TOML}")).path()).unwrap();
+        let camera = resolve_camera_section(&configured.parsed, "left_arm").unwrap();
+        assert_eq!(camera.camera_config().id, "head_cam");
+        assert_eq!(camera.camera_config().width, 640);
+        assert!(resolve_camera_section(&configured.parsed, "base").is_none());
+        let encoded = toml::to_string(&configured.parsed).unwrap();
+        let decoded: RobotConfigToml = toml::from_str(&encoded).unwrap();
+        assert_eq!(decoded.camera, configured.parsed.camera);
+    }
+
+    #[test]
+    fn camera_configuration_is_rejected_before_any_worker_starts() {
+        for (before, after) in [
+            ("hardware_id = \"left_arm\"", "hardware_id = \"missing\""),
+            ("width = 640", "width = 0"),
+            ("height = 480", "height = 4294967295"),
+            ("fps = 30", "fps = 0"),
+            ("/opt/robot-camera/bin/python", "relative-python"),
+            ("id = \"head_cam\"", "id = \"bad/camera\""),
+        ] {
+            let text = format!("{SAMPLE_TOML}\n{}", CAMERA_TOML.replace(before, after));
+            assert!(
+                matches!(
+                    load_robot_config(write_temp(&text).path()),
+                    Err(ConfigLoadError::Camera { .. })
+                ),
+                "未拒绝 {after}"
+            );
+        }
     }
 
     #[test]
@@ -605,6 +743,54 @@ streams = ["color", "depth"]
         assert_eq!(cfg.parsed.hardware[0].motor_ids, vec![1, 2, 3]);
         assert_eq!(cfg.parsed.hardware[1].motor_ids, vec![7, 8, 9]);
         assert!(!cfg.parsed.hardware[0].extras.contains_key("motor_ids"));
+    }
+
+    #[test]
+    fn mixed_raw_is_explicit_typed_and_preserves_default_position() {
+        let hw = valid_hw();
+        assert!(!hw.feetech_bus2_mixed_raw);
+        let mut config: RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+        let mut enabled = config.hardware.remove(0);
+        enabled.feetech_bus2_mixed_raw = true;
+        validate_hardware_section(&enabled).unwrap();
+        let text = toml::to_string(&enabled).unwrap();
+        let decoded: HardwareSection = toml::from_str(&text).unwrap();
+        assert!(decoded.feetech_bus2_mixed_raw);
+        assert!(!decoded.extras.contains_key("feetech_bus2_mixed_raw"));
+        for invalid in ["1", "\"true\"", "[]", "{}"] {
+            let malformed = text.replace(
+                "feetech_bus2_mixed_raw = true",
+                &format!("feetech_bus2_mixed_raw = {invalid}"),
+            );
+            assert!(toml::from_str::<HardwareSection>(&malformed).is_err());
+        }
+        enabled.adapter = hw.adapter;
+        assert!(matches!(
+            validate_hardware_section(&enabled),
+            Err(HardwareSectionError::MixedRawRequiresFeetech { .. })
+        ));
+    }
+
+    #[test]
+    fn mixed_raw_rejects_wrong_instance_and_layout_before_factory() {
+        let mut config: RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+        let mut hardware = config.hardware.remove(0);
+        hardware.feetech_bus2_mixed_raw = true;
+        validate_hardware_section(&hardware).unwrap();
+        for invalid in ["instance", "joint", "id"] {
+            let mut altered = hardware.clone();
+            match invalid {
+                "instance" => altered.id = "wrong".into(),
+                "joint" => altered.joints[0] = "wrong".into(),
+                _ => altered.motor_ids[0] = 10,
+            }
+            assert!(matches!(
+                validate_hardware_section(&altered),
+                Err(HardwareSectionError::InvalidMixedBus2Layout { .. })
+            ));
+        }
     }
 
     #[test]

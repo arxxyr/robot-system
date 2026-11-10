@@ -115,6 +115,8 @@ use crate::action::{
     ActionBackend, ActionCancelError, ActionContext, ActionFailure, ActionInstance, ActionKind,
     ActionOutcome, ActionRequest, ActionStartError, ActionTickOutput, JointCommandBody,
 };
+use crate::coordinator::build_hardware_hold_command;
+#[cfg(test)]
 use crate::coordinator::build_hold_command;
 use robot_msg::msg::ScriptedPayload as FbScriptedPayload;
 use robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD;
@@ -500,8 +502,9 @@ impl ActionInstance for ScriptedInstance {
 
         // (4) build_hold_command 复用（B3 §3.7 source_task_id 单调契约：
         // source_task_id == ctx.command_seq，**不**用私有 counter）。
-        let body = build_hold_command(
+        let body = build_hardware_hold_command(
             ctx.config,
+            ctx.hardware,
             ctx.layout_id,
             &self.tick_buf,
             /* source_task_id */ ctx.command_seq,
@@ -571,8 +574,9 @@ impl ScriptedInstance {
             self.final_published = true;
             self.phase = Phase::FinalEmitted;
             self.phase_started = true;
-            let body = build_hold_command(
+            let body = build_hardware_hold_command(
                 ctx.config,
+                ctx.hardware,
                 ctx.layout_id,
                 &self.tick_buf,
                 /* source_task_id */ ctx.command_seq,
@@ -592,8 +596,9 @@ impl ScriptedInstance {
         // 构 hold cmd：本 tick target = 上一 waypoint 的终点（也是
         // 下一段的 from），保 cmd 输出连续不跳变。tick_buf 已在
         // 调用者那侧填好（上一 waypoint.positions），直接用。
-        let body = build_hold_command(
+        let body = build_hardware_hold_command(
             ctx.config,
+            ctx.hardware,
             ctx.layout_id,
             &self.tick_buf,
             /* source_task_id */ ctx.command_seq,
@@ -689,6 +694,7 @@ mod tests {
             id: "test_arm".into(),
             joints: vec!["j0".into(), "j1".into(), "j2".into()],
             motor_ids: vec![1, 2, 3],
+            feetech_bus2_mixed_raw: false,
         }
     }
 
@@ -740,6 +746,73 @@ mod tests {
     }
 
     // ----- 1. name() -----
+
+    #[test]
+    fn mixed_scripted_all_emission_phases_keep_wheel_raw_zero() {
+        let mut hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot_bus2_full.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        hardware.feetech_bus2_mixed_raw = true;
+        hardware.joints.reverse();
+        hardware.motor_ids.reverse();
+        let waypoint: Vec<_> = hardware
+            .motor_ids
+            .iter()
+            .map(|&id| if id <= 6 { 0.5 } else { 500.0 })
+            .collect();
+        let req = ActionRequest {
+            action_id: ActionId::new_v7(),
+            kind: ActionKind::Scripted,
+            deadline_ns: u64::MAX,
+            priority: 10,
+            payload_schema_id: SCHEMA_SCRIPTED_PAYLOAD,
+            payload: build_scripted_payload_bytes(&[
+                (waypoint.clone(), 0, 100),
+                (waypoint, 0, 100),
+            ]),
+            idempotency_key: "mixed-scripted".into(),
+            source: ActionSource::Internal,
+        };
+        let anchor = [0.0; 9];
+        let clock = MockClock::new(MonoRawNs(1_000_000_000));
+        let cfg = CoordinatorConfig::default();
+        let mut ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor,
+            command_seq: 0,
+            scripted_start_pose: Some(&anchor),
+            solver: None,
+        };
+        let mut instance = ScriptedBackend.start(&req, &ctx).unwrap();
+        for (seq, elapsed_ms) in [0_u64, 50, 100, 150, 200].into_iter().enumerate() {
+            clock.set(MonoRawNs(1_000_000_000 + elapsed_ms * 1_000_000));
+            ctx.command_seq = u64::try_from(seq).unwrap();
+            let ActionTickOutput::Continue {
+                command: Some(body),
+                ..
+            } = instance.tick(&mut ctx).unwrap()
+            else {
+                panic!("需要插值/段界/末帧命令")
+            };
+            let command = root::<FbJointCommand>(body.as_bytes()).unwrap();
+            assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+            assert_eq!(
+                command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+                [0; 9]
+            );
+            for (slot, id) in hardware.motor_ids.iter().enumerate() {
+                if *id >= 7 {
+                    assert_eq!(command.target().unwrap().get(slot), 0.0);
+                }
+            }
+            assert_eq!(command.source_task_id(), ctx.command_seq);
+        }
+    }
 
     #[test]
     fn name_is_scripted() {

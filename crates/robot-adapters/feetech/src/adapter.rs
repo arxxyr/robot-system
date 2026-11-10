@@ -49,6 +49,8 @@ use diagnostic::FeetechDiagnostic;
 #[path = "mixed_bus.rs"]
 mod mixed_bus;
 use mixed_bus::MixedBus2;
+#[cfg(feature = "real-hw")]
+pub(crate) use mixed_bus::{raw_profiles_for_config, validate_raw_mixed_calibrations};
 
 // ============================================================================
 // dimos `_manipulator_base.py::write_enable(True)` 序列的常量
@@ -697,10 +699,16 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
         let n = self.joint_ids.len();
         for i in 0..n {
             out.positions[i] = raw_to_rad(self.pos_raw[i]);
-            // velocity raw 单位是 0.01 rev/s 还是 RPM 取决于固件 setting；v0.2 直接
-            // 透传 raw 到 f32，等 task 28 实测用示波器 / known 命令对照定单位换算。
-            out.velocities[i] = self.vel_raw[i] as f32;
-            out.torques[i] = 0.0; // STS3215 无 torque sensor
+            if self.mixed_bus2.is_some() {
+                // 混合实例尚未标定SI速度，且没有力矩传感；不能发布raw或伪零。
+                // 原始寄存器缓冲仍保留，停止确认和诊断继续使用各自的真实读回。
+                out.velocities[i] = f32::NAN;
+                out.torques[i] = f32::NAN;
+            } else {
+                // 旧位置实例保留历史反馈行为，本次不扩大修改范围。
+                out.velocities[i] = self.vel_raw[i] as f32;
+                out.torques[i] = 0.0;
+            }
         }
         out.joint_count = self.joint_count;
         // stamp_ns 由调用方填（trait 文档约定：adapter 不持时钟）

@@ -125,6 +125,15 @@ pub struct Sts3215RawWheelProfile {
 }
 
 impl Sts3215RawWheelProfile {
+    /// 构造待connect实读核对的固定预期合同，不表示已有现场观察或运行权限。
+    #[cfg(feature = "real-hw")]
+    pub(crate) fn expected(role: WheelRole, motor_id: u8) -> Result<Self, WheelProfileError> {
+        if !(7..=9).contains(&motor_id) {
+            return Err(WheelProfileError::WrongMotorId);
+        }
+        Ok(Self { role, motor_id })
+    }
+
     /// # Errors
     /// 任一现场身份不符即拒绝，不解除名义 SI profile 的 Phase 限制。
     pub fn try_bind(

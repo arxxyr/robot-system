@@ -335,6 +335,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         motor_ids: &[],
         calibration_paths: &[],
         calibration_range_tolerances_raw: &[],
+        feetech_bus2_mixed_raw: false,
     };
     // **关键**：调 build_serial_rt 而不是 build / build_hard_rt。
     let adapter = factory
@@ -412,6 +413,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         // 段(3)：本 e2e 不发 command 帧（cmd_pub 仅保持 publisher 存活，
         // 驱动全走 heartbeat/estop）——值仅满足必填字段，沿测试惯例。
         authoritative_layout: 0xCAFE_0001,
+        mixed_bus2_layout: None,
     };
     let topics_for_ipc = topics.clone();
     let ipc_factory = move || {
@@ -674,6 +676,7 @@ fn test_serial_rt_dispatch_chooses_serial_factory() {
         motor_ids: &[],
         calibration_paths: &[],
         calibration_range_tolerances_raw: &[],
+        feetech_bus2_mixed_raw: false,
     };
 
     // 1) build_hard_rt 必须返 Unsupported（factory 不 override）

@@ -1,4 +1,4 @@
-//! 显式右总线混合布局；不注册 factory、不改默认配置、不执行模式写入。
+//! 显式右总线混合布局；由配置选择既有factory分支，不执行电机模式写入。
 
 use super::{FeetechAdapter, FeetechAdapterConfig, effective_calibration_range_raw};
 use crate::bus::FeetechBus;
@@ -125,6 +125,46 @@ impl MixedBus2 {
     }
 }
 
+/// 只按配置关节角色取ID；随后仍由connect核对型号、模式、TE、固件及Phase。
+#[cfg(feature = "real-hw")]
+pub(crate) fn raw_profiles_for_config(
+    names: &[String],
+    ids: &[u8],
+) -> Result<[Sts3215RawWheelProfile; 3], RobotError> {
+    let profile = |index: usize, role| {
+        let motor_id = names
+            .iter()
+            .zip(ids)
+            .find_map(|(name, &id)| (name == JOINTS[index + 6]).then_some(id))
+            .ok_or(RobotError::InvalidParameter("混合右总线缺少轮关节"))?;
+        Sts3215RawWheelProfile::expected(role, motor_id)
+            .map_err(|_| RobotError::InvalidParameter("配置轮电机ID必须在7到9内"))
+    };
+    let profiles = [
+        profile(0, WheelRole::Front)?,
+        profile(1, WheelRole::Left)?,
+        profile(2, WheelRole::Right)?,
+    ];
+    MixedBus2::bind(names, ids, Profiles::ObservedRaw(profiles))?;
+    Ok(profiles)
+}
+
+/// factory在打开串口前复用；原显式构造仍独立校验同一前提。
+pub(crate) fn validate_raw_mixed_calibrations(
+    calibrations: &[crate::types::MotorCalibration],
+) -> Result<(), RobotError> {
+    if calibrations.len() != 9
+        || calibrations.iter().any(|cal| {
+            cal.range_min > cal.range_max
+                || cal.range_max > 4095
+                || cal.homing_offset.unsigned_abs() > 2047
+        })
+    {
+        return Err(RobotError::InvalidParameter("实证raw混合总线需要完整标定"));
+    }
+    Ok(())
+}
+
 impl<T: SerialTransport> FeetechAdapter<T> {
     /// 显式软件入口；只复用一条总线连接，默认 factory 不调用。
     /// profile 顺序固定为前、左、右，电机ID取自配置；raw 目标不进行 SI 换算。
@@ -144,7 +184,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         Ok(adapter)
     }
 
-    /// 仅现场实证的0/+500合同；不提供SI速度，不注册默认factory。
+    /// 仅现场实证的0/+500合同；不提供SI速度，factory须通过显式配置选择。
     /// # Errors
     /// 完整布局、标定、逐轮角色或原构造前提不符时拒绝。
     pub fn new_bus2_mixed_raw(
@@ -152,15 +192,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         bus: FeetechBus<T>,
         profiles: [Sts3215RawWheelProfile; 3],
     ) -> Result<Self, RobotError> {
-        if config.calibrations.len() != 9
-            || config.calibrations.iter().any(|cal| {
-                cal.range_min > cal.range_max
-                    || cal.range_max > 4095
-                    || cal.homing_offset.unsigned_abs() > 2047
-            })
-        {
-            return Err(RobotError::InvalidParameter("实证raw混合总线需要完整标定"));
-        }
+        validate_raw_mixed_calibrations(&config.calibrations)?;
         let mut adapter = Self::new(config, bus).map_err(RobotError::from)?;
         adapter.mixed_bus2 = Some(MixedBus2::bind(
             &adapter.joint_names,

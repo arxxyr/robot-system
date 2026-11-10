@@ -51,13 +51,15 @@ use crate::action::{
     ActionOutcome, ActionRequest, ActionStartError, ActionTickOutput, JointCommandBody,
     NO_PAYLOAD_SCHEMA_ID,
 };
+use crate::coordinator::build_hardware_hold_command;
+#[cfg(test)]
 use crate::coordinator::build_hold_command;
 
 // ============================================================================
 // HoldPoseBackend
 // ============================================================================
 
-/// 第一个真 action backend：每 tick 用 [`build_hold_command`] 产
+/// 第一个真 action backend：每 tick 用 [`crate::coordinator::build_hold_command`] 产
 /// `target = anchor_bias` 的 hold cmd body bytes。等价 IDLE 状态的 hold
 /// loop，但走 EXECUTING 路径（B2 outline §2.2 声明 / B3 round 2 落地）。
 ///
@@ -138,8 +140,9 @@ impl ActionInstance for HoldPoseInstance {
         // **核心**（B3 round 2 阻断 1 修法）：用 ctx.command_seq 作
         // source_task_id。S0 ipc_thread 把 fb.source_task_id() 写到
         // JointCommandBuf.seq；adapter.rs 要求单调递增。
-        let body = build_hold_command(
+        let body = build_hardware_hold_command(
             ctx.config,
+            ctx.hardware,
             ctx.layout_id,
             ctx.anchor_bias,
             /* source_task_id */ ctx.command_seq,
@@ -211,6 +214,7 @@ mod tests {
             id: "test_arm".into(),
             joints: vec!["j0".into(), "j1".into(), "j2".into()],
             motor_ids: vec![1, 2, 3],
+            feetech_bus2_mixed_raw: false,
         }
     }
 
@@ -309,6 +313,52 @@ mod tests {
     }
 
     // ----- 5. **核心** bit-equivalent 字节比对（reviewer round 2 收紧） -----
+
+    #[test]
+    fn mixed_hold_pose_preserves_only_arm_position_and_stops_wheels() {
+        let mut hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot_bus2_full.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        hardware.feetech_bus2_mixed_raw = true;
+        hardware.joints.rotate_left(3);
+        hardware.motor_ids.rotate_left(3);
+        let anchor_bias = vec![0.5; 9];
+        let clock = MockClock::new(MonoRawNs(100));
+        let cfg = CoordinatorConfig::default();
+        let mut ctx = ActionContext {
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &hardware,
+            config: &cfg,
+            anchor_bias: &anchor_bias,
+            command_seq: 42,
+            scripted_start_pose: None,
+            solver: None,
+        };
+        let mut instance = HoldPoseBackend.start(&sample_request(), &ctx).unwrap();
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = instance.tick(&mut ctx).unwrap()
+        else {
+            panic!("需要hold帧")
+        };
+        let command = root::<FbJointCommand>(body.as_bytes()).unwrap();
+        assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+        assert_eq!(
+            command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+            [0; 9]
+        );
+        for (slot, id) in hardware.motor_ids.iter().enumerate() {
+            assert_eq!(
+                command.target().unwrap().get(slot),
+                if *id <= 6 { 0.5 } else { 0.0 }
+            );
+        }
+        assert_eq!(command.source_task_id(), 42);
+    }
 
     #[test]
     fn tick_returns_continue_with_some_hold_body_bytes_bit_equivalent_to_build_hold_command() {

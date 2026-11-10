@@ -569,7 +569,7 @@ impl HandleSlots {
             SlotState::Live(WorkerSlot::Publisher(handle)) => match handle.poll_ready() {
                 crate::ipc_thread::ReadyState::Pending => ReadyProbe::Pending,
                 crate::ipc_thread::ReadyState::Ready => ReadyProbe::Ready,
-                crate::ipc_thread::ReadyState::Failed(never) => match *never {},
+                crate::ipc_thread::ReadyState::Failed(error) => ReadyProbe::PublisherFailed(error),
                 crate::ipc_thread::ReadyState::Disconnected => ReadyProbe::Disconnected,
             },
             #[cfg(feature = "test-comm-fault-hook")]
@@ -628,6 +628,7 @@ pub enum ReadyProbe<'a> {
     Joined,
     NotReadyWorker,
     IpcFailed(&'a crate::ipc_thread::IpcInitError),
+    PublisherFailed(&'a robot_transport::TransportError),
     RrFailed(&'a crate::rr_server_thread::RrInitError),
     #[cfg(feature = "test-comm-fault-hook")]
     HookFailed(&'a std::io::Error),

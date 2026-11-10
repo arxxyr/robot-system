@@ -424,13 +424,8 @@ fn raw_enable_forward_hold_and_estop_use_real_serial_tick_and_all_nine() {
             raw_to_rad(i32::from(raw)).to_bits()
         );
     }
-    assert_eq!(
-        state.velocities[..9]
-            .iter()
-            .map(|v| v.to_bits())
-            .collect::<Vec<_>>(),
-        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 0.0, 0.0].map(f32::to_bits)
-    );
+    assert!(state.velocities[..9].iter().all(|v| v.is_nan()));
+    assert!(state.torques[..9].iter().all(|v| v.is_nan()));
 
     // 真实保持使用刚成功的反馈，轮速先归零，独立预算不改来源目标。
     fixture.clock.advance(DurationNs(10_000_000));
@@ -619,6 +614,51 @@ impl Drop for Worker {
     }
 }
 
+// 真实 wire → IPC → 命令槽，供同一 SerialRT 工作线程消费。
+fn publish_raw_wire_command(fixture: &Fixture, worker: &Worker) {
+    use iceoryx2::prelude::NodeBuilder;
+    use iceoryx2::service::ipc::Service as IxService;
+    use robot_msg::{build_helpers::build_mixed_joint_command, markers};
+    use robot_transport::iceoryx2::{TopicClass, publisher, subscriber};
+    use robot_transport::{LatestSubscriber, Publisher};
+
+    let node = NodeBuilder::new().create::<IxService>().unwrap();
+    let topic = format!("/mixed_worker_{}/command", std::process::id());
+    let mut receiver =
+        subscriber::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+    let mut sender =
+        publisher::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+    assert!(receiver.latest().unwrap().is_none());
+    sender.update_connections().unwrap();
+    let source = fixture.command(500);
+    let body = build_mixed_joint_command(
+        0xCAFE_9000,
+        &source.positions[..9]
+            .iter()
+            .map(|v| f64::from(*v))
+            .collect::<Vec<_>>(),
+        &source.raw_velocities[..9],
+        source.deadline_ns,
+        10,
+        source.seq,
+    );
+    let mut sample = sender.loan(1024 + body.len()).unwrap();
+    sample.set_stamp_ns(source.stamp_ns);
+    sample.set_body_bytes(&body);
+    sample.publish().unwrap();
+    let metrics = crate::ipc_thread::IpcThreadMetrics::default();
+    crate::ipc_thread::poll_command(
+        &mut receiver,
+        &worker.commands,
+        0xCAFE_9000,
+        Some(&fixture.layout),
+        fixture.clock.as_ref(),
+        &metrics,
+    );
+    assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
+    assert_eq!(metrics.command_parse_errors.load(Ordering::Relaxed), 0);
+}
+
 #[test]
 fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() {
     let mut fixture = Fixture::unstarted();
@@ -647,7 +687,7 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
     fixture.assert_consumed();
 
     client.set_policy(OutputPolicy::ActiveForward);
-    worker.commands.store(fixture.command(500));
+    publish_raw_wire_command(&fixture, &worker);
     fixture.writes(46, 2, &[8, 9, 7], &[0, 0, 500]);
     fixture.writes(42, 2, &ARMS, &ANCHOR);
     let positions = fixture.feedback(ANCHOR.map(|raw| raw + 1), 500);
@@ -661,13 +701,8 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
             .collect::<Vec<_>>(),
         positions.map(|raw| raw_to_rad(i32::from(raw)).to_bits()),
     );
-    assert_eq!(
-        moving.state.velocities[..9]
-            .iter()
-            .map(|value| value.to_bits())
-            .collect::<Vec<_>>(),
-        [0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 500.0, 0.0, 0.0].map(f32::to_bits),
-    );
+    assert!(moving.state.velocities[..9].iter().all(|v| v.is_nan()));
+    assert!(moving.state.torques[..9].iter().all(|v| v.is_nan()));
     fixture.assert_consumed();
 
     client.set_policy(OutputPolicy::HoldCurrent);
@@ -677,7 +712,7 @@ fn raw_worker_consumes_slot_publishes_feedback_and_stops_without_another_tick() 
     let holding = worker.step();
     assert_eq!(holding.state.stamp_ns, fixture.clock.now().0);
     assert!(holding.state.stamp_ns > moving.state.stamp_ns);
-    assert_eq!(holding.state.velocities[8].to_bits(), 0.0_f32.to_bits());
+    assert!(holding.state.velocities[8].is_nan());
     fixture.assert_consumed();
 
     client.safety_stop();

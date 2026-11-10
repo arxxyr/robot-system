@@ -37,6 +37,7 @@ pub use robot_adapter_feetech as _;
 // P1C 纯有界输入合同；尚未接 IPC/runtime/writer，不构成真实控制授权。
 pub mod base_ingress;
 pub mod boot_supervisor;
+pub mod camera;
 pub mod clear_coordination;
 mod clear_estop_action;
 pub mod clear_estop_transaction;

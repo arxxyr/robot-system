@@ -10,6 +10,31 @@
 
 namespace robot.msg.v0;
 
+// 混合 wire 扩展前的关节命令快照；已有枚举数值与字段顺序冻结。
+enum ControlMode : byte {
+    Position = 0,
+    Velocity = 1,
+    Torque = 2,
+    ServoPosition = 3,
+    Stop = 4,
+}
+
+enum StaleAction : byte {
+    Hold = 0,
+    Zero = 1,
+    Stop = 2,
+}
+
+table JointCommand {
+    layout_id: ulong;
+    mode: ControlMode;
+    target: [double];
+    deadline_ns: ulong;
+    priority: ubyte;
+    source_task_id: ulong;
+    on_timeout: StaleAction = Hold;
+}
+
 // 与当前 JointState 相比，缺 `frame_id`（末尾字段）。
 table JointState {
     layout_id:    ulong;

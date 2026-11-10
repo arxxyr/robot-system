@@ -109,6 +109,7 @@ fn joint_command_roundtrip() {
             priority: 200,
             source_task_id: 42,
             on_timeout: msg::StaleAction::Zero,
+            ..msg::JointCommandArgs::default()
         },
     );
     fbb.finish(jc, None);
@@ -120,6 +121,79 @@ fn joint_command_roundtrip() {
     assert_eq!(parsed.priority(), 200);
     assert_eq!(parsed.on_timeout(), msg::StaleAction::Zero);
     assert_eq!(parsed.target().unwrap().len(), 3);
+    assert!(parsed.raw_velocities().is_none());
+}
+
+#[test]
+fn mixed_joint_command_roundtrip_and_old_reader_unknown_mode_stops() {
+    let positions = [0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.0, 0.0, 0.0];
+    let raw = [0, 0, 0, 0, 0, 0, 0, 500, 0];
+    let bytes = build_helpers::build_mixed_joint_command(0xCAFE, &positions, &raw, 200, 10, 7);
+    let command = flatbuffers::root::<msg::JointCommand>(&bytes).unwrap();
+    assert_eq!(command.mode(), msg::ControlMode::MixedPositionRawVelocity);
+    assert_eq!(
+        command.target().unwrap().iter().collect::<Vec<_>>(),
+        positions
+    );
+    assert_eq!(
+        command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+        raw
+    );
+    assert_eq!(command.on_timeout(), msg::StaleAction::Hold);
+
+    let old = flatbuffers::root::<v0::JointCommand>(&bytes).unwrap();
+    assert_eq!(old.mode().0, 5);
+    // 与扩展前 S0 的未知枚举分支一致：不能按旧 Position 驱动。
+    let old_mode = match old.mode() {
+        v0::ControlMode::Position => v0::ControlMode::Position,
+        v0::ControlMode::Velocity => v0::ControlMode::Velocity,
+        v0::ControlMode::Torque => v0::ControlMode::Torque,
+        v0::ControlMode::ServoPosition => v0::ControlMode::ServoPosition,
+        _ => v0::ControlMode::Stop,
+    };
+    assert_eq!(old_mode, v0::ControlMode::Stop);
+    assert_eq!(old.layout_id(), command.layout_id());
+    assert_eq!(old.deadline_ns(), command.deadline_ns());
+}
+
+#[test]
+fn old_joint_command_writer_has_no_raw_vector_and_preserves_enum_values() {
+    for mode in [
+        v0::ControlMode::Position,
+        v0::ControlMode::Velocity,
+        v0::ControlMode::Torque,
+        v0::ControlMode::ServoPosition,
+        v0::ControlMode::Stop,
+    ] {
+        let mut builder = FlatBufferBuilder::new();
+        let target = builder.create_vector(&[0.25_f64]);
+        let old = v0::JointCommand::create(
+            &mut builder,
+            &v0::JointCommandArgs {
+                layout_id: 42,
+                mode,
+                target: Some(target),
+                deadline_ns: 200,
+                priority: 10,
+                source_task_id: 7,
+                on_timeout: v0::StaleAction::Hold,
+            },
+        );
+        builder.finish(old, None);
+        let command = flatbuffers::root::<msg::JointCommand>(builder.finished_data()).unwrap();
+        assert_eq!(command.mode().0, mode.0);
+        assert!(command.raw_velocities().is_none());
+        let current = build_helpers::build_joint_command(
+            42,
+            msg::ControlMode(mode.0),
+            &[0.25],
+            200,
+            10,
+            msg::StaleAction::Hold,
+            7,
+        );
+        assert_eq!(builder.finished_data(), current, "旧命令helper逐字节兼容");
+    }
 }
 
 #[test]

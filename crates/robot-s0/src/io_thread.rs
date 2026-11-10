@@ -1,34 +1,82 @@
-//! `s0_io_thread` —— S0 四线程模型的"`SoftRT` adapter 轮询线程"。
-//!
-//! 对应 `docs/00_design.md` §1.2：poll `SoftRT` adapter → 写 `softrt_snapshot`。
-//!
-//! ### Part 2 范围
-//!
-//! Part 2 只做**占位骨架**：100 Hz 空 loop，能 spawn / stop / join，tick 计数增长。
-//! 不接任何 adapter。
-//!
-//! Part 3+（Step 7 起）再接真 `SoftRT` adapter（RealSense / webcam / wrist IMU 等）：
-//! - 100 Hz 调 `adapter.poll_state()` 或类似接口
-//! - 写 `softrt_snapshot` seqlock（新增，类型 TBD）
-//! - 错误记 metrics，不影响 `rt_thread` 延迟
-//!
-//! ### 为什么现在要占位
-//!
-//! `s0_daemon` 在 Part 2 拉起全部 4 线程才能对称（ipc + rt + pub + io）—— 即使
-//! `io_thread` 什么都不做，它的 spawn/stop 生命周期也要存在，方便：
-//! - 测试 `s0_daemon` 的 graceful shutdown 行为
-//! - 未来接真 adapter 时只改内部 `run_loop`，不改外部接线
+//! `s0_io_thread`：在独立 `SoftRT` 线程中轮询相机，向 Pub 提供容量为一的最新帧。
+//! 相机错误只清空图像并回收采集进程；执行器与 IPC/Pub 继续独立推进。
 
 #![forbid(unused_must_use)]
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use robot_core::time::RobotClock;
+use robot_core::adapter::SensorAdapter;
+use robot_core::error::RobotError;
+use robot_core::time::{Deadline, MonoRawNs, RobotClock};
 
-/// `io_thread` 配置。
+use crate::camera::CameraFrame;
+
+pub const CAMERA_MAX_AGE_NS: u64 = 1_000_000_000;
+pub type CameraAdapter = Box<dyn SensorAdapter<Frame = CameraFrame>>;
+
+/// 跨 SoftRT/Pub 的最新帧槽；锁内只交换所有权，不复制或释放像素。
+#[derive(Debug, Default)]
+pub struct CameraFrames {
+    latest: Mutex<Option<CameraFrame>>,
+    active: AtomicBool,
+}
+
+impl CameraFrames {
+    /// 返回是否替换了尚未发布的帧；旧帧在解锁后释放。
+    pub fn replace(&self, frame: CameraFrame) -> bool {
+        let old = {
+            self.latest
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .replace(frame)
+        };
+        self.active.store(true, Ordering::Release);
+        old.is_some()
+    }
+
+    /// Pub 不等待采集锁；获取后全部像素处理在锁外完成。
+    pub fn try_take(&self) -> Option<CameraFrame> {
+        if !self.is_active() {
+            return None;
+        }
+        self.latest.try_lock().ok()?.take()
+    }
+
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.active.load(Ordering::Acquire)
+    }
+
+    /// 先使帧失效，再取走旧帧于锁外释放。
+    pub fn clear(&self) {
+        self.active.store(false, Ordering::Release);
+        let old = {
+            self.latest
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+        };
+        drop(old);
+    }
+}
+
+pub(crate) fn camera_frame_valid(frame: &CameraFrame, now_ns: u64) -> bool {
+    frame.width > 0
+        && frame.height > 0
+        && frame.width.checked_mul(3) == Some(frame.step)
+        && frame
+            .step
+            .checked_mul(frame.height)
+            .and_then(|size| usize::try_from(size).ok())
+            == Some(frame.data.len())
+        && frame.data.len() <= robot_msg::size_tier::SizeTier::SensorLarge.max_bytes() - 4096
+        && frame.stamp_ns <= now_ns
+        && now_ns - frame.stamp_ns <= CAMERA_MAX_AGE_NS
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct IoThreadConfig {
     /// poll 周期（纳秒）。默认 10 ms（100 Hz）。
@@ -38,112 +86,191 @@ pub struct IoThreadConfig {
 impl Default for IoThreadConfig {
     fn default() -> Self {
         Self {
-            poll_interval_ns: 10_000_000, // 10 ms
+            poll_interval_ns: 10_000_000,
         }
     }
 }
 
-/// 占位计数器。Part 3 接 adapter 后还会加 `read_errors` / `polls_applied` 等。
 #[derive(Debug, Default)]
 pub struct IoThreadMetrics {
     pub tick_count: AtomicU64,
-    /// **A2 freeze hook**（v0.3 / test-only，cfg-gated）：tick loop 顶端 spin
-    /// 到该单调时钟 ns 为止；0 = 不冻。详 [`crate::freeze_hook`] 模块 doc。
-    /// 仅 `cfg(any(test, feature = "test-freeze-hook"))` 编译时存在，**不进
-    /// 生产 release**。
+    /// 无相机时立即为真；有相机时仅首个合法新鲜帧可置真。
+    pub ready: AtomicBool,
+    pub startup_failed: AtomicBool,
+    pub camera_errors: AtomicU64,
+    pub frames: AtomicU64,
+    pub dropped: AtomicU64,
+    pub last_frame_ns: AtomicU64,
+    /// stop/reap 失败为粘性事实，同时由 join 的 Err 交给原回收路径。
+    pub cleanup_failed: AtomicBool,
     #[cfg(any(test, feature = "test-freeze-hook"))]
     pub freeze_until_ns: AtomicU64,
 }
 
-/// `io_thread` 启动后的 handle。
 pub struct IoThreadHandle {
-    join: JoinHandle<()>,
+    join: JoinHandle<Result<(), RobotError>>,
     stop: Arc<AtomicBool>,
     metrics: Arc<IoThreadMetrics>,
 }
 
 impl IoThreadHandle {
     pub fn request_stop(&self) {
-        self.stop.swap(true, Ordering::AcqRel);
+        self.stop.store(true, Ordering::Release);
     }
-
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.join.is_finished()
     }
-
     #[must_use]
     pub fn metrics(&self) -> &Arc<IoThreadMetrics> {
         &self.metrics
     }
 
+    /// 保留原 `WorkerSlot` 的 join 合同；相机清理错误以 `RobotError` payload 返回 Err。
     /// # Errors
-    ///
-    /// `JoinHandle::join` 的 `Err`（线程 panic）。
+    /// 线程 panic，或 stop/reap 失败（可 downcast 为 `RobotError`）。
     pub fn join(self) -> thread::Result<()> {
-        self.join.join()
+        match self.join.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(Box::new(error)),
+            Err(panic) => Err(panic),
+        }
     }
 }
 
-/// 启动 `io_thread`。Part 2 no-op 占位。
-///
-/// `clock` 仅给 [`crate::freeze_hook`] 用；Part 3 接真 adapter 后也会用它做
-/// poll deadline。Part 2 占位 loop 仍用 `thread::sleep` 走真实时间，避免
-/// 跟 [`robot_core::time::MockClock`] 测试的语义不同。
-///
-/// # Errors
-///
-/// `std::io::Error` 当 `thread::Builder::spawn` 失败。
-#[allow(clippy::needless_pass_by_value)]
+/// 保留未配置相机时的原入口。
 pub fn spawn_io_thread(
     cfg: IoThreadConfig,
     clock: Arc<dyn RobotClock>,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<IoThreadHandle> {
+    spawn_io_thread_with_camera(cfg, clock, stop, None, Arc::new(CameraFrames::default()))
+}
+
+pub fn spawn_io_thread_with_camera(
+    cfg: IoThreadConfig,
+    clock: Arc<dyn RobotClock>,
+    stop: Arc<AtomicBool>,
+    camera: Option<CameraAdapter>,
+    frames: Arc<CameraFrames>,
+) -> std::io::Result<IoThreadHandle> {
     #[cfg(feature = "test-comm-fault-hook")]
     crate::comm_fault_hook::before_spawn("io")?;
     let metrics = Arc::new(IoThreadMetrics::default());
-
     let join_stop = Arc::clone(&stop);
     let join_metrics = Arc::clone(&metrics);
-    // cfg(test) / feature 关时 clock 未被 closure 用；显式 rename 保证 Part 3
-    // 接真 adapter 后无需改 spawn 签名（clippy::needless_pass_by_value 已
-    // allow 于函数 attribute）。
-    let join_clock = clock;
-
     let join = thread::Builder::new()
         .name("s0_io_thread".into())
         .spawn(move || {
-            // cfg 关时 join_clock 进闭包后未使用；显式 forget 让 closure
-            // 拿走 ownership 但不触发 unused_variables（cfg 开时 freeze_check
-            // 真正读它）。
-            #[cfg(not(any(test, feature = "test-freeze-hook")))]
-            let _ = &join_clock;
-
-            while crate::worker_stop::worker_running(
-                crate::worker_stop::WorkerKind::Io,
-                join_clock.as_ref(),
+            run_loop(
+                cfg,
+                clock.as_ref(),
                 &join_stop,
-            ) {
-                // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
-                #[cfg(any(test, feature = "test-freeze-hook"))]
-                crate::freeze_hook::freeze_check(
-                    &join_metrics.freeze_until_ns,
-                    join_clock.as_ref(),
-                    &join_stop,
-                );
-
-                // Part 3：这里会调 adapter.poll_state() → 写 softrt_snapshot。
-                join_metrics.tick_count.fetch_add(1, Ordering::Relaxed);
-                thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
-            }
+                &join_metrics,
+                camera,
+                &frames,
+            )
         })?;
-
     Ok(IoThreadHandle {
         join,
         stop,
         metrics,
     })
+}
+
+fn stop_camera(
+    camera: &mut Option<CameraAdapter>,
+    frames: &CameraFrames,
+    metrics: &IoThreadMetrics,
+) -> Result<(), RobotError> {
+    frames.clear();
+    let Some(mut camera) = camera.take() else {
+        return Ok(());
+    };
+    let result = camera.stop();
+    if result.is_err() {
+        metrics.cleanup_failed.store(true, Ordering::Release);
+    }
+    result
+}
+
+fn camera_fault(
+    camera: &mut Option<CameraAdapter>,
+    frames: &CameraFrames,
+    metrics: &IoThreadMetrics,
+) -> Result<(), RobotError> {
+    metrics.camera_errors.fetch_add(1, Ordering::Relaxed);
+    if !metrics.ready.swap(false, Ordering::AcqRel) {
+        metrics.startup_failed.store(true, Ordering::Release);
+    }
+    stop_camera(camera, frames, metrics)
+}
+
+fn run_loop(
+    cfg: IoThreadConfig,
+    clock: &dyn RobotClock,
+    stop: &AtomicBool,
+    metrics: &IoThreadMetrics,
+    mut camera: Option<CameraAdapter>,
+    frames: &CameraFrames,
+) -> Result<(), RobotError> {
+    let mut cleanup_result = Ok(());
+    if let Some(adapter) = camera.as_mut() {
+        if let Err(error) = adapter.start() {
+            tracing::error!(?error, "相机启动失败");
+            cleanup_result = camera_fault(&mut camera, frames, metrics);
+        }
+    } else {
+        metrics.ready.store(true, Ordering::Release);
+    }
+    while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Io, clock, stop) {
+        #[cfg(any(test, feature = "test-freeze-hook"))]
+        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock, stop);
+        if let Some(adapter) = camera.as_mut() {
+            let deadline = Deadline(MonoRawNs(clock.now().0.saturating_add(1_000_000)));
+            match adapter.poll_frame(deadline) {
+                Ok(Some(frame))
+                    if camera_frame_valid(&frame, clock.now().0)
+                        && (metrics.frames.load(Ordering::Relaxed) == 0
+                            || frame.stamp_ns > metrics.last_frame_ns.load(Ordering::Relaxed)) =>
+                {
+                    metrics
+                        .last_frame_ns
+                        .store(frame.stamp_ns, Ordering::Relaxed);
+                    if frames.replace(frame) {
+                        metrics.dropped.fetch_add(1, Ordering::Relaxed);
+                    }
+                    metrics.frames.fetch_add(1, Ordering::Relaxed);
+                    metrics.ready.store(true, Ordering::Release);
+                }
+                Ok(Some(_)) => {
+                    frames.clear();
+                    metrics.dropped.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::error!(?error, "相机采集失败，停用并回收相机");
+                    cleanup_result = camera_fault(&mut camera, frames, metrics);
+                }
+            }
+        }
+        // 首帧前沿用 daemon 的原启动预算；运行后不能用旧帧维持相机就绪。
+        if camera.is_some()
+            && metrics.frames.load(Ordering::Relaxed) > 0
+            && clock
+                .now()
+                .0
+                .saturating_sub(metrics.last_frame_ns.load(Ordering::Relaxed))
+                > CAMERA_MAX_AGE_NS
+        {
+            tracing::error!("相机超过新鲜度期限未产新帧，停用并回收相机");
+            cleanup_result = camera_fault(&mut camera, frames, metrics);
+        }
+        metrics.tick_count.fetch_add(1, Ordering::Relaxed);
+        thread::sleep(Duration::from_nanos(cfg.poll_interval_ns));
+    }
+    let stopped = stop_camera(&mut camera, frames, metrics);
+    cleanup_result.and(stopped)
 }
 
 #[cfg(test)]
@@ -153,6 +280,231 @@ mod tests {
 
     fn test_clock() -> Arc<dyn RobotClock> {
         Arc::new(SystemClock::new())
+    }
+
+    fn frame(stamp_ns: u64, byte: u8) -> CameraFrame {
+        CameraFrame {
+            width: 2,
+            height: 1,
+            step: 6,
+            stamp_ns,
+            data: vec![byte; 6],
+        }
+    }
+
+    struct FakeCamera {
+        results: std::collections::VecDeque<Result<Option<CameraFrame>, RobotError>>,
+        start_failed: bool,
+        stop_failed: bool,
+        stops: Arc<AtomicU64>,
+    }
+
+    impl SensorAdapter for FakeCamera {
+        type Frame = CameraFrame;
+        fn start(&mut self) -> Result<(), RobotError> {
+            if self.start_failed {
+                Err(RobotError::HardwareFault("模拟启动失败"))
+            } else {
+                Ok(())
+            }
+        }
+        fn poll_frame(&mut self, _deadline: Deadline) -> Result<Option<CameraFrame>, RobotError> {
+            self.results.pop_front().unwrap_or(Ok(None))
+        }
+        fn stop(&mut self) -> Result<(), RobotError> {
+            self.stops.fetch_add(1, Ordering::Relaxed);
+            if self.stop_failed {
+                Err(RobotError::HardwareFault("模拟回收失败"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn camera_latest_replaces_and_clear_discards_without_blocking_reader() {
+        let frames = CameraFrames::default();
+        assert!(!frames.replace(frame(1, 1)));
+        assert!(frames.replace(frame(2, 2)));
+        let guard = frames.latest.lock().unwrap();
+        assert!(frames.try_take().is_none());
+        drop(guard);
+        assert_eq!(frames.try_take().unwrap().data, [2; 6]);
+        assert!(frames.try_take().is_none());
+        frames.replace(frame(3, 3));
+        frames.clear();
+        assert!(frames.try_take().is_none());
+        assert!(!frames.is_active());
+    }
+
+    #[test]
+    fn camera_validity_rejects_old_future_and_malformed_frames() {
+        assert!(camera_frame_valid(&frame(0, 0), CAMERA_MAX_AGE_NS));
+        assert!(!camera_frame_valid(&frame(0, 0), CAMERA_MAX_AGE_NS + 1));
+        assert!(!camera_frame_valid(&frame(2, 0), 1));
+        let mut malformed = frame(1, 0);
+        malformed.step = 5;
+        assert!(!camera_frame_valid(&malformed, 1));
+        malformed.step = 6;
+        malformed.data.pop();
+        assert!(!camera_frame_valid(&malformed, 1));
+    }
+
+    #[test]
+    fn camera_runtime_fault_clears_frame_stops_once_and_io_keeps_ticking() {
+        let clock = test_clock();
+        let stops = Arc::new(AtomicU64::new(0));
+        let camera = FakeCamera {
+            results: [
+                Ok(Some(frame(clock.now().0, 1))),
+                Err(RobotError::HardwareFault("模拟采集失败")),
+            ]
+            .into(),
+            start_failed: false,
+            stop_failed: false,
+            stops: Arc::clone(&stops),
+        };
+        let frames = Arc::new(CameraFrames::default());
+        let handle = spawn_io_thread_with_camera(
+            IoThreadConfig {
+                poll_interval_ns: 1_000_000,
+            },
+            clock,
+            Arc::new(AtomicBool::new(false)),
+            Some(Box::new(camera)),
+            Arc::clone(&frames),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || handle.metrics().camera_errors.load(Ordering::Relaxed) == 1
+        ));
+        let ticks = handle.metrics().tick_count.load(Ordering::Relaxed);
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || handle.metrics().tick_count.load(Ordering::Relaxed) > ticks
+        ));
+        assert!(!handle.metrics().startup_failed.load(Ordering::Acquire));
+        assert_eq!(handle.metrics().frames.load(Ordering::Relaxed), 1);
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+        assert!(frames.try_take().is_none());
+        handle.request_stop();
+        handle.join().unwrap();
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn camera_without_first_frame_stays_unready_and_reaps_on_stop() {
+        let stops = Arc::new(AtomicU64::new(0));
+        let camera = FakeCamera {
+            results: [].into(),
+            start_failed: false,
+            stop_failed: false,
+            stops: Arc::clone(&stops),
+        };
+        let handle = spawn_io_thread_with_camera(
+            IoThreadConfig {
+                poll_interval_ns: 1_000_000,
+            },
+            test_clock(),
+            Arc::new(AtomicBool::new(false)),
+            Some(Box::new(camera)),
+            Arc::new(CameraFrames::default()),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || handle.metrics().tick_count.load(Ordering::Relaxed) >= 2
+        ));
+        assert!(!handle.metrics().ready.load(Ordering::Acquire));
+        assert!(!handle.metrics().startup_failed.load(Ordering::Acquire));
+        handle.request_stop();
+        handle.join().unwrap();
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn camera_missing_fresh_frames_after_ready_stops_once_and_io_keeps_ticking() {
+        let clock = Arc::new(robot_core::time::MockClock::new(MonoRawNs(0)));
+        let stops = Arc::new(AtomicU64::new(0));
+        let camera = FakeCamera {
+            results: [Ok(Some(frame(0, 1)))].into(),
+            start_failed: false,
+            stop_failed: false,
+            stops: Arc::clone(&stops),
+        };
+        let frames = Arc::new(CameraFrames::default());
+        let clock_input: Arc<dyn RobotClock> = clock.clone();
+        let handle = spawn_io_thread_with_camera(
+            IoThreadConfig {
+                poll_interval_ns: 1_000_000,
+            },
+            clock_input,
+            Arc::new(AtomicBool::new(false)),
+            Some(Box::new(camera)),
+            Arc::clone(&frames),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            handle.metrics().ready.load(Ordering::Acquire)
+        }));
+        let ticks = handle.metrics().tick_count.load(Ordering::Relaxed);
+        clock.set(MonoRawNs(CAMERA_MAX_AGE_NS));
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || handle.metrics().tick_count.load(Ordering::Relaxed) > ticks
+        ));
+        assert!(handle.metrics().ready.load(Ordering::Acquire));
+        assert_eq!(stops.load(Ordering::Relaxed), 0);
+        clock.set(MonoRawNs(CAMERA_MAX_AGE_NS + 1));
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || stops.load(Ordering::Relaxed) == 1
+        ));
+        assert!(!handle.metrics().ready.load(Ordering::Acquire));
+        assert!(!handle.metrics().startup_failed.load(Ordering::Acquire));
+        assert!(frames.try_take().is_none());
+        let stopped_tick = handle.metrics().tick_count.load(Ordering::Relaxed);
+        assert!(crate::test_util::wait_until(
+            Duration::from_secs(2),
+            || handle.metrics().tick_count.load(Ordering::Relaxed) > stopped_tick
+        ));
+        assert_eq!(handle.metrics().camera_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(handle.metrics().frames.load(Ordering::Relaxed), 1);
+        handle.request_stop();
+        handle.join().unwrap();
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn camera_startup_failure_and_cleanup_error_are_visible_to_original_join() {
+        let stops = Arc::new(AtomicU64::new(0));
+        let camera = FakeCamera {
+            results: [].into(),
+            start_failed: true,
+            stop_failed: true,
+            stops: Arc::clone(&stops),
+        };
+        let handle = spawn_io_thread_with_camera(
+            IoThreadConfig::default(),
+            test_clock(),
+            Arc::new(AtomicBool::new(false)),
+            Some(Box::new(camera)),
+            Arc::new(CameraFrames::default()),
+        )
+        .unwrap();
+        assert!(crate::test_util::wait_until(Duration::from_secs(2), || {
+            handle.metrics().cleanup_failed.load(Ordering::Acquire)
+        }));
+        assert!(handle.metrics().startup_failed.load(Ordering::Acquire));
+        assert!(!handle.metrics().ready.load(Ordering::Acquire));
+        handle.request_stop();
+        let error = handle.join().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RobotError>(),
+            Some(&RobotError::HardwareFault("模拟回收失败"))
+        );
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
     }
 
     #[test]

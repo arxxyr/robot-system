@@ -17,6 +17,8 @@ enum ControlMode : byte {
     Torque = 2,
     ServoPosition = 3,
     Stop = 4,
+    // 显式区分位置 rad 与 Feetech raw 速度；旧 reader 未知模式保守 Stop。
+    MixedPositionRawVelocity = 5,
 }
 
 enum StaleAction : byte {
@@ -125,6 +127,8 @@ table JointCommand {
     priority:         ubyte;              // 0..255，大者优先（§3.5）
     source_task_id:   ulong;
     on_timeout:       StaleAction = Hold;
+    // 混合模式按 JointLayout 配置槽位给完整向量；臂槽 raw=0，轮槽 target=0。
+    raw_velocities:   [short];
 }
 
 // 本文件有三个 root type；flatc 支持每个 table 当作可选 root。body 路由靠

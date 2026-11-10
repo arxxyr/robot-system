@@ -44,7 +44,7 @@ const BUS2_JOINTS: [&str; 9] = [
 ];
 
 /// 右总线同一完整目标：右臂位置与三轮 raw 速度共享一个来源期限。
-/// 本入口不启用默认 factory，也不证明设备 raw 单位或固件合同已获实机验证。
+/// 本类型只提供配置映射；设备身份与启动权限由原 S0 入口守门。
 #[derive(Clone, Copy, Debug)]
 pub struct XleRobotBus2Layout {
     slots: [usize; 9],
@@ -84,6 +84,32 @@ impl XleRobotBus2Layout {
             slots[logical] = slot;
         }
         Ok(Self { slots })
+    }
+
+    /// 将 wire 的完整配置槽位解回既有混合目标，拒绝跨组字段及未批准 raw。
+    pub(crate) fn command_from_config_slots(
+        &self,
+        positions: [f64; 9],
+        raw_velocities: [i16; 9],
+        seq: u64,
+        stamp_ns: u64,
+        deadline_ns: u64,
+    ) -> Result<JointCommandBuf, RobotError> {
+        if self.slots[..6]
+            .iter()
+            .any(|&slot| raw_velocities[slot] != 0)
+            || self.slots[6..]
+                .iter()
+                .any(|&slot| positions[slot] != 0.0 || !matches!(raw_velocities[slot], 0 | 500))
+        {
+            return Err(RobotError::InvalidParameter(
+                "混合wire的槽位字段或raw速度无效",
+            ));
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let arm = std::array::from_fn(|logical| positions[self.slots[logical]] as f32);
+        let wheels = std::array::from_fn(|logical| raw_velocities[self.slots[logical + 6]]);
+        self.command(arm, wheels, seq, stamp_ns, deadline_ns)
     }
 
     /// 臂位置按 ID1..6、轮 raw 按前/左/右角色顺序；不混同为 rad/s。

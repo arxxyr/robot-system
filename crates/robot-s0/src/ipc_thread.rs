@@ -39,6 +39,7 @@ use robot_transport::{LatestCommandWriter, LatestSubscriber, RtSnapshotPublisher
 
 use robot_core::executor_ctrl::{ExecutorCtrlClient, OutputSafetyState};
 
+use crate::grouped_position::XleRobotBus2Layout;
 use crate::state_machine::{Event, Guards, S0State, S0StateSnapshot};
 
 // ============================================================================
@@ -313,6 +314,8 @@ pub struct IpcThreadConfig {
     /// 既有占位）。`poll_command` 对每帧 `JointCommand.layout_id` 比对：
     /// **不等 → 丢弃不写 slot** + `unknown_layout_count` +1 + 限频 warn。
     pub authoritative_layout: u64,
+    /// 显式混合总线配置；未启用时拒绝位置/raw 速度 wire。
+    pub mixed_bus2_layout: Option<XleRobotBus2Layout>,
 }
 
 impl Default for IpcThreadConfig {
@@ -324,6 +327,7 @@ impl Default for IpcThreadConfig {
             // 与 CLI-only 生产路径同占位（§3.5.1 部分落地边界）；单测显式
             // 覆盖为各自 fixture 的 layout。
             authoritative_layout: 0xCAFE_BABE_DEAD_BEEF,
+            mixed_bus2_layout: None,
         }
     }
 }
@@ -884,6 +888,7 @@ fn run_loop(
             &mut ports.subscribers.command,
             cmd_writer,
             cfg.authoritative_layout,
+            cfg.mixed_bus2_layout.as_ref(),
             clock,
             metrics,
         );
@@ -923,10 +928,11 @@ fn run_loop(
 // Topic poll helpers（把 iceoryx2 lease → typed body → 业务动作）
 // ============================================================================
 
-fn poll_command(
+pub(crate) fn poll_command(
     cmd_sub: &mut Iceoryx2Subscriber<markers::JointCommand>,
     cmd_writer: &LatestCommandWriter<JointCommandBuf>,
     authoritative_layout: u64,
+    mixed_bus2_layout: Option<&XleRobotBus2Layout>,
     clock: &dyn RobotClock,
     metrics: &IpcThreadMetrics,
 ) {
@@ -955,7 +961,7 @@ fn poll_command(
         return;
     }
     let stamp_ns = view.header.stamp_ns();
-    let Ok(buf) = parse_joint_command(&fb_cmd, stamp_ns, clock.now()) else {
+    let Ok(buf) = parse_joint_command(&fb_cmd, stamp_ns, clock.now(), mixed_bus2_layout) else {
         metrics.command_parse_errors.fetch_add(1, Ordering::Relaxed);
         return;
     };
@@ -1014,7 +1020,7 @@ fn poll_estop(
 // FlatBuffers JointCommand → JointCommandBuf POD
 // ============================================================================
 
-/// 仅 Velocity 的新增接收校验错误；其他模式保留既有解码合同。
+/// 严格模式的接收校验错误；旧的非混合位置/力矩映射保持原合同。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum JointCommandParseError {
     EmptyVelocityTargets,
@@ -1023,6 +1029,14 @@ enum JointCommandParseError {
     VelocityTargetOutOfRange,
     UnsupportedVelocityTimeout,
     InvalidVelocityWindow,
+    MixedLayoutNotEnabled,
+    InvalidMixedDimensions,
+    NonFiniteMixedPosition,
+    MixedPositionOutOfRange,
+    InvalidMixedTargets,
+    UnsupportedMixedTimeout,
+    InvalidMixedWindow,
+    UnexpectedRawVelocities,
 }
 
 /// `FlatBuffers` `JointCommand` → POD [`JointCommandBuf`]。
@@ -1034,7 +1048,14 @@ fn parse_joint_command(
     fb: &FbJointCommand<'_>,
     stamp_ns: u64,
     now: MonoRawNs,
+    mixed_bus2_layout: Option<&XleRobotBus2Layout>,
 ) -> Result<JointCommandBuf, JointCommandParseError> {
+    if fb.mode() == FbControlMode::MixedPositionRawVelocity {
+        return parse_mixed_joint_command(fb, stamp_ns, now, mixed_bus2_layout);
+    }
+    if fb.raw_velocities().is_some() {
+        return Err(JointCommandParseError::UnexpectedRawVelocities);
+    }
     // wire 没有关节选择字段；只允许原全选语义。
     let mut buf = JointCommandBuf {
         selection: robot_core::adapter::JointSelection::All,
@@ -1096,6 +1117,48 @@ fn parse_joint_command(
     buf.deadline_ns = fb.deadline_ns();
     buf.seq = fb.source_task_id();
     Ok(buf)
+}
+
+fn parse_mixed_joint_command(
+    fb: &FbJointCommand<'_>,
+    stamp_ns: u64,
+    now: MonoRawNs,
+    layout: Option<&XleRobotBus2Layout>,
+) -> Result<JointCommandBuf, JointCommandParseError> {
+    let layout = layout.ok_or(JointCommandParseError::MixedLayoutNotEnabled)?;
+    if fb.on_timeout() != FbStaleAction::Hold {
+        return Err(JointCommandParseError::UnsupportedMixedTimeout);
+    }
+    if stamp_ns > now.0 || now.0 >= fb.deadline_ns() || fb.deadline_ns() <= stamp_ns {
+        return Err(JointCommandParseError::InvalidMixedWindow);
+    }
+    let (Some(target), Some(raw)) = (fb.target(), fb.raw_velocities()) else {
+        return Err(JointCommandParseError::InvalidMixedDimensions);
+    };
+    if target.len() != 9 || raw.len() != 9 {
+        return Err(JointCommandParseError::InvalidMixedDimensions);
+    }
+    let mut positions = [0.0_f64; 9];
+    for (slot, position) in positions.iter_mut().enumerate() {
+        let value = target.get(slot);
+        if !value.is_finite() {
+            return Err(JointCommandParseError::NonFiniteMixedPosition);
+        }
+        if value.abs() > f64::from(f32::MAX) {
+            return Err(JointCommandParseError::MixedPositionOutOfRange);
+        }
+        *position = value;
+    }
+    let raw_velocities = std::array::from_fn(|slot| raw.get(slot));
+    layout
+        .command_from_config_slots(
+            positions,
+            raw_velocities,
+            fb.source_task_id(),
+            stamp_ns,
+            fb.deadline_ns(),
+        )
+        .map_err(|_| JointCommandParseError::InvalidMixedTargets)
 }
 
 /// FB `ControlMode` → `ControlModeRepr`。FB 生成的 enum 是独立类型，需要显式映射。
@@ -1165,6 +1228,7 @@ mod tests {
                 priority: 10,
                 source_task_id: 7,
                 on_timeout,
+                ..robot_msg::msg::JointCommandArgs::default()
             },
         );
         builder.finish(command, None);
@@ -1177,7 +1241,280 @@ mod tests {
         now: MonoRawNs,
     ) -> Result<JointCommandBuf, JointCommandParseError> {
         let command = flatbuffers::root::<FbJointCommand<'_>>(body).unwrap();
-        parse_joint_command(&command, stamp_ns, now)
+        parse_joint_command(&command, stamp_ns, now, None)
+    }
+
+    fn mixed_hardware() -> crate::config_loader::HardwareSection {
+        let mut config: crate::config_loader::RobotConfigToml =
+            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+        config.hardware.remove(0)
+    }
+
+    fn mixed_body(
+        target: Option<&[f64]>,
+        raw: Option<&[i16]>,
+        deadline_ns: u64,
+        on_timeout: StaleAction,
+    ) -> Vec<u8> {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let target = target.map(|values| builder.create_vector(values));
+        let raw_velocities = raw.map(|values| builder.create_vector(values));
+        let command = FbJointCommand::create(
+            &mut builder,
+            &robot_msg::msg::JointCommandArgs {
+                layout_id: LAYOUT,
+                mode: FbControlMode::MixedPositionRawVelocity,
+                target,
+                deadline_ns,
+                priority: 10,
+                source_task_id: 7,
+                on_timeout,
+                raw_velocities,
+            },
+        );
+        builder.finish(command, None);
+        builder.finished_data().to_vec()
+    }
+
+    #[test]
+    fn mixed_command_follows_all_configured_wheel_maps_and_slot_reorder() {
+        for wheel_ids in [
+            [7, 8, 9],
+            [7, 9, 8],
+            [8, 7, 9],
+            [8, 9, 7],
+            [9, 7, 8],
+            [9, 8, 7],
+        ] {
+            for reverse in [false, true] {
+                let mut hardware = mixed_hardware();
+                hardware.motor_ids[6..].copy_from_slice(&wheel_ids);
+                if reverse {
+                    hardware.joints.reverse();
+                    hardware.motor_ids.reverse();
+                }
+                let layout = XleRobotBus2Layout::from_hardware(&hardware).unwrap();
+                for wheel in ["base_front_wheel", "base_left_wheel", "base_right_wheel"] {
+                    let target = std::array::from_fn::<_, 9, _>(|slot| {
+                        if hardware.motor_ids[slot] <= 6 {
+                            f64::from(hardware.motor_ids[slot]) / 10.0
+                        } else {
+                            0.0
+                        }
+                    });
+                    let wheel_slot = hardware
+                        .joints
+                        .iter()
+                        .position(|name| name == wheel)
+                        .unwrap();
+                    let mut raw = [0; 9];
+                    raw[wheel_slot] = 500;
+                    let body = mixed_body(Some(&target), Some(&raw), 200, StaleAction::Hold);
+                    let fb = flatbuffers::root::<FbJointCommand>(&body).unwrap();
+                    let command =
+                        parse_joint_command(&fb, 100, MonoRawNs(150), Some(&layout)).unwrap();
+                    assert_eq!(command.mode, ControlModeRepr::Position);
+                    assert_eq!(command.joint_count, 9);
+                    assert_eq!(&command.raw_velocities[..9], &raw);
+                    #[allow(clippy::cast_possible_truncation)]
+                    for (slot, value) in target.iter().enumerate() {
+                        assert_eq!(f64::from(command.positions[slot]), f64::from(*value as f32));
+                    }
+                    let position_mask =
+                        hardware
+                            .motor_ids
+                            .iter()
+                            .enumerate()
+                            .fold(
+                                0,
+                                |mask, (slot, id)| {
+                                    if *id <= 6 { mask | (1 << slot) } else { mask }
+                                },
+                            );
+                    assert_eq!(
+                        command.selection,
+                        robot_core::adapter::JointSelection::MixedPositionRawVelocity {
+                            position_mask,
+                            velocity_mask: 0x1ff ^ position_mask,
+                        }
+                    );
+                    assert_eq!(
+                        (command.seq, command.stamp_ns, command.deadline_ns),
+                        (7, 100, 200)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_command_requires_opt_in_and_rejects_raw_under_old_position_mode() {
+        let body = mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), 200, StaleAction::Hold);
+        assert_eq!(
+            parse_command_body(&body, 100, MonoRawNs(150)),
+            Err(JointCommandParseError::MixedLayoutNotEnabled)
+        );
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let target = builder.create_vector(&[0.0_f64; 9]);
+        let raw = builder.create_vector(&[0_i16; 9]);
+        let command = FbJointCommand::create(
+            &mut builder,
+            &robot_msg::msg::JointCommandArgs {
+                target: Some(target),
+                raw_velocities: Some(raw),
+                ..robot_msg::msg::JointCommandArgs::default()
+            },
+        );
+        builder.finish(command, None);
+        assert_eq!(
+            parse_command_body(builder.finished_data(), 100, MonoRawNs(150)),
+            Err(JointCommandParseError::UnexpectedRawVelocities)
+        );
+    }
+
+    #[test]
+    fn mixed_command_accepts_zero_clock_origin_and_finite_f32_endpoints() {
+        let hardware = mixed_hardware();
+        let layout = XleRobotBus2Layout::from_hardware(&hardware).unwrap();
+        let mut target = [0.0; 9];
+        target[0] = f64::from(f32::MAX);
+        target[1] = -f64::from(f32::MAX);
+        target[2] = f64::MIN_POSITIVE;
+        for (stamp, now, deadline) in [
+            (0, 0, 1),
+            (100, 199, 200),
+            (u64::MAX - 2, u64::MAX - 1, u64::MAX),
+        ] {
+            let body = mixed_body(Some(&target), Some(&[0; 9]), deadline, StaleAction::Hold);
+            let fb = flatbuffers::root::<FbJointCommand>(&body).unwrap();
+            let command = parse_joint_command(&fb, stamp, MonoRawNs(now), Some(&layout)).unwrap();
+            assert_eq!(command.positions[0], f32::MAX);
+            assert_eq!(command.positions[1], -f32::MAX);
+            assert_eq!(command.positions[2], 0.0);
+        }
+    }
+
+    fn invalid_mixed_frames() -> Vec<(Vec<u8>, u64)> {
+        let mut cases = vec![
+            (mixed_body(None, Some(&[0; 9]), 200, StaleAction::Hold), 100),
+            (
+                mixed_body(Some(&[0.0; 9]), None, 200, StaleAction::Hold),
+                100,
+            ),
+            (
+                mixed_body(Some(&[0.0; 8]), Some(&[0; 9]), 200, StaleAction::Hold),
+                100,
+            ),
+            (
+                mixed_body(Some(&[0.0; 9]), Some(&[0; 8]), 200, StaleAction::Hold),
+                100,
+            ),
+            (
+                mixed_body(Some(&[0.0; 10]), Some(&[0; 9]), 200, StaleAction::Hold),
+                100,
+            ),
+            (
+                mixed_body(Some(&[0.0; 9]), Some(&[0; 10]), 200, StaleAction::Hold),
+                100,
+            ),
+        ];
+        for value in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            -f64::MAX,
+        ] {
+            let mut target = [0.0; 9];
+            target[0] = value;
+            cases.push((
+                mixed_body(Some(&target), Some(&[0; 9]), 200, StaleAction::Hold),
+                100,
+            ));
+        }
+        for (slot, value) in [(0, 500), (6, -500), (7, 501), (8, i16::MIN)] {
+            let mut raw = [0; 9];
+            raw[slot] = value;
+            cases.push((
+                mixed_body(Some(&[0.0; 9]), Some(&raw), 200, StaleAction::Hold),
+                100,
+            ));
+        }
+        for value in [0.1, f64::MIN_POSITIVE] {
+            let mut wheel_position = [0.0; 9];
+            wheel_position[6] = value;
+            cases.push((
+                mixed_body(Some(&wheel_position), Some(&[0; 9]), 200, StaleAction::Hold),
+                100,
+            ));
+        }
+        for timeout in [StaleAction::Zero, StaleAction::Stop, StaleAction(99)] {
+            cases.push((
+                mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), 200, timeout),
+                100,
+            ));
+        }
+        for (stamp, deadline) in [(151, 200), (100, 150), (100, 99), (100, 100), (0, 0)] {
+            cases.push((
+                mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), deadline, StaleAction::Hold),
+                stamp,
+            ));
+        }
+        cases
+    }
+
+    #[test]
+    fn poll_command_mixed_rejections_preserve_slot_and_applied_counter() {
+        let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        let topic = format!("/mixed_rejected_{}_{id}/cmd", std::process::id());
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut receiver =
+            subscriber::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        let mut transmitter =
+            publisher::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        assert!(receiver.latest().unwrap().is_none());
+        transmitter.update_connections().unwrap();
+        let initial = JointCommandBuf::default();
+        let (writer, reader) = LatestCommandSlot::new(initial);
+        let clock = MockClock::new(MonoRawNs(150));
+        let layout = XleRobotBus2Layout::from_hardware(&mixed_hardware()).unwrap();
+        let metrics = IpcThreadMetrics::default();
+        for (index, (body, stamp)) in invalid_mixed_frames().into_iter().enumerate() {
+            let mut sample = transmitter.loan(1024 + body.len()).unwrap();
+            sample.set_stamp_ns(stamp);
+            sample.set_body_bytes(&body);
+            sample.publish().unwrap();
+            poll_command(
+                &mut receiver,
+                &writer,
+                LAYOUT,
+                Some(&layout),
+                &clock,
+                &metrics,
+            );
+            assert_eq!(**reader.load(), initial);
+            assert_eq!(
+                metrics.command_parse_errors.load(Ordering::Relaxed),
+                u64::try_from(index).unwrap() + 1
+            );
+            assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 0);
+            assert_eq!(metrics.unknown_layout_count.load(Ordering::Relaxed), 0);
+        }
+        let body = mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), 200, StaleAction::Hold);
+        let mut sample = transmitter.loan(1024 + body.len()).unwrap();
+        sample.set_stamp_ns(100);
+        sample.set_body_bytes(&body);
+        sample.publish().unwrap();
+        poll_command(
+            &mut receiver,
+            &writer,
+            LAYOUT,
+            Some(&layout),
+            &clock,
+            &metrics,
+        );
+        assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
+        assert_eq!(reader.load().joint_count, 9);
     }
 
     #[test]
@@ -1403,7 +1740,7 @@ mod tests {
             sample.set_stamp_ns(stamp_ns);
             sample.set_body_bytes(&body);
             sample.publish().unwrap();
-            poll_command(&mut receiver, &writer, LAYOUT, &clock, &metrics);
+            poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics);
             rejected += 1;
             assert_eq!(**reader.load(), initial);
             assert_eq!(
@@ -1423,7 +1760,7 @@ mod tests {
         sample.set_stamp_ns(100);
         sample.set_body_bytes(&body);
         sample.publish().unwrap();
-        poll_command(&mut receiver, &writer, LAYOUT, &clock, &metrics);
+        poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics);
         let expected = parse_command_body(&body, 100, clock.now()).unwrap();
         assert_eq!(**reader.load(), expected);
         assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
@@ -1904,6 +2241,7 @@ mod tests {
                     initial_guards: guards,
                     initial_state,
                     authoritative_layout: LAYOUT,
+                    mixed_bus2_layout: None,
                 },
                 clock: Arc::clone(&clock),
                 subscribers_factory: factory,

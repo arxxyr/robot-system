@@ -196,6 +196,7 @@ fn make_coordinator(registry: BackendRegistry, enabled: Vec<String>) -> Coordina
         id: "test_arm".into(),
         joints: vec!["j0".into()],
         motor_ids: vec![1],
+        feetech_bus2_mixed_raw: false,
     };
     let anchor_bias = vec![0.0_f64];
     Coordinator::new(
@@ -570,6 +571,7 @@ command_mode = \"joint_position\"
         id: "test_arm".into(),
         joints: vec!["j0".into()],
         motor_ids: vec![1],
+        feetech_bus2_mixed_raw: false,
     };
     let err = validate_profile_section(&profile, &registry, &hardware, 1)
         .expect_err("expected UnknownBackend");
@@ -601,6 +603,7 @@ fn profile_validation_no_enabled_backends_fails_fast() {
         id: "test_arm".into(),
         joints: vec!["j0".into()],
         motor_ids: vec![1],
+        feetech_bus2_mixed_raw: false,
     };
     let err = validate_profile_section(&profile, &registry, &hardware, 1)
         .expect_err("expected NoEnabledBackends");
@@ -628,6 +631,7 @@ fn profile_parse_missing_section_yields_default_b2_passes_validation() {
         id: "test_arm".into(),
         joints: vec!["j0".into()],
         motor_ids: vec![1],
+        feetech_bus2_mixed_raw: false,
     };
     validate_profile_section(&profile, &registry, &hardware, 1)
         .expect("default_b2 must pass validate (B1 config compat)");
@@ -655,6 +659,7 @@ fn make_hold_pose_coordinator(anchor_bias: Vec<f64>) -> Coordinator {
         id: "test_arm".into(),
         joints: vec!["j0".into()],
         motor_ids: vec![1],
+        feetech_bus2_mixed_raw: false,
     };
     let registry =
         BackendRegistry::from_explicit(&[&TEST_HOLD_POSE_BACKEND as &'static dyn ActionBackend]);
