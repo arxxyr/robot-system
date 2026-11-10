@@ -2,6 +2,9 @@
 
 #![cfg(all(target_os = "linux", feature = "test-comm-fault-hook"))]
 
+#[path = "comm_fault_startup/camera_actuator.rs"]
+mod camera_actuator;
+
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -66,6 +69,9 @@ try:
     while mode == 'no-frames' or not (directory / 'camera-go').exists():
         time.sleep(0.01)
     while True:
+        if (directory / 'camera-stall').exists():
+            while True:
+                time.sleep(0.01)
         stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
         if not (directory / 'camera-first-frame').exists():
             (directory / 'camera-first-frame').write_text(str(stamp))

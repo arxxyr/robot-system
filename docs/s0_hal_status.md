@@ -13,7 +13,7 @@
 | 混合接线 | TOML 显式选择原 raw factory；新增混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 内存串口验证 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；默认 S0 非零轮动实机尚未验收 |
 | 状态反馈 | `JointState`/`Heartbeat` 保留；混合实例未标定速度、未测力矩为 NaN，不把 raw/占位0当SI量 | 内部寄存器原值仍用于诊断和停止；NaN 不作为静止证据 |
 | 相机契约 | `SensorAdapter`＋独立拥有像素的 BGR 帧；现有 SoftRT 线程接收、Pub 发布 `ImageHeader + blob` | 先接头部 D435i 的单路 RGB；深度、IMU、腕部相机及多相机同步未接入 |
-| 相机生命周期 | 首个合法新帧后就绪；帧间超时清帧并回收，发布不等待采集；退出和父死回收已软件验证 | 帧时间为采集读取完成时刻，非硬件曝光时刻；真实采集结果单独记录，不宣称全链零拷贝 |
+| 相机生命周期 | 首个合法新帧后就绪；帧间超时清帧并回收，发布不等待采集；默认 daemon 已验证失流回收后新关节目标、状态和心跳继续，Disable及退出完成 | 组合回归使用模拟执行器和协议图像，不代替真实硬件并行验收；帧时间为采集读取完成时刻，非硬件曝光时刻，不宣称全链零拷贝 |
 
 ## 轮位与阻塞
 
@@ -50,4 +50,5 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 - 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。
 - 本轮软件与相机证据：`.verify/s0_body_hal_2026-11-10/`，Orin `/home/loosqk/robot-checks/s0-body-hal-20261110/`；原失败日志保留。
+- 默认 daemon 相机/执行器组合：[测试](../crates/robot-s0/tests/comm_fault_startup/camera_actuator.rs)、[验证摘要](../.verify/s0_camera_actuator_2026-11-10/summary.json)。Orin 4项相机集成测试及 fmt→根目录/测试特性 Clippy 通过；仅软件接线，无实机动作。
 - 线程与图像：[SerialRT](../crates/robot-s0/src/serial_io_thread.rs)、[驱动夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)、[SoftRT IO](../crates/robot-s0/src/io_thread.rs)、[发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。
