@@ -17,7 +17,7 @@
 //! ## 用法
 //!
 //! ```bash
-//! feetech_poke <right-device> 9 mixed-hold-wheel9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID>
+//! feetech_poke <right-device> 9 mixed-hold-wheel9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <address> <motor_id> ping
 //! feetech_poke <address> <motor_id> sync-zero
 //! feetech_poke <address> <motor_id> sync-velocity <value>

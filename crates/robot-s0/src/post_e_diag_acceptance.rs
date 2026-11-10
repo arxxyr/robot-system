@@ -371,6 +371,7 @@ impl TickFixture {
                 adapter_name: "独立诊断验收设备",
                 joint_names: vec!["diagnostic_joint".to_owned()],
                 calibrations: Vec::new(),
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         )

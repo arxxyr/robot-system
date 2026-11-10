@@ -68,6 +68,8 @@ joints      = [
     "right_arm_gripper",
 ]
 motor_ids   = [1, 2, 3, 4, 5, 6]
+# 校准上下边界容差（raw），与 joints/motor_ids 同序；不改变到位精度。
+calibration_range_tolerances_raw = [20, 20, 20, 20, 20, 20]
 calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
     "/home/loosqk/repo/dimensional-applications/calibration/base.json",

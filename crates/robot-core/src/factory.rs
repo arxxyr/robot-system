@@ -103,6 +103,9 @@ pub struct AdapterBuildContext<'a> {
     ///   map → 按 `joint_names` 顺序取出对应条目组成 `Vec<MotorCalibration>` 传给
     ///   adapter。任一 joint 在 map 中查不到 → `RobotError::InvalidParameter`。
     pub calibration_paths: &'a [String],
+    /// 各位置关节的校准边界容差（raw），与 `joint_names` 同序；空切片表示全0。
+    /// 仅用于软件校准边界，不改变电机参数、动作到位精度或速度判据。
+    pub calibration_range_tolerances_raw: &'a [u16],
 }
 
 /// adapter 工厂 trait。每个 adapter crate 实现 + 用 `inventory::submit!` 注册一个
@@ -292,6 +295,7 @@ mod tests {
             address: None,
             motor_ids: &[],
             calibration_paths: &[],
+            calibration_range_tolerances_raw: &[],
         };
         let adapter = f.build(&ctx).unwrap();
         assert_eq!(adapter.info().name, "stub_adapter");
@@ -327,6 +331,7 @@ mod tests {
             address: Some("/dev/serial/by-id/usb-test"),
             motor_ids: &ids,
             calibration_paths: &cal_paths,
+            calibration_range_tolerances_raw: &[0, 20],
         };
         assert_eq!(ctx.instance_name, "left_arm");
         assert_eq!(ctx.adapter_kind, "robot_core_test_stub");
@@ -335,5 +340,6 @@ mod tests {
         assert_eq!(ctx.motor_ids, &[3u8, 7]);
         assert_eq!(ctx.calibration_paths.len(), 2);
         assert_eq!(ctx.calibration_paths[0], "/tmp/left_arm.json");
+        assert_eq!(ctx.calibration_range_tolerances_raw, &[0, 20]);
     }
 }

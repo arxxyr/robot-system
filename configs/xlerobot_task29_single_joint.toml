@@ -29,6 +29,8 @@ adapter     = "feetech_sts3215"
 address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
 joints      = ["left_arm_gripper"]
 motor_ids   = [6]
+# 校准上下边界容差（raw），与 joints/motor_ids 同序；不改变到位精度。
+calibration_range_tolerances_raw = [20]
 # dimos calibration/left_arm.json 里 left_arm_gripper: range=[1408, 2886] raw，
 # 对应 rad ≈ [-0.98, +1.29]（≈ [-56°, +74°]）。±5° 远在 range 内，silent clamp
 # 不触发；真机闭环 bring-up 阶段只试小角度开合。

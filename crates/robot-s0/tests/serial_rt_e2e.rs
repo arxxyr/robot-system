@@ -334,6 +334,7 @@ fn spawn_harness(factory_name: &str) -> Harness {
         address: None,
         motor_ids: &[],
         calibration_paths: &[],
+        calibration_range_tolerances_raw: &[],
     };
     // **关键**：调 build_serial_rt 而不是 build / build_hard_rt。
     let adapter = factory
@@ -672,6 +673,7 @@ fn test_serial_rt_dispatch_chooses_serial_factory() {
         address: None,
         motor_ids: &[],
         calibration_paths: &[],
+        calibration_range_tolerances_raw: &[],
     };
 
     // 1) build_hard_rt 必须返 Unsupported（factory 不 override）

@@ -33,6 +33,8 @@ joints      = [
     "left_arm_gripper",
 ]
 motor_ids   = [1, 2, 3, 4, 5, 6]
+# 校准上下边界容差（raw），与 joints/motor_ids 同序；不改变到位精度。
+calibration_range_tolerances_raw = [20, 20, 20, 20, 20, 20]
 # arm-only：只给 left_arm.json（D2——不含 head joint，无需 head.json 冗余；
 # 拣取语义沿 factory load_and_merge 先例）。路径 = Orin 实机标定目录实测。
 calibration_paths = [

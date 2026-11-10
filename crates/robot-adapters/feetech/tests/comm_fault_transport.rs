@@ -474,6 +474,7 @@ fn adapter_fixture() -> (
             adapter_name: "独立通信验收",
             joint_names: vec!["first".to_owned(), "second".to_owned()],
             calibrations: Vec::new(),
+            calibration_range_tolerances_raw: Vec::new(),
             clock: Arc::new(robot_core::time::MockClock::default()),
             preempt: Some(probe.clone()),
             diag: None,

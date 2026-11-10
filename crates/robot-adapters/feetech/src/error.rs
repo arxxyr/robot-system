@@ -153,6 +153,15 @@ pub enum FeetechError {
     #[error("calibration range_max {0} out of [0, 4095]")]
     CalibrationMaxOutOfRange(i32),
 
+    #[error("校准原始下界 {min} 大于上界 {max}")]
+    CalibrationRangeInverted { min: u16, max: u16 },
+
+    #[error("校准边界容差 {0} 超出 [0, 4095]")]
+    CalibrationRangeToleranceOutOfRange(u16),
+
+    #[error("非零校准边界容差需要完整标定")]
+    CalibrationToleranceWithoutCalibration,
+
     #[error("标定电机 ID 与总线不匹配：expected={expected}, got={got}")]
     CalibrationMotorIdMismatch { expected: u8, got: u8 },
 
@@ -374,6 +383,9 @@ impl From<FeetechError> for robot_core::error::RobotError {
             F::CalibrationOffsetOutOfRange(_)
             | F::CalibrationMinOutOfRange(_)
             | F::CalibrationMaxOutOfRange(_)
+            | F::CalibrationRangeInverted { .. }
+            | F::CalibrationRangeToleranceOutOfRange(_)
+            | F::CalibrationToleranceWithoutCalibration
             | F::CalibrationMotorIdMismatch { .. }
             | F::CalibrationAnchorChanged { .. }
             | F::CalibrationEntryInvalid { .. }

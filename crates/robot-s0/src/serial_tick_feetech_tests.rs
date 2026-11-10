@@ -227,6 +227,7 @@ impl Fixture {
                 adapter_name: "s0_raw_test",
                 joint_names: hardware.joints,
                 calibrations,
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
             profiles,

@@ -1,6 +1,6 @@
 //! 显式右总线混合布局；不注册 factory、不改默认配置、不执行模式写入。
 
-use super::{FeetechAdapter, FeetechAdapterConfig};
+use super::{FeetechAdapter, FeetechAdapterConfig, effective_calibration_range_raw};
 use crate::bus::FeetechBus;
 use crate::calibration_io::clamp_raw;
 use crate::convert::{rad_to_raw, rad_to_tick_offset, raw_to_rad};
@@ -196,11 +196,13 @@ impl<T: SerialTransport> FeetechAdapter<T> {
         for (index, &slot) in layout.arm_slots.iter().enumerate() {
             let raw = self.pos_raw[index];
             let cal = &self.calibrations[slot];
+            let (min, max) =
+                effective_calibration_range_raw(cal, self.calibration_range_tolerances_raw[slot]);
             if cal.range_min > cal.range_max
                 || cal.range_max > 4095
-                || !(i32::from(cal.range_min)..=i32::from(cal.range_max)).contains(&raw)
+                || !(min..=max).contains(&raw)
                 || !(0..=4095).contains(&raw)
-                || clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max)) != raw
+                || clamp_raw(raw, min, max) != raw
                 || rad_to_raw(raw_to_rad(raw)) != raw
             {
                 return Err(crate::FeetechError::CalibrationAnchorChanged {
@@ -300,11 +302,16 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             }
             let mut raw = rad_to_raw(command.positions[slot]);
             if let Some(cal) = self.calibrations.get(slot) {
-                let clamped = clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max));
-                if self.raw_mixed() && raw != clamped {
-                    return Err(RobotError::InvalidParameter(
-                        "实证raw混合目标不允许标定限幅",
-                    ));
+                if cal.range_min > cal.range_max || cal.range_max > 4095 {
+                    return Err(RobotError::InvalidParameter("混合位置原标定范围无效"));
+                }
+                let (min, max) = effective_calibration_range_raw(
+                    cal,
+                    self.calibration_range_tolerances_raw[slot],
+                );
+                let clamped = clamp_raw(raw, min, max);
+                if raw != clamped {
+                    return Err(RobotError::InvalidParameter("混合目标不允许标定限幅"));
                 }
                 raw = clamped;
             }
@@ -587,6 +594,7 @@ mod tests {
                 call_deadline: Duration::from_millis(50),
                 adapter_name: "mixed_test",
                 joint_names: names,
+                calibration_range_tolerances_raw: Vec::new(),
                 calibrations: if raw {
                     ids.into_iter()
                         .map(|id| crate::MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
@@ -897,6 +905,91 @@ mod tests {
                 [1, 2, 3, 4, 5, 6]
             );
             assert_eq!(f.calls.load(Ordering::Relaxed), 2);
+        }
+    }
+
+    #[test]
+    fn observed_raw_uses_each_configured_slot_tolerance_without_changing_wire_words() {
+        let ids = [9, 3, 6, 1, 8, 4, 2, 7, 5];
+        let (mut fixture, connected) = Fixture::with_profile(ids, 0, 12, false, true);
+        connected.unwrap();
+        let _ = fixture.handle.drain_tx();
+        let layout = fixture.adapter.mixed_bus2.unwrap();
+        for (index, &slot) in layout.arm_slots.iter().enumerate() {
+            fixture.adapter.calibrations[slot].range_min = 1000;
+            fixture.adapter.calibrations[slot].range_max = 3000;
+            fixture.adapter.calibration_range_tolerances_raw[slot] = [0, 20, 7, 0, 0, 0][index];
+        }
+        for (index, tolerance) in [0, 20, 7].into_iter().enumerate() {
+            let slot = layout.arm_slots[index];
+            for (raw, accepted) in [
+                (1000 - tolerance, true),
+                (3000 + tolerance, true),
+                (999 - tolerance, false),
+                (3001 + tolerance, false),
+            ] {
+                fixture.adapter.pos_raw[..6].fill(2047);
+                fixture.adapter.pos_raw[index] = raw;
+                assert_eq!(
+                    fixture.adapter.validate_raw_mixed_anchor(1).is_ok(),
+                    accepted
+                );
+                let mut command = fixture.command();
+                command.positions[slot] = raw_to_rad(raw);
+                command.raw_velocities.fill(0);
+                assert_eq!(
+                    fixture.adapter.write_command(&command.as_view()).is_ok(),
+                    accepted
+                );
+                let tx = fixture.handle.drain_tx();
+                if accepted {
+                    let output = frames(&tx);
+                    let entry = output[1][7..25]
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .find(|entry| entry[0] == layout.arm_ids[index])
+                        .unwrap();
+                    assert_eq!(i32::from(u16::from_le_bytes([entry[1], entry[2]])), raw);
+                } else {
+                    assert_eq!(tx, [] as [u8; 0]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn observed_raw_tolerance_keeps_hard_bounds_and_rejects_original_invalid_calibration() {
+        let (mut fixture, connected) =
+            Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+        connected.unwrap();
+        let _ = fixture.handle.drain_tx();
+        fixture.adapter.calibration_range_tolerances_raw[0] = 20;
+        for (min, max, raw, accepted) in [
+            (10, 4085, 0, true),
+            (10, 4085, 4095, true),
+            (10, 4085, -1, false),
+            (10, 4085, 4096, false),
+            (3000, 2990, 2992, false),
+            (0, 4096, 2047, false),
+        ] {
+            fixture.adapter.calibrations[0].range_min = min;
+            fixture.adapter.calibrations[0].range_max = max;
+            fixture.adapter.pos_raw[..6].fill(2047);
+            fixture.adapter.pos_raw[0] = raw;
+            assert_eq!(
+                fixture.adapter.validate_raw_mixed_anchor(1).is_ok(),
+                accepted
+            );
+            let mut command = fixture.command();
+            command.positions[0] = raw_to_rad(raw);
+            command.raw_velocities.fill(0);
+            assert_eq!(
+                fixture.adapter.write_command(&command.as_view()).is_ok(),
+                accepted
+            );
+            let tx = fixture.handle.drain_tx();
+            assert_eq!(tx.is_empty(), !accepted);
         }
     }
 

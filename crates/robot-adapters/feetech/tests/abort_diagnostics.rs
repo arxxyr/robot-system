@@ -240,6 +240,7 @@ impl Fixture {
                 adapter_name: "诊断验收",
                 joint_names: vec!["joint".to_string()],
                 calibrations: Vec::new(),
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         )

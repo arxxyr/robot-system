@@ -765,6 +765,7 @@ mod physical {
                             .collect(),
                         // H3 只调用全配置电机的断扭广播，不执行角度命令与 connect。
                         calibrations: Vec::new(),
+                        calibration_range_tolerances_raw: Vec::new(),
                     },
                     bus,
                 )
@@ -873,6 +874,7 @@ mod physical {
                 adapter_name: "feetech_sts3215",
                 joint_names,
                 calibrations: Vec::new(),
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         )

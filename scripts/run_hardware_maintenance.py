@@ -2,6 +2,7 @@
 """爸爸，受监督直接wire维护；默认PLAN_ONLY，精度与停机证据分别判定。"""
 import argparse
 import contextlib
+import copy
 import fcntl
 import hashlib
 import importlib.util
@@ -47,9 +48,11 @@ BASE_TARGETS = []
 WHEEL_PULSE_TARGETS = {}
 WHEEL_STOP_TARGETS = {}
 BUS_CONFIG = None
+LEFT_BUS_CONFIG = None
 WHEEL_ROLES = ('front','left','right')
 WHEEL_LABELS = {'front':'前','left':'左','right':'右'}
 DEFAULT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot_bus2_full.toml'
+DEFAULT_LEFT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot_bus1_full.toml'
 RIGHT_PULSE_SCOPE_TEMPLATE = '仅{target}复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
@@ -121,15 +124,15 @@ MIXED_ARM_NAMES = ('right_arm_shoulder_pan','right_arm_shoulder_lift','right_arm
                    'right_arm_wrist_flex','right_arm_wrist_roll','right_arm_gripper')
 ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
 ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
-                   'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
+                   'PP须在0..4095，按原六项校准及配置容差记录INSIDE/WITHIN_TOLERANCE/OUTSIDE；不写电机、不判整机停止，'
                    '不提供混合动作的新鲜锚点或动作授权')
 ARM_ELBOW_RANGE_SCOPE = ('仅右肘物理3以单ID SYNC_READ读取TE→PV→PP，共3次只读；TE/PV严格0，'
-                         'PP须在0..4095并按原物理3校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
+                         'PP须在0..4095，按原物理3校准及配置容差记录INSIDE/WITHIN_TOLERANCE/OUTSIDE；不写电机、不判整机停止，'
                          '不提供混合动作的新鲜锚点或动作授权')
 GRIPPER_TOLERANCE_RAW = 5
 GRIPPER_MAX_INCREMENT_RAW = 256
 GRIPPER_TARGETS = {goal:{'goal_raw':goal,'direction':direction,
-    'scope':(f'仅右夹爪物理6：原校准范围内新鲜静止初值到固定GP{goal}单程{action}，'
+    'scope':(f'仅右夹爪物理6：原校准范围加配置容差内新鲜静止初值到固定GP{goal}单程{action}，'
              f'绝对增量须1..{GRIPPER_MAX_INCREMENT_RAW}，不回初值；'
              'GP写自动使能，从首次写尝试起800毫秒软件观测预算，随后独立断扭及原整机停止后验')}
     for goal,action,direction in ((1600,'张开',1),(1397,'合回',-1))}
@@ -154,36 +157,52 @@ def set_process_name():
             process_name_warning(error)
 
 
-def configure_bus_mapping(path):
-    """唯一映射源为运行时指定TOML的joints/motor_ids，不读取校准标签推断轮位。"""
-    global BASE_TARGETS, WHEEL_PULSE_TARGETS, WHEEL_STOP_TARGETS, BUS_CONFIG
-    global RIGHT_FEEDBACK_SCOPE, FRONT_FEEDBACK_SCOPE, LEFT_FEEDBACK_SCOPE, MIXED_RAW_SCOPE
+def read_bus_configuration(path,side):
+    """容差与joints/motor_ids同槽读取，缺省保持原校准边界。"""
     actual=Path(path).resolve(strict=True)
-    require(actual.is_file(),'右总线配置必须为普通文件')
+    require(actual.is_file(),'总线配置必须为普通文件')
     data=actual.read_bytes();document=tomllib.loads(data.decode('utf-8'))
     hardware=document.get('hardware')
-    require(type(hardware) is list and len(hardware)==1,'维护配置必须恰含一条右总线')
+    require(type(hardware) is list and len(hardware)==1,'维护配置必须恰含一条总线')
     row=hardware[0];names=row.get('joints');ids=row.get('motor_ids')
-    require(row.get('adapter')=='feetech_sts3215' and row.get('address')==DEVICES['right'],
-            '维护配置必须为既有右总线设备与Feetech适配器')
-    require(type(names) is list and type(ids) is list and len(names)==len(ids)==9
-            and all(type(name) is str for name in names) and len(set(names))==9
-            and all(type(motor) is int for motor in ids) and len(set(ids))==9,
-            '总线joints/motor_ids必须为九个唯一名称及整数ID')
-    mapping=dict(zip(names,ids))
+    count=8 if side=='left' else 9
+    require(row.get('adapter')=='feetech_sts3215' and row.get('address')==DEVICES[side],
+            '维护配置必须为既有总线设备与Feetech适配器')
+    require(type(names) is list and type(ids) is list and len(names)==len(ids)==count
+            and all(type(name) is str for name in names) and len(set(names))==count
+            and all(type(motor) is int for motor in ids) and len(set(ids))==count,
+            '总线joints/motor_ids必须为完整唯一名称及整数ID')
+    tolerances=row.get('calibration_range_tolerances_raw',[0]*count)
+    require(type(tolerances) is list and len(tolerances)==count
+            and all(type(value) is int and 0<=value<=4095 for value in tolerances),
+            'calibration_range_tolerances_raw必须与motor_ids等长且每项为0..4095整数')
+    return dict(zip(names,ids)),{'path':str(actual),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),
+                               'motor_ids':ids,'calibration_range_tolerances_raw':tolerances}
+
+
+def configure_bus_mapping(path,left_path=None):
+    """唯一映射及逐电机容差源为本次显式绑定的左右总线TOML。"""
+    global BASE_TARGETS, WHEEL_PULSE_TARGETS, WHEEL_STOP_TARGETS, BUS_CONFIG, LEFT_BUS_CONFIG
+    global RIGHT_FEEDBACK_SCOPE, FRONT_FEEDBACK_SCOPE, LEFT_FEEDBACK_SCOPE, MIXED_RAW_SCOPE
+    mapping,right=read_bus_configuration(path,'right')
     require(set(mapping)==set(MIXED_ARM_NAMES)|{f'base_{role}_wheel' for role in WHEEL_ROLES}
             and all(mapping[name]==motor for motor,name in enumerate(MIXED_ARM_NAMES,1))
             and {mapping[f'base_{role}_wheel'] for role in WHEEL_ROLES}=={7,8,9},
             '固定六臂1..6及三轮7/8/9映射不合法')
+    if left_path is None:
+        left_path=LEFT_BUS_CONFIG['path'] if LEFT_BUS_CONFIG is not None else DEFAULT_LEFT_BUS_CONFIG
+    left_mapping,left=read_bus_configuration(left_path,'left')
+    left_names=[name.replace('right_','left_',1) for name in MIXED_ARM_NAMES]+['head_motor_1','head_motor_2']
+    require(left_mapping==dict(zip(left_names,range(1,9))),'固定左六臂1..6及头部7/8映射不合法')
     BASE_TARGETS=[('right',mapping[f'base_{role}_wheel'],f'base_{role}_wheel') for role in WHEEL_ROLES]
     WHEEL_PULSE_TARGETS=dict(zip(WHEEL_ROLES,BASE_TARGETS))
     WHEEL_STOP_TARGETS={motor:role for role,(_,motor,_) in WHEEL_PULSE_TARGETS.items()}
-    BUS_CONFIG={'path':str(actual),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+    BUS_CONFIG=right;LEFT_BUS_CONFIG=left
     scopes={role:feedback_scope(motor) for role,(_,motor,_) in WHEEL_PULSE_TARGETS.items()}
     RIGHT_FEEDBACK_SCOPE=scopes['right'];FRONT_FEEDBACK_SCOPE=scopes['front'];LEFT_FEEDBACK_SCOPE=scopes['left']
     held='/'.join(wheel_label(motor) for motor in wheel_ids() if motor!=9)
     MIXED_RAW_SCOPE=MIXED_RAW_SCOPE_TEMPLATE.format(held=held,selected=wheel_label(9))
-    return dict(BUS_CONFIG)
+    return copy.deepcopy(BUS_CONFIG)
 
 
 def wheel_ids():
@@ -202,13 +221,38 @@ def feedback_scope(motor):
 
 def verify_bus_config(plan):
     """执行和GO每次复核原配置字节身份；禁止只信进程已加载的映射。"""
-    reference=plan.get('bus_config')
-    require(type(reference) is dict and set(reference)=={'path','bytes','sha256'}
-            and Path(reference['path']).is_absolute() and reference==BUS_CONFIG,
-            '计划未绑定本次实际右总线配置')
-    data=Path(reference['path']).read_bytes()
-    require(len(data)==reference['bytes'] and hashlib.sha256(data).hexdigest()==reference['sha256'],
-            '右总线配置字节身份变化，旧计划/GO已失效')
+    for key,current in (('bus_config',BUS_CONFIG),('left_bus_config',LEFT_BUS_CONFIG)):
+        reference=plan.get(key)
+        require(type(reference) is dict and set(reference)=={'path','bytes','sha256','motor_ids','calibration_range_tolerances_raw'}
+                and Path(reference['path']).is_absolute() and reference==current,
+                '计划未绑定本次实际左右总线配置')
+        data=Path(reference['path']).read_bytes()
+        require(len(data)==reference['bytes'] and hashlib.sha256(data).hexdigest()==reference['sha256'],
+                '总线配置字节身份变化，旧计划/GO已失效')
+
+
+def motor_range_tolerance(plan,side,motor):
+    require(side in SERIALS and type(motor) is int,'校准容差目标错误')
+    reference=(BUS_CONFIG if side=='right' else LEFT_BUS_CONFIG) if plan is None else plan.get(
+        'bus_config' if side=='right' else 'left_bus_config')
+    require(isinstance(reference,dict),'缺少绑定总线的逐电机校准容差')
+    ids=reference.get('motor_ids');values=reference.get('calibration_range_tolerances_raw')
+    require(type(ids) is list and motor in ids and type(values) is list and len(values)==len(ids)
+            and all(type(value) is int and 0<=value<=4095 for value in values),'逐电机校准容差字段错误')
+    return values[ids.index(motor)]
+
+
+def effective_calibration_bounds(calibration,tolerance):
+    require(type(tolerance) is int and 0<=tolerance<=4095
+            and all(type(calibration[key]) is int for key in ('range_min','range_max'))
+            and 0<=calibration['range_min']<=calibration['range_max']<=4095,'校准边界/容差错误')
+    return max(0,calibration['range_min']-tolerance),min(4095,calibration['range_max']+tolerance)
+
+
+def calibration_range_status(value,calibration,plan,side,motor):
+    low,high=effective_calibration_bounds(calibration,motor_range_tolerance(plan,side,motor))
+    return ('INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else
+            'WITHIN_TOLERANCE' if low<=value<=high else 'OUTSIDE')
 
 
 def feedback_entry(plan):
@@ -378,6 +422,7 @@ def mixed_raw_contract(bindings):
             'tool':dict(refs['tool']),'arm_calibration':dict(refs['arm_calibration']),
             'trace':dict(RIGHT_PULSE_TRACE),'operation':'mixed-hold-wheel9',
             'motor_ids':[*range(1,7),*wheel_ids()],'arm_ids':[1,2,3,4,5,6],'arm_names':list(MIXED_ARM_NAMES),
+            'calibration_range_tolerances_raw':[motor_range_tolerance(None,'right',motor) for motor in range(1,7)],
             'wheel_ids':wheel_ids(),'wheel_raw_goal':[500 if motor==9 else 0 for motor in wheel_ids()],
             'metadata':{key:value for key,value in RIGHT_PULSE_METADATA.items() if key!='Lock'},
             'allowed_raw_targets':[0,500],
@@ -439,13 +484,16 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
           'go_expires_at_unix_ns','motor_ids','wheel_ids','wheel_raw_goal','pulse_duration_ns',
           'zero_window_ns','enable_budget_ns','loaded_calibration','arm_anchors','wheel_anchors',
           'arm_final','cycle_count','cycles','wheel_samples','zero_samples','timing','cleanup'}
-    require(isinstance(row,dict) and set(row)==keys,'混合child原件schema字段错误')
+    tolerance_key='calibration_range_tolerances_raw'
+    legacy=isinstance(row,dict) and tolerance_key not in row and contract[tolerance_key]==[0]*6
+    require(isinstance(row,dict) and set(row)==(keys if legacy else keys|{tolerance_key}),'混合child原件schema字段错误')
     def integer(value,low=0,high=None):
         require(type(value) is int and value>=low and (high is None or value<=high),'混合原件整数越界')
         return value
     def array(value,count,low=0,high=4095):
         require(type(value) is list and len(value)==count,'混合原件数组长度错误')
         return [integer(item,low,high) for item in value]
+    require(array(row.get(tolerance_key,[0]*6),6)==contract[tolerance_key],'混合原件逐电机校准容差与计划不符')
     require(row['schema']=='FEETECH_MIXED_WHEEL9_V1' and row['operation']==contract['operation']
             and row['serial_device']==DEVICES['right']
             and row['arm_calibration_path']==contract['arm_calibration']['path']
@@ -480,7 +528,8 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
                     'calibration_max','sampled_ns'} and integer(anchor['motor_id'])==index
                 and integer(anchor['calibration_min'])==cal['range_min']
                 and integer(anchor['calibration_max'])==cal['range_max'],'混合锚点身份/范围错误')
-        value=integer(anchor['raw'],cal['range_min'],cal['range_max'])
+        low,high=effective_calibration_bounds(cal,contract[tolerance_key][index-1])
+        value=integer(anchor['raw'],low,high)
         require(integer(anchor['goal_raw'],0,4095)==value
                 and 0<=times[1]-integer(anchor['sampled_ns'],1)<=contract['anchor_freshness_ns'],
                 '六臂实际Goal不等于新鲜原位锚点')
@@ -573,7 +622,8 @@ def run_bus2_mixed_raw_hold(engine):
     engine.rows.extend([*arms,wheel])
     argv=[contract['tool']['path'],DEVICES['right'],'9',contract['operation'],
           '--arm-calibration',contract['arm_calibration']['path'],'--go-expires-at-ns',str(expiry),
-          '--wheel-ids',','.join(map(str,contract['wheel_ids']))]
+          '--wheel-ids',','.join(map(str,contract['wheel_ids'])),
+          '--calibration-range-tolerances-raw',','.join(map(str,contract['calibration_range_tolerances_raw']))]
     trace=io.output/f'bus2-mixed-raw-command_{io.sequence+1:04d}.strace'
     failure=None
     try:
@@ -870,7 +920,9 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
     root=validate_artifact_root(artifact_root)
     require(Path(output).is_relative_to(root) and Path(output)!=root,'输出不在显式维护根目录内')
     plan = {"schema": "MAINTENANCE_PLAN_V2", "run_id": run_id, "output": str(output), "artifact_root":str(root),
-            "bindings": bindings, "bus_config":dict(BUS_CONFIG or {}), "script_sha256": hashlib.sha256(script).hexdigest(), "script_bytes": len(script),
+            "bindings": bindings, "bus_config":copy.deepcopy(BUS_CONFIG or {}),
+            "left_bus_config":copy.deepcopy(LEFT_BUS_CONFIG or {}),
+            "script_sha256": hashlib.sha256(script).hexdigest(), "script_bytes": len(script),
             "position_targets": position_targets, "position_delta_raw": 24, "minimum_excursion_raw": 12,
             "return_tolerance_raw": 4, "position_wait_ms": 800, "base_order": wheel_ids(),
             "base_raw": [20, -20], "pulse_target_ms": 150, "nonzero_window_fail_ns": 1_000_000_000,
@@ -1295,6 +1347,7 @@ class ProbeEngine:
         self.check_gate()
         ready=getattr(self,'left_stop_go_check',self.check_gate)
         contract=self.plan['right_gripper_release'];goal=contract['goal_raw']
+        low,high=effective_calibration_bounds(calibration,motor_range_tolerance(self.plan,'right',6))
         row={'side':'right','motor':6,'name':'right_arm_gripper','kind':'position_release','status':'FAIL',
              'goal_raw':goal,'return_to_initial':False,'position_accuracy':{'status':'NOT_RUN','stages':{}}}
         self.rows.append(row);error=None
@@ -1304,12 +1357,12 @@ class ProbeEngine:
                     and self.read('right',6,'Torque_Enable')==0
                     and self.read('right',6,'Present_Velocity')==0,'右夹爪模式/断扭/静止状态漂移')
             value=self.read('right',6,'Present_Position')
-            require(type(value) is int and calibration['range_min']<=value<=calibration['range_max']
+            require(type(value) is int and low<=value<=high
                     and 0<(goal-value)*contract['direction']<=contract['maximum_increment_raw']
                     and (initial is None or value==initial),'右夹爪初值/增量/稳定性不符，不重算目标')
             return value
         try:
-            require(calibration==contract['calibration'] and calibration['range_min']<=goal<=calibration['range_max'],
+            require(calibration==contract['calibration'] and low<=goal<=high,
                     '右夹爪原标定或固定目标范围变化')
             initial=stopped_at();row['initial_raw']=initial
             self.io.sleep(.05);stopped_at(initial)
@@ -1345,7 +1398,8 @@ class ProbeEngine:
                     "目标非断扭/静止")
             anchor = self.read(side, motor, "Present_Position")
             goal = anchor + self.plan["position_delta_raw"]
-            require(calibration["range_min"] <= anchor <= goal <= calibration["range_max"], "锚点/目标超标定范围")
+            low,high=effective_calibration_bounds(calibration,motor_range_tolerance(self.plan,side,motor))
+            require(low <= anchor <= goal <= high, "锚点/目标超有效校准范围")
             row.update(anchor_raw=anchor, goal_raw=goal)
             self.write(side, motor, "Goal_Position", anchor)
             self.io.sleep(0.02)
@@ -1552,12 +1606,13 @@ def validate_arm_range_capture(row,plan):
         else:
             require(0<=value<=4095,'右臂范围PP不在单圈范围')
             calibration=calibrations[motor-1]
-            status='INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE'
+            status=calibration_range_status(value,calibration,plan,'right',motor)
             require(ranges[index//3]=={'motor':motor,'name':name,'position_raw':value,
                     'range_min':calibration['range_min'],'range_max':calibration['range_max'],'status':status,
                     'sampled_ns':end},'右臂范围校准判定变化')
         previous_finish,previous_sequence=end,command
-    require(row.get('range_status')==('OUTSIDE' if any(value['status']=='OUTSIDE' for value in ranges) else 'INSIDE'),
+    require(row.get('range_status')==('OUTSIDE' if any(value['status']=='OUTSIDE' for value in ranges) else
+            'WITHIN_TOLERANCE' if any(value['status']=='WITHIN_TOLERANCE' for value in ranges) else 'INSIDE'),
             '右臂范围汇总变化')
 
 
@@ -1599,11 +1654,12 @@ def run_bus2_arm_range_only(engine,check_go):
                         require(0<=value<=4095,'右臂范围PP不在单圈范围，停止后续UART')
                         row['ranges'].append({'motor':motor,'name':name,
                             'position_raw':value,'range_min':calibration['range_min'],'range_max':calibration['range_max'],
-                            'status':'INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE',
+                            'status':calibration_range_status(value,calibration,engine.plan,'right',motor),
                             'sampled_ns':sample['finished_ns']})
                 except BaseException as error:
                     sample.update(finished_ns=io.now(),error=repr(error));raise
-        row['range_status']='OUTSIDE' if any(value['status']=='OUTSIDE' for value in row['ranges']) else 'INSIDE'
+        row['range_status']=('OUTSIDE' if any(value['status']=='OUTSIDE' for value in row['ranges']) else
+                            'WITHIN_TOLERANCE' if any(value['status']=='WITHIN_TOLERANCE' for value in row['ranges']) else 'INSIDE')
         row['finished_ns']=io.now()
         validate_arm_range_capture(row,engine.plan)
         row['status']='DIAGNOSTIC_CAPTURED'
@@ -2997,6 +3053,8 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bus-config',type=Path,default=DEFAULT_BUS_CONFIG,
                         help='右总线TOML，joints/motor_ids为唯一轮位映射；计划绑定其绝对路径和原始字节身份')
+    parser.add_argument('--left-bus-config',type=Path,default=DEFAULT_LEFT_BUS_CONFIG,
+                        help='左总线TOML，逐电机校准容差与joints/motor_ids同序；与右总线一起绑定计划')
     parser.add_argument('--bindings',type=Path)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--run-id')
@@ -3028,7 +3086,7 @@ def main(argv=None):
     grippers.add_argument('--right-gripper-release',action='store_true',help=GRIPPER_RELEASE_SCOPE)
     grippers.add_argument('--right-gripper-close',action='store_true',help=GRIPPER_TARGETS[1397]['scope'])
     options=parser.parse_args(argv)
-    configure_bus_mapping(options.bus_config)
+    configure_bus_mapping(options.bus_config,options.left_bus_config)
     require(options.arm_range_id is None or options.bus2_arm_range_only,'单ID3选择只能附加到右臂范围只读')
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
     wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None

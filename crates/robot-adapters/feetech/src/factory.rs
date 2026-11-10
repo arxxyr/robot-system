@@ -25,7 +25,9 @@ use robot_core::error::RobotError;
 use robot_core::factory::{AdapterBuildContext, AdapterFactory};
 use robot_core::time::{RobotClock, SystemClock};
 
-use crate::adapter::{FeetechAdapter, FeetechAdapterConfig};
+use crate::adapter::{
+    FeetechAdapter, FeetechAdapterConfig, validate_calibration_range_tolerances_raw,
+};
 use crate::bus::FeetechBus;
 use crate::calibration_io::load_and_merge;
 use crate::registers::DEFAULT_BAUDRATE;
@@ -51,6 +53,7 @@ impl FeetechFactory {
             .ok_or(RobotError::InvalidParameter("feetech: missing address"))?;
 
         let motor_ids = resolve_motor_ids(ctx)?;
+        validate_calibration_tolerances(ctx)?;
 
         // ---- 3) 打开真串口 ----
         let clock: Arc<dyn RobotClock> = ctx.services.map_or_else(
@@ -130,6 +133,7 @@ impl FeetechFactory {
                 adapter_name: "feetech_sts3215",
                 joint_names: ctx.joint_names.to_vec(),
                 calibrations,
+                calibration_range_tolerances_raw: ctx.calibration_range_tolerances_raw.to_vec(),
             },
             bus,
         )
@@ -210,6 +214,23 @@ fn resolve_motor_ids(ctx: &AdapterBuildContext<'_>) -> Result<Vec<u8>, RobotErro
     Ok(ctx.motor_ids.to_vec())
 }
 
+fn validate_calibration_tolerances(ctx: &AdapterBuildContext<'_>) -> Result<(), RobotError> {
+    validate_calibration_range_tolerances_raw(
+        ctx.joint_names.len(),
+        ctx.calibration_range_tolerances_raw,
+    )
+    .map_err(RobotError::from)?;
+    if ctx.calibration_paths.is_empty()
+        && ctx
+            .calibration_range_tolerances_raw
+            .iter()
+            .any(|&value| value != 0)
+    {
+        return Err(crate::FeetechError::CalibrationToleranceWithoutCalibration.into());
+    }
+    Ok(())
+}
+
 impl AdapterFactory for FeetechFactory {
     fn name(&self) -> &'static str {
         "feetech_sts3215"
@@ -239,6 +260,27 @@ inventory::submit! { &FeetechFactory as &dyn AdapterFactory }
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_calibration_tolerances_are_rejected_before_opening_serial() {
+        let names = ["j1".to_owned()];
+        for tolerances in [&[0, 20][..], &[4096][..], &[1][..]] {
+            let context = AdapterBuildContext {
+                services: None,
+                instance_name: "test",
+                adapter_kind: "feetech_sts3215",
+                joint_names: &names,
+                address: Some("/不存在的串口"),
+                motor_ids: &[1],
+                calibration_paths: &[],
+                calibration_range_tolerances_raw: tolerances,
+            };
+            assert!(matches!(
+                FeetechFactory::build_concrete(&context, ""),
+                Err(RobotError::InvalidParameter(_))
+            ));
+        }
+    }
 
     #[test]
     fn wheel_calibration_follows_configured_id_without_relabeling_records() {

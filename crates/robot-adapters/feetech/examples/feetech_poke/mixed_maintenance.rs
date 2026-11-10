@@ -517,6 +517,7 @@ fn run<T: SerialTransport + 'static>(
     transport: T,
     guard: &Arc<Guard>,
     calibrations: &[MotorCalibration],
+    calibration_range_tolerances_raw: [u16; 6],
     report: &mut Value,
 ) -> Result<(), String> {
     let ids = guard.ids;
@@ -524,6 +525,7 @@ fn run<T: SerialTransport + 'static>(
     let held_slots = (6..9).filter(|slot| ids[*slot] != 9).collect::<Vec<_>>();
     let held_ids = held_slots.iter().map(|slot| ids[*slot]).collect::<Vec<_>>();
     bind_report(report, &ids);
+    report["calibration_range_tolerances_raw"] = json!(calibration_range_tolerances_raw);
     let motors: HashMap<_, _> = NAMES
         .iter()
         .zip(ids)
@@ -543,6 +545,10 @@ fn run<T: SerialTransport + 'static>(
         adapter_name: "mixed-wheel9-maintenance",
         joint_names: NAMES.iter().map(ToString::to_string).collect(),
         calibrations: calibrations.to_owned(),
+        calibration_range_tolerances_raw: calibration_range_tolerances_raw
+            .into_iter()
+            .chain([0; 3])
+            .collect(),
     };
     let mut adapter = FeetechAdapter::new_bus2_mixed_raw(
         config,
@@ -882,6 +888,25 @@ fn parse_wheel_ids(value: &str) -> Result<[u8; 3], String> {
     Ok(wheel_ids)
 }
 
+fn parse_calibration_range_tolerances_raw(args: &[String]) -> Result<[u16; 6], String> {
+    let value = match args {
+        [] => return Ok([0; 6]),
+        [flag, value] if flag == "--calibration-range-tolerances-raw" => value,
+        _ => return Err("六臂校准容差参数不匹配".into()),
+    };
+    let parsed = value
+        .split(',')
+        .map(str::parse::<u16>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "六臂校准容差解析失败")?;
+    if parsed.iter().any(|tolerance| *tolerance > 4095) {
+        return Err("六臂校准容差必须在0..4095内".into());
+    }
+    parsed
+        .try_into()
+        .map_err(|_| "六臂校准容差必须恰为六个整数".into())
+}
+
 fn bind_report(report: &mut Value, ids: &[u8; 9]) {
     report["motor_ids"] = json!(ids);
     report["wheel_ids"] = json!(&ids[6..]);
@@ -894,13 +919,13 @@ fn bind_report(report: &mut Value, ids: &[u8; 9]) {
 }
 
 fn empty_report(args: &[String]) -> Value {
-    json!({"schema":"FEETECH_MIXED_WHEEL9_V1","operation":"mixed-hold-wheel9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
+    json!({"schema":"FEETECH_MIXED_WHEEL9_V1","operation":"mixed-hold-wheel9","result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"calibration_range_tolerances_raw":[0,0,0,0,0,0],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}})
 }
 
 pub(super) fn main(args: &[String]) -> ExitCode {
     let mut report = empty_report(args);
     let result = (|| {
-        if args.len() != 10
+        if !matches!(args.len(), 10 | 12)
             || args[1] != DEVICE
             || args[2] != "9"
             || args[4] != "--arm-calibration"
@@ -910,6 +935,8 @@ pub(super) fn main(args: &[String]) -> ExitCode {
             return Err("固定mixed维护参数不匹配".into());
         }
         let wheel_ids = parse_wheel_ids(&args[9])?;
+        let calibration_range_tolerances_raw = parse_calibration_range_tolerances_raw(&args[10..])?;
+        report["calibration_range_tolerances_raw"] = json!(calibration_range_tolerances_raw);
         let ids = motor_ids(wheel_ids)?;
         bind_report(&mut report, &ids);
         let expiry = args[7].parse::<u64>().map_err(|_| "GO Unix期限解析失败")?;
@@ -942,7 +969,13 @@ pub(super) fn main(args: &[String]) -> ExitCode {
             DEFAULT_BAUDRATE,
         )
         .map_err(|e| e.to_string())?;
-        run(transport, &guard, &calibrations, &mut report)
+        run(
+            transport,
+            &guard,
+            &calibrations,
+            calibration_range_tolerances_raw,
+            &mut report,
+        )
     })();
     match result {
         Ok(()) => {
@@ -967,6 +1000,9 @@ mod tests {
     use robot_core::time::{MockClock, MonoRawNs};
     use std::collections::VecDeque;
 
+    // 模拟信号场景共享入口原子标志，禁止并行修改。
+    static SIM_LOCK: Mutex<()> = Mutex::new(());
+
     struct AdvancingClock(Arc<MockClock>);
     impl RobotClock for AdvancingClock {
         fn now(&self) -> MonoRawNs {
@@ -986,7 +1022,7 @@ mod tests {
         clock: Arc<MockClock>,
         rx: VecDeque<u8>,
         frames: Arc<Mutex<Vec<Vec<u8>>>>,
-        goal: [u16; 10],
+        goal: Arc<Mutex<[u16; 10]>>,
         torque: [u8; 10],
         position: [u16; 10],
         velocity: [u16; 10],
@@ -1019,7 +1055,7 @@ mod tests {
                     if self.scenario == 4 {
                         0
                     } else {
-                        self.goal[usize::from(id)]
+                        self.goal.lock().unwrap()[usize::from(id)]
                     }
                 }
                 46 => self.velocity[usize::from(id)],
@@ -1096,7 +1132,7 @@ mod tests {
                         };
                         match bytes[5] {
                             40 => self.torque[usize::from(row[0])] = u8::try_from(value).unwrap(),
-                            42 => self.goal[usize::from(row[0])] = value,
+                            42 => self.goal.lock().unwrap()[usize::from(row[0])] = value,
                             46 => self.velocity[usize::from(row[0])] = value,
                             _ => panic!("未授权寄存器写"),
                         }
@@ -1127,7 +1163,11 @@ mod tests {
         }
         fn read_exact(&mut self, out: &mut [u8]) -> Result<(), FeetechError> {
             self.clock.advance(DurationNs(20_000));
-            if self.scenario == 10 && self.rx.len() == 48 && self.goal[1] == 2047 && !self.nonzero {
+            if self.scenario == 10
+                && self.rx.len() == 48
+                && self.goal.lock().unwrap()[1] == 2047
+                && !self.nonzero
+            {
                 self.clock.advance(DurationNs(201_000_000));
             }
             for byte in out {
@@ -1169,6 +1209,54 @@ mod tests {
     }
 
     #[test]
+    fn calibration_tolerances_require_six_bounded_raw_values_or_default_to_zero() {
+        assert_eq!(parse_calibration_range_tolerances_raw(&[]).unwrap(), [0; 6]);
+        for values in ["0,20,7,4095,1,0", "4095,4095,4095,4095,4095,4095"] {
+            let args = ["--calibration-range-tolerances-raw".into(), values.into()];
+            let expected = values
+                .split(',')
+                .map(|value| value.parse::<u16>().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                parse_calibration_range_tolerances_raw(&args)
+                    .unwrap()
+                    .as_slice(),
+                expected
+            );
+        }
+        for values in [
+            "",
+            "0,0,0,0,0",
+            "0,0,0,0,0,0,0",
+            "0,0,0,0,0,4096",
+            "0,0,0,0,0,65536",
+            "0,0,0,0,0,-1",
+            "0,0,0,0,0,x",
+            "0,0,0,0,0,1.0",
+        ] {
+            let args = ["--calibration-range-tolerances-raw".into(), values.into()];
+            assert!(
+                parse_calibration_range_tolerances_raw(&args).is_err(),
+                "{values}"
+            );
+        }
+        for args in [
+            vec!["--calibration-range-tolerances-raw".into()],
+            vec![
+                "--calibration-range-tolerance-raw".into(),
+                "0,0,0,0,0,0".into(),
+            ],
+            vec![
+                "--calibration-range-tolerances-raw".into(),
+                "0,0,0,0,0,0".into(),
+                "extra".into(),
+            ],
+        ] {
+            assert!(parse_calibration_range_tolerances_raw(&args).is_err());
+        }
+    }
+
+    #[test]
     fn mixed_failure_before_run_retains_zero_cycles_and_no_effects() {
         let error = Guard::new(Arc::new(MockClock::default()), 0, [8, 9, 7])
             .err()
@@ -1180,6 +1268,10 @@ mod tests {
         assert_eq!(decoded["result"], "FAIL");
         assert_eq!(decoded["error"], "GO已过期");
         assert_eq!(decoded["cycle_count"], 0);
+        assert_eq!(
+            decoded["calibration_range_tolerances_raw"],
+            json!([0, 0, 0, 0, 0, 0])
+        );
         assert!(decoded["cycles"].as_array().unwrap().is_empty());
         assert!(
             decoded["timing"]
@@ -1197,6 +1289,7 @@ mod tests {
 
     #[test]
     fn fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop() {
+        let _sim_lock = SIM_LOCK.lock().unwrap();
         assert!(Guard::new(Arc::new(MockClock::default()), 0, [8, 9, 7]).is_err());
         for (wheel_ids, scenario) in [
             [8, 9, 7],
@@ -1235,7 +1328,7 @@ mod tests {
                 clock: clock.clone(),
                 rx: VecDeque::new(),
                 frames: frames.clone(),
-                goal: [0; 10],
+                goal: Arc::new(Mutex::new([0; 10])),
                 torque: [0; 10],
                 position,
                 velocity: [0; 10],
@@ -1251,7 +1344,11 @@ mod tests {
                 cals[5].range_min = 1384;
             }
             let mut report = empty_report(&[]);
-            let result = run(sim, &guard, &cals, &mut report);
+            let result = run(sim, &guard, &cals, [0; 6], &mut report);
+            assert_eq!(
+                report["calibration_range_tolerances_raw"],
+                json!([0, 0, 0, 0, 0, 0])
+            );
             assert_eq!(
                 result.is_ok(),
                 scenario == 0,
@@ -1343,6 +1440,115 @@ mod tests {
                         assert!(frames.iter().filter(|f| f[4] == 131).all(|f| f[5] == 40));
                     }
                 }
+            }
+        }
+        INTERRUPTED.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn mixed_calibration_tolerances_preserve_actual_anchor_and_goal_raw() {
+        let _sim_lock = SIM_LOCK.lock().unwrap();
+        for (tolerances, second_max, rejected_motor) in [
+            ([0; 6], 4095, Some(3)),
+            ([20; 6], 4095, None),
+            ([0, 20, 7, 0, 0, 0], 2030, None),
+            ([0, 7, 20, 0, 0, 0], 2030, Some(2)),
+        ] {
+            INTERRUPTED.store(false, Ordering::SeqCst);
+            let wheel_ids = [8, 9, 7];
+            let ids = motor_ids(wheel_ids).unwrap();
+            let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000)));
+            let guard = Arc::new(
+                Guard::new(
+                    Arc::new(AdvancingClock(clock.clone())),
+                    Guard::unix_now().unwrap() + 600_000_000_000,
+                    wheel_ids,
+                )
+                .unwrap(),
+            );
+            let frames = Arc::new(Mutex::new(Vec::new()));
+            let goals = Arc::new(Mutex::new([0; 10]));
+            let mut position = [2047; 10];
+            position[3] = 2992;
+            let sim = Sim {
+                ids,
+                clock,
+                rx: VecDeque::new(),
+                frames: frames.clone(),
+                goal: goals.clone(),
+                torque: [0; 10],
+                position,
+                velocity: [0; 10],
+                scenario: 0,
+                nonzero: false,
+                zero_samples: 0,
+            };
+            let mut calibrations = ids
+                .into_iter()
+                .map(|id| MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
+                .collect::<Vec<_>>();
+            calibrations[1].range_max = second_max;
+            calibrations[2].range_max = 2991;
+            let mut report = empty_report(&[]);
+            let result = run(sim, &guard, &calibrations, tolerances, &mut report);
+            assert_eq!(
+                report["calibration_range_tolerances_raw"],
+                json!(tolerances)
+            );
+            assert_eq!(
+                result.is_ok(),
+                rejected_motor.is_none(),
+                "{tolerances:?}: {result:?}"
+            );
+            let frames = frames.lock().unwrap();
+            if let Some(motor) = rejected_motor {
+                let raw = if motor == 3 { 2992 } else { 2047 };
+                assert_eq!(
+                    result.unwrap_err(),
+                    format!("invalid parameter: feetech calibration: motor={motor}, raw={raw}")
+                );
+                assert_eq!(report["cycle_count"], 0);
+                assert!(report["arm_anchors"].as_array().unwrap().is_empty());
+                assert!(
+                    frames
+                        .iter()
+                        .filter(|frame| frame[4] == 131)
+                        .all(|frame| frame[5] == 40)
+                );
+                continue;
+            }
+            assert_eq!(goals.lock().unwrap()[3], 2992);
+            assert_eq!(report["arm_anchors"][2]["raw"], 2992);
+            assert_eq!(report["arm_anchors"][2]["goal_raw"], 2992);
+            assert_eq!(report["arm_anchors"][2]["calibration_min"], 0);
+            assert_eq!(report["arm_anchors"][2]["calibration_max"], 2991);
+            assert_eq!(report["arm_anchors"][2].as_object().unwrap().len(), 6);
+            assert_eq!(report["arm_final"][2]["raw"], 2992);
+            assert_eq!(report["cycle_count"], 400);
+            assert_eq!(report["cleanup"]["disable_ok"], true);
+            assert_eq!(
+                report["cleanup"]["torque_enable_after"],
+                json!([0, 0, 0, 0, 0, 0, 0, 0, 0])
+            );
+            assert!(
+                frames
+                    .iter()
+                    .filter(|frame| frame.len() >= 8 && frame[4..7] == [131, 42, 2])
+                    .all(|frame| {
+                        frame[7..frame.len() - 1]
+                            .chunks_exact(3)
+                            .any(|row| row[0] == 3 && u16::from_le_bytes([row[1], row[2]]) == 2992)
+                    })
+            );
+            if let Some(path) = std::env::var_os("ROBOT_MIXED_TOLERANCE_SOFTWARE_FIXTURE")
+                .filter(|_| tolerances == [20; 6])
+            {
+                report["result"] = json!("PASS");
+                report["serial_device"] = json!(DEVICE);
+                report["arm_calibration_path"] = json!("/tmp/mixed-software-arm-calibration.json");
+                report["go_expires_at_unix_ns"] = json!(guard.expires_unix);
+                report["loaded_calibration"] = json!(calibrations[..6].iter().map(|cal| json!({"id":cal.id,"range_min":cal.range_min,"range_max":cal.range_max,"homing_offset":cal.homing_offset,"drive_mode":cal.drive_mode})).collect::<Vec<_>>());
+                std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
             }
         }
         INTERRUPTED.store(false, Ordering::SeqCst);

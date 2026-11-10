@@ -2460,6 +2460,12 @@ fn build_adapter(
     };
 
     // 3) build adapter
+    let calibration_range_tolerances_raw = args
+        .loaded_config
+        .as_ref()
+        .and_then(|cfg| resolve_hardware_section(&cfg.parsed, &args.hardware_id))
+        .and_then(|hw| hw.calibration_range_tolerances_raw.as_deref())
+        .unwrap_or_default();
     let ctx = AdapterBuildContext {
         services,
         instance_name: &args.hardware_id,
@@ -2468,6 +2474,7 @@ fn build_adapter(
         address: address.as_deref(),
         motor_ids: &motor_ids,
         calibration_paths: &calibration_paths,
+        calibration_range_tolerances_raw,
     };
     // **task-30 v9 finding #3 + M7 阶段 4 第二步**：按 RtClass 三路 dispatch。
     // 1) 先 `build_hard_rt`：HardRT factory 必返综合 trait object（编译期 RtSafeCtrl）。

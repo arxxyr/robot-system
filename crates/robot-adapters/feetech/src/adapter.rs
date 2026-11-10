@@ -115,6 +115,60 @@ pub struct FeetechAdapterConfig {
     /// 来源推荐：`calibration_io::load_and_merge(&[...])` → factory 按 joint_names
     /// 顺序取出对应 motor 的 `MotorCalibration`。
     pub calibrations: Vec<MotorCalibration>,
+    /// 与关节同序的校准边界容差，raw 单位；空数组等价全 0。
+    /// 非空长度必须与关节数一致，每项限 0..=4095；不修改原标定。
+    pub calibration_range_tolerances_raw: Vec<u16>,
+}
+
+/// 只扩展软件校准边界，保留 12-bit 位置硬界及原标定数据。
+fn effective_calibration_range_raw(calibration: &MotorCalibration, tolerance: u16) -> (i32, i32) {
+    (
+        i32::from(calibration.range_min.saturating_sub(tolerance)),
+        i32::from(calibration.range_max.saturating_add(tolerance).min(4095)),
+    )
+}
+
+fn validate_calibrations_raw(
+    calibrations: &[MotorCalibration],
+    joint_count: usize,
+) -> Result<(), FeetechError> {
+    if !calibrations.is_empty() && calibrations.len() != joint_count {
+        return Err(FeetechError::ByteLengthMismatch {
+            expected: joint_count,
+            actual: calibrations.len(),
+        });
+    }
+    for calibration in calibrations {
+        if calibration.range_max > 4095 {
+            return Err(FeetechError::CalibrationMaxOutOfRange(i32::from(
+                calibration.range_max,
+            )));
+        }
+        if calibration.range_min > calibration.range_max {
+            return Err(FeetechError::CalibrationRangeInverted {
+                min: calibration.range_min,
+                max: calibration.range_max,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// factory 在打开串口前复用此校验；adapter 构造仍独立守住同一约束。
+pub(crate) fn validate_calibration_range_tolerances_raw(
+    joint_count: usize,
+    tolerances: &[u16],
+) -> Result<(), FeetechError> {
+    if !tolerances.is_empty() && tolerances.len() != joint_count {
+        return Err(FeetechError::ByteLengthMismatch {
+            expected: joint_count,
+            actual: tolerances.len(),
+        });
+    }
+    if let Some(&invalid) = tolerances.iter().find(|&&value| value > 4095) {
+        return Err(FeetechError::CalibrationRangeToleranceOutOfRange(invalid));
+    }
+    Ok(())
 }
 
 /// `FeetechAdapter` —— 包一层 `FeetechBus`，把 sync_read/write 跟
@@ -150,6 +204,8 @@ pub struct FeetechAdapter<T: SerialTransport> {
     /// Per-joint 标定。非空 Vec 长度等于 `joint_count`；空 Vec 表示无标定，
     /// `write_command` 热路径跳过 silent clamp。task 29 commit 2 新增。
     calibrations: Vec<MotorCalibration>,
+    /// 构造期补齐的逐关节边界容差；轮速路径不消费此配置。
+    calibration_range_tolerances_raw: Vec<u16>,
     /// `sync_goal_to_present` 里 readback 用的 Goal_Position 缓冲（预分配避免
     /// 热路径 alloc，虽然 enable 不在 RT scope 但保持一致风格）。task 29 commit
     /// 4 新增 —— 用于防飞序列的 write Goal 后 readback 验证。
@@ -190,12 +246,26 @@ impl<T: SerialTransport> FeetechAdapter<T> {
 
         // calibration 长度校验：允许空（无标定）或长度 == joint_count
         let calibrations = config.calibrations;
-        if !calibrations.is_empty() && calibrations.len() != joint_count_usize {
-            return Err(FeetechError::ByteLengthMismatch {
-                expected: joint_count_usize,
-                actual: calibrations.len(),
-            });
+        validate_calibrations_raw(&calibrations, joint_count_usize)?;
+
+        validate_calibration_range_tolerances_raw(
+            joint_count_usize,
+            &config.calibration_range_tolerances_raw,
+        )?;
+        if calibrations.is_empty()
+            && config
+                .calibration_range_tolerances_raw
+                .iter()
+                .any(|&value| value != 0)
+        {
+            return Err(FeetechError::CalibrationToleranceWithoutCalibration);
         }
+        let calibration_range_tolerances_raw = if config.calibration_range_tolerances_raw.is_empty()
+        {
+            vec![0; joint_count_usize]
+        } else {
+            config.calibration_range_tolerances_raw
+        };
 
         let mut joint_ids = Vec::with_capacity(joint_count_usize);
         let mut safety_stop_entries = Vec::with_capacity(joint_count_usize);
@@ -231,8 +301,10 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             }
         } else {
             for (i, cal) in calibrations.iter().enumerate() {
-                limits.position_min[i] = raw_to_rad(i32::from(cal.range_min));
-                limits.position_max[i] = raw_to_rad(i32::from(cal.range_max));
+                let (min, max) =
+                    effective_calibration_range_raw(cal, calibration_range_tolerances_raw[i]);
+                limits.position_min[i] = raw_to_rad(min);
+                limits.position_max[i] = raw_to_rad(max);
             }
         }
 
@@ -263,6 +335,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             limits,
             joint_count: u8::try_from(joint_count_usize).expect("joint_count <= MAX_JOINTS=32"),
             calibrations,
+            calibration_range_tolerances_raw,
             // task 29 commit 4：sync_goal_to_present readback 验证缓冲
             goal_raw: vec![0_i32; joint_count_usize],
             // task-30 v9 / M3：OutputSafetyProbe 路径预分配缓冲
@@ -676,8 +749,11 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             }
             let mut raw = rad_to_raw(cmd.positions[i]);
             if use_clamp {
-                let cal = &self.calibrations[i];
-                raw = clamp_raw(raw, i32::from(cal.range_min), i32::from(cal.range_max));
+                let (min, max) = effective_calibration_range_raw(
+                    &self.calibrations[i],
+                    self.calibration_range_tolerances_raw[i],
+                );
+                raw = clamp_raw(raw, min, max);
             }
             self.cmd_entries.push((self.joint_ids[i], raw));
         }
@@ -930,6 +1006,14 @@ mod tests {
         joints: &[(&str, u8)],
         calibrations: Vec<MotorCalibration>,
     ) -> (FeetechAdapter<MockTransport>, MockHandle) {
+        make_adapter_with_calibration_tolerances(joints, calibrations, Vec::new())
+    }
+
+    fn make_adapter_with_calibration_tolerances(
+        joints: &[(&str, u8)],
+        calibrations: Vec<MotorCalibration>,
+        calibration_range_tolerances_raw: Vec<u16>,
+    ) -> (FeetechAdapter<MockTransport>, MockHandle) {
         let (transport, handle) = MockTransport::new();
         let mut motors = HashMap::new();
         for (name, id) in joints {
@@ -945,6 +1029,7 @@ mod tests {
                 adapter_name: "feetech_sts3215_test",
                 joint_names: joints.iter().map(|(n, _)| (*n).to_string()).collect(),
                 calibrations,
+                calibration_range_tolerances_raw,
             },
             bus,
         )
@@ -1521,6 +1606,128 @@ mod tests {
     }
 
     #[test]
+    fn per_joint_tolerances_drive_limits_and_position_clamp_without_changing_calibration() {
+        let calibrations = (1..=3)
+            .map(|id| MotorCalibration::new(id, 0, 0, 1000, 3000).unwrap())
+            .collect::<Vec<_>>();
+        let (mut adapter, handle) = make_adapter_with_calibration_tolerances(
+            &[("head", 1), ("arm", 2), ("gripper", 3)],
+            calibrations.clone(),
+            vec![0, 20, 7],
+        );
+        for (index, (min, max)) in [(1000, 3000), (980, 3020), (993, 3007)]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(rad_to_raw(adapter.limits().position_min[index]), min);
+            assert_eq!(rad_to_raw(adapter.limits().position_max[index]), max);
+        }
+        let mut command = robot_core::adapter::JointCommandBuf {
+            joint_count: 3,
+            mode: robot_core::adapter::ControlModeRepr::Position,
+            ..robot_core::adapter::JointCommandBuf::default()
+        };
+        for (target, expected) in [(3021, [3000, 3020, 3007]), (979, [1000, 980, 993])] {
+            command.positions[..3].fill(raw_to_rad(target));
+            adapter.write_command(&command.as_view()).unwrap();
+            let tx = handle.drain_tx();
+            let actual = tx[7..tx.len() - 1]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|entry| u16::from_le_bytes([entry[1], entry[2]]))
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+        assert_eq!(adapter.calibrations, calibrations);
+    }
+
+    #[test]
+    fn calibration_tolerances_keep_position_hard_bounds() {
+        let (mut adapter, handle) = make_adapter_with_calibration_tolerances(
+            &[("j1", 1)],
+            vec![MotorCalibration::new(1, 0, 0, 10, 4085).unwrap()],
+            vec![4095],
+        );
+        assert_eq!(rad_to_raw(adapter.limits().position_min[0]), 0);
+        assert_eq!(rad_to_raw(adapter.limits().position_max[0]), 4095);
+        let mut command = robot_core::adapter::JointCommandBuf {
+            joint_count: 1,
+            mode: robot_core::adapter::ControlModeRepr::Position,
+            ..robot_core::adapter::JointCommandBuf::default()
+        };
+        for (target, expected) in [(-1, 0), (4096, 4095)] {
+            command.positions[0] = raw_to_rad(target);
+            adapter.write_command(&command.as_view()).unwrap();
+            let tx = handle.drain_tx();
+            assert_eq!(u16::from_le_bytes([tx[8], tx[9]]), expected);
+        }
+    }
+
+    #[test]
+    fn calibration_tolerance_configuration_is_validated_at_construction() {
+        for tolerances in [Vec::new(), vec![4095], vec![0, 20], vec![4096]] {
+            let (transport, handle) = MockTransport::new();
+            let motors = HashMap::from([("j1".into(), Motor::new(1).unwrap())]);
+            let bus = FeetechBus::new(transport, motors).unwrap();
+            let result = FeetechAdapter::new(
+                FeetechAdapterConfig {
+                    clock: Arc::new(robot_core::time::MockClock::default()),
+                    preempt: None,
+                    diag: None,
+                    call_deadline: Duration::from_millis(50),
+                    adapter_name: "test",
+                    joint_names: vec!["j1".into()],
+                    calibrations: vec![MotorCalibration::identity(1)],
+                    calibration_range_tolerances_raw: tolerances.clone(),
+                },
+                bus,
+            );
+            match tolerances.as_slice() {
+                [] => assert_eq!(result.unwrap().calibration_range_tolerances_raw, [0]),
+                [4095] => assert!(result.is_ok()),
+                [0, 20] => assert!(matches!(
+                    result,
+                    Err(FeetechError::ByteLengthMismatch {
+                        expected: 1,
+                        actual: 2
+                    })
+                )),
+                [4096] => assert!(matches!(
+                    result,
+                    Err(FeetechError::CalibrationRangeToleranceOutOfRange(4096))
+                )),
+                _ => unreachable!(),
+            }
+            assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+        }
+        let (transport, handle) = MockTransport::new();
+        let bus = FeetechBus::new(
+            transport,
+            HashMap::from([("j1".into(), Motor::new(1).unwrap())]),
+        )
+        .unwrap();
+        let result = FeetechAdapter::new(
+            FeetechAdapterConfig {
+                clock: Arc::new(robot_core::time::MockClock::default()),
+                preempt: None,
+                diag: None,
+                call_deadline: Duration::from_millis(50),
+                adapter_name: "test",
+                joint_names: vec!["j1".into()],
+                calibrations: Vec::new(),
+                calibration_range_tolerances_raw: vec![1],
+            },
+            bus,
+        );
+        assert!(matches!(
+            result,
+            Err(FeetechError::CalibrationToleranceWithoutCalibration)
+        ));
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+    }
+
+    #[test]
     fn calibration_length_mismatch_rejected() {
         // joint 有 1 个，calibration 给 2 个 → new() 拒绝
         let (transport, _handle) = MockTransport::new();
@@ -1536,6 +1743,7 @@ mod tests {
                 adapter_name: "test",
                 joint_names: vec!["j1".into()],
                 calibrations: vec![MotorCalibration::identity(1), MotorCalibration::identity(2)],
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         );
@@ -1543,6 +1751,42 @@ mod tests {
             Err(FeetechError::ByteLengthMismatch { .. }) => {}
             Ok(_) => panic!("expected ByteLengthMismatch, got Ok"),
             Err(other) => panic!("expected ByteLengthMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn original_invalid_calibration_is_rejected_before_tolerance_or_io() {
+        for tolerance in [0, 20] {
+            for (min, max) in [(3000, 2990), (0, 4096)] {
+                let (transport, handle) = MockTransport::new();
+                let bus = FeetechBus::new(
+                    transport,
+                    HashMap::from([("j1".into(), Motor::new(1).unwrap())]),
+                )
+                .unwrap();
+                let mut calibration = MotorCalibration::identity(1);
+                calibration.range_min = min;
+                calibration.range_max = max;
+                let result = FeetechAdapter::new(
+                    FeetechAdapterConfig {
+                        clock: Arc::new(robot_core::time::MockClock::default()),
+                        preempt: None,
+                        diag: None,
+                        call_deadline: Duration::from_millis(50),
+                        adapter_name: "test",
+                        joint_names: vec!["j1".into()],
+                        calibrations: vec![calibration],
+                        calibration_range_tolerances_raw: vec![tolerance],
+                    },
+                    bus,
+                );
+                assert!(matches!(
+                    result,
+                    Err(FeetechError::CalibrationRangeInverted { .. }
+                        | FeetechError::CalibrationMaxOutOfRange(_))
+                ));
+                assert_eq!(handle.drain_tx(), [] as [u8; 0]);
+            }
         }
     }
 
@@ -1561,6 +1805,7 @@ mod tests {
                 adapter_name: "test",
                 joint_names: vec!["j1".into()],
                 calibrations: vec![calibration],
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         );
@@ -1914,6 +2159,7 @@ mod tests {
                 adapter_name: "test_unconnected",
                 joint_names: vec!["j1".into(), "j2".into()],
                 calibrations: Vec::new(),
+                calibration_range_tolerances_raw: Vec::new(),
             },
             bus,
         )

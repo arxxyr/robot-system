@@ -85,6 +85,9 @@ pub struct HardwareSection {
     pub motor_ids: Vec<u8>,
     #[serde(default)]
     pub calibration: Option<String>,
+    /// 与 `joints/motor_ids` 同序的校准边界容差（raw）；省略为全0。
+    #[serde(default)]
+    pub calibration_range_tolerances_raw: Option<Vec<u16>>,
     /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
     /// 不再走 extras）。`None`（缺省）= **true**（保留 `s0_daemon` 既有无条件启动
     /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
@@ -134,6 +137,8 @@ pub enum HardwareSectionError {
     /// motor id 重复（总线寻址冲突）。
     #[error("[[hardware]] id={id}: motor_id 重复 {motor_id}")]
     DupMotorId { id: String, motor_id: u8 },
+    #[error("[[hardware]] id={id}: 校准边界容差须与 joints 等长且每项在0..=4095")]
+    InvalidCalibrationTolerances { id: String },
 }
 
 impl HardwareSectionError {
@@ -178,6 +183,11 @@ pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSec
             joints: hw.joints.len(),
             motor_ids: hw.motor_ids.len(),
         });
+    }
+    if let Some(values) = &hw.calibration_range_tolerances_raw
+        && (values.len() != hw.joints.len() || values.iter().any(|&value| value > 4095))
+    {
+        return Err(HardwareSectionError::InvalidCalibrationTolerances { id: hw.id.clone() });
     }
     let mut seen_names = std::collections::HashSet::with_capacity(hw.joints.len());
     for name in &hw.joints {
@@ -595,6 +605,42 @@ streams = ["color", "depth"]
         assert_eq!(cfg.parsed.hardware[0].motor_ids, vec![1, 2, 3]);
         assert_eq!(cfg.parsed.hardware[1].motor_ids, vec![7, 8, 9]);
         assert!(!cfg.parsed.hardware[0].extras.contains_key("motor_ids"));
+    }
+
+    #[test]
+    fn calibration_tolerances_are_optional_per_joint_configuration() {
+        let mut hw = valid_hw();
+        assert_eq!(hw.calibration_range_tolerances_raw, None);
+        hw.calibration_range_tolerances_raw = Some(vec![0, 20, 7]);
+        validate_hardware_section(&hw).unwrap();
+        let encoded = toml::to_string(&hw).unwrap();
+        let decoded: HardwareSection = toml::from_str(&encoded).unwrap();
+        assert_eq!(
+            decoded.calibration_range_tolerances_raw,
+            Some(vec![0, 20, 7])
+        );
+        assert!(
+            !decoded
+                .extras
+                .contains_key("calibration_range_tolerances_raw")
+        );
+    }
+
+    #[test]
+    fn calibration_tolerances_reject_invalid_length_or_raw_values() {
+        let mut hw = valid_hw();
+        for values in [vec![], vec![20], vec![0, 20, 4096]] {
+            hw.calibration_range_tolerances_raw = Some(values);
+            assert!(matches!(
+                validate_hardware_section(&hw),
+                Err(HardwareSectionError::InvalidCalibrationTolerances { .. })
+            ));
+        }
+        let base = toml::to_string(&valid_hw()).unwrap();
+        for invalid in ["[-1, 0, 0]", "[true, 0, 0]", "[1.5, 0, 0]", "[65536, 0, 0]"] {
+            let text = format!("{base}\ncalibration_range_tolerances_raw = {invalid}\n");
+            assert!(toml::from_str::<HardwareSection>(&text).is_err());
+        }
     }
 
     #[test]
