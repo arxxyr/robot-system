@@ -1,9 +1,8 @@
-//! One-shot Feetech wire-level 命令：读/写单个寄存器 / handshake ping。
+//! Feetech 维护命令：读写寄存器、握手及受约束的混合保持。
 //!
-//! 用途：bring-up / 下使能手动测试 / 单寄存器诊断 —— 比开整个 `s0_daemon`
-//! 轻，比改 `mock_s1` 通用。当前 S0 架构（见 `rt_thread.rs:148` 注释）里
-//! `state_machine` **未接通** adapter enable/disable 执行链路（Part 2 TODO），
-//! 本 example 是这个缺口补上之前的"手动下使能"入口。
+//! 寄存器模式直接走 wire；混合保持模式调用真实 adapter，并沿既有维护入口
+//! 约束现场条件和动作授权。使用时须独占总线，不能与默认 S0 同时占用同一串口。
+//! 默认 S0 已接启停控制链；本工具的通过结果不代替 daemon 验收。
 //!
 //! ## 编译
 //!

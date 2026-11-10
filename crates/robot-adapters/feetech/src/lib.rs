@@ -1,51 +1,22 @@
 //! # `robot-adapter-feetech`
 //!
-//! Feetech STS3215（Phase 0）系列 servo 的 Rust adapter，对应
-//! `docs/01_implementation_steps.md` Step 10 + Step 7 task 27/28。
+//! Feetech STS3215（型号 777）的协议、串口与设备适配。
 //!
-//! ## 与 dimos / lerobot 的关系
+//! 协议、寄存器、编码与校准沿 dimos / lerobot 的 `feetech_io` 约定移植；
+//! Rust 直接实现 packet、checksum、ping/read/write/sync_read/sync_write，
+//! 不链接 `scservo_sdk` 或 lerobot。
 //!
-//! - **协议参考**：`/home/loosqk/repo/robot/dimos-deploy/src/xlerobot_dimos/common/feetech_io/`
-//!   （`bus.py` / `registers.py` / `encoding.py` / `calibration.py` /
-//!   `patches.py` / `types.py`）+ `dimos-deploy/docs/06_lerobot_replace_spec.md`
-//!   是 *字面级* 移植蓝本。
-//! - **不**链接 `scservo_sdk` 或 lerobot —— Rust 端直接实现 wire protocol（packet
-//!   头 + checksum + ping/read/write/sync_read/sync_write）。
-//! - **patch_setPacketTimeout 不需要**：dimos 那个 patch 是 scservo_sdk 自己的 bug
-//!   修补，Rust 端不走 sdk，timeout 计算直接走标准 `std::time::Duration` /
-//!   `serialport::SerialPort::timeout`。
+//! - [`transport::SerialTransport`] 提供传输边界，内存实现用于离线测试；
+//!   `real-hw` 启用真实串口与 `factory` 静态注册。
+//! - [`FeetechBus`] 处理寄存器操作；[`FeetechAdapter`] 复用 `robot-core` 的
+//!   `ManipulatorAdapter` 与 `OutputSafetyProbe`，满足 `SerialRtAdapter` 合同。
+//! - adapter 的同步串口调用由 S0 的 `s0_serial_io_thread` 独占执行，
+//!   不挂 `s0_rt_thread`，也不在 adapter 内另起后台 I/O 线程。
+//! - [`calibration_io`] 加载既有校准，位置换算统一复用 [`convert`]。
+//!   底盘混合路径须显式选择既有 raw 合同，不把 raw 速度冒充 SI 速度。
 //!
-//! ## v0.2 task 27 范围（**本 crate 当前内容**）
-//!
-//! 1. `registers` —— STS3215 控制表 + sign-magnitude 表 + 常量 + enum
-//! 2. `encoding` —— sign-magnitude 编解码 + LE byte 拆合
-//! 3. `protocol` —— wire packet build/parse（字节级）
-//! 4. `transport` —— `SerialTransport` trait + 内存 mock 实现（仅供单测）
-//! 5. `bus` —— `FeetechBus` 公开 API：connect / ping / read / write / sync_*
-//! 6. `calibration` —— write_calibration / reset / set_half_turn_homings
-//! 7. `types` —— Motor / MotorCalibration 强类型
-//! 8. `error` —— `FeetechError` enum（thiserror）
-//! 9. `adapter` —— `FeetechAdapter` 实现 `ManipulatorAdapter` trait
-//! 10. `convert` —— STS3215 `raw ↔ rad` 纯换算（v0.5 候选 E 段(6) 自 adapter
-//!     私有 fn 提升为 pub；公式单源，外部消费者〔真机验收 bin〕禁复制）
-//!
-//! 单元测试覆盖 1-7（mock transport 喂虚假回包，验证字节级正确性 + 编解码
-//! roundtrip）。
-//!
-//! ## v0.2 task 27 *不*做的事
-//!
-//! - **真 USB-RS485 驱动**：留 task 28，加 `feature = "real-hw"` 时把
-//!   `serialport` crate 拉进来，实现 `SerialTransport` for 真串口。
-//! - **后台 IO 线程模型**：task 27 的 `FeetechAdapter::read_state` /
-//!   `write_command` 是 *同步*调用（在调用线程内做完整 wire RTT）。RT 铁律
-//!   要求 < 100 µs，串口 RTT 在 ms 量级 → **不能直接挂 `s0_rt_thread`**。
-//!   task 28 真机实测后，根据 latency 决定是否引入 "RT thread + 后台 IO 线程"
-//!   双层架构（adapter 内部跑 50-100 Hz IO 循环，trait 方法只读 atomic
-//!   snapshot）。当前 v0.2 版本可用于离线校准 / 单元 smoke / s2 工具脚本。
-//! - **多 bus 多 motor model**：仅 STS3215，model_number=777 单一种；其他型号
-//!   （SMS / SCS）需要时新增 model 表，wire protocol 框架可复用。
-//! - **完整 EEPROM 寄存器**：只列 dimos / lerobot 实际用到的 14 项；其他
-//!   寄存器（PWM_Limit / Acceleration / etc.）按需补充。
+//! 当前只适配 STS3215；寄存器可读写性及诊断限制以 [`registers`] 为准。
+//! 单元测试和维护工具的结果不代替默认 S0 的实际动作与停止验收。
 
 #![forbid(unused_must_use)]
 // 协议层中英文混排 + raw 字节 ↔ unsigned ↔ signed 的 cast 极频繁，单条 allow

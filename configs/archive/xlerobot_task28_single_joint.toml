@@ -1,0 +1,13 @@
+# 历史试验配置：task28 左臂 ID1 单关节。
+# 仅供查阅，配置值保留；当前入口和归档边界见 ../README.md。
+
+[robot]
+id             = "xlerobot_task28"
+config_version = "0.2.0-task28"
+
+[[hardware]]
+id          = "test_motor"
+adapter     = "feetech_sts3215"
+address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+joints      = ["test_j1"]
+motor_ids   = [1]

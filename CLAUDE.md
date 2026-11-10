@@ -17,6 +17,14 @@ Rust 机器人运行时；S0/S1/S2、iceoryx2 与 FlatBuffers 沿既有设计。
 - 软件、安装、运行、实际动作和停止分别验收。保留原始日志、原帧及失败事实，不回填历史 PASS，不生成重复源码包、报告或已删除的 `H_evidence.tar.gz`。
 - 按修改风险补必要验证，已有同源结果可引用；不把文档整理扩为一次全仓或实机验收。当前状态只维护在 `s0_hal_status.md`，历史交接不反复同步。
 
+## 目录与职责
+
+- 分层为 `S1 → S0 HAL → 硬件适配器 → 设备`。`robot-core` 定义统一契约，`robot-s0` 负责设备组织、分组执行和生命周期；具体协议留在适配实现中，维护试验流程留在工具中。不为分层名称新建 crate。
+- 配置用途以 [configs/README.md](configs/README.md) 为准：当前配置和仍被调用的测试夹具保留稳定路径，退出使用的试验配置移到 `configs/archive/`。不按目录通配安装，不在源码复制配置值。
+- 模块入口注释只写当前职责、接口与约束；已完成步骤、评审轮次和历史状态回到 Git 历史或交接记录。复用须有实际调用需求，不为文件大小或目录对称拆模块。
+- 测试构建与运行必须使用同一个隔离产物目录，不能覆盖服务引用的 `target/release` 或冻结产物；脚本需要测试时，优先用假命令验证路径与退出码，不启动硬件。
+- 移动或删除前查代码、脚本、CI 与部署引用，同步当前链接；保留独有原帧、兼容性夹具和失败事实。仓库外仍在使用的历史工具先迁移并验证，不能当垃圾清理。
+
 ## 安全与执行边界
 
 - 保持 S0/S1 隔离；每条总线一个所有者、SerialRT writer、命令流、控制权及停止域。IK 在 S1，相机采集走 SoftRT，不能阻塞执行器。
@@ -30,7 +38,7 @@ Rust 机器人运行时；S0/S1/S2、iceoryx2 与 FlatBuffers 沿既有设计。
 ## 工具链与代码
 
 - Rust 使用浮动最新 `nightly`、Edition 2024，不写 `rust-version`，记录实际版本。核心 crate 默认不用 `#![feature]`；确需启用应注释并评审。仅真实编译回归可临时回退日期并登记解除条件。
-- S0/S1 使用系统分配器且 RT 禁 alloc；外部工具按既有约定使用 mimalloc。`panic=abort` 仅限 S0/S1 的 release package；其他 crate 保留 unwind。
+- S0/S1 使用系统分配器且 RT 禁 alloc；外部工具按既有约定使用 mimalloc。沿用 Cargo 已登记的构建方案：当前 workspace `release` 为 abort，独立观测工具用 `release-tools` 保留 unwind；不在整理时改变 panic 语义。
 - `robot-core` 保持冻结设计的零 runtime 依赖边界，遵守既有白名单；RPC 使用 `CommandMeta` 与强类型，不用 `protobuf.Any`；`layout_id` 保持 `u64`。具体接口、线程和 wire 规则按需读设计对应章节。
 - 每次提交前实际执行 `cargo fmt --all`，再执行 `cargo clippy --all --all-targets -- -D warnings`，零警告后提交；相关测试按改动选择。CI 顺序沿既有配置。
 - macOS 适用于纯值/部分单测；S0 的 Linux 路径在 Orin 或现有 Linux 环境验证。候选使用隔离工作目录和已有缓存，不在正式安装产物目录构建；只清理本任务资源。

@@ -65,7 +65,8 @@ pub enum AdapterKind {
     Sensor,
 }
 
-/// 控制模式（§4.4 + §3.5 `FlatBuffers` `ControlMode` 枚举的 Rust 镜像）。
+/// 设备 adapter 的常规控制模式（§4.4），由 IPC 显式转换 wire 模式。
+/// 混合 wire 命令通过 `JointSelection` 与 raw 速度槽表达，不与本枚举一一对应。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ControlMode {
     Position,

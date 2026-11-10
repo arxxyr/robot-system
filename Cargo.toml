@@ -1,7 +1,7 @@
 # robot-system workspace 根
 #
 # 设计版本：v0.1.2（冻结，见 docs/00_design.md）
-# 实施阶段：v0.5 受监督 demo 完成；post-E 当前进度见 team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md
+# 当前完成边界与下一步：docs/s0_hal_status.md
 # 工具链：nightly 硬要求，严格不用 stable（docs/00_design.md §9 / docs/CHANGELOG.md 2026-04-21）
 
 [workspace]
@@ -26,24 +26,13 @@ members = [
 # RR R0（2026-09-14）：iceoryx2 / iceoryx2-cal 0.9.3 以原始发布包 vendor 到 3rd-party/，
 # 经下方 [patch.crates-io] 接入根依赖图。这里显式排除，避免 Cargo 把 workspace 目录内的
 # path 依赖自动收为成员（否则 --workspace / --all-targets 会选中它们的 tests/tests.rs，
-# 而该文件引用未发布的 *_tests_common）。tools/rr-memory-model 为后续独立模型包预留，
-# 目前不存在。来源与原包缺失事实见 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
+# 而该文件引用未发布的 *_tests_common）。tools/rr-memory-model 保持独立 workspace。
+# 来源与原包缺失事实见 3rd-party/ICEORYX2_VENDOR_SOURCE.md。
 exclude = [
     "3rd-party/iceoryx2",
     "3rd-party/iceoryx2-cal",
     "tools/rr-memory-model",
 ]
-
-# 未来 crate（按 docs/01_implementation_steps.md 顺序逐步启用；现在不要提前加入 members）：
-#   crates/robot-kinematics-piper    # v0.6+：Piper 可选 IK/FK backend（结构异构验证）
-#   crates/robot-policy-host         # v0.5：ExternalPolicyHost
-#   crates/robot-s2-bridge           # v0.5：pyo3 module
-#   crates/robot-recorder            # record/replay
-#
-# robot-rpc v0.3 A1：仅 ClearEStop control-plane slice + 全纯单测；**不**
-# 起 server binary（reviewer A1-1 拍板硬边界）。Phase B 的 B4 才扩展完整
-# §5.3 RPC gateway（task / stream / S1 coordinator 交互等；最新 handoff
-# 从 B3 改为 B4）。
 
 [workspace.package]
 version      = "0.1.2"
@@ -55,7 +44,7 @@ license      = "Proprietary"
 # cargo-deny 识别 publish=false 即跳过 license 校验（deny.toml private.ignore=true）。
 publish      = false
 authors      = ["loosqk <loosqk07@gmail.com>"]
-repository   = "https://github.com/loosqk/robot-system"
+repository   = "https://github.com/arxxyr/robot-system"
 readme       = "README.md"
 
 [workspace.dependencies]
@@ -64,7 +53,7 @@ readme       = "README.md"
 # 用户 2026-04-22 显式决定走 1.0 预发布轨道；精确 pin 防 alpha.N → alpha.N+1
 # 的破坏性变更（pre-release SemVer 不保证兼容）。升级 alpha 时同步跑 time.rs 测试。
 libc      = "=1.0.0-alpha.4"
-# thiserror：Step 1 暂未使用（Result 路径未登场），保留入口供后续子 crate 继承。
+# thiserror：各 crate 的强类型错误定义。
 thiserror = "2.0.20"
 # robot-msg (Step 2) FlatBuffers runtime：与 3rd-party/flatc/VERSION 严格对齐（精确 pin，防 minor 漂移）。
 # 白名单登记见 docs/CHANGELOG.md 2026-04-22 "workspace runtime 依赖白名单机制"。
@@ -78,8 +67,7 @@ iceoryx2 = "=0.9.3"
 iceoryx2-cal = { version = "=0.9.3", default-features = false }
 # 仅 pubsub cleanup 工具用上游 Node ID 解码 PID，避免复制私有位布局。
 iceoryx2-bb-posix = "=0.9.3"
-# arc-swap：Step 6 Part 1 latest-command slot 的同步原语（ipc_thread → rt_thread 方向）。
-# RT 侧 load() 返回 Guard 不 bump refcount（hazard pointer），满足 §4.9 RT 铁律。
+# arc-swap：robot-transport 最新命令槽（IPC 写，执行线程读）；状态反馈另走快照。
 arc-swap = "1.9"
 # tempfile：dev-dependency，给 estop_latch / 其他涉及文件系统的单测用临时目录。
 # 只在 dev-dependencies 位置继承（`tempfile = { workspace = true }` 出现在子 crate 的 dev-deps 段）。
@@ -142,12 +130,7 @@ rerun = { version = "=0.38.1", default-features = false, features = ["sdk"] }
 # 外部工具 allocator（冻结设计 §0）；不进入 S0 / S1 的分配路径。
 mimalloc = { version = "0.1", default-features = false }
 
-# v0.3 A1 ClearEStop control-plane slice 网关依赖（**仅** robot-rpc 用；
-# 其它 crate **不**得 link tonic / prost / tokio / 跨 crate 复用 RPC 类型）。
-# A1-1 (3/3) skeleton 引入 codegen+prost；A1-3 (2/3) 起 server binary 需要
-# 加 transport feature 跑 tonic transport stack。白名单登记走
-# docs/CHANGELOG.md 2026-04-27 "v0.3 A1-1 (3/3) robot-rpc skeleton + tonic
-# 引入" + 2026-04-28 "A1-3 (2/3) robot_rpc_gateway binary 依赖" 偏离登记。
+# RPC 网关及显式启用的集成测试依赖；不进入 S0/S1 daemon 的执行路径。
 # tonic 0.14 feature 重排：`router`（`Server::add_service` 所在的 Routes
 # 构建器）从 transport 拆出，需显式启用。
 tonic = { version = "0.14", default-features = false, features = ["codegen", "transport", "router"] }
@@ -166,9 +149,7 @@ tonic-prost-build = { version = "0.14", default-features = false }
 # protoc-bin-vendored：vendored protoc binary（避免 host 必须装 protoc）。
 # 跟 vendored flatc 同款隔离策略：编译期一致性 + 跨开发机不依赖系统包。
 protoc-bin-vendored = "3"
-# tokio：A1-3 (2/3) robot_rpc_gateway 跑 tonic transport stack 必须 tokio
-# runtime。**仅** robot-rpc 用；其它 crate（含 robot-s0 / robot-s1）禁
-# link tokio。Async 边界严格在 gateway 进程内，不进 daemon。
+# tokio：RPC 网关与显式启用的集成测试运行时，不进 S0/S1 daemon。
 tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
 
 # 内部 crate 统一 path 依赖（workspace 继承，便于下游 crate `workspace = true`）。

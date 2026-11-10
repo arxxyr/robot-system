@@ -1,6 +1,6 @@
 # XLeRobot S0 daemon —— right arm-only 6-motor（v0.5 候选 E；Spec D2 身份表 +
-# D13 guard 启动链）。旧 `xlerobot-s0-bus{1,2}.service`（full config）**保留
-# 不删不改**作回滚路径，本 unit 通过 Conflicts= 与之互斥。
+# D13 guard 启动链）。本 unit 通过 Conflicts= 与 full-bus 模板互斥；
+# full-bus 引用当前配置，不是冻结回滚版本。回滚边界见本目录 README.md。
 #
 # ## ExecStart = guard，**不是** s0_daemon（QA1 / Y1 终拍）
 #

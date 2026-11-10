@@ -4,7 +4,7 @@
 # 身份：robot_id = xlerobot_right / hardware_id = right_arm / bus2
 # （…5A7C122340）。latch = /var/lib/robot/xlerobot_right/estop_latch；
 # gateway listen = 127.0.0.1:50052（unit 侧字面）。
-# 旧 xlerobot_bus2_right_arm_full.toml 保留不动作历史件（D2）。
+# 旧整臂配置归档在 archive/xlerobot_bus2_right_arm_full.toml，不作当前入口。
 #
 # 安装（R10-1）：install -D -m 0644 本文件 → /etc/robot/xlerobot_right_arm.toml
 

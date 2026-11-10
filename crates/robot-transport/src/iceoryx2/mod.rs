@@ -1,29 +1,20 @@
-//! `iceoryx2` 后端（§2.1）。Step 5 分阶段上：
+//! `iceoryx2` IPC 后端（§2.1）：pub/sub、强类型 request/response 与只读观测。
 //!
-//! - **本 commit**：[`service_name`] + [`qos`] 纯类型层，不含真实 pub/sub。
-//! - **后续 commit**：`attributes` / `publisher` / `subscriber` / `event`
-//!   wrapper。
+//! 版本由 workspace 与 vendor 源码统一锁定，当前为 `iceoryx2 = "=0.9.3"`。
 //!
-//! ### 设计决策
+//! ### 服务合同
 //!
-//! 决策冻结在 `docs/CHANGELOG.md` 2026-04-22 "Step 5 开工决策与 iceoryx2
-//! 依赖登记"：
-//!
-//! 1. 版本精确 pin `iceoryx2 = "=0.8.1"`（升级必重跑 `/tmp` 烟测）。
-//! 2. topic 字符串原样当 `ServiceName`（方案 A），§2.3 命名空间保持不变。
-//! 3. `QoS` 按 §2.4 九类映射到 iceoryx2 builder 选项（见 [`qos`]）。
-//! 4. sample 上限按 [`robot_msg::size_tier::SizeTier`] 四档。
-//! 5. `schema_id` / `schema_version` 作为 service attribute 双道防线
-//!    （attribute 是硬约束，mismatch open 被拒绝）。
+//! - topic 原样作为 `ServiceName`，保留 §2.3 命名空间。
+//! - pub/sub 的 `QoS` 由 [`qos`] 映射，sample 上限由
+//!   [`robot_msg::size_tier::SizeTier`] 决定。
+//! - `schema_id` / `schema_version` 绑定 service attribute，不匹配时拒绝打开。
+//! - 订阅视图借用 sample lease，不得超出该 lease 的生命周期。
 //!
 //! ### RT 约束
 //!
-//! - service / publisher / subscriber 构造**不得进 RT thread**（涉及 shm 申请
-//!   / 锁 / 文件系统）。构造必须在 `s0_ipc_thread` 启动期 / `s1_coordinator`
-//!   non-RT 路径上一次性完成。
-//! - 运行期 `publisher.loan_uninit` / `subscriber.receive` 零拷贝零 alloc，
-//!   RT thread 可直接调（但按 §1.2 S0 RT thread 仍不直接碰 iceoryx2，
-//!   走 `s0_ipc_thread` 代理）。
+//! 服务、端口构造与运行期 IPC 均留在普通优先级线程，不进入 S0 RT 线程。
+//! 构造涉及 shm、锁及文件系统；当前发布 wrapper 还会构造缓冲并复制到 shm，
+//! 不能据底层 loan API 宣称本封装全链零拷贝或零分配。
 
 pub mod attributes;
 pub mod observer;
@@ -60,16 +51,15 @@ pub use subscriber::{Iceoryx2SampleLease, Iceoryx2Subscriber};
 // Service open-or-create 入口
 // ---------------------------------------------------------------------------
 //
-// 对调用方（robot-s0 / robot-s1 / robot-tests）暴露单入口：
+// channel 创建同进程 pub/sub 对；生产调用方也可分别创建 publisher / subscriber：
 //   let (pub_, sub) = iceoryx2::channel::<JointState>(&node, topic, TopicClass::S0State)?;
-// 内部按决策 ①②③④⑤ 一起落：
+// 各入口共用服务合同：
 //   - service name: topic 原样
 //   - QoS profile: profile_of(class)
 //   - size tier: default_tier_of(T::SCHEMA_ID) → max_sample_size
 //   - attribute: schema_id + schema_version 硬绑
 //   - publisher / subscriber 同时创建（同进程 pub+sub）
-// 跨进程场景（真正的 s0/s1/viz 多进程）下，open_or_create 的发布端 / 订阅
-// 端各走一半；本 MVP 给一个对称 helper 方便单测。
+// 跨进程各端按需持有对应端口，open_or_create 复用同名服务并检查 schema。
 
 use core::marker::PhantomData;
 use std::time::Duration;

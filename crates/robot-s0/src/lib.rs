@@ -1,20 +1,18 @@
 //! # robot-s0
 //!
-//! S0 daemon：`docs/00_design.md` §1.2 四线程模型的 Rust 落地。
+//! S0 在设备 adapter 之上组织硬件抽象与运行时，复用 `robot-core` 的契约。
+//! 线程边界沿 `docs/00_design.md` §1.2：
 //!
-//! **Part 1 Scope（本 crate 当前内容）**：
-//! - [`state_machine`]：5 主态 + 4 子态 + 12 事件 + 转换表 + 单测
-//! - `rt_thread`（Task 7）：`SCHED_FIFO` 70 + `mlockall` + tick 闭环（mock adapter 接入）
-//! - `bin/s0_daemon`（Task 8）：最小 main，只拉起 `rt_thread`，smoke duration 后退出
+//! - [`ipc_thread`]：接收命令与控制请求，推进状态机和控制权，发布内部快照。
+//! - `rt_thread` / [`serial_io_thread`]：分别执行 `HardRT` / `SerialRT` adapter；
+//!   每条串口总线保留唯一所有者、命令流和停止域。
+//! - [`io_thread`]：独立轮询 `SoftRT` 相机，不阻塞执行器。
+//! - [`pub_thread`]：发布状态、心跳和图像，不执行 adapter I/O。
+//! - [`boot_supervisor`]、[`watchdog`]、[`latch_writer`] 与 [`shutdown_mechanism`]：
+//!   启动监督、心跳监视、持久化安全状态及有界关闭与回收。
 //!
-//! **Part 2 将新增**（留 TODO 不实现）：
-//! - `ipc_thread`：iceoryx2 订阅 command / heartbeat → 写 `LatestCommandSlot`
-//! - `pub_thread`：读 snapshot → iceoryx2 发布 state / heartbeat
-//! - `io_thread`：poll `SoftRT` adapter
-//! - `watchdog`：S1 heartbeat 超时检测 + `CONTROL_LOST_*` 事件发生
-//! - `estop_latch`：持久化 `EStop` latch
-//!
-//! 详见 `docs/handoffs/2026-04-24_2.md` §6。
+//! `s0_daemon` 负责这些组件的生产接线；当前实现及实机验收边界见
+//! `docs/s0_hal_status.md`。
 
 #![forbid(unused_must_use)]
 
@@ -71,7 +69,7 @@ pub(crate) mod ipc_runtime;
 pub mod ipc_thread;
 // S48 A3d / W1：latch 目标稳定锁、共享名称校验与绑定目录 fd 的数据对象检查。
 pub mod latch_lock;
-// S48 A3e / W2a：唯一磁盘 writer 纯模块（义务 / 进度 / 公告 / 协议 / 本体 / 配对 / 监督）；无生产调用方。
+// daemon 启动唯一磁盘 writer，保留持久化义务、进度与真实完成凭证。
 pub mod latch_writer;
 pub mod persist_health;
 pub mod pub_thread;
@@ -85,7 +83,7 @@ pub mod serial_preempt;
 mod serial_tick;
 mod set_enabled_action;
 pub mod set_enabled_rr_server;
-// S48 W2b：纯关闭 / join 机制（句柄槽、有界 join、门谓词注入的顺序停止与唯一报告）；无生产调用方。
+// daemon 复用句柄槽与门谓词执行有界关闭，真实 join 后才生成完成报告。
 pub mod shutdown_mechanism;
 pub mod state_machine;
 // S48 A3b：`S0StateSnapshot` 的显式字段 codec（快照编码与 state_machine 分文件）。

@@ -1,9 +1,8 @@
-//! v0.3 Phase B B1 (1/3) coordinator 纯逻辑层。
+//! S1 协调逻辑：配置、启动锚定、保持命令、动作状态机与 tick 循环。
 //!
-//! 本模块只放**可单元测试的纯函数 + 配置类型**，不直接 link iceoryx2 /
-//! tokio / OS 信号。Binary 层（B1 (2/3) `crates/robot-s1/src/bin/s1_daemon.rs`）
-//! 把启动锚定 + tick loop 编排起来；订阅器通过 [`LatestSubscriber`] trait
-//! object 注入，便于测试用 mock 后端替代真 iceoryx2。
+//! `s1_daemon` 负责端口、工作线程与 OS 信号，向本模块注入 [`RobotClock`]、
+//! [`Publisher`] 与 [`LatestSubscriber`]。生产循环使用 [`run_action_tick_loop`]；
+//! [`tick_once`] / [`run_tick_loop`] 保留基础保持接口，便于独立验证。
 //!
 //! ## 模块入口
 //!
@@ -27,16 +26,12 @@
 //!   joint count 错位（B1 outline §4.2 + §9 决策 #2 锁定 —— 不 fallback
 //!   `bias = 0.0`）。
 //!
-//! ## 不做
+//! ## 执行边界
 //!
-//! - **不**起线程 / 不轮询 OS clock；调用方传 [`RobotClock`] trait
-//!   object，测试用 `MockClock` 推时间，binary 用 `SystemClock`。
-//! - **不**真 publish；binary 层自己 own publishers，调本模块拿 bytes
-//!   后调 `SampleWriter::set_body_bytes(&bytes)`。
-//! - **不**做 heartbeat builder（直接 `robot_msg::build_helpers::build_heartbeat`
-//!   够用，没有 coordinator-specific 行为）。
-//! - **不**接 `robot-s0::config_loader`（避免 s1 → s0 反向依赖；B1
-//!   outline §9 决策 #6）。
+//! - 本模块不创建线程或安装信号处理器；循环通过注入的时钟读取时间与等待。
+//! - tick 循环通过借入的 publisher 发布，端口所有权仍由调用方持有；
+//!   心跳构造复用 `robot_msg::build_helpers::build_heartbeat`。
+//! - 配置解析不依赖 `robot-s0::config_loader`，保留 S0/S1 隔离。
 
 // 中文 doc 块大量 identifier-like 字串（mock_s1 / position_rad / tokio /
 // freeze 等），coordinator 模块走宽松 doc-markdown，跟 robot-s0 /
@@ -926,17 +921,17 @@ fn duration_to_ns_saturating(d: Duration) -> u64 {
     u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
 }
 
-/// Production tick loop wrapper：循环调 [`tick_once`]，按 `poll_interval`
-/// sleep；`shutdown.load(Acquire)` 或 `duration` 到期则退出。
+/// 基础 Position 保持循环：调用 [`tick_once`]，通过注入的时钟按 `poll_interval` 等待。
+/// 不调度 action backend；生产 `s1_daemon` 使用 [`run_action_tick_loop`]。
 ///
 /// **退出条件**（按检查顺序）：
 /// 1. `shutdown.load(Acquire) == true`（信号处理器置位）。
 /// 2. `duration.is_some_and(|d| state.elapsed_ns(now) >= d.as_nanos())`。
 ///
 /// **clock 抽象**：测试用 [`robot_core::time::MockClock`] 可立即推时间，
-/// `tick_once` 走 due 路径；binary 用 [`robot_core::time::SystemClock`]。
+/// `tick_once` 走 due 路径；实际运行可用 [`robot_core::time::SystemClock`]。
 ///
-/// 返回最终 [`TickState`] 给 binary 做退出 banner（`cmd_seq` / `hb_seq` /
+/// 返回最终 [`TickState`] 给调用方读取进度（`cmd_seq` / `hb_seq` /
 /// `elapsed_ns`）。
 ///
 /// 9 个参数全部是必要的（cfg / layout_id / bias / 两个 publisher /
@@ -981,51 +976,26 @@ where
     Ok(state)
 }
 
-/// **B2 (3/3) state-aware tick loop**：包装 [`run_tick_loop`] B1 hold 路径
-/// + 按 [`CoordinatorState`] 分支调度 action backend。
+/// `s1_daemon` 使用的状态感知循环；直接按 [`CoordinatorState`] 发布保持命令
+/// 或推进 action backend，不调用 [`run_tick_loop`]。
 ///
-/// **行为**（与 outline §6.1 override 共存策略 + reviewer 验收契约对齐）：
+/// 心跳与命令分别按配置周期门控，发布失败向调用方返回错误：
 ///
-/// - **Heartbeat**：永远按 `cfg.heartbeat_hz` 50 Hz 发；不分状态。S0
-///   watchdog 永远看到活跃 hb，**不**触发 control-lost（包括 `Degraded`
-///   状态，符合 outline §6.5 决策 #10d "S1 内部 degraded 不宣称 S0 进
-///   CONTROL_LOST_STOP"）。
-/// - **Command**：按 `cfg.command_hz` 50 Hz 周期门控，state 决定本帧
-///   command 来源：
-///   * `Idle`：`build_hold_command(cfg, layout_id, idle_hold_target, ...)`
-///     publish hold cmd。**v0.5 候选 E 段(5)（Spec D3 第 3 条，B1 等价
-///     语义收窄版显式解锁）**：target 源 = [`Coordinator::idle_hold_target`]
-///     ——初值 = 启动 `anchor_bias`（boot 后首个 Success-Scripted 之前与
-///     B1 **bit 等价**）；**仅** Scripted `Completed(Success)` 且末
-///     waypoint 已发布后更新为末 waypoint target；其余一切 backend ×
-///     终态显式 reset 回 `anchor_bias`。形态（build_hold_command 路径）
-///     不变。
-///   * `Degraded`：`build_hold_command(cfg, layout_id, anchor_bias, ...)`
-///     ——**不解锁**（D3 行为矩阵末行：Idle 与 Degraded 自此分源，
-///     Degraded 永远回启动锚点）。
-///   * `Executing`：`coordinator.tick_action(clock, state.cmd_seq)` 决
-///     定输出（B3 round 2 阻断 1 修法：透传当前帧 cmd_seq 给 backend
-///     作 source_task_id，保 S0 ipc_thread 单调契约）：
-///     - `Some(body)` → publish action backend 自产的 `JointCommand`
-///       body bytes（reviewer 评审口径："action command 仍能 publish"）。
-///     - `None` → 本帧不 publish，S0 沿用上一帧 cmd 直到 `deadline_ns`。
-///       cmd_seq 不递增（reviewer 评审口径："hold loop 不再发 B1 hold
-///       command" = cmd_ch.publishes() 不增）。
-///   * `Booting`：防御路径 —— 调用方应在 anchor 完调 [`Coordinator::mark_idle`]
-///     转 Idle；若仍 `Booting` 进入本循环，本帧 skip cmd（防止用未锚
-///     定的 anchor_bias publish），状态机 update last_cmd_ns 防止下一
-///     轮 1 ms poll 立刻 retry。
-///   * `ShuttingDown`：循环顶部检测后 break，正常清理退出。
+/// - `Degraded` 仍发送心跳，不把 S1 内部降级当作 S0 控制链路失活。
+/// - `Idle` 保持 [`Coordinator::idle_hold_target`]：初值为启动锚点；仅 Scripted
+///   成功且末 waypoint 已发布后改为末 target，其余 backend/终态重置为启动锚点。
+/// - `Degraded` 始终保持启动锚点，与 `Idle` 的成功后保持目标分开。
+/// - 保持命令经 `Coordinator::hold_command` 构造；混合实例的轮 raw 固定为零。
+/// - `Executing` 调用 [`Coordinator::tick_action`]，透传当前 `cmd_seq` 作为 backend
+///   的命令序号来源；`Some(body)` 发布 backend 命令，`None` 不发保持替代命令，
+///   也不递增 `cmd_seq`，由 S0 沿用原命令及其截止约束。
+/// - `Booting` 跳过命令，防止发布未锚定的目标；无论是否发布都推进命令周期，
+///   避免按 poll 间隔反复调用 backend。
 ///
 /// **退出条件**（按检查顺序）：
 /// 1. `shutdown.load(Acquire)`（信号处理器置位）。
-/// 2. `coordinator.current_state() == ShuttingDown`（[`Coordinator::mark_shutting_down`]
-///    已被外部调用，比如 SIGTERM handler 直接 mark_shutting_down 而非
-///    `shutdown` AtomicBool）。
-/// 3. `duration` 到期（测试用）。
-///
-/// **不**与 [`run_tick_loop`] 替代关系：B1 路径仍由 mock_s1 / 旧
-/// integration test 使用；本函数**仅**给 `s1_daemon` B2 wiring 用。
+/// 2. `duration` 到期。
+/// 3. `coordinator.current_state() == ShuttingDown`（由 [`Coordinator::mark_shutting_down`] 设置）。
 #[allow(clippy::too_many_arguments)]
 pub fn run_action_tick_loop<HBPub, CmdPub, C>(
     coordinator: &Coordinator,
@@ -1516,7 +1486,7 @@ pub enum CoordinatorState {
     /// `clear_error`。**不**触 S0 watchdog / 不宣称 CONTROL_LOST_*。
     Degraded { reason: String },
     /// 收到 SIGINT/SIGTERM 后；coordinator 不接受新 submit / 不再走
-    /// tick 推进。binary `run_tick_loop` 检测到此状态后 break。
+    /// tick 推进。[`run_action_tick_loop`] 检测到此状态后退出。
     ShuttingDown,
 }
 
@@ -2074,13 +2044,13 @@ impl Coordinator {
         self.lock_inner().fsm.clone()
     }
 
-    /// **lib-level tick advance**（B2 (3/3) binary `run_tick_loop` 用）：
+    /// [`run_action_tick_loop`] 调用的单次动作推进：
     ///
     /// - 状态 `Executing` → 调 backend.`tick()`；按返回值更新 state /
-    ///   推 [`ActionEvent`] / 写 finished ring；返 `Some(body)` 让 binary
-    ///   publish 这帧 `JointCommand`。
+    ///   推 [`ActionEvent`] / 写 finished ring；返 `Some(body)` 让调用方
+    ///   发布这帧 `JointCommand`。
     /// - 其它 4 状态（`Booting` / `Idle` / `Degraded` / `ShuttingDown`）
-    ///   → 不动 state，返 `None`。binary 自行接管 hold loop / hb 发送。
+    ///   → 不动 state，返 `None`。调用方按状态处理保持命令与心跳。
     ///
     /// **失败转移**（outline §6.5 + reviewer 拍板）：
     ///

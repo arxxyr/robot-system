@@ -1,28 +1,15 @@
-//! S0 子态机：5 主态 + ENABLED 的 4 子态 + 12 事件 + 转换表。
+//! S0 状态与转换判定：5 主态、ENABLED 的 4 子态及控制事件。
 //!
 //! 对应 `docs/00_design.md` §1.4（冻结的转换表）+ §6.7 核心不变量。
 //!
-//! ### Part 1 实现范围
+//! IPC 运行时负责消费控制请求、心跳、执行器故障与停止事件，填写守卫并
+//! 发布状态快照。本模块判定状态转换，不直接执行设备 I/O 或持久化。
 //!
-//! 所有状态变体 + 所有 transition 行**全部写死**：单测用 `Event::*` 注入验证
-//! 转换表；运行时（`rt_thread` / `ipc_thread`）这一步只会真正发 `Enable` / `Heartbeat` /
-//! `EStop` 三种事件，其他事件的**触发器信号源**在 Part 2 才接：
+//! `HardRT` 执行器与 `SerialRT` 收敛路径分别处理物理操作；状态转换不能
+//! 代替启停确认、持久化结果或原控制权协议。
 //!
-//! | 事件 | 触发源 | Part 1 可用？ |
-//! |---|---|---|
-//! | `Enable` / `Heartbeat` / `EStop` | 测试或 RPC 注入 | ✅ |
-//! | `HeartbeatTimeout` | `watchdog`（Part 2） | ❌ |
-//! | `AdapterErr` / `CmdDeadlineExpired` / `LimitViolation` / `WatchdogTimeout` / `RtOverrun` | `rt_thread` 内检测（Part 2） | ❌ |
-//! | `ClearError` / `ClearEStop` | RPC（Part 2） | ❌ |
-//! | `Stop` | `systemd SIGTERM` handler（Part 2） | ❌ |
-//!
-//! 这些事件**变体 + transition 单测**都存在；Part 2 只接信号源不改 shape。
-//!
-//! ### 守卫状态（`Guards`）
-//!
-//! Part 1 `Guards` 是扁平 POD struct，字段由调用方在 transition 前根据当前运行时
-//! 现实填写（例如 `adapter_connected` 来自 `ManipulatorAdapter::connect()` 的结果）。
-//! Part 2 的 watchdog / deadline 会增量写入对应字段；Guards struct 本身不需改。
+//! [`Guards`] 是调用方在转换前填写的事实快照，例如连接、校准、心跳及
+//! 命令截止状态；`on_timeout_hint` 来自最近命令的超时策略。
 
 #![allow(clippy::doc_markdown)]
 
@@ -33,7 +20,7 @@ use robot_core::adapter::ControlMode;
 // ============================================================================
 
 /// ENABLED 的 4 个子态。`CtrlLost{Hold,Zero,Stop}` 三者对应 `JointCommand.on_timeout`
-/// 的三种策略（§1.4）。Part 1 `rt_thread` 只进 `Active`；其他三态需要 watchdog 触发。
+/// 的三种策略（§1.4），由控制链路失活事件与当前超时策略选择。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EnabledSub {
     Active,
@@ -71,8 +58,7 @@ impl OutputMode {
     }
 }
 
-/// Fault 代码。对应 §1.4 ENABLED → FAULT 的 5 条触发边 + task-30 v9 加 1 条
-/// (`SafetyStopFailed`：`safety_stop` / `confirm_torque_off` 失败)。
+/// Fault 代码，涵盖执行器故障、超时、限位、通信不可信及停止失败。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FaultCode {
     /// SerialRT 通信不可信，必须由执行器完成本地收敛。
@@ -119,7 +105,7 @@ impl Default for S0State {
     }
 }
 
-/// 事件集合。§1.4 列出的 12 种；**部分事件在 Part 1 没有真实触发源**（见模块 doc 表格）。
+/// 控制事件集合；由 IPC 运行时、执行器与 watchdog 路径提供事实。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Event {
     Enable,
@@ -145,8 +131,7 @@ pub enum Event {
 
 /// 转换守卫条件的扁平快照。调用方在 `try_transition` 前填入当前事实。
 ///
-/// Part 1 `on_timeout_hint` 默认 `Hold`（保守），Part 2 从最近一条 `JointCommand`
-/// 的 `on_timeout` 字段决定。
+/// `on_timeout_hint` 默认 `Hold`，运行时按最近一条 `JointCommand.on_timeout` 更新。
 ///
 /// 字段 bool 多（对齐 §1.4 转换表的 9 条守卫条件），clippy
 /// `struct_excessive_bools` 在此 allow —— 这些 bool 语义互相独立，聚合成 bitflags
@@ -228,7 +213,7 @@ pub struct Rejected {
 ///
 /// ### 为什么要这个类型
 ///
-/// Part 2 架构决策：`ipc_thread` 是 state machine 的执行者，每 tick 消费事件调
+/// `ipc_thread` 是 state machine 的执行者，每 tick 消费事件调
 /// [`try_transition`] 后必须把结果发布给 `pub_thread`（它负责对外 iceoryx2 publish
 /// `JointState` + S0 自身 Heartbeat）。同步原语复用现有 `RtSnapshotPublisher<T>`
 /// seqlock —— S48 A3b 起要求 `T: SnapshotValue`（显式字段 codec，见

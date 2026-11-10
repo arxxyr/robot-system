@@ -544,7 +544,7 @@ ClearEStop 只经 maintainer+ 的既有 RPC 事务，成功后仍 Safe；上扭�
 | `scripts/systemd/xlerobot-s0-{left,right}-arm.service` | guard → `exec s0_daemon` |
 | `scripts/systemd/xlerobot-s1-{left,right}.service` | S1 coordinator（硬依赖同臂 S0） |
 | `scripts/systemd/xlerobot-gateway-{left,right}.service` | gRPC gateway（50051 / 50052） |
-| `scripts/systemd/README.md` | 旧 full-bus unit 的安装 / 验证说明（保留） |
+| `scripts/systemd/README.md` | 服务模板分类、全总线候选与历史验证入口 |
 | `crates/robot-s0/src/deploy/` | identity / guard / preflight / provision / counter 实现 |
 | `crates/robot-s0/tests/deploy_units.rs` | unit 指令文本 + 三处 config 路径一致锁 |
 | `crates/robot-s0/tests/deploy_guard_kill.rs` | pre-increment 崩溃注入（真 SIGKILL） |
