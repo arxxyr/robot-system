@@ -110,6 +110,81 @@ class FakeIO:
 class ProbeTests(unittest.TestCase):
     def quiet(self): return contextlib.redirect_stdout(io.StringIO())
 
+    def release_fixture(self):
+        calibration={'id':6,'drive_mode':0,'homing_offset':0,'range_min':1384,'range_max':2847}
+        bindings={'schema':'MAINTENANCE_BINDINGS_V1','tool':{'sha256':m.TOOL_SHA,'bytes':m.TOOL_BYTES},
+                  'usb':{side:{'device':m.DEVICES[side],'serial':m.SERIALS[side]} for side in m.SERIALS},
+                  'calibrations':{'right_arm_gripper':calibration},'refs':[dict(m.RIGHT_PULSE_TRACE)],
+                  'binary_paths':[m.RIGHT_PULSE_TRACE['path']]}
+        root='/home/loosqk/robot-checks/release-fixture'
+        plan=m.make_plan(bindings,root+'/run','release-fixture',root,right_gripper_release=True)
+        executor=FakeIO(step=8);executor.position=executor.goal=1371
+        return executor,m.ProbeEngine(executor,plan),calibration
+
+    def test_right_gripper_release_is_one_way_to_fixed_goal_and_preserves_other_targets(self):
+        executor,engine,calibration=self.release_fixture()
+        engine.gripper_release(calibration)
+        row=engine.rows[0]
+        self.assertEqual((row['status'],row['initial_raw'],row['goal_raw']),('PASS',1371,1400))
+        self.assertEqual((executor.position,executor.goal,executor.torque),(1400,1400,0))
+        writes=[call for call in executor.calls if len(call)==6 and call[2]=='write']
+        self.assertEqual([(call[3],call[4],call[5]) for call in writes],
+                         [('Goal_Position',1400,False),('Torque_Enable',1,False),('Torque_Enable',0,True)])
+        self.assertEqual({call[:2] for call in executor.calls if len(call)==6},{('right',6)})
+        witness=row['position_accuracy']['stages']['release']
+        self.assertEqual(witness['started_ns'],row['enable_attempt_ns'])
+        self.assertEqual(witness['deadline_ns']-witness['started_ns'],800_000_000)
+        before=idle_rows();after=copy.deepcopy(before)
+        before['right:6'].update(Present_Position=1371,Goal_Position=1371)
+        after['right:6'].update(Present_Position=1400,Goal_Position=1400)
+        self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'PASS')
+        m.validate_snapshot(after,before,engine.rows)
+        after['left:6']['Present_Position']+=5
+        self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
+
+    def test_right_gripper_release_rejects_drift_before_enable_and_mixed_entry(self):
+        executor,engine,calibration=self.release_fixture();original=executor.poke;reads=[]
+        def drift(side,motor,action,register,value=None,cleanup=False):
+            if action=='read' and register=='Present_Position' and not cleanup:
+                reads.append(True)
+                if len(reads)==3:executor.position+=1
+            return original(side,motor,action,register,value,cleanup)
+        executor.poke=drift
+        with self.assertRaises(ValueError):engine.gripper_release(calibration)
+        self.assertEqual(executor.torque,0)
+        self.assertNotIn(('right',6,'write','Torque_Enable',1,False),executor.calls)
+        self.assertIn(('right',6,'write','Torque_Enable',0,True),executor.calls)
+        with self.assertRaises(ValueError):engine.gripper_release(calibration)
+        with self.assertRaises(ValueError):run_main(['--right-gripper-release','--position-target','head-1'])
+
+    def test_right_gripper_dispatch_classifies_only_this_action_with_shared_stop_gate(self):
+        executor,engine,_=self.release_fixture()
+        m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
+        self.assertEqual([(row['side'],row['motor'],row['kind']) for row in engine.rows],
+                         [('right',6,'position_release')])
+        report={'plan':engine.plan,'probes':engine.rows,'stop_verification':{'status':'PASS'},
+                'identity_verification':{'status':'PASS'},'position_verification':{'status':'PASS'},
+                'child_active':False,'evidence_errors':[]}
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        self.assertTrue(all(row['decision']=='DEFERRED' for row in engine.plan['base_targets']))
+        report['stop_verification']['status']='UNKNOWN'
+        self.assertEqual(m.classify_run_result(report),'NEEDS_MANUAL_POWER_CUT')
+        self.assertEqual(executor.torque,0)
+
+    def test_right_gripper_unknown_write_ack_still_disables_once_without_retry_or_return(self):
+        for register,value in (('Goal_Position',1400),('Torque_Enable',1)):
+            executor,engine,calibration=self.release_fixture();original=executor.poke
+            def unknown(side,motor,action,reg,written=None,cleanup=False):
+                result=original(side,motor,action,reg,written,cleanup)
+                if action=='write' and (reg,written)==(register,value):raise OSError('写已生效，ACK未知')
+                return result
+            executor.poke=unknown
+            with self.subTest(register=register),self.assertRaises(ValueError):engine.gripper_release(calibration)
+            self.assertEqual((executor.goal,executor.torque),(1400,0))
+            self.assertEqual(executor.calls.count(('right',6,'write',register,value,False)),1)
+            self.assertEqual(executor.calls.count(('right',6,'write','Torque_Enable',0,True)),1)
+            self.assertNotIn(('right',6,'write','Goal_Position',1371,True),executor.calls)
+
     def test_position_and_wheel_positive(self):
         a=FakeIO(); e=m.ProbeEngine(a,PLAN)
         e.position('left',5,'left_arm_wrist_roll',CALI)
