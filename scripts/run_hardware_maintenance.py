@@ -200,8 +200,7 @@ def configure_bus_mapping(path,left_path=None):
     BUS_CONFIG=right;LEFT_BUS_CONFIG=left
     scopes={role:feedback_scope(motor) for role,(_,motor,_) in WHEEL_PULSE_TARGETS.items()}
     RIGHT_FEEDBACK_SCOPE=scopes['right'];FRONT_FEEDBACK_SCOPE=scopes['front'];LEFT_FEEDBACK_SCOPE=scopes['left']
-    held='/'.join(wheel_label(motor) for motor in wheel_ids() if motor!=9)
-    MIXED_RAW_SCOPE=MIXED_RAW_SCOPE_TEMPLATE.format(held=held,selected=wheel_label(9))
+    MIXED_RAW_SCOPE=mixed_raw_scope(9)
     return copy.deepcopy(BUS_CONFIG)
 
 
@@ -212,6 +211,12 @@ def wheel_ids():
 
 def wheel_label(motor):
     return f'{WHEEL_LABELS[WHEEL_STOP_TARGETS[motor]]}{motor}'
+
+
+def mixed_raw_scope(selected_motor_id):
+    require(type(selected_motor_id) is int and selected_motor_id in (7,8,9),'混合维护仅接受物理7/8/9')
+    held='/'.join(wheel_label(motor) for motor in wheel_ids() if motor!=selected_motor_id)
+    return MIXED_RAW_SCOPE_TEMPLATE.format(held=held,selected=wheel_label(selected_motor_id))
 
 
 def feedback_scope(motor):
@@ -416,14 +421,15 @@ def validate_arm_range_plan(plan):
             '右臂范围只读不得解除三轮合同DEFERRED')
 
 
-def mixed_raw_contract(bindings):
+def mixed_raw_contract(bindings,selected_motor_id=9):
     refs=mixed_raw_refs(bindings)
-    return {'schema':'MAINTENANCE_BUS2_MIXED_RAW_V1','scope':MIXED_RAW_SCOPE,
+    scope=mixed_raw_scope(selected_motor_id)
+    return {'schema':'MAINTENANCE_BUS2_MIXED_RAW_V1','scope':scope,'selected_motor_id':selected_motor_id,
             'tool':dict(refs['tool']),'arm_calibration':dict(refs['arm_calibration']),
-            'trace':dict(RIGHT_PULSE_TRACE),'operation':'mixed-hold-wheel9',
+            'trace':dict(RIGHT_PULSE_TRACE),'operation':'mixed-hold-wheel9' if selected_motor_id==9 else 'mixed-hold-wheel',
             'motor_ids':[*range(1,7),*wheel_ids()],'arm_ids':[1,2,3,4,5,6],'arm_names':list(MIXED_ARM_NAMES),
             'calibration_range_tolerances_raw':[motor_range_tolerance(None,'right',motor) for motor in range(1,7)],
-            'wheel_ids':wheel_ids(),'wheel_raw_goal':[500 if motor==9 else 0 for motor in wheel_ids()],
+            'wheel_ids':wheel_ids(),'wheel_raw_goal':[500 if motor==selected_motor_id else 0 for motor in wheel_ids()],
             'metadata':{key:value for key,value in RIGHT_PULSE_METADATA.items() if key!='Lock'},
             'allowed_raw_targets':[0,500],
             'pulse_duration_ns':20_000_000_000,'zero_window_ns':500_000_000,
@@ -436,13 +442,16 @@ def mixed_raw_contract(bindings):
 
 
 def validate_mixed_raw_plan(plan):
+    contract=plan.get('bus2_mixed_raw_hold')
+    require(isinstance(contract,dict),'缺少混合维护合同')
+    selected=contract.get('selected_motor_id')
     require(not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only'))
-            and plan.get('position_targets')==[] and plan.get('scope')==MIXED_RAW_SCOPE
-            and plan.get('bus2_mixed_raw_hold')==mixed_raw_contract(plan['bindings']),
+            and plan.get('position_targets')==[] and plan.get('scope')==mixed_raw_scope(selected)
+            and contract==mixed_raw_contract(plan['bindings'],selected),
             '混合维护禁止混用旧动作或改动固定raw合同')
     require(plan.get('base_targets')==[{'side':side,'motor':motor,'name':name,
-            'decision':'RAW_DIAGNOSTIC' if motor==9 else 'RAW_ZERO_HOLD',
+            'decision':'RAW_DIAGNOSTIC' if motor==selected else 'RAW_ZERO_HOLD',
             'reason_code':'FW310_PHASE12_RAW_0_500_ONLY'} for side,motor,name in BASE_TARGETS],
             '混合维护不得扩展为通用底盘合同')
 
@@ -479,14 +488,17 @@ def mixed_calibration_rows(calibration):
 def parse_mixed_raw_result(text,plan,expiry,calibration):
     """只验证child自身RAW时域；不拿父MONOTONIC与child绝对ns比较。"""
     require(len(text.splitlines())==1,'混合child必须输出唯一完整JSON行')
-    row=strict_json(text);contract=plan['bus2_mixed_raw_hold']
+    row=strict_json(text);contract=plan['bus2_mixed_raw_hold'];selected_motor=contract['selected_motor_id']
     keys={'schema','operation','result','error','serial_device','arm_calibration_path',
           'go_expires_at_unix_ns','motor_ids','wheel_ids','wheel_raw_goal','pulse_duration_ns',
           'zero_window_ns','enable_budget_ns','loaded_calibration','arm_anchors','wheel_anchors',
           'arm_final','cycle_count','cycles','wheel_samples','zero_samples','timing','cleanup'}
     tolerance_key='calibration_range_tolerances_raw'
-    legacy=isinstance(row,dict) and tolerance_key not in row and contract[tolerance_key]==[0]*6
-    require(isinstance(row,dict) and set(row)==(keys if legacy else keys|{tolerance_key}),'混合child原件schema字段错误')
+    legacy_tolerances=isinstance(row,dict) and tolerance_key not in row and contract[tolerance_key]==[0]*6
+    if not legacy_tolerances:keys.add(tolerance_key)
+    legacy_schema=isinstance(row,dict) and row.get('schema')=='FEETECH_MIXED_WHEEL9_V1'
+    if not legacy_schema:keys.add('selected_motor_id')
+    require(isinstance(row,dict) and set(row)==keys,'混合child原件schema字段错误')
     def integer(value,low=0,high=None):
         require(type(value) is int and value>=low and (high is None or value<=high),'混合原件整数越界')
         return value
@@ -494,7 +506,9 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
         require(type(value) is list and len(value)==count,'混合原件数组长度错误')
         return [integer(item,low,high) for item in value]
     require(array(row.get(tolerance_key,[0]*6),6)==contract[tolerance_key],'混合原件逐电机校准容差与计划不符')
-    require(row['schema']=='FEETECH_MIXED_WHEEL9_V1' and row['operation']==contract['operation']
+    require((legacy_schema and selected_motor==9
+             or row['schema']=='FEETECH_MIXED_WHEEL_V1' and integer(row['selected_motor_id'],7,9)==selected_motor)
+            and row['operation']==contract['operation']
             and row['serial_device']==DEVICES['right']
             and row['arm_calibration_path']==contract['arm_calibration']['path']
             and integer(row['go_expires_at_unix_ns'])==expiry,'混合原件目标/校准/GO错误')
@@ -538,7 +552,7 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
                 and abs(integer(last['raw'],0,4095)-value)<=4,'六臂末置偏离固定锚点')
     wheel_anchors=row['wheel_anchors']
     require(type(wheel_anchors) is list and len(wheel_anchors)==2,'未选两轮新鲜锚点缺失')
-    for anchor,motor in zip(wheel_anchors,(motor for motor in contract['wheel_ids'] if motor!=9)):
+    for anchor,motor in zip(wheel_anchors,(motor for motor in contract['wheel_ids'] if motor!=selected_motor)):
         require(isinstance(anchor,dict) and set(anchor)=={'motor_id','raw','sampled_ns'}
                 and integer(anchor['motor_id'])==motor
                 and 0<=times[1]-integer(anchor['sampled_ns'],1)<=contract['anchor_freshness_ns'],
@@ -563,8 +577,8 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
                     and max(previous,deadline-contract['cycle_period_ns'])<=start<=end<=deadline,
                     '混合周期来源期限变化或逾期')
         previous=end
-    selected=contract['wheel_ids'].index(9)
-    held=[slot for slot,motor in enumerate(contract['wheel_ids']) if motor!=9]
+    selected=contract['wheel_ids'].index(selected_motor)
+    held=[slot for slot,motor in enumerate(contract['wheel_ids']) if motor!=selected_motor]
     samples=row['wheel_samples'];travel=0;positive=False;last=None
     require(type(samples) is list and len(samples)==contract['wheel_sample_count'],'混合反馈集合不完整')
     for index,sample in enumerate(samples,1):
@@ -580,27 +594,27 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
         for wheel,anchor in zip(held,wheel_anchors):
             require(words[wheel] in (0,50,0x8032)
                     and abs(positions[wheel]-anchor['raw'])<=4,'未选轮运动护栏失败')
-        require(words[selected]<=contract['velocity_raw_max'],'物理9运动反馈方向/范围失败')
+        require(words[selected]<=contract['velocity_raw_max'],f'物理{selected_motor}运动反馈方向/范围失败')
         positive|=words[selected]>0
         if last is not None:
             step=(positions[selected]-last)%4096
-            require(step<=contract['position_step_raw_max'],'物理9相邻位置越界或逆向')
+            require(step<=contract['position_step_raw_max'],f'物理{selected_motor}相邻位置越界或逆向')
             travel+=step
         last=positions[selected]
-    require(positive and travel>0,'物理9缺少正速度及正位移联合反馈')
+    require(positive and travel>0,f'物理{selected_motor}缺少正速度及正位移联合反馈')
     zero=row['zero_samples']
-    require(type(zero) is list and len(zero)==3,'物理9零速三组原件缺失')
+    require(type(zero) is list and len(zero)==3,f'物理{selected_motor}零速三组原件缺失')
     for index,sample in enumerate(zero):
         require(isinstance(sample,dict) and set(sample)=={'started_ns','finished_ns','torque_enable',
-                'goal_velocity_word','present_velocity_word'},'物理9零速原件字段错误')
+                'goal_velocity_word','present_velocity_word'},f'物理{selected_motor}零速原件字段错误')
         scheduled=times[3]+contract['zero_offsets_ns'][index]
         end=min(times[2]+contract['zero_window_ns'],times[3]+contract['zero_offsets_ns'][index+1]) if index<2 else times[2]+contract['zero_window_ns']
         require(scheduled<=integer(sample['started_ns'],1)<=integer(sample['finished_ns'],1)<=end
                 and integer(sample['torque_enable'])==1 and integer(sample['goal_velocity_word'])==0,
-                '物理9零速时间/TE1/GV0失败')
+                f'物理{selected_motor}零速时间/TE1/GV0失败')
         word=integer(sample['present_velocity_word'],0,65535)
         require(word in contract['zero_final_raw_unsigned'] if index==2 else word<=1000 or word==0x8032,
-                '物理9零速反馈不满足原合同')
+                f'物理{selected_motor}零速反馈不满足原合同')
     require(zero[-1]['finished_ns']<=times[4],'九电机断扭早于零速观察完成')
     cleanup=row['cleanup']
     require(isinstance(cleanup,dict) and set(cleanup)=={'zero_attempted','zero_ok','disable_attempted',
@@ -614,13 +628,13 @@ def run_bus2_mixed_raw_hold(engine):
     """一次真实adapter维护child；正常或异常都继续复用外层整机停止及身份后验。"""
     plan=engine.plan;io=engine.io;validate_mixed_raw_plan(plan);engine.check_gate()
     calibration=verify_mixed_raw_refs(plan);mixed_calibration_rows(calibration)
-    contract=plan['bus2_mixed_raw_hold'];expiry=engine.go_expires_at_unix_ns
+    contract=plan['bus2_mixed_raw_hold'];expiry=engine.go_expires_at_unix_ns;selected=contract['selected_motor_id']
     arms=[{'side':'right','motor':motor,'name':name,'kind':'position_hold','status':'FAIL','cleanup_errors':[]}
           for motor,name in enumerate(MIXED_ARM_NAMES,1)]
-    wheel={'side':'right','motor':9,'name':WHEEL_PULSE_TARGETS[WHEEL_STOP_TARGETS[9]][2],'kind':'velocity',
+    wheel={'side':'right','motor':selected,'name':WHEEL_PULSE_TARGETS[WHEEL_STOP_TARGETS[selected]][2],'kind':'velocity',
            'status':'FAIL','raw_velocity':500,'cleanup_errors':[]}
     engine.rows.extend([*arms,wheel])
-    argv=[contract['tool']['path'],DEVICES['right'],'9',contract['operation'],
+    argv=[contract['tool']['path'],DEVICES['right'],str(selected),contract['operation'],
           '--arm-calibration',contract['arm_calibration']['path'],'--go-expires-at-ns',str(expiry),
           '--wheel-ids',','.join(map(str,contract['wheel_ids'])),
           '--calibration-range-tolerances-raw',','.join(map(str,contract['calibration_range_tolerances_raw']))]
@@ -883,9 +897,11 @@ def position_targets_from_plan(plan):
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
               left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
-              gripper_goal=1600,arm_range_id=None):
+              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None):
     require(arm_range_id is None or bus2_arm_range_only and type(arm_range_id) is int and arm_range_id==3,
             '单ID3选择只能附加到右臂范围只读')
+    require(mixed_wheel_id is None or bus2_mixed_raw_hold and type(mixed_wheel_id) is int and mixed_wheel_id in (7,8,9),
+            '混合选轮只能附加到混合维护且仅接受物理7/8/9')
     require(type(gripper_goal) is int and gripper_goal in GRIPPER_TARGETS
             and (right_gripper_release or gripper_goal==1600),'夹爪目标仅用于本次固定单右6动作')
     require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
@@ -946,10 +962,11 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             if motor==7:validate_right_feedback_plan(plan)
             else:validate_front_feedback_plan(plan,motor=motor)
     if bus2_mixed_raw_hold:
-        plan['bus2_mixed_raw_hold']=mixed_raw_contract(bindings)
-        plan['scope']=MIXED_RAW_SCOPE
+        selected=9 if mixed_wheel_id is None else mixed_wheel_id
+        plan['bus2_mixed_raw_hold']=mixed_raw_contract(bindings,selected)
+        plan['scope']=plan['bus2_mixed_raw_hold']['scope']
         plan['base_targets']=[{'side':side,'motor':motor,'name':name,
-            'decision':'RAW_DIAGNOSTIC' if motor==9 else 'RAW_ZERO_HOLD',
+            'decision':'RAW_DIAGNOSTIC' if motor==selected else 'RAW_ZERO_HOLD',
             'reason_code':'FW310_PHASE12_RAW_0_500_ONLY'} for side,motor,name in BASE_TARGETS]
         plan['limitations']=['仅本次FW3.10/Phase12/Mode1的raw{0,+500}维护合同，不解除通用profile/SI门',
                              '维护真实adapter链；不声明SerialTick、S0/S1、D15或生产验收完成']
@@ -1005,7 +1022,7 @@ def validate_go(go, plan, now_ns):
                     'continuous_wheel_observation'))
                 and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
                 and facts.get('base_confirmation_scope')==(
-                    MIXED_RAW_SCOPE if 'bus2_mixed_raw_hold' in plan else
+                    plan['bus2_mixed_raw_hold']['scope'] if 'bus2_mixed_raw_hold' in plan else
                     LEFT_FEEDBACK_SCOPE if 'left_wheel_feedback_only' in plan else
                     FRONT_FEEDBACK_SCOPE if 'front_wheel_feedback_only' in plan else
                     RIGHT_FEEDBACK_SCOPE if 'right_wheel_feedback_only' in plan else plan['right_wheel_pulse']['scope'])
@@ -1996,7 +2013,10 @@ def install_right_pulse_guard(engine,helper):
     holder=SimpleNamespace(command=lambda _io,argv,**kwargs:original(argv,**kwargs))
     helper.install_stop_wire_capture(SimpleNamespace(RealExecutor=holder,verify_ref=verify_ref))
     traced=lambda argv,**kwargs:holder.command(io,argv,**kwargs)
-    wheel=pulse_wheel(engine.plan) if 'right_wheel_pulse' in engine.plan else WHEEL_STOP_TARGETS[9] if 'bus2_mixed_raw_hold' in engine.plan else 'right'
+    if 'right_wheel_pulse' in engine.plan:wheel=pulse_wheel(engine.plan)
+    elif 'bus2_mixed_raw_hold' in engine.plan:
+        wheel=WHEEL_STOP_TARGETS[engine.plan['bus2_mixed_raw_hold']['selected_motor_id']]
+    else:wheel='right'
     side,motor,name=WHEEL_PULSE_TARGETS[wheel]
     row={'side':side,'motor':motor,'name':name,'kind':'raw_velocity_diagnostic',
          'status':'NOT_RUN','before_raw':[],'samples':[],'cleanup_raw':[],'writes':[],
@@ -2789,8 +2809,9 @@ def classify_run_result(report):
     if 'bus2_mixed_raw_hold' in report.get('plan',{}):
         try:
             validate_mixed_raw_plan(report['plan'])
+            selected=report['plan']['bus2_mixed_raw_hold']['selected_motor_id']
             require([(p['side'],p['motor'],p['kind']) for p in probes]
-                    ==[('right',motor,'position_hold') for motor in range(1,7)]+[('right',9,'velocity')],
+                    ==[('right',motor,'position_hold') for motor in range(1,7)]+[('right',selected,'velocity')],
                     '混合维护探针集合错误')
             result=report['mixed_raw_result']
             require(result['result']=='PASS' and result['error'] is None,'缺少本次混合child成功原件')
@@ -3077,7 +3098,9 @@ def main(argv=None):
     parser.add_argument('--zero-stop-check',action='store_true',
                         help='仅附加单轮pulse：零速后保持使能，500毫秒内三组检查，末组PV原字限0/50/0x8032')
     parser.add_argument('--bus2-mixed-raw-hold',action='store_true',
-                        help='仅FW3.10/Phase12：六臂原位保持及物理9 raw+500/20秒；复用整机停止后验')
+                        help='仅FW3.10/Phase12：六臂原位保持及所选轮raw+500/20秒，默认物理9；复用整机停止后验')
+    parser.add_argument('--mixed-wheel-id',type=int,choices=(7,8,9),
+                        help='仅附加到混合维护：选择物理7/8/9，缺省物理9；其余两轮保持raw0')
     parser.add_argument('--bus2-arm-range-only',action='store_true',
                         help='仅右臂1..6逐ID SYNC_READ TE/PV/PP，共18读；记录校准范围，不写电机、不判停止')
     parser.add_argument('--arm-range-id',type=int,choices=(3,),
@@ -3088,6 +3111,7 @@ def main(argv=None):
     options=parser.parse_args(argv)
     configure_bus_mapping(options.bus_config,options.left_bus_config)
     require(options.arm_range_id is None or options.bus2_arm_range_only,'单ID3选择只能附加到右臂范围只读')
+    require(options.mixed_wheel_id is None or options.bus2_mixed_raw_hold,'混合选轮只能附加到混合维护')
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
     wheel_target=options.wheel_pulse[0] if options.wheel_pulse else None
     pulse_requested=options.right_wheel_pulse or wheel_target is not None
@@ -3110,7 +3134,9 @@ def main(argv=None):
                           'position_targets':selected_targets,
                           'scope':GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else
                               (ARM_ELBOW_RANGE_SCOPE if options.arm_range_id==3 else ARM_RANGE_SCOPE)
-                              if options.bus2_arm_range_only else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
+                              if options.bus2_arm_range_only else
+                              mixed_raw_scope(9 if options.mixed_wheel_id is None else options.mixed_wheel_id)
+                              if options.bus2_mixed_raw_hold else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
         return 0
     plan=make_plan(strict_json(options.bindings.read_text()),options.output,options.run_id,options.artifact_root,
                    options.position_target,right_wheel_pulse=options.right_wheel_pulse,
@@ -3118,7 +3144,8 @@ def main(argv=None):
                    zero_stop_check=options.zero_stop_check,front_wheel_feedback_only=options.front_wheel_feedback_only,
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
-                   right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id)
+                   right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id,
+                   mixed_wheel_id=options.mixed_wheel_id)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

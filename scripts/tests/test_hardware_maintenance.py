@@ -3703,28 +3703,31 @@ class MixedRawTests(unittest.TestCase):
         self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True)
 
     def receipt(self):
+        selected=self.plan['bus2_mixed_raw_hold']['selected_motor_id']
         first=1_100_000_000;zero=first+20_000_000_000;zero_done=zero+1_000_000
         cycles=[{'started_ns':first+index*50_000_000+1_000_000,
                  'finished_ns':first+index*50_000_000+4_000_000,
                  'source_deadline_ns':first+(index+1)*50_000_000} for index in range(400)]
         cycles[0]={'started_ns':first-1_000_000,'finished_ns':first+2_000_000,
                    'source_deadline_ns':first+49_000_000}
-        return {'schema':'FEETECH_MIXED_WHEEL9_V1','operation':'mixed-hold-wheel9','result':'PASS','error':None,
+        return {**({'schema':'FEETECH_MIXED_WHEEL9_V1','operation':'mixed-hold-wheel9'} if selected==9 else
+                   {'schema':'FEETECH_MIXED_WHEEL_V1','operation':'mixed-hold-wheel','selected_motor_id':selected}),
+            'result':'PASS','error':None,
             'calibration_range_tolerances_raw':list(self.plan['bus2_mixed_raw_hold']['calibration_range_tolerances_raw']),
             'serial_device':m.DEVICES['right'],
             'arm_calibration_path':self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path'],
             'go_expires_at_unix_ns':self.expiry,'motor_ids':self.plan['bus2_mixed_raw_hold']['motor_ids'],
-            'wheel_ids':m.wheel_ids(),'wheel_raw_goal':[500 if motor==9 else 0 for motor in m.wheel_ids()],'pulse_duration_ns':20_000_000_000,
+            'wheel_ids':m.wheel_ids(),'wheel_raw_goal':[500 if motor==selected else 0 for motor in m.wheel_ids()],'pulse_duration_ns':20_000_000_000,
             'zero_window_ns':500_000_000,'enable_budget_ns':21_000_000_000,'cycle_count':400,
             'loaded_calibration':list(self.calibration.values()),
             'arm_anchors':[{'motor_id':motor,'raw':1000,'goal_raw':1000,'calibration_min':0,
                 'calibration_max':4095,'sampled_ns':first-50_000_000} for motor in range(1,7)],
-            'wheel_anchors':[{'motor_id':motor,'raw':1000,'sampled_ns':first-20_000_000} for motor in m.wheel_ids() if motor!=9],
+            'wheel_anchors':[{'motor_id':motor,'raw':1000,'sampled_ns':first-20_000_000} for motor in m.wheel_ids() if motor!=selected],
             'arm_final':[{'motor_id':motor,'raw':1000} for motor in range(1,7)],'cycles':cycles,
             'wheel_samples':[{'started_ns':cycles[index*5]['started_ns']+1_000_000,
                 'finished_ns':cycles[index*5]['started_ns']+2_000_000,
-                'position_raw':[(4000+index*5)%4096 if motor==9 else 1000 for motor in m.wheel_ids()],
-                'velocity_word':[500 if motor==9 else 0 for motor in m.wheel_ids()],
+                'position_raw':[(4000+index*5)%4096 if motor==selected else 1000 for motor in m.wheel_ids()],
+                'velocity_word':[500 if motor==selected else 0 for motor in m.wheel_ids()],
                 'arm_position_raw':[1000]*6} for index in range(1,80)],
             'zero_samples':[{'started_ns':zero_done+offset,'finished_ns':zero_done+offset+1_000_000,
                 'torque_enable':1,'goal_velocity_word':0,'present_velocity_word':word}
@@ -3772,6 +3775,95 @@ class MixedRawTests(unittest.TestCase):
                 with self.assertRaises(ValueError):m.run_motion_probes(engine,self.bindings,self.plan)
             else:m.run_motion_probes(engine,self.bindings,self.plan)
         return engine
+
+    def test_mixed_front_plan_command_and_final_result_bind_physical_8(self):
+        self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                              bus2_mixed_raw_hold=True,mixed_wheel_id=8)
+        contract=self.plan['bus2_mixed_raw_hold']
+        self.assertEqual(contract['selected_motor_id'],8)
+        self.assertEqual(contract['wheel_ids'],[8,9,7])
+        self.assertEqual(contract['wheel_raw_goal'],[500,0,0])
+        self.assertIn('前8固定raw+500持续20秒',self.plan['scope'])
+        self.assertIn('左9/右7保持raw0',self.plan['scope'])
+        self.assertEqual([row['motor'] for row in self.plan['base_targets']
+                          if row['decision']=='RAW_DIAGNOSTIC'],[8])
+        engine=self.perform()
+        self.assertEqual(engine.mixed_wire_evidence['original_argv'][2:4],['8','mixed-hold-wheel'])
+        self.assertEqual((engine.right_pulse['motor'],engine.right_pulse['name']),(8,'base_front_wheel'))
+        self.assertEqual((engine.rows[-1]['motor'],engine.rows[-1]['name']),(8,'base_front_wheel'))
+        before=idle_rows();after=idle_rows()
+        for motor in range(1,7):before[f'right:{motor}']['Goal_Position']=0
+        after['right:8']['Present_Position']=1400
+        position=m.classify_position_snapshot(after,before,engine.rows)
+        self.assertEqual(position['status'],'PASS')
+        report={'plan':self.plan,'probes':engine.rows,'mixed_raw_result':engine.mixed_raw_result,
+                'stop_verification':{'status':'PASS'},'identity_verification':{'status':'PASS'},
+                'position_verification':position,'child_active':False}
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        bad=copy.deepcopy(report);bad['probes'][-1]['motor']=9
+        self.assertEqual(m.classify_run_result(bad),'FAIL')
+
+    def test_mixed_selection_rejects_wrong_id_held_motion_and_cross_wheel_go(self):
+        legacy=self.receipt();old_plan=copy.deepcopy(self.plan)
+        old_go=WheelFeedbackTests.go(self,old_plan,1000)
+        for selected in (8,7):
+            with self.subTest(selected=selected):
+                self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                                      bus2_mixed_raw_hold=True,mixed_wheel_id=selected)
+                row=self.receipt();self.assertEqual(self.parse(row),row)
+                self.assertEqual([anchor['motor_id'] for anchor in row['wheel_anchors']],
+                                 [motor for motor in m.wheel_ids() if motor!=selected])
+                for value in (9,True,str(selected),None):
+                    bad=copy.deepcopy(row);bad['selected_motor_id']=value
+                    with self.subTest(value=value),self.assertRaises(ValueError):self.parse(bad)
+                bad=copy.deepcopy(row);bad.pop('selected_motor_id')
+                with self.assertRaises(ValueError):self.parse(bad)
+                with self.assertRaises(ValueError):self.parse(legacy)
+                for slot,motor in enumerate(m.wheel_ids()):
+                    if motor==selected:continue
+                    bad=copy.deepcopy(row);bad['wheel_samples'][0]['position_raw'][slot]=1005
+                    with self.subTest(held_motor=motor),self.assertRaises(ValueError):self.parse(bad)
+                with self.assertRaises(ValueError):m.validate_go(old_go,self.plan,2000)
+                bad_go=copy.deepcopy(old_go);bad_go['plan_sha256']=m.digest(self.plan)
+                with self.assertRaises(ValueError):m.validate_go(bad_go,self.plan,2000)
+                m.validate_go(WheelFeedbackTests.go(self,self.plan,1000),self.plan,2000)
+        self.plan=old_plan
+        self.assertEqual(self.parse(legacy),legacy)
+        for value in (8,9,True):
+            legacy['selected_motor_id']=value
+            with self.subTest(legacy_selected=value),self.assertRaises(ValueError):self.parse(legacy)
+
+    def test_mixed_wheel_cli_requires_mixed_mode_and_keeps_legacy_default(self):
+        self.assertEqual(self.plan['bus2_mixed_raw_hold']['selected_motor_id'],9)
+        self.assertEqual(self.plan['bus2_mixed_raw_hold']['operation'],'mixed-hold-wheel9')
+        self.assertEqual(self.plan['scope'],m.MIXED_RAW_SCOPE)
+        for selected in (7,8,9):
+            with self.subTest(selected=selected),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,mixed_wheel_id=selected)
+            with self.assertRaises(ValueError):run_main(['--mixed-wheel-id',str(selected)])
+        for selected in (6,10,True,'8'):
+            with self.subTest(selected=selected),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                            bus2_mixed_raw_hold=True,mixed_wheel_id=selected)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不得启动child')):
+            out=io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(run_main(['--bus2-mixed-raw-hold','--mixed-wheel-id','8']),0)
+            row=json.loads(out.getvalue())
+            self.assertEqual(row['actions_started'],0)
+            self.assertIn('前8固定raw+500持续20秒',row['scope'])
+
+    @unittest.skipUnless(os.environ.get('ROBOT_MIXED_FRONT_SOFTWARE_FIXTURE'),'未提供前轮同源Rust内存串口成功回执')
+    def test_actual_rust_front_memory_serial_receipt_passes_strict_python_parser(self):
+        self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                              bus2_mixed_raw_hold=True,mixed_wheel_id=8)
+        row=m.strict_json(Path(os.environ['ROBOT_MIXED_FRONT_SOFTWARE_FIXTURE']).read_text())
+        self.assertEqual(row['schema'],'FEETECH_MIXED_WHEEL_V1')
+        self.assertEqual(row['selected_motor_id'],8)
+        self.assertEqual(row['arm_calibration_path'],'/tmp/mixed-software-arm-calibration.json')
+        row['arm_calibration_path']=self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path']
+        self.expiry=row['go_expires_at_unix_ns']
+        self.assertEqual(self.parse(row),row)
 
     @unittest.skipUnless(os.environ.get('ROBOT_MIXED_SOFTWARE_FIXTURE'),'未提供同源Rust内存串口成功回执')
     def test_actual_rust_memory_serial_receipt_passes_strict_python_parser(self):
