@@ -31,9 +31,10 @@ calibration_paths = [
 
 # 已在 Orin 核对 D435i（序列号 043323051347）的 RGB 接口；不用易变的 video8。
 # helper 路径跟随正式仓库；候选验证使用隔离工作目录，不启动正式电机实例。
-[camera]
+[[sensor]]
 hardware_id = "left_arm_full_with_head"
 id = "head_color"
+adapter = "opencv_v4l2"
 device = "/dev/v4l/by-path/platform-3610000.usb-usb-0:2:1.3-video-index0"
 python = "/home/loosqk/repo/dimensional-applications/.venv/bin/python"
 helper = "/home/loosqk/repo/robot/robot-system/scripts/camera_capture.py"

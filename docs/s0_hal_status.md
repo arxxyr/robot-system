@@ -2,7 +2,7 @@
 
 更新：2026-11-10（UTC）。本页集中记录当前边界与下一步；架构以 [冻结设计](00_design.md) 为准，过往轮次从 [历史索引](handoffs/README.md) 按需查阅。
 
-执行器默认混合接线和单路相机软件实现已完成；头部 D435i 彩色流的真实 S0 采集/发布/退出已通过；两条执行器总线的默认 S0 实机验收尚待完成，不能称全身 HAL 已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
+执行器默认混合接线和多路独立 RGB 的软件实现已完成；此前头部 D435i 单路的真实 S0 采集/发布/退出已通过。两条执行器总线的默认 S0 实机验收、双腕相机配置及三路真实并行验收尚待完成，不能称全身 HAL 已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
 
 ## 完成边界
 
@@ -12,8 +12,8 @@
 | 总线内分组 | 左臂1–6＋头7/8 Position 分组；右臂1–6位置＋三轮 raw 速度 | 17电机由两个 daemon 各管一条总线；各自保留唯一串口所有者、命令流、控制权和停止域 |
 | 混合接线 | TOML 显式选择原 raw factory；新增混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 内存串口验证 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；默认 S0 非零轮动实机尚未验收 |
 | 状态反馈 | `JointState`/`Heartbeat` 保留；混合实例未标定速度、未测力矩为 NaN，不把 raw/占位0当SI量 | 内部寄存器原值仍用于诊断和停止；NaN 不作为静止证据 |
-| 相机契约 | `SensorAdapter`＋独立拥有像素的 BGR 帧；现有 SoftRT 线程接收、Pub 发布 `ImageHeader + blob` | 先接头部 D435i 的单路 RGB；深度、IMU、腕部相机及多相机同步未接入 |
-| 相机生命周期 | 首个合法新帧后就绪；帧间超时清帧并回收，发布不等待采集；默认 daemon 已验证失流回收后新关节目标、状态和心跳继续，Disable及退出完成 | 组合回归使用模拟执行器和协议图像，不代替真实硬件并行验收；帧时间为采集读取完成时刻，非硬件曝光时刻，不宣称全链零拷贝 |
+| 相机契约 | `[[sensor]]` 按 `hardware_id` 归属；每路 `SensorAdapter`、BGR 帧槽和图像 topic 独立，复用原 SoftRT/`ImageHeader + blob` | 正式配置仅有已核实头部；双腕设备对应待确认；不含深度、IMU或多相机同步 |
+| 相机生命周期 | 全部配置相机取得合法新帧才就绪；一路失流只回收该路；Pub轮转且每轮最多一张，状态和心跳优先；关闭时回收全部helper并保留首个清理错误 | 软件组合使用模拟执行器和协议图像；顺序回收可能短暂延迟其他相机；保留1秒帧龄/失流检查，未支持低于1Hz；时间戳仍为读取完成时刻，非曝光时刻 |
 
 ## 轮位与阻塞
 
@@ -37,7 +37,9 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 
 1. 前轮混合维护的实际动作与停止已通过；本轮已接默认 factory/wire 和 S1 的混合保持路径，两份实机配置均显式 `auto_enable=false`。
 2. 头部相机实时 USB 型号为 **D435i**，序列号 `043323051347`；RGB 对应配置中的稳定 by-path（当前枚举 `/dev/video8`），采集目标为640×480、15 FPS。真实输出 FPS/帧龄须由订阅端测量，驱动报告值不代替发布实测。
-3. 真实 D435i＋模拟执行器的 S0 已连续收到145帧（约10秒，14.47 FPS），最大帧龄20.86毫秒、心跳最大间隔21.93毫秒；画面已检查，daemon/订阅器退出码均0，相机设备释放。FPS不是收尾门槛，不继续调优。该结果不替代真实执行器并行测试。下一步只准备默认 S0 的执行器实机验收。现有20秒维护入口直接调用 adapter，不能仅替换二进制冒充 daemon 验收；非零混合命令仍缺受原监管约束的发送入口。准备完成后再通知动作、确认现场，不复用此前 GO。
+3. 此前单路真实 D435i＋模拟执行器的 S0 连续收到145帧（约10秒，14.47 FPS），最大帧龄20.86毫秒、心跳最大间隔21.93毫秒；画面已检查，daemon/订阅器退出码均0，相机设备释放。FPS不是收尾门槛，不继续调优。该结果不替代新版多路或真实执行器并行测试。
+4. 当前相机唯一配置为 `[[sensor]]`，旧 `[camera]` 明确拒绝。Orin只读枚举可见两个 `USB2.0_CAM1` 节点，稳定路径分别为 `platform-3610000.usb-usb-0:2.1:1.0-video-index0` 和 `platform-3610000.usb-usb-0:2.2:1.0-video-index0`；实际左右腕对应和采集格式待确认，暂不猜填配置。
+5. 后续准备默认 S0 的执行器实机验收。现有20秒维护入口直接调用 adapter，不能仅替换二进制冒充 daemon 验收；仍缺有界非零混合发送入口及沿唯一写者完成零速阶段 TE/GV/PV 读回。准备完成后再通知动作、确认现场，不复用此前 GO。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
@@ -51,4 +53,5 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。
 - 本轮软件与相机证据：`.verify/s0_body_hal_2026-11-10/`，Orin `/home/loosqk/robot-checks/s0-body-hal-20261110/`；原失败日志保留。
 - 默认 daemon 相机/执行器组合：[测试](../crates/robot-s0/tests/comm_fault_startup/camera_actuator.rs)、[验证摘要](../.verify/s0_camera_actuator_2026-11-10/summary.json)。Orin 4项相机集成测试及 fmt→根目录/测试特性 Clippy 通过；仅软件接线，无实机动作。
+- 多路相机软件：[验证摘要](../.verify/s0_multi_camera_2026-11-10/summary.json)。Orin 90项不同测试通过，含三路协议图像与模拟执行器组合；fmt→根目录及S0全部特性Clippy通过。早期lint/断言编译失败原件保留；未开相机、未访问UART、未部署。
 - 线程与图像：[SerialRT](../crates/robot-s0/src/serial_io_thread.rs)、[驱动夹具](../crates/robot-s0/src/serial_tick_feetech_tests.rs)、[SoftRT IO](../crates/robot-s0/src/io_thread.rs)、[发布](../crates/robot-s0/src/pub_thread.rs)、[图像消息](../crates/robot-msg/src/markers.rs)。

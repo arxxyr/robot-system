@@ -108,7 +108,7 @@ pub struct IpcPublishers {
 /// 在线程内按原顺序持有发布端口与 Node；兼容测试输入不创建第二 Node。
 pub struct OwnedIpcPublishers {
     publishers: IpcPublishers,
-    camera: Option<CameraPublisher>,
+    cameras: Vec<CameraPublisher>,
     _node: Option<iceoryx2::prelude::Node<iceoryx2::service::ipc::Service>>,
 }
 impl OwnedIpcPublishers {
@@ -119,12 +119,12 @@ impl OwnedIpcPublishers {
     ) -> Self {
         Self {
             publishers,
-            camera: None,
+            cameras: Vec::new(),
             _node: Some(node),
         }
     }
 
-    /// 单路相机与原 state/heartbeat 共用本线程和同一个 Node。
+    /// 每路相机与原 state/heartbeat 共用本线程和同一个 Node。
     #[must_use]
     pub fn with_camera(
         mut self,
@@ -132,7 +132,7 @@ impl OwnedIpcPublishers {
         frame_id: String,
         frames: Arc<CameraFrames>,
     ) -> Self {
-        self.camera = Some(CameraPublisher {
+        self.cameras.push(CameraPublisher {
             publisher,
             frame_id,
             frames,
@@ -145,7 +145,7 @@ impl From<IpcPublishers> for OwnedIpcPublishers {
     fn from(publishers: IpcPublishers) -> Self {
         Self {
             publishers,
-            camera: None,
+            cameras: Vec::new(),
             _node: None,
         }
     }
@@ -224,7 +224,7 @@ where
     F: FnOnce() -> P + Send + 'static,
     P: Into<OwnedIpcPublishers>,
 {
-    spawn_pub_thread_with_camera(
+    spawn_pub_thread_with_cameras(
         cfg,
         clock,
         move || Ok(publishers_factory()),
@@ -238,7 +238,7 @@ where
 
 /// 相机发布端也在线程 factory 内创建；其创建错误经原 Ready 通道拒绝启动。
 #[allow(clippy::too_many_arguments)]
-pub fn spawn_pub_thread_with_camera<F, P>(
+pub fn spawn_pub_thread_with_cameras<F, P>(
     cfg: PubThreadConfig,
     clock: Arc<dyn RobotClock>,
     publishers_factory: F,
@@ -278,7 +278,7 @@ where
                 &cfg,
                 clock.as_ref(),
                 &mut pubs.publishers,
-                pubs.camera.as_mut(),
+                &mut pubs.cameras,
                 &rt_snap_rdr,
                 &state_rdr,
                 &rt_ctrl,
@@ -305,7 +305,7 @@ fn run_loop(
     cfg: &PubThreadConfig,
     clock: &dyn RobotClock,
     pubs: &mut IpcPublishers,
-    mut camera: Option<&mut CameraPublisher>,
+    cameras: &mut [CameraPublisher],
     rt_snap_rdr: &RtSnapshotReader<RtSnapshot>,
     state_rdr: &RtSnapshotReader<S0StateSnapshot>,
     rt_ctrl: &crate::hard_rt_ctrl::HardRtCtrlInner,
@@ -323,6 +323,7 @@ fn run_loop(
     let mut state_seq: u64 = 0;
     let mut hb_seq: u64 = 0;
     let mut last_diag_summary_ns = clock.now().0;
+    let mut next_camera = 0;
 
     while crate::worker_stop::worker_running(crate::worker_stop::WorkerKind::Pub, clock, stop) {
         // ─── A2 freeze hook（test-only，0 cost when freeze_until_ns == 0）───
@@ -355,9 +356,10 @@ fn run_loop(
             last_hb_ns = now;
         }
 
-        // 最多消费一张最新图像；绝不等待采集，state/heartbeat 总是优先。
-        if let Some(camera) = camera.as_deref_mut() {
+        // 各路轮转，每轮最多一张图像；state/heartbeat 总是优先。
+        if let Some(camera) = cameras.get_mut(next_camera) {
             publish_camera_frame(camera, cfg.s0_source_id, clock, metrics);
+            next_camera = (next_camera + 1) % cameras.len();
         }
 
         metrics.tick_count.fetch_add(1, Ordering::Relaxed);
@@ -1108,7 +1110,7 @@ mod tests {
         let (original, _rt, _state, _observers, ctrl) = bring_up();
         let (_, rt_reader) = RtSnapshotPublisher::new(RtSnapshot::default());
         let (_, state_reader) = RtSnapshotPublisher::new(S0StateSnapshot::default());
-        let mut handle = spawn_pub_thread_with_camera(
+        let mut handle = spawn_pub_thread_with_cameras(
             PubThreadConfig::default(),
             Arc::new(SystemClock),
             || Err::<IpcPublishers, _>(TransportError::Backend("模拟相机publisher创建失败".into())),
@@ -1180,12 +1182,14 @@ mod tests {
             release: release_rx,
             stopped: Arc::clone(&stopped),
         };
-        let io = crate::io_thread::spawn_io_thread_with_camera(
+        let io = crate::io_thread::spawn_io_thread_with_cameras(
             crate::io_thread::IoThreadConfig::default(),
             Arc::new(SystemClock),
             Arc::new(AtomicBool::new(false)),
-            Some(Box::new(camera)),
-            frames,
+            vec![crate::io_thread::CameraInput {
+                adapter: Box::new(camera),
+                frames,
+            }],
         )
         .unwrap();
         entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();

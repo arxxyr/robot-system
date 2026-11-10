@@ -93,9 +93,9 @@ fn assert_settled(bytes: &[u8], request_id: &str) {
     clippy::too_many_lines,
     reason = "同一 daemon 内按顺序保留命令、图像、失流与真实回收的证据"
 )]
-fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_shutdown() {
+fn three_cameras_isolate_stall_and_preserve_mock_feedback_until_clean_shutdown() {
     let mut process =
-        Process::spawn_inner(8, &[], None, None, false, &[], Some(CameraFixture::Frames));
+        Process::spawn_inner(8, &[], None, None, false, &[], &[CameraFixture::Frames; 3]);
     let node = NodeBuilder::new().create::<Service>().unwrap();
     let robot = &process.robot_id;
     let mut commands = publisher::<markers::JointCommand>(
@@ -122,12 +122,16 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
         TopicClass::Heartbeat,
     )
     .unwrap();
-    let mut images = subscriber::<markers::ImageHeader>(
-        &node,
-        &format!("/{robot}/sensors/fixture_camera/color"),
-        TopicClass::Sensor,
-    )
-    .unwrap();
+    let mut images: Vec<_> = (0..3)
+        .map(|index| {
+            subscriber::<markers::ImageHeader>(
+                &node,
+                &format!("/{robot}/sensors/fixture_camera_{index}/color"),
+                TopicClass::Sensor,
+            )
+            .unwrap()
+        })
+        .collect();
     let client: Iceoryx2RrClient<markers::SetEnabledRequest, markers::SetEnabledResponse> =
         rr_client_with(
             &node,
@@ -135,9 +139,29 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
             &RrProfile::S0_CONTROL,
         )
         .unwrap();
-    process.wait_camera_started();
-    std::fs::write(process.camera_file("camera-go"), b"go").unwrap();
-    process.wait_ready(5000);
+    for index in 0..3 {
+        process.wait_camera_started_at(index);
+    }
+    for index in 0..2 {
+        std::fs::write(process.camera_file_at(index, "camera-go"), b"go").unwrap();
+    }
+    let first_frames: Vec<_> = (0..2)
+        .map(|index| process.camera_file_at(index, "camera-first-frame"))
+        .collect();
+    wait(&mut process, "前两路首帧", || {
+        first_frames.iter().all(|file| file.exists())
+    });
+    assert!(!process.page.snapshot().ready_reached, "第三路无帧不能就绪");
+    std::fs::write(process.camera_file_at(2, "camera-go"), b"go").unwrap();
+    let ready = process.wait_ready(5000);
+    for index in 0..3 {
+        let stamp: u64 =
+            std::fs::read_to_string(process.camera_file_at(index, "camera-first-frame"))
+                .unwrap()
+                .parse()
+                .unwrap();
+        assert!(ready.ready_ns >= stamp, "就绪必须在每一路首帧之后");
+    }
     commands.update_connections().unwrap();
     heartbeat.update_connections().unwrap();
     let mut layout = None;
@@ -199,33 +223,45 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
     }
     let mut a_feedback = None;
     let mut a_heartbeat = None;
-    let mut image_count = 0;
-    let mut last_image_stamp = 0;
-    let mut last_image_sequence = None;
+    let mut image_counts = [0; 3];
+    let mut last_image_stamps = [0; 3];
+    let mut last_image_sequences = [None; 3];
     wait(
         &mut process,
-        "A目标反馈与两张推进的原始图像",
+        "A目标反馈与三路各两张推进的原始图像",
         || {
             pump(&A);
             a_feedback = target_feedback(&mut state, &A).or(a_feedback);
             a_heartbeat = heartbeat_sequence(&mut alive).or(a_heartbeat);
-            if let Some(lease) = images.latest().unwrap() {
+            for (index, images) in images.iter_mut().enumerate() {
+                let Some(lease) = images.latest().unwrap() else {
+                    continue;
+                };
                 let view = lease.view().unwrap();
                 let image: msg::ImageHeader = view.body.get();
                 assert_eq!((image.width(), image.height(), image.step()), (2, 1, 6));
                 assert_eq!(image.encoding(), Some("bgr8"));
                 assert_eq!(image.color_order(), Some("BGR"));
-                assert_eq!(image.frame_id(), Some("fixture_camera"));
+                let frame_id = format!("fixture_camera_{index}");
+                assert_eq!(image.frame_id(), Some(frame_id.as_str()));
                 assert_eq!(image.stamp_ns(), view.header.stamp_ns());
                 assert_eq!(image.blob().unwrap().size(), 6);
-                assert_eq!(view.blob.unwrap().bytes(), [1, 2, 3, 4, 5, 6]);
-                assert!(image.stamp_ns() > last_image_stamp);
-                assert!(last_image_sequence.is_none_or(|previous| view.header.seq() > previous));
-                last_image_stamp = image.stamp_ns();
-                last_image_sequence = Some(view.header.seq());
-                image_count += 1;
+                let offset = u8::try_from(index).unwrap();
+                assert_eq!(
+                    view.blob.unwrap().bytes(),
+                    [1, 2, 3, 4, 5, 6].map(|value| value + offset)
+                );
+                assert!(image.stamp_ns() > last_image_stamps[index]);
+                assert!(
+                    last_image_sequences[index].is_none_or(|previous| view.header.seq() > previous)
+                );
+                last_image_stamps[index] = image.stamp_ns();
+                last_image_sequences[index] = Some(view.header.seq());
+                image_counts[index] += 1;
             }
-            a_feedback.is_some() && a_heartbeat.is_some() && image_count >= 2
+            a_feedback.is_some()
+                && a_heartbeat.is_some()
+                && image_counts.iter().all(|&count| count >= 2)
         },
     );
     let a_feedback = a_feedback.unwrap();
@@ -241,7 +277,9 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
         pump(&A);
         let _ = state.latest().unwrap();
         let _ = alive.latest().unwrap();
-        let _ = images.latest().unwrap();
+        for images in &mut images {
+            let _ = images.latest().unwrap();
+        }
         helper_stopped.is_file() && !helper_process.exists()
     });
     process.assert_camera_reaped();
@@ -256,18 +294,26 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
     let stopped_at = SystemClock.now().0;
     let mut b_feedback = None;
     let mut b_heartbeat = None;
+    let mut healthy_frames = [false; 2];
     wait(
         &mut process,
-        "失流后的B目标反馈与心跳推进",
+        "失流后的两路图像、B目标反馈与心跳推进",
         || {
             pump(&B);
             b_feedback = target_feedback(&mut state, &B).or(b_feedback);
             b_heartbeat = heartbeat_sequence(&mut alive).or(b_heartbeat);
-            if let Some(lease) = images.latest().unwrap() {
+            if let Some(lease) = images[0].latest().unwrap() {
                 assert!(lease.view().unwrap().header.stamp_ns() <= stopped_at);
+            }
+            for (index, images) in images[1..].iter_mut().enumerate() {
+                if let Some(lease) = images.latest().unwrap() {
+                    let view = lease.view().unwrap();
+                    healthy_frames[index] |= view.header.stamp_ns() > stopped_at;
+                }
             }
             b_feedback.is_some_and(|(seq, stamp)| seq > a_feedback.0 && stamp > stopped_at)
                 && b_heartbeat.is_some_and(|(seq, stamp)| seq > a_heartbeat.0 && stamp > stopped_at)
+                && healthy_frames.iter().all(|seen| *seen)
         },
     );
     {
@@ -303,7 +349,9 @@ fn camera_stall_preserves_real_daemon_mock_feedback_and_heartbeat_until_clean_sh
         })
     });
     process.stop();
-    process.assert_camera_reaped();
+    for index in 0..3 {
+        process.assert_camera_reaped_at(index);
+    }
     let observed = process.page.snapshot();
     assert_eq!(observed.stop_bitmap, 0xff);
     assert_eq!(observed.residual_bitmap, 0);

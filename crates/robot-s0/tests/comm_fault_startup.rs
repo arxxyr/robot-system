@@ -56,6 +56,7 @@ import sys
 import time
 
 directory = Path(__file__).parent
+stream_index = int(directory.name.rsplit('-', 1)[1])
 mode = Path(sys.argv[sys.argv.index('--device') + 1]).name
 
 def stop(_signum, _frame):
@@ -64,10 +65,10 @@ def stop(_signum, _frame):
 signal.signal(signal.SIGTERM, stop)
 try:
     (directory / 'camera-pid').write_text(str(os.getpid()))
-    if mode == 'eof':
-        raise SystemExit(0)
     while mode == 'no-frames' or not (directory / 'camera-go').exists():
         time.sleep(0.01)
+    if mode == 'eof':
+        raise SystemExit(0)
     while True:
         if (directory / 'camera-stall').exists():
             while True:
@@ -75,7 +76,7 @@ try:
         stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
         if not (directory / 'camera-first-frame').exists():
             (directory / 'camera-first-frame').write_text(str(stamp))
-        sys.stdout.buffer.write(struct.pack('<4sIIIQ', b'RCAM', 2, 1, 6, stamp) + bytes([1, 2, 3, 4, 5, 6]))
+        sys.stdout.buffer.write(struct.pack('<4sIIIQ', b'RCAM', 2, 1, 6, stamp) + bytes(range(stream_index + 1, stream_index + 7)))
         sys.stdout.buffer.flush()
         time.sleep(0.05)
 finally:
@@ -101,25 +102,17 @@ impl Process {
         fail: Option<&str>,
         ipc_exit_before_enable: bool,
     ) -> Self {
-        Self::spawn_inner(
-            joints,
-            extra,
-            pause,
-            fail,
-            ipc_exit_before_enable,
-            &[],
-            None,
-        )
+        Self::spawn_inner(joints, extra, pause, fail, ipc_exit_before_enable, &[], &[])
     }
 
     /// S48 A3b：standalone（显式移除 `WATCHDOG_USEC` / `NOTIFY_SOCKET`）并注入
     /// 额外 `ROBOT_TEST_*` 环境变量，用于快照版本耗尽回归。
     fn spawn_standalone_with_env(joints: usize, envs: &[(&str, String)]) -> Self {
-        Self::spawn_inner(joints, &[], None, None, false, envs, None)
+        Self::spawn_inner(joints, &[], None, None, false, envs, &[])
     }
 
     fn spawn_with_camera(camera: CameraFixture) -> Self {
-        Self::spawn_inner(6, &[], None, None, false, &[], Some(camera))
+        Self::spawn_inner(6, &[], None, None, false, &[], &[camera])
     }
 
     fn spawn_inner(
@@ -129,7 +122,7 @@ impl Process {
         fail: Option<&str>,
         ipc_exit_before_enable: bool,
         envs: &[(&str, String)],
-        camera: Option<CameraFixture>,
+        cameras: &[CameraFixture],
     ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let robot_id = format!(
@@ -147,11 +140,13 @@ impl Process {
                 .replace("auto_enable=false", "auto_enable=true");
             std::fs::write(&config, contents).unwrap();
         }
-        if let Some(camera) = camera {
+        for (index, camera) in cameras.iter().enumerate() {
             let python = PathBuf::from("/usr/bin/python3");
             assert!(python.is_file(), "相机协议夹具需要固定 /usr/bin/python3");
-            let helper = directory.path().join("camera_fixture.py");
-            let device = directory.path().join(camera.name());
+            let camera_directory = directory.path().join(format!("camera-{index}"));
+            std::fs::create_dir(&camera_directory).unwrap();
+            let helper = camera_directory.join("camera_fixture.py");
+            let device = camera_directory.join(camera.name());
             std::fs::write(&helper, CAMERA_HELPER).unwrap();
             let mut contents = std::fs::read_to_string(&config).unwrap();
             // TOML Value 的格式化保留字符串引号和转义，不能改成路径 Display。
@@ -160,7 +155,7 @@ impl Process {
             let helper = toml::Value::String(helper.to_str().unwrap().to_owned());
             write!(
                 contents,
-                "\n[camera]\nhardware_id=\"arm\"\nid=\"fixture_camera\"\ndevice={device}\npython={python}\nhelper={helper}\nwidth=2\nheight=1\nfps=20\n"
+                "\n[[sensor]]\nadapter=\"opencv_v4l2\"\nhardware_id=\"arm\"\nid=\"fixture_camera_{index}\"\ndevice={device}\npython={python}\nhelper={helper}\nwidth=2\nheight=1\nfps=20\n"
             )
             .unwrap();
             std::fs::write(&config, contents).unwrap();
@@ -224,12 +219,25 @@ impl Process {
     }
 
     fn camera_file(&self, name: &str) -> PathBuf {
-        self.directory.as_ref().unwrap().path().join(name)
+        self.camera_file_at(0, name)
+    }
+
+    fn camera_file_at(&self, index: usize, name: &str) -> PathBuf {
+        self.directory
+            .as_ref()
+            .unwrap()
+            .path()
+            .join(format!("camera-{index}"))
+            .join(name)
     }
 
     fn wait_camera_started(&mut self) {
+        self.wait_camera_started_at(0);
+    }
+
+    fn wait_camera_started_at(&mut self, index: usize) {
         let deadline = SystemClock.now().0 + 5_000_000_000;
-        while !self.camera_file("camera-pid").is_file() {
+        while !self.camera_file_at(index, "camera-pid").is_file() {
             assert!(
                 self.child.try_wait().unwrap().is_none(),
                 "相机 helper 启动前 daemon 退出：{}",
@@ -245,12 +253,16 @@ impl Process {
     }
 
     fn assert_camera_reaped(&self) {
+        self.assert_camera_reaped_at(0);
+    }
+
+    fn assert_camera_reaped_at(&self, index: usize) {
         assert!(
-            self.camera_file("camera-stopped").is_file(),
+            self.camera_file_at(index, "camera-stopped").is_file(),
             "相机 helper 必须走正常停止 finally：{}",
             self.log()
         );
-        let pid: u32 = std::fs::read_to_string(self.camera_file("camera-pid"))
+        let pid: u32 = std::fs::read_to_string(self.camera_file_at(index, "camera-pid"))
             .unwrap()
             .parse()
             .unwrap();
@@ -447,7 +459,23 @@ fn configured_camera_commits_ready_only_after_a_real_helper_frame() {
 
 #[test]
 fn camera_helper_eof_before_first_frame_exits_without_ready_and_reaps() {
-    let mut process = Process::spawn_with_camera(CameraFixture::Eof);
+    let mut process = Process::spawn_inner(
+        6,
+        &[],
+        None,
+        None,
+        false,
+        &[],
+        &[
+            CameraFixture::Frames,
+            CameraFixture::Eof,
+            CameraFixture::Frames,
+        ],
+    );
+    for index in 0..3 {
+        process.wait_camera_started_at(index);
+    }
+    std::fs::write(process.camera_file_at(1, "camera-go"), b"go").unwrap();
     assert_eq!(process.wait_exit(5000), 1);
     let observed = process.page.snapshot();
     assert_initialized(&observed);
@@ -461,13 +489,30 @@ fn camera_helper_eof_before_first_frame_exits_without_ready_and_reaps() {
         "{}",
         process.log()
     );
-    process.assert_camera_reaped();
+    for index in 0..3 {
+        process.assert_camera_reaped_at(index);
+    }
 }
 
 #[test]
 fn camera_without_frames_exits_at_original_startup_deadline_without_ready_and_reaps() {
-    let mut process = Process::spawn_with_camera(CameraFixture::NoFrames);
-    process.wait_camera_started();
+    let mut process = Process::spawn_inner(
+        6,
+        &[],
+        None,
+        None,
+        false,
+        &[],
+        &[
+            CameraFixture::Frames,
+            CameraFixture::NoFrames,
+            CameraFixture::Frames,
+        ],
+    );
+    for index in 0..3 {
+        process.wait_camera_started_at(index);
+        std::fs::write(process.camera_file_at(index, "camera-go"), b"go").unwrap();
+    }
     let timeout_ms = (absolute_boot_budget(6).0 + SHUTDOWN_MARGIN.0) / 1_000_000;
     assert_eq!(process.wait_exit(timeout_ms), 1);
     let observed = process.page.snapshot();
@@ -489,7 +534,9 @@ fn camera_without_frames_exits_at_original_startup_deadline_without_ready_and_re
         "{}",
         process.log()
     );
-    process.assert_camera_reaped();
+    for index in 0..3 {
+        process.assert_camera_reaped_at(index);
+    }
 }
 
 #[test]

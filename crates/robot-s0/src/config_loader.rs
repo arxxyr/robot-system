@@ -1,37 +1,10 @@
 //! `robot-s0::config_loader` —— `configs/<robot>.toml` 读取 + `ConfigIdentity` 构造。
 //!
-//! 为什么住在 `robot-s0` 而不是 `robot-core`：
-//!
-//! - `docs/00_design.md` §4.2 + `docs/CHANGELOG.md` 2026-04-22 "workspace runtime
-//!   依赖白名单机制"：`robot-core` 禁 `serde_json` 等 runtime 依赖，恪守"零
-//!   runtime 依赖"。serde / toml 同属"runtime 解析层"，按精神也不进 robot-core。
-//! - `IdentityFingerprint` 类型（`robot_core::config`）已是 robot-core 的纯类型；
-//!   解析 + 构造逻辑下沉到 *使用方* crate（这里是 robot-s0）。v0.3 起若 robot-s1
-//!   / robot-recorder 也要读同一份 TOML，再抽出 `robot-config` 共享 crate
-//!   （v0.2 单 binary 不值得动结构）。
-//!
-//! ### v0.2 范围
-//!
-//! - TOML schema 跟 `docs/00_design.md` §7.2 字面对齐：`[robot]` 单段 +
-//!   `[[hardware]]` 多段 + `[[sensor]]` 多段。
-//! - `[robot]` 段必须含 `id` + `config_version`（设计 §7.3 `ConfigIdentity`
-//!   的 plain 字段源）。
-//! - `[[hardware]]` / `[[sensor]]` 字段宽松接收：`id` + `adapter` +
-//!   `motor_ids`（v0.5 候选 E 段(2) typed 必填）必填，其他（`address` /
-//!   `baud` / `joints` / `calibration` / `wheel_radius` / ...）按需出现，
-//!   未知字段不报错（v0.4 接 hardware-specific adapter 时再按 adapter
-//!   type cast）。
-//! - `IdentityFingerprint` 的 `config_hash = blake3(原始 TOML bytes)`。其余 3 hash
-//!   留 placeholder（详 [`robot_core::config`] module-level docs）。
-//!
-//! ### 不做的事（推 v0.3+）
-//!
-//! - 跨进程 `ConfigIdentity` handshake（iceoryx2 request-response）。
-//! - `calibration_hash` / `schema_registry_hash` / `adapter_registry_hash`
-//!   计算（依赖 calibration / schema registry / adapter inventory 三个 v0.3+
-//!   子系统）。
-//! - hardware-specific 字段强类型化（v0.4 真 adapter 落地时按 adapter 名
-//!   做 enum dispatch）。
+//! 解析留在 S0，`robot-core` 只提供配置指纹等契约类型。
+//! `[[hardware]]` 保留适配器专用字段；`[[sensor]]` 只接受当前支持的
+//! `opencv_v4l2` BGR8 相机，并在启动 worker 前校验归属、唯一性与采集参数。
+//! 共享的 `[s1]` 段交 S1 验证，未知顶层字段拒绝，避免旧 `[camera]` 被静默忽略。
+//! `config_hash` 始终取原始 TOML 字节；其余指纹沿既有部分身份合同。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,15 +21,16 @@ use serde::{Deserialize, Serialize};
 /// `derive(Serialize)` 仅给单测用（roundtrip 断言）；运行时 `s0_daemon` 不写
 /// TOML 回去。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RobotConfigToml {
     pub robot: RobotSection,
     #[serde(default)]
     pub hardware: Vec<HardwareSection>,
     #[serde(default)]
     pub sensor: Vec<SensorSection>,
-    /// 单个明确绑定硬件实例的相机流；省略时保持原无相机行为。
-    #[serde(default)]
-    pub camera: Option<CameraSection>,
+    /// 同份配置的 S1 参数由 S1 解析；S0 只保留该合法顶层段。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s1: Option<toml::Table>,
     /// `[monitor]` 段（task-31 B'b 加）：系统健康采样配置。缺省时 `s0_daemon`
     /// 跑默认值（5 s 间隔 / `top_n=5` / 空 `interested_processes`）。
     #[serde(default)]
@@ -70,12 +44,13 @@ pub struct RobotSection {
     pub config_version: String,
 }
 
-/// 单路 `OpenCV` 相机配置；独立解释器及 helper 路径明确，不借用 shell 环境。
+/// 归属一个硬件实例的 `OpenCV` BGR8 相机；路径明确，不借用 shell 环境。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CameraSection {
+pub struct SensorSection {
     pub hardware_id: String,
     pub id: String,
+    pub adapter: String,
     pub device: PathBuf,
     pub python: PathBuf,
     pub helper: PathBuf,
@@ -84,7 +59,7 @@ pub struct CameraSection {
     pub fps: u32,
 }
 
-impl CameraSection {
+impl SensorSection {
     #[must_use]
     pub fn camera_config(&self) -> crate::camera::CameraConfig {
         crate::camera::CameraConfig {
@@ -100,41 +75,71 @@ impl CameraSection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CameraSectionError {
-    #[error("[camera] hardware_id={id} 没有匹配的硬件实例")]
+pub enum SensorSectionError {
+    #[error("[[sensor]] hardware_id={id} 没有匹配的硬件实例")]
     UnknownHardwareId { id: String },
-    #[error("[camera] 配置无效：{0}")]
-    InvalidConfig(robot_core::error::RobotError),
+    #[error("[[sensor]] id={id} 使用不支持的 adapter={adapter}")]
+    UnsupportedAdapter { id: String, adapter: String },
+    #[error("[[sensor]] id 重复：{id}")]
+    DuplicateId { id: String },
+    #[error("[[sensor]] device 路径重复：{device:?}")]
+    DuplicateDevice { device: PathBuf },
+    #[error("[[sensor]] id={id} 配置无效：{source}")]
+    InvalidConfig {
+        id: String,
+        source: robot_core::error::RobotError,
+    },
 }
 
-pub fn validate_camera_section(cfg: &RobotConfigToml) -> Result<(), CameraSectionError> {
-    let Some(camera) = &cfg.camera else {
-        return Ok(());
-    };
-    if resolve_hardware_section(cfg, &camera.hardware_id).is_none() {
-        return Err(CameraSectionError::UnknownHardwareId {
-            id: camera.hardware_id.clone(),
-        });
+pub fn validate_camera_sections(cfg: &RobotConfigToml) -> Result<(), SensorSectionError> {
+    let mut ids = std::collections::HashSet::with_capacity(cfg.sensor.len());
+    let mut devices = std::collections::HashSet::with_capacity(cfg.sensor.len());
+    for camera in &cfg.sensor {
+        if camera.adapter != "opencv_v4l2" {
+            return Err(SensorSectionError::UnsupportedAdapter {
+                id: camera.id.clone(),
+                adapter: camera.adapter.clone(),
+            });
+        }
+        if resolve_hardware_section(cfg, &camera.hardware_id).is_none() {
+            return Err(SensorSectionError::UnknownHardwareId {
+                id: camera.hardware_id.clone(),
+            });
+        }
+        camera
+            .camera_config()
+            .validate()
+            .map_err(|source| SensorSectionError::InvalidConfig {
+                id: camera.id.clone(),
+                source,
+            })?;
+        if !ids.insert(camera.id.as_str()) {
+            return Err(SensorSectionError::DuplicateId {
+                id: camera.id.clone(),
+            });
+        }
+        if !devices.insert(camera.device.as_path()) {
+            return Err(SensorSectionError::DuplicateDevice {
+                device: camera.device.clone(),
+            });
+        }
     }
-    camera
-        .camera_config()
-        .validate()
-        .map_err(CameraSectionError::InvalidConfig)
+    Ok(())
 }
 
 /// 仅匹配的 S0 硬件实例拥有相机；其他实例不会打开同一设备。
 #[must_use]
-pub fn resolve_camera_section<'a>(
+pub fn resolve_camera_sections<'a>(
     cfg: &'a RobotConfigToml,
     hardware_id: &str,
-) -> Option<&'a CameraSection> {
-    cfg.camera
-        .as_ref()
+) -> Vec<&'a SensorSection> {
+    cfg.sensor
+        .iter()
         .filter(|camera| camera.hardware_id == hardware_id)
+        .collect()
 }
 
-/// `[[hardware]]` 段：v0.2 通用字段；hardware-specific 字段（`baud` /
-/// `wheel_radius` / ...）由 toml unknown-field 默认接受策略消化。
+/// `[[hardware]]` 段：通用字段强类型化，适配器专用字段由现有工厂读取 `extras`。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct HardwareSection {
     pub id: String,
@@ -162,8 +167,7 @@ pub struct HardwareSection {
     /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
     #[serde(default)]
     pub auto_enable: Option<bool>,
-    /// adapter-specific 整数字段（`baud` / `poll_hz` / ...）。v0.4 按 adapter 名
-    /// 拆 enum；v0.2 通用 map 兜底。
+    /// 适配器专用字段（`baud` / `poll_hz` / `wheel_radius` 等）。
     #[serde(flatten, default)]
     pub extras: toml::Table,
 }
@@ -330,20 +334,6 @@ const fn default_monitor_top_n() -> usize {
     5
 }
 
-/// `[[sensor]]` 段：与 `HardwareSection` 同结构；保留独立类型给 v0.4
-/// sensor-specific 字段（streams / fps / ...）扩展。
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct SensorSection {
-    pub id: String,
-    pub adapter: String,
-    #[serde(default)]
-    pub serial: Option<String>,
-    #[serde(default)]
-    pub streams: Vec<String>,
-    #[serde(flatten, default)]
-    pub extras: toml::Table,
-}
-
 // ============================================================================
 // 加载结果
 // ============================================================================
@@ -385,11 +375,11 @@ pub enum ConfigLoadError {
         #[source]
         source: toml::de::Error,
     },
-    #[error("相机配置无效 ({path}): {source}")]
-    Camera {
+    #[error("传感器配置无效 ({path}): {source}")]
+    Sensor {
         path: PathBuf,
         #[source]
-        source: CameraSectionError,
+        source: SensorSectionError,
     },
 }
 
@@ -397,7 +387,7 @@ pub enum ConfigLoadError {
 // 入口
 // ============================================================================
 
-/// 读 + 解析 + 算 `ConfigIdentity`。失败的三类错误见 [`ConfigLoadError`]。
+/// 读 + 解析 + 校验传感器配置，再算 `ConfigIdentity`。
 ///
 /// `config_hash` 用 *原始 bytes* 算（不是解析后再 canonical 化）—— 即"对 TOML
 /// 文件的 byte-exact 同一性"；任何空白 / 注释 / 字段顺序改动都改变 hash。
@@ -407,7 +397,7 @@ pub enum ConfigLoadError {
 ///
 /// # Errors
 ///
-/// 见 [`ConfigLoadError`]：文件读失败 / 非 UTF-8 / TOML 语法错。
+/// 见 [`ConfigLoadError`]：文件读失败、非 UTF-8、TOML 或传感器配置错误。
 pub fn load_robot_config(path: &Path) -> Result<LoadedConfig, ConfigLoadError> {
     let raw_bytes = fs::read(path).map_err(|source| ConfigLoadError::Read {
         path: path.to_path_buf(),
@@ -422,7 +412,7 @@ pub fn load_robot_config(path: &Path) -> Result<LoadedConfig, ConfigLoadError> {
             path: path.to_path_buf(),
             source,
         })?;
-    validate_camera_section(&parsed).map_err(|source| ConfigLoadError::Camera {
+    validate_camera_sections(&parsed).map_err(|source| ConfigLoadError::Sensor {
         path: path.to_path_buf(),
         source,
     })?;
@@ -474,12 +464,6 @@ adapter = "mock_omni3"
 joints = ["wheel_1", "wheel_2", "wheel_3"]
 motor_ids = [7, 8, 9]
 wheel_radius = 0.05
-
-[[sensor]]
-id = "head_cam"
-adapter = "realsense_d435i"
-serial = "0123"
-streams = ["color", "depth"]
 "#;
 
     fn write_temp(toml: &str) -> tempfile::NamedTempFile {
@@ -488,10 +472,11 @@ streams = ["color", "depth"]
         f
     }
 
-    const CAMERA_TOML: &str = r#"
-[camera]
+    const SENSOR_TOML: &str = r#"
+[[sensor]]
 hardware_id = "left_arm"
 id = "head_cam"
+adapter = "opencv_v4l2"
 device = "/dev/v4l/by-id/test-camera"
 python = "/opt/robot-camera/bin/python"
 helper = "/opt/robot/scripts/camera_capture.py"
@@ -501,22 +486,43 @@ fps = 30
 "#;
 
     #[test]
-    fn camera_section_is_optional_and_bound_to_one_hardware_instance() {
+    fn camera_sections_are_optional_and_bound_to_their_hardware_instances() {
         let baseline = load_robot_config(write_temp(SAMPLE_TOML).path()).unwrap();
-        assert!(baseline.parsed.camera.is_none());
-        let configured =
-            load_robot_config(write_temp(&format!("{SAMPLE_TOML}\n{CAMERA_TOML}")).path()).unwrap();
-        let camera = resolve_camera_section(&configured.parsed, "left_arm").unwrap();
-        assert_eq!(camera.camera_config().id, "head_cam");
-        assert_eq!(camera.camera_config().width, 640);
-        assert!(resolve_camera_section(&configured.parsed, "base").is_none());
+        assert_eq!(baseline.parsed.sensor, [] as [SensorSection; 0]);
+        let second = SENSOR_TOML
+            .replace("head_cam", "left_wrist")
+            .replace("test-camera", "left-wrist");
+        let third = SENSOR_TOML
+            .replace("head_cam", "right_wrist")
+            .replace("test-camera", "right-wrist")
+            .replace("left_arm", "base");
+        let configured = load_robot_config(
+            write_temp(&format!("{SAMPLE_TOML}\n{SENSOR_TOML}\n{second}\n{third}")).path(),
+        )
+        .unwrap();
+        let cameras = resolve_camera_sections(&configured.parsed, "left_arm");
+        assert_eq!(
+            cameras
+                .iter()
+                .map(|camera| camera.id.as_str())
+                .collect::<Vec<_>>(),
+            ["head_cam", "left_wrist"]
+        );
+        assert_eq!(cameras[0].camera_config().width, 640);
+        let other = resolve_camera_sections(&configured.parsed, "base");
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, "right_wrist");
+        assert_eq!(
+            resolve_camera_sections(&configured.parsed, "missing"),
+            [] as [&SensorSection; 0]
+        );
         let encoded = toml::to_string(&configured.parsed).unwrap();
         let decoded: RobotConfigToml = toml::from_str(&encoded).unwrap();
-        assert_eq!(decoded.camera, configured.parsed.camera);
+        assert_eq!(decoded.sensor, configured.parsed.sensor);
     }
 
     #[test]
-    fn camera_configuration_is_rejected_before_any_worker_starts() {
+    fn invalid_camera_configuration_is_rejected_before_any_worker_starts() {
         for (before, after) in [
             ("hardware_id = \"left_arm\"", "hardware_id = \"missing\""),
             ("width = 640", "width = 0"),
@@ -525,11 +531,11 @@ fps = 30
             ("/opt/robot-camera/bin/python", "relative-python"),
             ("id = \"head_cam\"", "id = \"bad/camera\""),
         ] {
-            let text = format!("{SAMPLE_TOML}\n{}", CAMERA_TOML.replace(before, after));
+            let text = format!("{SAMPLE_TOML}\n{}", SENSOR_TOML.replace(before, after));
             assert!(
                 matches!(
                     load_robot_config(write_temp(&text).path()),
-                    Err(ConfigLoadError::Camera { .. })
+                    Err(ConfigLoadError::Sensor { .. })
                 ),
                 "未拒绝 {after}"
             );
@@ -537,8 +543,96 @@ fps = 30
     }
 
     #[test]
+    fn sensor_ids_are_unique_across_hardware_instances() {
+        let second = SENSOR_TOML
+            .replace("test-camera", "another-camera")
+            .replace("left_arm", "base");
+        let text = format!("{SAMPLE_TOML}\n{SENSOR_TOML}\n{second}");
+        assert!(matches!(
+            load_robot_config(write_temp(&text).path()),
+            Err(ConfigLoadError::Sensor {
+                source: SensorSectionError::DuplicateId { id },
+                ..
+            }) if id == "head_cam"
+        ));
+    }
+
+    #[test]
+    fn sensor_devices_are_unique_across_hardware_instances() {
+        let second = SENSOR_TOML
+            .replace("head_cam", "another_camera")
+            .replace("left_arm", "base");
+        let text = format!("{SAMPLE_TOML}\n{SENSOR_TOML}\n{second}");
+        assert!(matches!(
+            load_robot_config(write_temp(&text).path()),
+            Err(ConfigLoadError::Sensor {
+                source: SensorSectionError::DuplicateDevice { device },
+                ..
+            }) if device == Path::new("/dev/v4l/by-id/test-camera")
+        ));
+    }
+
+    #[test]
+    fn unsupported_sensor_adapter_is_rejected() {
+        let sensor = SENSOR_TOML.replace("opencv_v4l2", "realsense_d435i");
+        let text = format!("{SAMPLE_TOML}\n{sensor}");
+        assert!(matches!(
+            load_robot_config(write_temp(&text).path()),
+            Err(ConfigLoadError::Sensor {
+                source: SensorSectionError::UnsupportedAdapter { adapter, .. },
+                ..
+            }) if adapter == "realsense_d435i"
+        ));
+    }
+
+    #[test]
+    fn legacy_camera_and_unknown_sensor_fields_are_not_silently_ignored() {
+        for sensor in [
+            SENSOR_TOML.replace("[[sensor]]", "[camera]"),
+            format!("{SENSOR_TOML}\nstreams = [\"color\", \"depth\"]\n"),
+            format!("{SENSOR_TOML}\nserial = \"unimplemented\"\n"),
+        ] {
+            let text = format!("{SAMPLE_TOML}\n{sensor}");
+            assert!(matches!(
+                load_robot_config(write_temp(&text).path()),
+                Err(ConfigLoadError::Toml { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn shared_s1_configuration_remains_accepted() {
+        let text = format!("{SAMPLE_TOML}\n[s1.profile]\nbackends = [\"scripted\"]\n");
+        let config = load_robot_config(write_temp(&text).path()).unwrap();
+        let profile = &config.parsed.s1.as_ref().unwrap()["profile"];
+        assert_eq!(profile["backends"][0].as_str(), Some("scripted"));
+        let encoded = toml::to_string(&config.parsed).unwrap();
+        let decoded: RobotConfigToml = toml::from_str(&encoded).unwrap();
+        assert_eq!(decoded.s1, config.parsed.s1);
+    }
+
+    #[test]
+    fn repository_robot_configs_still_parse() {
+        for text in [
+            include_str!("../../../configs/xlerobot.toml"),
+            include_str!("../../../configs/xlerobot_bus1_full.toml"),
+            include_str!("../../../configs/xlerobot_bus2_full.toml"),
+            include_str!("../../../configs/xlerobot_left_arm.toml"),
+            include_str!("../../../configs/xlerobot_right_arm.toml"),
+            include_str!("../../../configs/scripted_backend_smoke.toml"),
+            include_str!("../../../configs/robotctl_smoke.toml"),
+            include_str!("../../../configs/crash_restart_smoke.toml"),
+            include_str!("../../../configs/clear_estop_e2e.toml"),
+            include_str!("../../../configs/ik_backend_smoke.toml"),
+        ] {
+            let parsed: RobotConfigToml = toml::from_str(text).unwrap();
+            validate_camera_sections(&parsed).unwrap();
+        }
+    }
+
+    #[test]
     fn parse_full_sample_toml() {
-        let f = write_temp(SAMPLE_TOML);
+        let f = write_temp(&format!("{SAMPLE_TOML}\n{SENSOR_TOML}"));
         let cfg = load_robot_config(f.path()).unwrap();
 
         assert_eq!(cfg.parsed.robot.id, "xlerobot");
@@ -573,8 +667,16 @@ fps = 30
         assert_eq!(cfg.parsed.sensor.len(), 1);
         assert_eq!(cfg.parsed.sensor[0].id, "head_cam");
         assert_eq!(
-            cfg.parsed.sensor[0].streams,
-            vec!["color".to_string(), "depth".into()]
+            cfg.parsed.sensor[0].camera_config(),
+            crate::camera::CameraConfig {
+                id: "head_cam".into(),
+                device: "/dev/v4l/by-id/test-camera".into(),
+                python: "/opt/robot-camera/bin/python".into(),
+                helper: "/opt/robot/scripts/camera_capture.py".into(),
+                width: 640,
+                height: 480,
+                fps: 30,
+            }
         );
     }
 

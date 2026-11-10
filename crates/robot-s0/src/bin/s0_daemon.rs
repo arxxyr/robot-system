@@ -43,7 +43,7 @@ use robot_s0::config_loader::{
 };
 use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
 use robot_s0::io_thread::{
-    CameraAdapter, CameraFrames, IoThreadConfig, spawn_io_thread_with_camera,
+    CameraAdapter, CameraFrames, CameraInput, IoThreadConfig, spawn_io_thread_with_cameras,
 };
 use robot_s0::ipc_thread::{
     ClearEStopRrRequest, ClearEStopRrResponse, IpcSubscribers, IpcThreadConfig, RrChannels,
@@ -57,7 +57,7 @@ use robot_s0::latch_writer::{
     PersistClient, PersistEndpoint, PersistShared, StandbyStore, WriterConfig, WriterPairing,
     WriterSlot,
 };
-use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread_with_camera};
+use robot_s0::pub_thread::{IpcPublishers, PubThreadConfig, spawn_pub_thread_with_cameras};
 use robot_s0::rr_server_thread::{RrServerThreadConfig, spawn_rr_server_thread};
 use robot_s0::rt_thread::{RtThreadConfig, RtThreadHandle, spawn_rt_thread};
 use robot_s0::rx_trust::{MarkerCommand, RealMarkerFs, TrustLockError};
@@ -1570,32 +1570,29 @@ fn run_workers(
     } = start;
     let clock = &res.clock;
     let t = topics(args);
-    let camera_config = args
-        .loaded_config
-        .as_ref()
-        .and_then(|config| {
-            robot_s0::config_loader::resolve_camera_section(&config.parsed, &args.hardware_id)
-        })
-        .map(robot_s0::config_loader::CameraSection::camera_config);
-    let camera_frames = Arc::new(CameraFrames::default());
-    let camera_adapter = camera_config
-        .as_ref()
-        .map(|config| {
-            robot_s0::camera::OpenCvCameraAdapter::new(config.clone(), Arc::clone(clock))
-                .map(|adapter| Box::new(adapter) as CameraAdapter)
-        })
-        .transpose()
-        .map_err(|error| {
-            tracing::error!(?error, "相机配置无效");
-            1
-        })?;
-    let camera_publisher = camera_config.map(|config| {
-        (
+    let camera_configs = args.loaded_config.as_ref().map_or_else(Vec::new, |config| {
+        robot_s0::config_loader::resolve_camera_sections(&config.parsed, &args.hardware_id)
+    });
+    let mut cameras = Vec::with_capacity(camera_configs.len());
+    let mut camera_publishers = Vec::with_capacity(camera_configs.len());
+    for section in camera_configs {
+        let config = section.camera_config();
+        let frames = Arc::new(CameraFrames::default());
+        let adapter = robot_s0::camera::OpenCvCameraAdapter::new(config.clone(), Arc::clone(clock))
+            .map_err(|error| {
+                tracing::error!(?error, camera = %config.id, "相机配置无效");
+                1
+            })?;
+        camera_publishers.push((
             format!("/{}/sensors/{}/color", args.robot_id, config.id),
             config.id,
-            Arc::clone(&camera_frames),
-        )
-    });
+            Arc::clone(&frames),
+        ));
+        cameras.push(CameraInput {
+            adapter: Box::new(adapter) as CameraAdapter,
+            frames,
+        });
+    }
     let mixed_bus2_layout = args
         .loaded_config
         .as_ref()
@@ -1888,13 +1885,13 @@ fn run_workers(
     })?;
     stops.mark_spawned(WorkerKind::Executor);
     let pub_topics = (t.pub_state.clone(), t.pub_heartbeat.clone());
-    let publisher = spawn_pub_thread_with_camera(
+    let publisher = spawn_pub_thread_with_cameras(
         PubThreadConfig {
             joint_layout_id: args.authoritative_layout,
             ..PubThreadConfig::default()
         },
         clock.clone(),
-        move || make_publishers(&pub_topics, camera_publisher),
+        move || make_publishers(&pub_topics, camera_publishers),
         snapshot_reader,
         state_reader.clone(),
         res.ctrl.clone(),
@@ -1907,18 +1904,17 @@ fn run_workers(
     stops.mark_spawned(WorkerKind::Pub);
     // 大帧分段读取不能每段都等待原空轮询的10ms；仍在独立SoftRT线程内。
     let io_config = IoThreadConfig {
-        poll_interval_ns: if camera_adapter.is_some() {
-            1_000_000
-        } else {
+        poll_interval_ns: if cameras.is_empty() {
             IoThreadConfig::default().poll_interval_ns
+        } else {
+            1_000_000
         },
     };
-    let io = spawn_io_thread_with_camera(
+    let io = spawn_io_thread_with_cameras(
         io_config,
         clock.clone(),
         stops.flag(WorkerKind::Io),
-        camera_adapter,
-        camera_frames,
+        cameras,
     )
     .map_err(|error| startup_io_error(&error))?;
     workers.meta.io = Some(io.metrics().clone());
@@ -2388,30 +2384,31 @@ fn make_subscribers(
 
 fn make_publishers(
     topics: &(String, String),
-    camera: Option<(String, String, Arc<CameraFrames>)>,
+    cameras: Vec<(String, String, Arc<CameraFrames>)>,
 ) -> Result<robot_s0::pub_thread::OwnedIpcPublishers, robot_transport::TransportError> {
     let node = NodeBuilder::new().create::<IxService>().map_err(|error| {
         robot_transport::TransportError::Backend(format!("相机发布节点: {error:?}"))
     })?;
     let joint_state = open_pub::<markers::JointState>(&node, &topics.0, TopicClass::S0State)?;
     let heartbeat = open_pub::<markers::Heartbeat>(&node, &topics.1, TopicClass::Heartbeat)?;
-    let image = camera
+    let images = cameras
+        .into_iter()
         .map(|(topic, id, frames)| {
             open_pub::<markers::ImageHeader>(&node, &topic, TopicClass::Sensor)
                 .map(|publisher| (publisher, id, frames))
         })
-        .transpose()?;
-    let publishers = robot_s0::pub_thread::OwnedIpcPublishers::new(
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut publishers = robot_s0::pub_thread::OwnedIpcPublishers::new(
         IpcPublishers {
             joint_state,
             heartbeat,
         },
         node,
     );
-    Ok(match image {
-        Some((publisher, id, frames)) => publishers.with_camera(publisher, id, frames),
-        None => publishers,
-    })
+    for (publisher, id, frames) in images {
+        publishers = publishers.with_camera(publisher, id, frames);
+    }
+    Ok(publishers)
 }
 
 /// 启动期确保 latch 父目录存在；失败直接拒启动，避免 `EStop` 后落盘失败却

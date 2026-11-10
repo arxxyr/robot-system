@@ -1,18 +1,17 @@
-# XLeRobot 默认配置（v0.2 task 25 示例）。
+# XLeRobot 模拟配置；真实总线接线见 xlerobot_bus1_full.toml / xlerobot_bus2_full.toml。
 #
 # `docs/00_design.md` §7.2 / §7.3 schema：
 #   [robot]            必填，给 ConfigIdentity 用
-#   [[hardware]]       v0.2 仅 mock；v0.4 切真 Feetech adapter
-#   [[sensor]]         v0.4 接 RealSense / Webcam
+#   [[hardware]]       本示例仅使用 mock
+#   [[sensor]]         可选，显式声明归属硬件实例的 opencv_v4l2 BGR8 相机
 #
-# v0.2 仅供 s0_daemon `--config configs/xlerobot.toml` 替代纯 CLI 模式。
-# 跨进程 ConfigIdentity handshake 推 v0.3+。
+# 供 s0_daemon `--config configs/xlerobot.toml` 替代纯 CLI 模式。
 
 [robot]
 id             = "xlerobot"
 config_version = "0.2.0"
 
-# ---- 手臂总线（v0.4 切 feetech_sts3215）-----------------------------------
+# ---- 模拟手臂总线 --------------------------------------------------------
 [[hardware]]
 id          = "left_arm"
 adapter     = "mock_hard_rt"
@@ -43,7 +42,7 @@ motor_ids   = [1, 2, 3, 4, 5]
 calibration = "calibration/right_arm.json"
 auto_enable = true
 
-# ---- 三轮全向底盘（v0.4 切 feetech_omni3）---------------------------------
+# ---- 模拟三轮全向底盘 ----------------------------------------------------
 [[hardware]]
 id           = "base"
 adapter      = "mock_omni3"
@@ -53,9 +52,5 @@ motor_ids    = [7, 8, 9]
 wheel_radius = 0.05
 base_radius  = 0.125
 
-# ---- 视觉传感器（v0.4 接 realsense_d435i）---------------------------------
-[[sensor]]
-id      = "head_cam"
-adapter = "realsense_d435i"
-serial  = ""               # 实机填序列号
-streams = ["color", "depth"]
+# 本模拟配置不声明相机设备。已核实的头部 RGB 配置见 xlerobot_bus1_full.toml；
+# 腕部设备须核对稳定路径和实际格式后再填写，不使用未实现的深度或 IMU 字段。
