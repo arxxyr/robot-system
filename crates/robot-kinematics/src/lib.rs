@@ -1,28 +1,11 @@
-//! 通用机器人运动学 trait + 纯类型。
+//! 通用机器人运动学接口与纯类型：定义位姿、速度、雅可比、关节约束和 IK 求解合同。
 //!
-//! # 设计原则
+//! ## 模块边界
 //!
-//! - **零 runtime 依赖**：仅 `thiserror` derive；不依赖 `nalgebra` /
-//!   `robot-core` / `robot-msg` 等。
-//! - **trait dyn-safe**：[`ArmIkSolver`] 可作 `Box<dyn ArmIkSolver>`
-//!   存于 S1 coordinator（详 [`ArmIkSolver`] doc）。
-//! - **不预钉 `XLeRobot` clamp 行为**：[`IkSolution`] 最小字段（不
-//!   含 `clamped: bool` / `iterations` / `residual_error` 等
-//!   metadata）；[`IkError::OutOfReach`] 在 trait 层**可选** ——
-//!   solver 可返 `Ok(IkSolution { joints_rad: clamped })` + 外部
-//!   informational metric，也可返
-//!   `Err(IkError::OutOfReach { distance_m })`，trait crate 不强
-//!   制语义（`XLeRobot` 实施期第二轮 round 拍板，沿 dimos
-//!   `arm_ik.py` 或重新选型）。
-//!
-//! # 第一轮 round 不在范围
-//!
-//! 详 `team-swe/specs/v0_4_robot_kinematics.md` §"不在范围"：
-//!
-//! - `BaseKinematics` trait + `BaseKinematicInfo`（推到第二轮 round）
-//! - `robot-kinematics-xlerobot` 实现（第二轮 round）
-//! - `IkBackend` 第三个真 action backend（第二轮 round）
-//! - frame 抽象 / `FrameName` enum / `TransformTree`（第二轮 round）
+//! - 仅依赖 `thiserror` 生成错误实现，不依赖具体机器人、矩阵库或运行时。
+//! - [`ArmIkSolver`] 支持 `Box<dyn ArmIkSolver>`，由调用方持有并注入具体求解器。
+//! - [`IkSolution`] 仅包含关节弧度；工作空间裁剪与 [`IkError::OutOfReach`] 的
+//!   返回策略由求解器实现约定，通用接口不统一该策略。
 
 /// 笛卡尔 pose（translation + quaternion XYZW）。
 ///
