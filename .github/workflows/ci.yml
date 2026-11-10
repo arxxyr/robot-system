@@ -18,8 +18,8 @@ name: ci
 
 on:
   push:
-    branches: [main, master]
-  pull_request:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -35,7 +35,31 @@ env:
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
+  version-tag:
+    name: 校验版本标签
+    if: github.event.deleted == false
+    runs-on: ubuntu-latest
+    outputs:
+      valid: ${{ steps.semver.outputs.valid }}
+    steps:
+      # tags 只支持 glob；完整 SemVer 在此校验，非法标签不启动构建与测试。
+      - id: semver
+        shell: bash
+        run: |
+          export LC_ALL=C
+          number='(0|[1-9][0-9]*)'
+          prerelease='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          semver="^v${number}\.${number}\.${number}(-${prerelease}(\.${prerelease})*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$"
+          if [[ "$GITHUB_REF_NAME" =~ $semver ]]; then
+            echo 'valid=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'valid=false' >> "$GITHUB_OUTPUT"
+            echo '跳过：标签不符合 v 前缀的 SemVer 格式。'
+          fi
+
   test:
+    needs: version-tag
+    if: needs.version-tag.outputs.valid == 'true'
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -88,6 +112,8 @@ jobs:
         run: sccache --show-stats
 
   robot-viz:
+    needs: version-tag
+    if: needs.version-tag.outputs.valid == 'true'
     name: robot-viz software (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -235,6 +261,8 @@ jobs:
             --p999-us 100000
 
   deny:
+    needs: version-tag
+    if: needs.version-tag.outputs.valid == 'true'
     name: cargo deny
     runs-on: ubuntu-latest
     # `.cargo/config.toml` 把 rustc-wrapper 设为 sccache，但本 job 不装
