@@ -119,6 +119,10 @@ MIXED_RAW_SCOPE = None
 MIXED_REF_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink')
 MIXED_ARM_NAMES = ('right_arm_shoulder_pan','right_arm_shoulder_lift','right_arm_elbow_flex',
                    'right_arm_wrist_flex','right_arm_wrist_roll','right_arm_gripper')
+ARM_RANGE_REGS = ('Torque_Enable','Present_Velocity','Present_Position')
+ARM_RANGE_SCOPE = ('仅右臂物理1..6逐个以单ID SYNC_READ读取TE→PV→PP，共18次只读；TE/PV严格0，'
+                   'PP须在0..4095并按原六项校准记录INSIDE/OUTSIDE；不写电机、不判整机停止，'
+                   '不提供混合动作的新鲜锚点或动作授权')
 LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
                       'Present_Position':(56,2),'Present_Velocity':(58,2)}
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
@@ -285,6 +289,56 @@ def mixed_raw_refs(bindings):
     require(any(all(ref.get(k)==v for k,v in RIGHT_PULSE_TRACE.items()) for ref in bindings.get('refs',[]))
             and RIGHT_PULSE_TRACE['path'] in bindings.get('binary_paths',[]), '混合维护缺少冻结strace')
     return refs
+
+
+def arm_calibration_ref(bindings):
+    """只取原右臂校准引用；只读诊断不依赖未使用的混合ELF或strace。"""
+    refs=bindings.get('bus2_mixed_raw_hold')
+    ref=refs.get('arm_calibration') if isinstance(refs,dict) else None
+    require(isinstance(ref,dict) and isinstance(ref.get('path'),str)
+            and Path(ref['path']).is_absolute()
+            and re.fullmatch(r'[0-9a-f]{64}',ref.get('sha256','')) is not None
+            and type(ref.get('bytes')) is int and ref['bytes']>0
+            and all(key in ref for key in MIXED_REF_IDENTITY)
+            and all(type(ref[key]) is int and ref[key]>=0 for key in MIXED_REF_IDENTITY[:-1])
+            and ref.get('symlink') is False and ref.get('nlink')==1,
+            '右臂校准引用缺少完整身份')
+    require(any(all(actual.get(key)==value for key,value in ref.items())
+                for actual in bindings.get('refs',[])), '右臂校准引用未进入完整refs')
+    return ref
+
+
+def verify_arm_calibration(plan):
+    ref=arm_calibration_ref(plan['bindings'])
+    data=verify_ref(ref);info=Path(ref['path']).lstat()
+    actual={'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode),
+            'device':info.st_dev,'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,
+            'ctime_ns':info.st_ctime_ns,'nlink':info.st_nlink,'symlink':False}
+    require(not Path(ref['path']).is_symlink() and all(ref.get(key)==value for key,value in actual.items()),
+            '右臂校准引用元数据变化')
+    return mixed_calibration_rows(strict_json(data.decode()))
+
+
+def arm_range_contract(bindings):
+    return {'schema':'MAINTENANCE_BUS2_ARM_RANGE_V1','scope':ARM_RANGE_SCOPE,
+            'targets':[['right',motor,name] for motor,name in enumerate(MIXED_ARM_NAMES,1)],
+            'raw_tool':dict(RIGHT_PULSE_RAW),'arm_calibration':dict(arm_calibration_ref(bindings)),
+            'operation':'sync_read','registers':list(ARM_RANGE_REGS),'reads':18,'register_writes':0,
+            'torque_enable':0,'present_velocity':0,'position_raw_min':0,'position_raw_max':4095,
+            'stop_verified':False,'same_frame':False,'mixed_anchor_permitted':False}
+
+
+def validate_arm_range_plan(plan):
+    require(not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
+                'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold'))
+            and plan.get('position_targets')==[] and plan.get('scope')==ARM_RANGE_SCOPE
+            and plan.get('bus2_arm_range_only')==arm_range_contract(plan['bindings']),
+            '右臂范围只读禁止混用动作、轮诊断或改动固定合同')
+    require(RIGHT_PULSE_RAW['path'] in plan['bindings'].get('binary_paths',[]),'右臂范围只读进程名单缺b2')
+    left_feedback_tool_ref(plan)
+    require(plan.get('base_targets')==[{'side':side,'motor':motor,'name':name,'decision':'DEFERRED',
+            'reason_code':'BASE_FIRMWARE_CONTRACT_UNVERIFIED'} for side,motor,name in BASE_TARGETS],
+            '右臂范围只读不得解除三轮合同DEFERRED')
 
 
 def mixed_raw_contract(bindings):
@@ -689,6 +743,9 @@ def position_targets_from_plan(plan):
     """执行只接受计划中已绑定的目标；不从全局四项列表补跑未选电机。"""
     for motor,prefix in WHEEL_STOP_TARGETS.items():
         require(plan.get(f'{prefix}{motor}_stop_contract')==left_stop_contract(motor=motor),'缺少当次固定三轮停止合同')
+    if 'bus2_arm_range_only' in plan:
+        validate_arm_range_plan(plan)
+        return []
     if 'bus2_mixed_raw_hold' in plan:
         validate_mixed_raw_plan(plan)
         return []
@@ -716,7 +773,7 @@ def position_targets_from_plan(plan):
 
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
-              left_wheel_feedback_only=False,bus2_mixed_raw_hold=False):
+              left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False):
     require(wheel_pulse_target is None or (type(wheel_pulse_target) is str and wheel_pulse_target in ('front','left')),
             '新单轮选择仅接受front或left')
     require(not (right_wheel_pulse and wheel_pulse_target is not None),'旧右轮入口与具名轮选择不能混用')
@@ -725,15 +782,15 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             '零速保持使能检查只能附加到单轮pulse')
     require(type(right_wheel_pulse) is bool and type(right_wheel_feedback_only) is bool
             and type(front_wheel_feedback_only) is bool and type(left_wheel_feedback_only) is bool
-            and type(bus2_mixed_raw_hold) is bool
+            and type(bus2_mixed_raw_hold) is bool and type(bus2_arm_range_only) is bool
             and sum((bool(pulse_requested),right_wheel_feedback_only,front_wheel_feedback_only,
-                     left_wheel_feedback_only,bus2_mixed_raw_hold))<=1
+                     left_wheel_feedback_only,bus2_mixed_raw_hold,bus2_arm_range_only))<=1
             and not ((pulse_requested or right_wheel_feedback_only or front_wheel_feedback_only
-                      or left_wheel_feedback_only or bus2_mixed_raw_hold)
+                      or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only)
                      and position_target_names is not None),
             '轮诊断禁止互相混用或混用位置选择')
     position_targets = [] if (pulse_requested or right_wheel_feedback_only or front_wheel_feedback_only
-                             or left_wheel_feedback_only or bus2_mixed_raw_hold) else select_position_targets(position_target_names)
+                             or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only) else select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -780,6 +837,12 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
         plan['limitations']=['仅本次FW3.10/Phase12/Mode1的raw{0,+500}维护合同，不解除通用profile/SI门',
                              '维护真实adapter链；不声明SerialTick、S0/S1、D15或生产验收完成']
         validate_mixed_raw_plan(plan)
+    if bus2_arm_range_only:
+        plan['bus2_arm_range_only']=arm_range_contract(bindings)
+        plan['scope']=ARM_RANGE_SCOPE
+        plan['limitations']=['六臂PP仅为顺序采样的范围诊断，不是混合动作200毫秒新鲜锚点',
+                             '无寄存器写入，不判整机停止或物理安全，不解除D15或生产验收']
+        validate_arm_range_plan(plan)
     return plan
 
 
@@ -801,6 +864,15 @@ def validate_go(go, plan, now_ns):
         require(type(facts["confirmed_at_ns"]) is int
                 and go["issued_at_ns"] - 3600_000_000_000 <= facts["confirmed_at_ns"] <= now_ns,
                 "现场确认时间错误")
+    if 'bus2_arm_range_only' in plan:
+        facts=go['physical']['right']
+        verify_arm_calibration(plan)
+        require(0 < go['expires_at_ns']-go['issued_at_ns'] <= 600_000_000_000
+                and 0 <= now_ns-facts['confirmed_at_ns'] <= 600_000_000_000,
+                '右臂范围只读现场/GO最多600秒')
+        require(facts.get('arm_range_confirmation_scope')==ARM_RANGE_SCOPE
+                and isinstance(facts.get('arm_range_confirmation_answer'),str)
+                and facts['arm_range_confirmation_answer'].strip(), '缺本轮右臂范围只读具体现场确认')
     if any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only','front_wheel_feedback_only',
                                   'left_wheel_feedback_only','bus2_mixed_raw_hold')):
         facts=go['physical']['right']
@@ -883,6 +955,8 @@ class RealExecutor:
                 failures.append('wait观测:' + repr(error))
 
     def command(self, argv, *, cleanup=False, allowed=(0,), input_raw=None, mixed_stop_check=None):
+        if getattr(self,'arm_range_read_only',False):
+            self.check_arm_range_command(argv)
         require(mixed_stop_check is None or callable(mixed_stop_check),'混合维护停止检查必须可调用')
         require(mixed_stop_check is None or not cleanup,'混合维护长child不得作为清场命令重发')
         if not cleanup:
@@ -906,6 +980,9 @@ class RealExecutor:
                 front_prelaunch=getattr(self,'front_feedback_before_spawn',None)
                 if front_prelaunch is not None:
                     front_prelaunch(argv)
+                arm_prelaunch=getattr(self,'arm_range_before_spawn',None)
+                if arm_prelaunch is not None:
+                    arm_prelaunch(argv)
                 if mixed_stop_check is not None:
                     mixed_stop_check()
                 self.child = subprocess.Popen(argv, stdin=stdin if input_raw is not None else subprocess.DEVNULL,
@@ -951,7 +1028,22 @@ class RealExecutor:
                 self.evidence_errors.append('journal:' + repr(error))
                 raise ValueError('命令journal写失败，child已真实回收') from error
 
+    def check_arm_range_command(self,argv):
+        """仅本模式拒绝所有UART写及范围外读；身份检查仍可执行。"""
+        if not any(device in argv for device in DEVICES.values()):
+            return
+        if (len(argv)==2 and argv[0]=='fuser' and argv[1] in DEVICES.values()
+                or len(argv)==4 and argv[:3]==['sudo','-n','fuser'] and argv[3] in DEVICES.values()
+                or len(argv)==5 and argv[:4]==['udevadm','info','--query=property','--name']
+                   and argv[4] in DEVICES.values()):
+            return
+        require(not getattr(self,'arm_range_uart_blocked',False),'右臂范围只读UART已封锁')
+        require(len(argv)==5 and argv[:2]==[RIGHT_PULSE_RAW['path'],DEVICES['right']]
+                and argv[2] in tuple(map(str,range(1,7))) and argv[3]=='read-raw'
+                and argv[4] in ARM_RANGE_REGS,'右臂范围只读拒绝UART写或范围外命令')
+
     def poke(self, side, motor, action, register, value=None, *, cleanup=False):
+        require(not getattr(self,'arm_range_read_only',False) or action!='write', '右臂范围只读禁止寄存器写')
         require(side in SERIALS and 1 <= motor <= (8 if side == "left" else 9), "目标 ID 越界")
         require(register in REGS and action in ("read", "write"), "维护操作越界")
         require(action != "write" or register in WRITE_REGS, "禁止 EEPROM/mode/Lock/保护写")
@@ -1174,6 +1266,19 @@ def left_feedback_raw(io, reference, register, check_ready, *, motor=7):
     """复用b2的只读原帧输出；此入口不能构造write或其他目标命令。"""
     require(register in LEFT_FEEDBACK_META,'轮只读字段越界')
     require(type(motor) is int and motor in (7,8,9),'只读原帧仅接受物理7、8或9')
+    return read_feedback_raw(io,reference,register,check_ready,motor=motor,
+                             validate=lambda raw:validate_left_feedback_raw(raw,register,motor=motor))
+
+
+def arm_range_raw(io,reference,register,check_ready,*,motor):
+    require(type(motor) is int and motor in range(1,7) and register in ARM_RANGE_REGS,
+            '右臂范围只读仅接受物理1..6的TE/PV/PP')
+    return read_feedback_raw(io,reference,register,check_ready,motor=motor,
+                             validate=lambda raw:validate_arm_range_raw(raw,register,motor=motor))
+
+
+def read_feedback_raw(io,reference,register,check_ready,*,motor,validate):
+    """冻结b2逐ID SYNC_READ，保留完整TX/RX；白名单由各窄入口约束。"""
     verify_ref(reference,executable=True)
     path=Path(reference['path'])
     info=path.lstat()
@@ -1186,13 +1291,23 @@ def left_feedback_raw(io, reference, register, check_ready, *, motor=7):
     text=io.command([reference['path'],DEVICES['right'],str(motor),'read-raw',register])
     require(len(text.splitlines())==1,'轮原帧输出不是单行JSON')
     raw=strict_json(text)
-    validate_left_feedback_raw(raw,register,motor=motor)
+    validate(raw)
     return raw
 
 
 def validate_left_feedback_raw(raw,register, *, motor=7):
     """采集和停止判定共用原帧检查；不信报告中的PASS字段。"""
     require(type(motor) is int and motor in (7,8,9),'只读原帧仅接受物理7、8或9')
+    return validate_feedback_raw(raw,register,motor=motor)
+
+
+def validate_arm_range_raw(raw,register,*,motor):
+    require(type(motor) is int and motor in range(1,7) and register in ARM_RANGE_REGS,
+            '右臂范围原帧目标/字段越界')
+    return validate_feedback_raw(raw,register,motor=motor)
+
+
+def validate_feedback_raw(raw,register,*,motor):
     address,width=LEFT_FEEDBACK_META[register]
     require(isinstance(raw,dict) and set(raw)=={
         'operation','serial_device','motor_id','register','requested_register_address','width','raw_unsigned','tx','rx'}
@@ -1209,6 +1324,96 @@ def validate_left_feedback_raw(raw,register, *, motor=7):
             and type(value) is int and int.from_bytes(bytes(rx[5:5+width]),'little')==value,
             '轮原帧ID/长度/错误码/校验/原字不符')
     return value
+
+
+def validate_arm_range_capture(row,plan):
+    validate_arm_range_plan(plan)
+    calibrations=verify_arm_calibration(plan)
+    require(row.get('kind')=='bus2_arm_range_diagnostic' and row.get('plan_sha256')==digest(plan)
+            and row.get('register_writes')==0 and row.get('stop_verified') is False
+            and row.get('same_frame') is False and row.get('mixed_anchor_permitted') is False
+            and not row.get('errors') and not row.get('uart_blocked'),'右臂范围采集身份/结果变化')
+    samples=row.get('samples',[]);ranges=row.get('ranges',[])
+    require(len(samples)==18 and len(ranges)==6,'右臂范围18读原件不完整')
+    start,finish=row.get('started_ns'),row.get('finished_ns')
+    require(type(start) is int and type(finish) is int and start<=finish,'右臂范围采集时刻缺失')
+    previous_finish=start;previous_sequence=-1
+    for index,sample in enumerate(samples):
+        motor=index//3+1;register=ARM_RANGE_REGS[index%3]
+        begin,end,command=(sample.get(key) for key in ('started_ns','finished_ns','command_sequence'))
+        require(sample.get('motor')==motor and sample.get('register')==register
+                and sample.get('status')=='READ_VALID' and not sample.get('error')
+                and all(type(value) is int for value in (begin,end,command))
+                and previous_finish<=begin<=end<=finish and command>previous_sequence,
+                '右臂范围读取顺序/时刻/命令序号变化')
+        value=validate_arm_range_raw(sample.get('raw'),register,motor=motor)
+        if register!='Present_Position':require(value==0,'右臂范围TE/PV非零')
+        else:
+            require(0<=value<=4095,'右臂范围PP不在单圈范围')
+            calibration=calibrations[motor-1]
+            status='INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE'
+            require(ranges[motor-1]=={'motor':motor,'name':MIXED_ARM_NAMES[motor-1],'position_raw':value,
+                    'range_min':calibration['range_min'],'range_max':calibration['range_max'],'status':status,
+                    'sampled_ns':end},'右臂范围校准判定变化')
+        previous_finish,previous_sequence=end,command
+    require(row.get('range_status')==('OUTSIDE' if any(value['status']=='OUTSIDE' for value in ranges) else 'INSIDE'),
+            '右臂范围汇总变化')
+
+
+def run_bus2_arm_range_only(engine,check_go):
+    require(not engine.rows and not getattr(engine.io,'arm_range_uart_blocked',False), '右臂范围单次序列已经执行或封锁')
+    validate_arm_range_plan(engine.plan)
+    io=engine.io;reference=left_feedback_tool_ref(engine.plan)
+    row={'kind':'bus2_arm_range_diagnostic','status':'FAIL','samples':[],'ranges':[],'errors':[],
+         'register_writes':0,'stop_verified':False,'same_frame':False,'mixed_anchor_permitted':False,
+         'uart_blocked':False,'started_ns':io.now(),'plan_sha256':digest(engine.plan)}
+    engine.rows.append(row)
+    expected_argv=None
+    def ready():
+        io.check();check_go()
+        require(io.child is None and not io.evidence_errors and not getattr(io,'arm_range_uart_blocked',False),
+                '右臂范围child/原件异常或UART已封锁')
+    def prelaunch(argv):
+        require(list(argv)==expected_argv,'右臂范围只读偏离本次固定读取')
+        ready()
+    installed=False
+    try:
+        ready();calibrations=verify_arm_calibration(engine.plan)
+        require(not hasattr(io,'arm_range_before_spawn'),'右臂范围采集不可嵌套')
+        io.arm_range_before_spawn=prelaunch;installed=True
+        for motor,calibration in enumerate(calibrations,1):
+            for register in ARM_RANGE_REGS:
+                ready()
+                expected_argv=[reference['path'],DEVICES['right'],str(motor),'read-raw',register]
+                sample={'motor':motor,'register':register,'started_ns':io.now(),'status':'UNKNOWN'}
+                row['samples'].append(sample)
+                try:
+                    raw=arm_range_raw(io,reference,register,ready,motor=motor)
+                    sample.update(raw=raw,status='READ_VALID',finished_ns=io.now(),command_sequence=io.sequence)
+                    ready()
+                    value=raw['raw_unsigned']
+                    if register!='Present_Position':require(value==0,'右臂范围TE/PV非零，停止后续UART')
+                    else:
+                        require(0<=value<=4095,'右臂范围PP不在单圈范围，停止后续UART')
+                        row['ranges'].append({'motor':motor,'name':MIXED_ARM_NAMES[motor-1],
+                            'position_raw':value,'range_min':calibration['range_min'],'range_max':calibration['range_max'],
+                            'status':'INSIDE' if calibration['range_min']<=value<=calibration['range_max'] else 'OUTSIDE',
+                            'sampled_ns':sample['finished_ns']})
+                except BaseException as error:
+                    sample.update(finished_ns=io.now(),error=repr(error));raise
+        row['range_status']='OUTSIDE' if any(value['status']=='OUTSIDE' for value in row['ranges']) else 'INSIDE'
+        row['finished_ns']=io.now()
+        validate_arm_range_capture(row,engine.plan)
+        row['status']='DIAGNOSTIC_CAPTURED'
+    except BaseException as error:
+        row['errors'].append(repr(error));row['uart_blocked']=True
+        io.arm_range_uart_blocked=True;engine.manual_cut=True
+        raise
+    finally:
+        row['finished_ns']=io.now()
+        if installed and getattr(io,'arm_range_before_spawn',None) is prelaunch:
+            del io.arm_range_before_spawn
+    return row
 
 
 def validate_left_stop_window(row,plan,anchor,*,motor=7):
@@ -2386,10 +2591,12 @@ def execute(plan, go, approval):
             and os.getgid() == os.getegid() == host['gid']
             and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == host['boot_id'], "真实主机身份不符")
     validate_go(go, plan, time.time_ns())
+    arm_range_only='bus2_arm_range_only' in plan
     feedback_only=any(f'{role}_wheel_feedback_only' in plan for role in WHEEL_ROLES)
+    diagnostic_only=arm_range_only or feedback_only
     feedback_motor=feedback_entry(plan)[1] if feedback_only else None
     front_feedback_only=feedback_motor in (8,9)
-    feedback_verification=(f'{WHEEL_STOP_TARGETS[feedback_motor]}{feedback_motor}_feedback_capture'
+    feedback_verification=('arm_range_capture' if arm_range_only else f'{WHEEL_STOP_TARGETS[feedback_motor]}{feedback_motor}_feedback_capture'
                            if front_feedback_only else f'{WHEEL_STOP_TARGETS[7]}7_candidate_verification')
     pulse_helper=load_right_pulse_helper() if any(key in plan for key in ('right_wheel_pulse','bus2_mixed_raw_hold')) else None
     script=Path(__file__).read_bytes()
@@ -2403,6 +2610,7 @@ def execute(plan, go, approval):
     # 输出目录及独立claim均不覆盖；前置失败也消费本次GO，不静默重试。
     write_new(consumed, {'plan_sha256':digest(plan),'consumed_at_ns':time.time_ns()})
     io = RealExecutor(bindings['tool'], plan['output'])
+    io.arm_range_read_only=arm_range_only
     io.process_snapshots=[]
     for signum in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP,signal.SIGQUIT):
         signal.signal(signum,io.mark_signal)
@@ -2411,7 +2619,7 @@ def execute(plan, go, approval):
               'S0_S1_head_base_integration':False,'H2_D15_closed':False,'deployable':False}
     if 'bus2_mixed_raw_hold' in plan:
         report['hardware_layer']='维护层真实FeetechAdapter混合链'
-    if feedback_only:
+    if diagnostic_only:
         report['stop_verification']={'status':'NOT_EVALUATED_DIAGNOSTIC_ONLY'}
         report['position_verification']={'status':'NOT_EVALUATED_DIAGNOSTIC_ONLY'}
     try:
@@ -2450,7 +2658,9 @@ def execute(plan, go, approval):
                 install_right_pulse_guard(engine,pulse_helper)
                 engine.right_pulse_go_check=lambda:validate_go(go,plan,time.time_ns())
             try:
-                if feedback_only:
+                if arm_range_only:
+                    run_bus2_arm_range_only(engine,lambda:validate_go(go,plan,time.time_ns()))
+                elif feedback_only:
                     if front_feedback_only:
                         run_front_wheel_feedback(engine,lambda:validate_go(go,plan,time.time_ns()),motor=feedback_motor)
                     else:run_right_wheel_feedback(engine,lambda:validate_go(go,plan,time.time_ns()))
@@ -2462,7 +2672,7 @@ def execute(plan, go, approval):
                     validate_snapshot(report['before'],engine=engine)
                     run_motion_probes(engine,bindings,plan)
             finally:
-                if feedback_only:
+                if diagnostic_only:
                     # 仅非UART后验；异常后不补读末TE，也不调用停止/恢复写。
                     finish_identity_verification(report,io,bindings,proc_helper)
                 else:
@@ -2485,7 +2695,24 @@ def execute(plan, go, approval):
         report['commands']=io.commands
         report['process_snapshots']=io.process_snapshots
         report['evidence_errors']=io.evidence_errors
-        if feedback_only:
+        if arm_range_only:
+            captured=(engine is not None and len(engine.rows)==1
+                      and engine.rows[0]['status']=='DIAGNOSTIC_CAPTURED' and not engine.manual_cut)
+            if captured:
+                try:validate_arm_range_capture(engine.rows[0],plan)
+                except BaseException as error:
+                    captured=False;report['error']=repr(error)
+            valid=(captured and not report.get('error') and io.interrupted is None
+                   and io.child is None and not io.evidence_errors
+                   and report.get('identity_verification',{}).get('status')=='PASS')
+            report[feedback_verification]={'status':'DIAGNOSTIC_CAPTURED' if valid else 'FAIL',
+                'contract':'BUS2_ARM_RANGE_DIAGNOSTIC_ONLY',
+                'range_status':engine.rows[0].get('range_status','UNKNOWN') if engine and engine.rows else 'UNKNOWN',
+                'mixed_anchor_permitted':False}
+            report['result']='DIAGNOSTIC_CAPTURED' if valid else 'NEEDS_MANUAL_POWER_CUT'
+            if not valid:
+                print('爸爸，右臂范围只读采集或身份失败，请立即人工断电；禁止后续UART。',flush=True)
+        elif feedback_only:
             captured=(engine is not None and len(engine.rows)==1
                       and engine.rows[0]['status']==('DIAGNOSTIC_CAPTURED' if front_feedback_only else 'PASS')
                       and len(engine.rows[0]['samples'])==14 and not engine.manual_cut)
@@ -2512,7 +2739,7 @@ def execute(plan, go, approval):
             io.journal.close()
         except BaseException as error:
             report['journal_close_error']=repr(error)
-            if feedback_only:
+            if diagnostic_only:
                 report[feedback_verification]['status']='FAIL'
             if engine:
                 identity=report.setdefault('identity_verification',{'checks':[]})
@@ -2526,7 +2753,7 @@ def execute(plan, go, approval):
         try:
             write_new(Path(plan['output'])/'run.json',report)
         except BaseException as error:
-            if feedback_only:
+            if diagnostic_only:
                 report['result']='NEEDS_MANUAL_POWER_CUT'
                 report['manual_power_cut_required']=True
                 report[feedback_verification]['status']='FAIL'
@@ -2564,6 +2791,8 @@ def main(argv=None):
                         help='仅附加单轮pulse：零速后保持使能，500毫秒内三组检查，末组PV原字限0/50/0x8032')
     parser.add_argument('--bus2-mixed-raw-hold',action='store_true',
                         help='仅FW3.10/Phase12：六臂原位保持及物理9 raw+500/20秒；复用整机停止后验')
+    parser.add_argument('--bus2-arm-range-only',action='store_true',
+                        help='仅右臂1..6逐ID SYNC_READ TE/PV/PP，共18读；记录校准范围，不写电机、不判停止')
     options=parser.parse_args(argv)
     configure_bus_mapping(options.bus_config)
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
@@ -2571,12 +2800,13 @@ def main(argv=None):
     pulse_requested=options.right_wheel_pulse or wheel_target is not None
     require(not options.zero_stop_check or pulse_requested,'零速保持使能检查只能附加到单轮pulse')
     require(sum((bool(pulse_requested),options.right_wheel_feedback_only,options.front_wheel_feedback_only,
-                 options.left_wheel_feedback_only,options.bus2_mixed_raw_hold))<=1
+                 options.left_wheel_feedback_only,options.bus2_mixed_raw_hold,options.bus2_arm_range_only))<=1
             and not ((pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
-                      or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold)
+                      or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold or options.bus2_arm_range_only)
                      and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
     selected_targets = [] if (pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
-                             or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold) else select_position_targets(options.position_target)
+                             or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold
+                             or options.bus2_arm_range_only) else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
@@ -2588,7 +2818,7 @@ def main(argv=None):
                    right_wheel_feedback_only=options.right_wheel_feedback_only,wheel_pulse_target=wheel_target,
                    zero_stop_check=options.zero_stop_check,front_wheel_feedback_only=options.front_wheel_feedback_only,
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
-                   bus2_mixed_raw_hold=options.bus2_mixed_raw_hold)
+                   bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

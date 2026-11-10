@@ -1,0 +1,45 @@
+{
+  "result": "SOFTWARE_PASS_PREPARED_HARDWARE_NOT_RUN",
+  "scope": "复用维护入口，仅右臂六电机TE/PV/PP共18项单ID SYNC_READ，核对原校准范围",
+  "entry": "scripts/run_hardware_maintenance.py --bus2-arm-range-only",
+  "behavior": [
+    "保留原帧和采样时间；TE/PV严格0，PP0..4095",
+    "校准内外分别INSIDE/OUTSIDE，越界继续收齐，不挪位置、不改限位",
+    "独立600秒GO和校准身份绑定，失败封锁UART，非UART身份收尾",
+    "不判整机停止，不复用为200ms混合锚点，不自动接续动作"
+  ],
+  "software_validation": {
+    "native_rustc": "rustc 1.102.0-nightly (ac8310ba6 2026-11-09)",
+    "fmt": "PASS",
+    "clippy_workspace": "PASS",
+    "python_methods": 162,
+    "python_skipped": 0,
+    "new_arm_range_methods_subset": 9,
+    "review": "Astra静态审查PASS",
+    "rust_sources_changed": false,
+    "new_driver_build": false
+  },
+  "preparation": {
+    "host_checks": 26,
+    "result": "PREPARED_NOT_EXECUTED",
+    "plan_sha256": "6c6cd144a0b8dac0f36a8ad4e2c6df59a58d84294d664e947410f36810d7cfc4",
+    "launch_syntax": "PASS",
+    "runtime_root": "/home/loosqk/robot-checks/arm-range-readonly-20261110"
+  },
+  "initial_failure": "首次PLAN_ONLY因完整refs附加valid:true被过严整字典相等拒绝；已按既有入口逐绑定字段比较并增加回归，原件plan-attempt1.stderr保留。首次161项软件测试通过，最终162项覆盖修复。",
+  "source_verification": "source-verification.json",
+  "uart_access": false,
+  "go_created": false,
+  "register_writes": 0,
+  "hardware_result": "NOT_RUN",
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "next": "取得本轮供电、双臂空载支撑和持续看护回执后，只执行已准备的18项只读。",
+  "cleanup": {
+    "owned_worktree_removed": true,
+    "quality_tmux_absent": true,
+    "shared_target_retained": true,
+    "deployed_checkout_unchanged": true,
+    "runtime_script_and_launch_retained_for_pending_readonly": true
+  }
+}

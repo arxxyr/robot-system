@@ -29,7 +29,7 @@
 
 raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无 SI 换算，不放行名义 profile。三轮停止快照14读要求首末 TE/GV0、PV仅0/±50、1秒五组 PP 跨度≤1且包含快照位置，总预算1.5秒，原字保留。20秒动作、21秒启用上限、500毫秒零速观察及各阶段原判据不放宽，不向其他电机或未批准阶段推广。TE1零速前两组沿原0..1000及−50观察，末组只接受0/±50；SDK初始/断扭后仅±50同连接触发一次新14读，0沿原路径，断扭后保留原1秒观察，不续GO/21秒预算，失败不重试。见[SDK停止复核合同](../.verify/sdk_wheel_stop_stability_2026-10-22_r1/summary.json)。
 
-1. 仅处理右3/右6原位范围阻塞。先备好既有入口、固定 Python、进程检查及 `PLAN_ONLY`，再通知动作并确认当次现场条件；不以旧 GO 续期。硬件入口不用 `uv run` 增加维护父进程。
+1. 先用维护入口 `--bus2-arm-range-only` 核右臂六电机的 TE/PV/PP，共18项单ID `SYNC_READ` 原帧，定位右3/右6原位范围阻塞。只读不写、不自动串联动作；校准越界逐项记录，不能拿本次顺序采样替代混合启用时的新鲜锚点。脚本和 `PLAN_ONLY` 备好后才确认当次现场条件，不沿用旧 GO；硬件入口用固定 Python。
 2. 条件满足后，只验六臂固定原位＋ID9 `+500/20秒`、另两轮零速，再执行既有零速、断扭和全总线停止检查；原时效、失败粘性及停止规则保持。
 3. 维护实机通过后，按实际授权接默认 S0 入口并独立验收；随后沿 SoftRT 与 `ImageHeader + blob` 接单条相机流，验证采集、发布、退出、不阻塞执行器及连续采集。
 
@@ -38,6 +38,7 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 ## 按需证据与源码
 
 - 当前映射：[配置软件验证](../.verify/wheel_config_mapping_2026-11-09/summary.json)、[ID9左轮实机](../.verify/right_wheel_mapping_2026-11-09/summary.json)、[ID7右轮实机](../.verify/wheel_id7_mapping_2026-11-09/summary.json)。
+- 右臂范围：[只读软件及启动准备](../.verify/arm_range_readonly_2026-11-09/summary.json)；等待当次现场确认，尚无新位置读数。
 - 混合与停止：[维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[工作线程离线验证](../.verify/s0_hal_worker_2026-11-03/summary.json)、[历史混合失败](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)、[历史反馈与目视矛盾](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)。后续结果不回写旧失败或未知归因。
 - 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。

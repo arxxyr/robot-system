@@ -1,0 +1,21 @@
+{
+  "base_commit": "6ae3a14b682686267f5ba4524a758103b14036e2",
+  "local_orin_same": true,
+  "files": {
+    "scripts/run_hardware_maintenance.py": "8ffb51ff1156ba82268b2dc02a3d7450bf1be59c42262ef9e374dbd52775444a",
+    "scripts/tests/test_hardware_maintenance.py": "016dadd3c03ea522964a2ca834ab71ace0a131e8b12b4c2de285be4b008b75f0",
+    "docs/s0_hal_status.md": "8b3dc4fd0c05c02d912414b46d7616f6bbe29e49b87985c9e63aefea09f0f202"
+  },
+  "changed": [
+    "docs/s0_hal_status.md",
+    "scripts/run_hardware_maintenance.py",
+    "scripts/tests/test_hardware_maintenance.py"
+  ],
+  "untracked": [],
+  "runtime_script": "8ffb51ff1156ba82268b2dc02a3d7450bf1be59c42262ef9e374dbd52775444a",
+  "runtime_config": "080856f4236d3481e74158118c85667f5509bc1a04e537fe8ce50f1c2875b131",
+  "quality_exit": "0",
+  "go_exists": false,
+  "capture_exists": false,
+  "quality_session_exists": false
+}

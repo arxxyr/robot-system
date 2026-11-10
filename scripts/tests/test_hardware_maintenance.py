@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -3003,6 +3004,251 @@ class WheelFeedbackTests(unittest.TestCase):
 
     def test_left_feedback_execute_has_only_fourteen_reads_locks_and_nonuart_finish(self):
         self.check_execute_cases((None,3,'post','journal','report'),left=True)
+
+
+class ArmRangeIO(FeedbackIO):
+    """复用轮诊断假端点，只为固定六臂提供逐ID原帧。"""
+    def __init__(self):
+        super().__init__()
+        self.arm_positions=[1000,2000,2992,2000,2000,1371]
+        self.velocities=[0];self.value_at={}
+    def command(self,argv,**kwargs):
+        if getattr(self,'arm_range_read_only',False):m.RealExecutor.check_arm_range_command(self,argv)
+        if argv[0]==m.RIGHT_PULSE_RAW['path']:
+            before=getattr(self,'arm_range_before_spawn',None)
+            if before is not None:before(argv)
+            self.motor=int(argv[2]);self.positions=[self.arm_positions[self.motor-1]]
+        text=super().command(argv,**kwargs)
+        if self.sequence in self.value_at and argv[0]==m.RIGHT_PULSE_RAW['path']:
+            row=json.loads(text);value=self.value_at[self.sequence];width=row['width']
+            row['raw_unsigned']=value
+            row['rx']=[255,255,self.motor,width+2,0,*value.to_bytes(width,'little')]
+            row['rx'].append((~sum(row['rx'][2:]))&255)
+            return json.dumps(row)+'\n'
+        return text
+
+
+class ArmRangeTests(unittest.TestCase):
+    def setUp(self):
+        WheelFeedbackTests.setUp(self)
+        self.calibration={name:{'id':motor,'drive_mode':0,'homing_offset':0,'range_min':0,'range_max':4095}
+                          for motor,name in enumerate(m.MIXED_ARM_NAMES,1)}
+        self.calibration[m.MIXED_ARM_NAMES[2]]['range_max']=2991
+        self.calibration[m.MIXED_ARM_NAMES[5]]['range_min']=1384
+        self.calibration_path=self.root/'right_arm.json'
+        self.calibration_path.write_text(json.dumps(self.calibration));info=self.calibration_path.stat()
+        self.calibration_ref={'path':str(self.calibration_path),
+            'sha256':hashlib.sha256(self.calibration_path.read_bytes()).hexdigest(),'bytes':info.st_size,
+            'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode),'device':info.st_dev,
+            'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,'nlink':1,'symlink':False}
+
+    def bindings(self):
+        bindings=WheelFeedbackTests.bindings(self)
+        bindings['refs'].append(dict(self.calibration_ref))
+        bindings['bus2_mixed_raw_hold']={'arm_calibration':dict(self.calibration_ref)}
+        return bindings
+
+    def plan(self,bindings=None,root=None):
+        root=root or '/home/loosqk/robot-checks/arm-range'
+        return m.make_plan(bindings or self.bindings(),str(root)+'/run','arm-range',root,bus2_arm_range_only=True)
+
+    def go(self,plan,now):
+        go=WheelFeedbackTests.go(self,plan,now)
+        go['physical']['right']={**{key:True for key in m.FACTS},'confirmed_at_ns':now,
+            'arm_range_confirmation_scope':m.ARM_RANGE_SCOPE,'arm_range_confirmation_answer':'夹具范围只读'}
+        return go
+
+    def engine(self):return m.ProbeEngine(ArmRangeIO(),self.plan())
+
+    def test_eighteen_sync_reads_preserve_frames_and_outside_three_six_without_clamp(self):
+        engine=self.engine();m.run_bus2_arm_range_only(engine,lambda:None)
+        row=engine.rows[0]
+        self.assertEqual(row['status'],'DIAGNOSTIC_CAPTURED');self.assertEqual(row['range_status'],'OUTSIDE')
+        self.assertEqual([value['status'] for value in row['ranges']],['INSIDE','INSIDE','OUTSIDE','INSIDE','INSIDE','OUTSIDE'])
+        self.assertEqual([value['position_raw'] for value in row['ranges']],[1000,2000,2992,2000,2000,1371])
+        self.assertEqual([(call[2],call[4]) for call in engine.io.calls],
+                         [(str(motor),register) for motor in range(1,7) for register in m.ARM_RANGE_REGS])
+        self.assertTrue(all(call[:2]==[self.reference['path'],m.DEVICES['right']] and call[3]=='read-raw'
+                            for call in engine.io.calls))
+        self.assertTrue(all(sample['raw']['operation']=='sync_read' and sample['raw']['tx'][4]==0x82
+                            and sample['finished_ns']>sample['started_ns'] for sample in row['samples']))
+        self.assertFalse(row['stop_verified']);self.assertFalse(row['mixed_anchor_permitted'])
+        self.assertFalse(engine.manual_cut);m.validate_arm_range_capture(row,engine.plan)
+        for motor in range(1,7):
+            with self.assertRaises(ValueError):m.left_feedback_raw(engine.io,self.reference,'Present_Position',lambda:None,motor=motor)
+        self.assertEqual(len(engine.io.calls),18)
+
+    def test_each_communication_frame_or_signal_failure_stops_without_tail_reads_or_writes(self):
+        for fault in ('fail_at','bad_at','signal_at'):
+            for index in range(1,19):
+                engine=self.engine();setattr(engine.io,fault,index)
+                with self.subTest(fault=fault,index=index),self.assertRaises((ValueError,OSError)):
+                    m.run_bus2_arm_range_only(engine,lambda:None)
+                self.assertEqual(len(engine.io.calls),index)
+                self.assertTrue(engine.io.arm_range_uart_blocked);self.assertTrue(engine.manual_cut)
+                self.assertEqual(engine.rows[0]['status'],'FAIL')
+                with self.assertRaises(ValueError):m.run_bus2_arm_range_only(engine,lambda:None)
+                self.assertEqual(len(engine.io.calls),index)
+                self.assertTrue(all(call[3]=='read-raw' for call in engine.io.calls))
+
+    def test_nonzero_te_pv_and_invalid_single_turn_pp_keep_raw_and_stop_immediately(self):
+        for index in range(1,19):
+            if index%3==0:values=(4096,65535)
+            elif index%3==1:values=(1,)
+            else:values=(50,0x8032,0x8000)
+            for value in values:
+                engine=self.engine();engine.io.value_at[index]=value
+                with self.subTest(index=index,value=value),self.assertRaises(ValueError):
+                    m.run_bus2_arm_range_only(engine,lambda:None)
+                self.assertEqual(len(engine.io.calls),index)
+                self.assertEqual(engine.rows[0]['samples'][-1]['raw']['raw_unsigned'],value)
+
+    def test_go_scope_ten_minute_expiry_and_midcapture_expiry_refuse_later_uart(self):
+        plan=self.plan();go=self.go(plan,100);m.validate_go(go,plan,200)
+        for mutation in ('scope','answer','ttl','expired','field_age'):
+            bad=copy.deepcopy(go);now=200
+            if mutation=='scope':bad['physical']['right']['arm_range_confirmation_scope']=m.MIXED_RAW_SCOPE
+            if mutation=='answer':bad['physical']['right']['arm_range_confirmation_answer']=''
+            if mutation=='ttl':bad['expires_at_ns']=600_000_000_101
+            if mutation=='expired':now=bad['expires_at_ns']
+            if mutation=='field_age':
+                bad['issued_at_ns']=600_000_000_101;bad['expires_at_ns']=bad['issued_at_ns']+100;now=bad['issued_at_ns']
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.validate_go(bad,plan,now)
+        for index in (0,1,8,18):
+            engine=self.engine()
+            with self.subTest(index=index),self.assertRaisesRegex(ValueError,'GO'):
+                m.run_bus2_arm_range_only(engine,lambda:m.require(engine.io.sequence<index,'GO过期'))
+            self.assertEqual(len(engine.io.calls),index)
+            if index:self.assertIn('raw',engine.rows[0]['samples'][-1])
+
+    def test_calibration_content_and_metadata_change_invalidate_plan_go_before_uart(self):
+        for mutation in ('content','mode','inode'):
+            info=self.calibration_path.stat()
+            self.calibration_ref.update(mode=stat.S_IMODE(info.st_mode),inode=info.st_ino,
+                mtime_ns=info.st_mtime_ns,ctime_ns=info.st_ctime_ns)
+            plan=self.plan();go=self.go(plan,100)
+            raw=self.calibration_path.read_bytes();mode=self.calibration_path.stat().st_mode
+            if mutation=='content':self.calibration_path.write_bytes(raw+b' ')
+            if mutation=='mode':self.calibration_path.chmod(0o600)
+            if mutation=='inode':
+                replacement=self.root/'replacement.json';replacement.write_bytes(raw);replacement.replace(self.calibration_path)
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.validate_go(go,plan,200)
+            engine=m.ProbeEngine(ArmRangeIO(),plan)
+            with self.assertRaises(ValueError):m.run_bus2_arm_range_only(engine,lambda:None)
+            self.assertEqual(engine.io.calls,[])
+            self.calibration_path.write_bytes(raw);self.calibration_path.chmod(stat.S_IMODE(mode))
+
+    def test_calibration_refs_allow_existing_valid_metadata_but_require_each_bound_field(self):
+        bindings=self.bindings();bindings['refs'][-1]['valid']=True
+        plan=self.plan(bindings)
+        self.assertEqual(m.arm_calibration_ref(bindings),self.calibration_ref)
+        self.assertEqual(m.verify_arm_calibration(plan),m.mixed_calibration_rows(self.calibration))
+        for field,value in self.calibration_ref.items():
+            bad=copy.deepcopy(bindings)
+            bad['refs'][-1][field]=(not value if type(value) is bool else
+                                     value+1 if type(value) is int else value+'x')
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'未进入完整refs'):
+                self.plan(bad)
+
+    def test_all_action_and_wheel_modes_and_contract_mutation_are_rejected(self):
+        root='/home/loosqk/robot-checks/arm-range'
+        for options in ({'right_wheel_pulse':True},{'wheel_pulse_target':'front'},{'zero_stop_check':True},
+                        {'right_wheel_feedback_only':True},{'front_wheel_feedback_only':True},
+                        {'left_wheel_feedback_only':True},{'bus2_mixed_raw_hold':True}):
+            with self.subTest(options=options),self.assertRaises(ValueError):
+                m.make_plan(self.bindings(),root+'/run','arm-range',root,bus2_arm_range_only=True,**options)
+        with self.assertRaises(ValueError):
+            m.make_plan(self.bindings(),root+'/run','arm-range',root,['head-1'],bus2_arm_range_only=True)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('禁止子进程')) as child:
+            for flag in ('--right-wheel-pulse','--right-wheel-feedback-only','--front-wheel-feedback-only',
+                         '--left-wheel-feedback-only','--bus2-mixed-raw-hold','--zero-stop-check','--execute'):
+                with self.assertRaises(ValueError):run_main(['--bus2-arm-range-only',flag])
+            with self.assertRaises(ValueError):run_main(['--bus2-arm-range-only','--position-target','head-1'])
+            with contextlib.redirect_stdout(io.StringIO()) as output:self.assertEqual(run_main(['--bus2-arm-range-only']),0)
+            self.assertEqual(json.loads(output.getvalue())['actions_started'],0);child.assert_not_called()
+        for field,value in (('reads',17),('register_writes',1),('mixed_anchor_permitted',True),('operation','read')):
+            plan=self.plan();plan['bus2_arm_range_only'][field]=value
+            with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
+        for key in ('right_wheel_pulse','right_wheel_feedback_only','front_wheel_feedback_only',
+                    'left_wheel_feedback_only','bus2_mixed_raw_hold'):
+            plan=self.plan();plan[key]={}
+            with self.assertRaises(ValueError):m.position_targets_from_plan(plan)
+
+    def test_real_executor_readonly_boundary_blocks_write_enable_and_outside_targets_before_child(self):
+        directory=self.root/'executor';directory.mkdir()
+        executor=m.RealExecutor(dict(m.RIGHT_PULSE_WRITE),directory);self.addCleanup(executor.journal.close)
+        executor.arm_range_read_only=True
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('禁止子进程')) as child:
+            for side,motor,register,value in (('right',1,'Torque_Enable',1),('right',1,'Goal_Position',1000),
+                                              ('right',9,'Goal_Velocity',0),('left',1,'Torque_Enable',0)):
+                with self.assertRaises(ValueError):executor.poke(side,motor,'write',register,value,cleanup=True)
+            for argv in ([self.reference['path'],m.DEVICES['right'],'1','write','Torque_Enable','1'],
+                         [self.reference['path'],m.DEVICES['right'],'7','read-raw','Torque_Enable'],
+                         [self.reference['path'],m.DEVICES['right'],'1','read-raw','Goal_Velocity'],
+                         [self.reference['path'],m.DEVICES['left'],'1','read-raw','Torque_Enable']):
+                with self.assertRaises(ValueError):executor.command(argv,cleanup=True)
+            child.assert_not_called()
+        self.assertEqual(executor.sequence,0)
+
+    def test_execute_dispatch_locks_one_shot_go_and_nonuart_finish_in_success_and_failure(self):
+        for fault in (None,3,'post','journal','report','expired'):
+            root=self.root/str(fault);root.mkdir();helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+            bindings=self.bindings();bindings['proc_helper']={'path':str(helper),
+                'sha256':hashlib.sha256(helper.read_bytes()).hexdigest(),'bytes':helper.stat().st_size}
+            bindings['protection']={}
+            for side in m.SERIALS:
+                bindings['protection'][side]={}
+                for name in ('rx_trust.lock','estop_latch.lock'):
+                    path=root/f'{side}-{name}';path.write_bytes(b'unchanged\n')
+                    bindings['protection'][side][name]={'path':str(path)}
+            executor=ArmRangeIO();executor.fail_at=fault
+            if fault=='journal':
+                class FailedClose(io.StringIO):
+                    def close(self):raise OSError('注入日志关闭失败')
+                executor.journal=FailedClose()
+            write_new=m.write_new
+            def write_report(path,value):
+                if fault=='report' and Path(path).name=='run.json':raise OSError('注入最终报告保存失败')
+                return write_new(path,value)
+            read_text=Path.read_text
+            def read_boot(path,*args,**kwargs):
+                return 'unit-boot' if str(path)=='/proc/sys/kernel/random/boot_id' else read_text(path,*args,**kwargs)
+            with contextlib.ExitStack() as stack,contextlib.redirect_stdout(io.StringIO()) as messages:
+                for target,name,kwargs in (
+                        (m,'MAINTENANCE_NAMESPACE',{'new':self.root}),(m.sys,'platform',{'new':'linux'}),
+                        (m.os,'uname',{'return_value':SimpleNamespace(machine='aarch64',nodename='unit-host')}),
+                        (Path,'read_text',{'new':read_boot}),(m,'RealExecutor',{'return_value':executor}),
+                        (m,'protected_and_refs',{'return_value':None}),(m,'verify_protection_file',{'return_value':None}),
+                        (m,'idle',{'return_value':None}),(m,'usb_identity',{'return_value':None}),
+                        (m,'inspect_unit',{'return_value':None}),(m,'inspect_holder',{'return_value':None}),
+                        (m,'write_new',{'side_effect':write_report}),(m.signal,'signal',{})):
+                    stack.enter_context(patch.object(target,name,**kwargs))
+                process=stack.enter_context(patch.object(m,'inspect_processes',
+                    return_value=None,side_effect=ValueError('后验身份未知') if fault=='post' else None))
+                pulse=stack.enter_context(patch.object(m,'load_right_pulse_helper',side_effect=AssertionError('不可依赖mixed新ELF/strace')))
+                snapshot=stack.enter_context(patch.object(m,'snapshot',side_effect=AssertionError('不可整机snapshot')))
+                motion=stack.enter_context(patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')))
+                finish=stack.enter_context(patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')))
+                safe_off=stack.enter_context(patch.object(m.ProbeEngine,'safe_off',side_effect=AssertionError('不可safe_off')))
+                plan=self.plan(bindings,root);go=self.go(plan,m.time.time_ns());approval=root/'go.json'
+                if fault=='expired':go['expires_at_ns']=go['issued_at_ns']
+                m.write_new(approval,go)
+                if fault=='expired':
+                    with self.assertRaises(ValueError):m.execute(plan,go,approval)
+                    self.assertEqual(executor.calls,[]);self.assertFalse(Path(str(approval)+'.consumed').exists());continue
+                self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
+                with self.assertRaises(ValueError):m.execute(plan,go,approval)
+                snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called();safe_off.assert_not_called();pulse.assert_not_called()
+                self.assertEqual(process.call_count,1)
+            report=json.loads(messages.getvalue().splitlines()[-1]) if fault=='report' else json.loads((root/'run/run.json').read_text())
+            self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
+            self.assertEqual(report['arm_range_capture']['status'],'DIAGNOSTIC_CAPTURED' if fault is None else 'FAIL')
+            if fault is None:self.assertEqual(report['arm_range_capture']['range_status'],'OUTSIDE')
+            self.assertEqual(report['stop_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
+            self.assertEqual(report['position_verification']['status'],'NOT_EVALUATED_DIAGNOSTIC_ONLY')
+            self.assertEqual(report['identity_verification']['status'],{'post':'FAIL','journal':'UNKNOWN'}.get(fault,'PASS'))
+            self.assertEqual(len(report['owned_locks']),4);self.assertEqual(len(executor.calls),3 if fault==3 else 18)
+            self.assertTrue(Path(str(approval)+'.consumed').exists());self.assertFalse(report['deployable'])
 
 
 class MixedRawTests(unittest.TestCase):
