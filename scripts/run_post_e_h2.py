@@ -30,6 +30,18 @@ TRUST = arm_profile().trust
 CONFIG = arm_profile().config
 
 
+def set_process_name():
+    """只设置Linux入口显示名；命名失败不改变执行及停止收尾。"""
+    if sys.platform == "linux":
+        try:
+            Path("/proc/self/comm").write_text("robot-h2", encoding="ascii")
+        except OSError as error:
+            try:
+                print(f"爸爸，进程显示名设置失败，继续使用原入口：{error!r}", file=sys.stderr, flush=True)
+            except (OSError, ValueError):
+                pass
+
+
 def file_hash(path):
     path = Path(path)
     metadata = path.lstat()
@@ -777,6 +789,7 @@ def validate_options(options):
 
 
 def main(argv=None, backend_factory=None):
+    set_process_name()
     options = parse_args(argv)
     if not options.execute:
         print(json.dumps({"mode": "PLAN_ONLY", "side": options.side, "deployable": False,

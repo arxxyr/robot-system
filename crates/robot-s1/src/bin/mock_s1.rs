@@ -364,6 +364,7 @@ TOPICS:
 // ============================================================================
 
 fn main() {
+    robot_logging::set_process_name("robot-mock-s1");
     // task-32：统一 tracing subscriber 初始化（详 robot-logging::init）。
     let _ = robot_logging::init();
 

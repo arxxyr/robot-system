@@ -172,6 +172,33 @@ const fn civil_from_days(z: i64) -> (i32, u32, u32) {
 // 公共 init 入口
 // ============================================================================
 
+/// 设置 Linux 主线程的进程显示名；仅在各 binary 的 `main` 启动时调用。
+///
+/// 名称限 1–15 个可见 ASCII 字节，避免内核截断；不修改可执行文件名或 argv。
+/// 失败仅向 stderr 告警，继续原有启动和安全收尾；其他平台不做操作。
+pub fn set_process_name(name: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write as _;
+
+        if name.is_empty() || name.len() > 15 || !name.bytes().all(|byte| byte.is_ascii_graphic()) {
+            let _ = writeln!(
+                std::io::stderr(),
+                "警告：进程显示名必须是 1–15 个可见 ASCII 字节：{name:?}"
+            );
+            return;
+        }
+        if let Err(error) = std::fs::write("/proc/self/comm", name) {
+            let _ = writeln!(
+                std::io::stderr(),
+                "警告：设置进程显示名 {name:?} 失败：{error}"
+            );
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = name;
+}
+
 /// 初始化 tracing subscriber。每个 bin 在 `main` 第一件事调。
 ///
 /// **幂等**：多次调用只第一次生效（底层 `tracing::subscriber::set_global_default`
@@ -275,5 +302,47 @@ mod tests {
         // 第二次必然 false（global subscriber 已设）
         let b = init();
         assert!(!b, "second init must return false");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_name_preserves_identity() {
+        struct RestoreComm(Vec<u8>);
+
+        impl Drop for RestoreComm {
+            fn drop(&mut self) {
+                // 断言失败时也恢复进程名；恢复失败不能在展开时再次 panic。
+                let _ = std::fs::write("/proc/self/comm", &self.0);
+            }
+        }
+
+        let original_comm = std::fs::read("/proc/self/comm").expect("读取原进程显示名");
+        let original_name = original_comm
+            .strip_suffix(b"\n")
+            .expect("comm 以换行结束")
+            .to_vec();
+        let original_cmdline = std::fs::read("/proc/self/cmdline").expect("读取原命令行");
+        let original_exe = std::fs::read_link("/proc/self/exe").expect("读取原可执行文件");
+
+        {
+            let _restore = RestoreComm(original_name);
+            set_process_name("robot-namecheck");
+            assert_eq!(
+                std::fs::read("/proc/self/comm").expect("读取新进程显示名"),
+                b"robot-namecheck\n"
+            );
+            assert_eq!(
+                std::fs::read("/proc/self/cmdline").expect("读取命名后的命令行"),
+                original_cmdline
+            );
+            assert_eq!(
+                std::fs::read_link("/proc/self/exe").expect("读取命名后的可执行文件"),
+                original_exe
+            );
+        }
+        assert_eq!(
+            std::fs::read("/proc/self/comm").expect("读取恢复后的进程显示名"),
+            original_comm
+        );
     }
 }

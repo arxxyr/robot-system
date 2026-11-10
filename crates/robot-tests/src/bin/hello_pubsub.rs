@@ -20,6 +20,7 @@ const TOPIC: &str = "/demo_robot/s0/left_arm/state";
 const DEMO_LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    robot_logging::set_process_name("robot-pubsub");
     println!("=== hello_pubsub · iceoryx2 同进程 pub/sub 演示 ===");
     println!("topic: {TOPIC}");
     println!();

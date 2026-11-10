@@ -277,6 +277,7 @@ SYSTEMD (v0.5 候选 E 段(8), unit Type=notify):
 #[allow(clippy::too_many_lines)] // main 含 8-variant GatewayError exit-code 大 match
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
+    robot_logging::set_process_name("robot-gateway");
     let _ = robot_logging::init();
 
     let args = match Args::parse() {

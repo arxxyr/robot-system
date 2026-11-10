@@ -197,6 +197,7 @@ TOPICS:
 // ============================================================================
 
 fn main() {
+    robot_logging::set_process_name("robot-ctl");
     // task-32：统一 tracing subscriber 初始化。
     let _ = robot_logging::init();
 

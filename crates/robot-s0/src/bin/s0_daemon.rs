@@ -537,6 +537,7 @@ struct Topics {
 // ============================================================================
 
 fn main() {
+    robot_logging::set_process_name("robot-s0");
     let supervisor = BootSupervisor::start().unwrap_or_else(|_| std::process::exit(1));
     #[cfg(feature = "test-comm-fault-hook")]
     robot_s0::comm_fault_hook::boot_pause("before_logging");

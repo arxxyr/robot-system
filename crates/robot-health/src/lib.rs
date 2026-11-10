@@ -39,7 +39,7 @@
 //!
 //! let handle = robot_health::spawn_monitor(robot_health::MonitorConfig {
 //!     interval: Duration::from_secs(5),
-//!     interested_processes: vec!["s0_daemon".into(), "mock_s1".into()],
+//!     interested_processes: vec!["robot-s0".into(), "robot-mock-s1".into()],
 //!     top_n: 5,
 //! });
 //! // 运行期间 tracing::info! 会每 5 s 打一条 system health

@@ -6,6 +6,7 @@ import copy
 from dataclasses import replace
 import contextlib
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -154,6 +155,29 @@ def report_fixture(root, side="left"):
     for name in ("s0.stdout.log","s0.stderr.log","gateway.stdout.log","gateway.stderr.log"):
         (evidence/name).write_text("")
     return expected
+
+
+class ProcessNameTests(unittest.TestCase):
+    def test_import_does_not_set_name_and_main_sets_name(self):
+        spec=importlib.util.spec_from_file_location("h2_import_fixture",driver.__file__)
+        module=importlib.util.module_from_spec(spec)
+        with patch.object(Path,"write_text") as write:
+            spec.loader.exec_module(module)
+            write.assert_not_called()
+        with patch.object(driver,"set_process_name") as name,contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(driver.main([]),0)
+            name.assert_called_once_with()
+
+    def test_linux_comm_failure_is_nonfatal_and_other_platform_does_not_write(self):
+        with patch.object(driver.sys,"platform","linux"),patch.object(Path,"write_text") as write:
+            driver.set_process_name()
+            write.assert_called_once_with("robot-h2",encoding="ascii")
+        with patch.object(driver.sys,"platform","linux"),patch.object(Path,"write_text",side_effect=OSError("拒绝命名")), \
+                contextlib.redirect_stderr(io.StringIO()):
+            driver.set_process_name()
+        with patch.object(driver.sys,"platform","win32"),patch.object(Path,"write_text") as write:
+            driver.set_process_name()
+            write.assert_not_called()
 
 
 class ParameterTests(unittest.TestCase):

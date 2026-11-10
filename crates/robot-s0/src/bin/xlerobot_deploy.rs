@@ -56,6 +56,7 @@ const DEFAULT_RUNTIME_DIR: &str = "/run/robot-system/preflight";
 const USAGE_EXIT_CODE: u8 = 2;
 
 fn main() {
+    robot_logging::set_process_name("robot-deploy");
     let _ = robot_logging::init();
     let argv: Vec<OsString> = std::env::args_os().skip(1).collect();
     let Some(subcommand) = argv.first().and_then(|a| a.to_str()).map(str::to_owned) else {

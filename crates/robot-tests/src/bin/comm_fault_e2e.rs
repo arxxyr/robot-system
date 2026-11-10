@@ -7,5 +7,6 @@ mod comm_fault;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
+    robot_logging::set_process_name("robot-comm-e2e");
     comm_fault::main_entry().await
 }

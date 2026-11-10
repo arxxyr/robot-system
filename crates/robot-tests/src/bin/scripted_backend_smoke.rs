@@ -295,6 +295,7 @@ payload_boundary|all\n  \
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> ExitCode {
+    robot_logging::set_process_name("robot-scripted");
     let _ = robot_logging::init();
     let args = match Args::parse() {
         Ok(a) => a,

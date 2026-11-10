@@ -321,6 +321,7 @@ EXIT CODES:
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> ExitCode {
+    robot_logging::set_process_name("robot-cleanup");
     let args = match Args::parse() {
         Ok(a) => a,
         Err(s) if s == "HELP" => {

@@ -1,0 +1,39 @@
+{
+  "task": "控制与硬件测试进程统一robot-显示名前缀",
+  "base_commit": "8555ac2cbfa2cd9be7a48b96a413b3445683cfa7",
+  "changes": [
+    "20个Rust入口、2个Python维护入口",
+    "既有冻结Feetech通过临时执行名命名，原文件与SHA不改",
+    "监控配置兼容新旧comm",
+    "Orin htop仅show_merged_command从0改1"
+  ],
+  "validation": {
+    "host": "Orin ARM64",
+    "rustc": "1.102.0-nightly (ac8310ba6 2026-11-09)",
+    "fmt": "PASS",
+    "workspace_clippy": "PASS",
+    "xlerobot_real_clippy": "PASS",
+    "feetech_example_clippy": "PASS",
+    "robot_logging_tests": 4,
+    "python_tests": 232,
+    "python_skipped": 0,
+    "actual_robotctl_help_comm": "robot-ctl",
+    "alias_direct_and_strace_identity": "PASS",
+    "htop_3_0_5_pty": "merged=0目标PID不可见，merged=1可见"
+  },
+  "corrected_validation_failures": [
+    "首次real-hw被误用为robot-s0 feature，改为xlerobot-real后通过；失败日志保留",
+    "初始无硬件观察夹具依赖/proc/task/children，本机内核不提供；改用既有process_snapshot后两种启动均通过"
+  ],
+  "boundaries": {
+    "uart_access": false,
+    "motor_writes": false,
+    "control_service_restarted": false,
+    "old_installed_rust_artifacts_replaced": false,
+    "d15": "OPEN/DEFERRED",
+    "deployable": false
+  },
+  "source_manifest": "source-sha256.json",
+  "logs": "quality/",
+  "cleanup": "仅本任务夹具、会话、临时链接和工作树；共享target保留"
+}

@@ -128,6 +128,21 @@ LEFT_FEEDBACK_META = {'Torque_Enable':(40,1),'Goal_Velocity':(46,2),
 LEFT_FEEDBACK_IDENTITY = ('uid','gid','mode','device','inode','mtime_ns','ctime_ns','nlink','symlink','elf_machine')
 
 
+def process_name_warning(error):
+    """显示名失败只告警，不阻断独立停止命令。"""
+    with contextlib.suppress(OSError, ValueError):
+        print(f'爸爸，进程显示名设置失败，继续使用原入口：{error!r}',file=sys.stderr,flush=True)
+
+
+def set_process_name():
+    """只在入口启动时设置Linux显示名，导入模块没有命名副作用。"""
+    if sys.platform=='linux':
+        try:
+            Path('/proc/self/comm').write_text('robot-maint',encoding='ascii')
+        except OSError as error:
+            process_name_warning(error)
+
+
 def configure_bus_mapping(path):
     """唯一映射源为运行时指定TOML的joints/motor_ids，不读取校准标签推断轮位。"""
     global BASE_TARGETS, WHEEL_PULSE_TARGETS, WHEEL_STOP_TARGETS, BUS_CONFIG
@@ -954,6 +969,48 @@ class RealExecutor:
             except BaseException as error:
                 failures.append('wait观测:' + repr(error))
 
+    @contextlib.contextmanager
+    def named_feetech_command(self, argv, row):
+        """仅给已验证工具的exec名加前缀；原路径继续用于全部安全门。"""
+        actual=[str(value) for value in argv]
+        references={ref['path']:ref for ref in
+                    (self.tool,RIGHT_PULSE_RAW,RIGHT_PULSE_WRITE,RIGHT_PULSE_SYNC,
+                     getattr(self,'mixed_feetech_tool',None)) if ref is not None}
+        index=0
+        if actual and actual[0]==RIGHT_PULSE_TRACE['path']:
+            flags=['-ttt','-xx','-s','256','-yy','-e','trace=openat,close,read,write,ioctl','-o']
+            prefixes=([RIGHT_PULSE_TRACE['path'],*flags],
+                      [RIGHT_PULSE_TRACE['path'],'-f','-I','3',*flags])
+            index=next((len(prefix)+1 for prefix in prefixes
+                        if actual[:len(prefix)]==prefix),len(actual))
+        if sys.platform!='linux' or index>=len(actual) or actual[index] not in references:
+            yield actual
+            return
+        # 只验证原target；verify_ref拒绝符号链接的规则保持不变。
+        verify_ref(references[actual[index]],executable=True)
+        directory=None
+        def warning(error):
+            row.setdefault('process_name_warnings',[]).append(repr(error))
+            process_name_warning(error)
+        try:
+            directory=tempfile.TemporaryDirectory(prefix='robot-feetech-')
+            os.chmod(directory.name,0o700)
+            alias=Path(directory.name)/'robot-feetech'
+            alias.symlink_to(actual[index])
+            row['requested_argv']=list(actual)
+            actual[index]=str(alias)
+            row['argv']=list(actual)
+        except OSError as error:
+            warning(error)
+        try:
+            yield actual
+        finally:
+            if directory is not None:
+                try:
+                    directory.cleanup()
+                except OSError as error:
+                    warning(error)
+
     def command(self, argv, *, cleanup=False, allowed=(0,), input_raw=None, mixed_stop_check=None):
         if getattr(self,'arm_range_read_only',False):
             self.check_arm_range_command(argv)
@@ -971,7 +1028,9 @@ class RealExecutor:
             row['budget_ns']=MIXED_CHILD_BUDGET_NS
         failures = []
         out, err = b'', b''
+        naming_stack=contextlib.ExitStack()
         try:
+            actual_argv=naming_stack.enter_context(self.named_feetech_command(argv,row))
             # 原始输出先落匿名文件；证据目录写失败不会阻止后续独立安全收尾命令。
             with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr, tempfile.TemporaryFile() as stdin:
                 if input_raw is not None:
@@ -985,7 +1044,7 @@ class RealExecutor:
                     arm_prelaunch(argv)
                 if mixed_stop_check is not None:
                     mixed_stop_check()
-                self.child = subprocess.Popen(argv, stdin=stdin if input_raw is not None else subprocess.DEVNULL,
+                self.child = subprocess.Popen(actual_argv, stdin=stdin if input_raw is not None else subprocess.DEVNULL,
                                               stdout=stdout, stderr=stderr, start_new_session=True,
                                               env={**os.environ, 'PATH':'/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL':'C',
                                                    'RUST_LOG':'error'})
@@ -1018,6 +1077,8 @@ class RealExecutor:
             row["error"] = repr(error)
             raise
         finally:
+            # 异常分支也先真实reap，最后才移除显示名链接。
+            naming_stack.close()
             row["finished_ns"] = self.now()
             row['owner_errors'] = failures
             self.commands.append(row)
@@ -2610,6 +2671,8 @@ def execute(plan, go, approval):
     # 输出目录及独立claim均不覆盖；前置失败也消费本次GO，不静默重试。
     write_new(consumed, {'plan_sha256':digest(plan),'consumed_at_ns':time.time_ns()})
     io = RealExecutor(bindings['tool'], plan['output'])
+    if 'bus2_mixed_raw_hold' in plan:
+        io.mixed_feetech_tool=plan['bus2_mixed_raw_hold']['tool']
     io.arm_range_read_only=arm_range_only
     io.process_snapshots=[]
     for signum in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP,signal.SIGQUIT):
@@ -2765,6 +2828,7 @@ def execute(plan, go, approval):
 
 
 def main(argv=None):
+    set_process_name()
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bus-config',type=Path,default=DEFAULT_BUS_CONFIG,
                         help='右总线TOML，joints/motor_ids为唯一轮位映射；计划绑定其绝对路径和原始字节身份')

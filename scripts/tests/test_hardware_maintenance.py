@@ -4,6 +4,7 @@ import atexit
 import itertools
 import copy
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -203,6 +204,155 @@ class ProbeTests(unittest.TestCase):
         for reg,value in [('Torque_Enable',1),('Goal_Velocity',20),('Present_Velocity',2),('Goal_Position',1),('Present_Position',1005),('Operating_Mode',1)]:
             changed=copy.deepcopy(rows); changed['left:1'][reg]=value
             with self.subTest(reg=reg),self.assertRaises(ValueError): m.validate_snapshot(changed,rows)
+
+
+class ProcessNameTests(unittest.TestCase):
+    def test_import_does_not_set_name_and_main_sets_name(self):
+        spec=importlib.util.spec_from_file_location('maintenance_import_fixture',m.__file__)
+        module=importlib.util.module_from_spec(spec)
+        with patch.object(Path,'write_text') as write:
+            spec.loader.exec_module(module)
+            write.assert_not_called()
+        with patch.object(m,'set_process_name') as name,contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_main([]),0)
+            name.assert_called_once_with()
+
+    def test_linux_comm_failure_is_nonfatal_and_other_platform_does_not_write(self):
+        with patch.object(m.sys,'platform','linux'),patch.object(Path,'write_text') as write:
+            m.set_process_name()
+            write.assert_called_once_with('robot-maint',encoding='ascii')
+        with patch.object(m.sys,'platform','linux'),patch.object(Path,'write_text',side_effect=OSError('拒绝命名')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            m.set_process_name()
+        with patch.object(m.sys,'platform','darwin'),patch.object(Path,'write_text') as write:
+            m.set_process_name()
+            write.assert_not_called()
+
+    def reference(self,path):
+        data=b'\x7fELF\x02\x01'+b'\0'*12+(183).to_bytes(2,'little')
+        path.write_bytes(data);path.chmod(0o700)
+        return {'path':str(path),'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+
+    def test_verified_feetech_exec_alias_preserves_identity_and_records_actual_argv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            refs={name:self.reference(root/name) for name in ('tool','raw','write','sync','mixed')}
+            with patch.object(m,'RIGHT_PULSE_RAW',refs['raw']),patch.object(m,'RIGHT_PULSE_WRITE',refs['write']), \
+                    patch.object(m,'RIGHT_PULSE_SYNC',refs['sync']),patch.object(m.sys,'platform','linux'):
+                for index,(name,trace) in enumerate((('tool',False),('raw',False),('write',False),
+                        ('sync',False),('mixed',False),('raw',True),('mixed',True))):
+                    with self.subTest(name=name,trace=trace):
+                        output=root/f'run{index}';output.mkdir()
+                        executor=m.RealExecutor(refs['tool'],output);executor.mixed_feetech_tool=refs['mixed']
+                        self.addCleanup(executor.journal.close)
+                        target=Path(refs[name]['path']);before=target.stat();spawned=[]
+                        argv=[str(target),'/fixture/no-uart','9','read','Torque_Enable']
+                        leaf=0
+                        if trace:
+                            prefix=[m.RIGHT_PULSE_TRACE['path'],*(['-f','-I','3'] if name=='mixed' else []),
+                                    '-ttt','-xx','-s','256','-yy','-e','trace=openat,close,read,write,ioctl',
+                                    '-o',str(output/'wire.strace')]
+                            leaf=len(prefix);argv=[*prefix,*argv]
+                        def popen(actual,**kwargs):
+                            self.assertNotIn('preexec_fn',kwargs)
+                            self.assertEqual(actual[:leaf],argv[:leaf]);self.assertEqual(actual[leaf+1:],argv[leaf+1:])
+                            alias=Path(actual[leaf]);spawned.append(list(actual))
+                            self.assertEqual(alias.name,'robot-feetech');self.assertEqual(alias.resolve(),target.resolve())
+                            self.assertEqual(stat.S_IMODE(alias.parent.stat().st_mode),0o700)
+                            def wait(timeout):
+                                self.assertTrue(alias.is_symlink())
+                                return 0
+                            return SimpleNamespace(pid=123,wait=wait)
+                        executor.front_feedback_before_spawn=lambda original:self.assertEqual(original,argv)
+                        with patch.object(m.subprocess,'Popen',side_effect=popen):
+                            self.assertEqual(executor.command(argv),'')
+                        row=executor.commands[0]
+                        self.assertEqual(row['argv'],spawned[0]);self.assertEqual(row['requested_argv'],argv)
+                        self.assertEqual(json.loads((output/'commands.jsonl').read_text())['argv'],spawned[0])
+                        self.assertFalse(Path(spawned[0][leaf]).parent.exists())
+                        self.assertTrue(row['reaped']);self.assertIsNone(executor.child)
+                        after=target.stat()
+                        self.assertEqual((before.st_ino,before.st_mtime_ns,before.st_ctime_ns,before.st_nlink),
+                                         (after.st_ino,after.st_mtime_ns,after.st_ctime_ns,after.st_nlink))
+                        self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(),refs[name]['sha256'])
+
+    def test_system_tool_arguments_are_not_renamed_and_original_ref_gate_remains_strict(self):
+        with tempfile.TemporaryDirectory() as directory,patch.object(m.sys,'platform','linux'):
+            root=Path(directory);reference=self.reference(root/'tool')
+            executor=m.RealExecutor(reference,root);self.addCleanup(executor.journal.close)
+            for argv in (['sudo','-n',reference['path']],['systemctl','status',reference['path']],
+                         [m.RIGHT_PULSE_TRACE['path'],'--',reference['path']]):
+                row={'argv':list(argv)}
+                with patch.object(m,'verify_ref',side_effect=AssertionError('系统工具不应走命名验证')), \
+                        executor.named_feetech_command(argv,row) as actual:
+                    self.assertEqual(actual,argv);self.assertNotIn('requested_argv',row)
+            alias=root/'external-link';alias.symlink_to(reference['path'])
+            for invalid in (dict(reference,sha256='0'*64),dict(reference,path=str(alias))):
+                executor.tool=invalid
+                with patch.object(m.subprocess,'Popen') as child,self.assertRaises(ValueError):
+                    executor.command([invalid['path']])
+                child.assert_not_called()
+
+    def test_alias_failure_falls_back_to_original_cleanup_command_without_safety_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);reference=self.reference(root/'tool')
+            executor=m.RealExecutor(reference,root);self.addCleanup(executor.journal.close)
+            argv=[reference['path'],'/fixture/no-uart','9','write','Torque_Enable','0']
+            child=SimpleNamespace(pid=123,wait=lambda timeout:0)
+            with patch.object(m.sys,'platform','linux'), \
+                    patch.object(m.tempfile,'TemporaryDirectory',side_effect=OSError('临时显示名不可用')), \
+                    patch.object(m.subprocess,'Popen',return_value=child) as spawn,contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(executor.command(argv,cleanup=True),'')
+            self.assertEqual(spawn.call_args.args[0],argv)
+            self.assertEqual(executor.commands[0]['argv'],argv)
+            self.assertTrue(executor.commands[0]['process_name_warnings'])
+            self.assertEqual(executor.commands[0]['owner_errors'],[])
+            self.assertEqual(executor.evidence_errors,[])
+
+    def test_alias_cleanup_failure_does_not_fail_reaped_stop_command(self):
+        temporary_directory=m.tempfile.TemporaryDirectory
+        with temporary_directory() as directory:
+            root=Path(directory);reference=self.reference(root/'tool')
+            executor=m.RealExecutor(reference,root);self.addCleanup(executor.journal.close)
+            def failing_cleanup(*args,**kwargs):
+                temporary=temporary_directory(*args,**kwargs);cleanup=temporary.cleanup
+                def fail():
+                    cleanup()
+                    raise OSError('显示名清理失败')
+                temporary.cleanup=fail
+                return temporary
+            child=SimpleNamespace(pid=123,wait=lambda timeout:0)
+            with patch.object(m.sys,'platform','linux'), \
+                    patch.object(m.tempfile,'TemporaryDirectory',side_effect=failing_cleanup), \
+                    patch.object(m.subprocess,'Popen',return_value=child),contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(executor.command([reference['path']],cleanup=True),'')
+            self.assertTrue(executor.commands[0]['reaped'])
+            self.assertTrue(executor.commands[0]['process_name_warnings'])
+            self.assertFalse(Path(executor.commands[0]['argv'][0]).parent.exists())
+            self.assertEqual(executor.commands[0]['owner_errors'],[])
+            self.assertEqual(executor.evidence_errors,[])
+
+    def test_alias_survives_launch_exception_until_original_child_is_reaped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);reference=self.reference(root/'tool')
+            executor=m.RealExecutor(reference,root);self.addCleanup(executor.journal.close)
+            aliases=[];original_reap=executor.reap;attempts=[]
+            def reap(*args,**kwargs):
+                attempts.append(True)
+                if len(attempts)==1:
+                    raise OSError('child启动后的异常')
+                self.assertTrue(aliases[0].is_symlink())
+                return original_reap(*args,**kwargs)
+            executor.reap=reap
+            def popen(argv,**kwargs):
+                aliases.append(Path(argv[0]))
+                return SimpleNamespace(pid=123,wait=lambda timeout:0)
+            with patch.object(m.sys,'platform','linux'),patch.object(m.subprocess,'Popen',side_effect=popen):
+                with self.assertRaisesRegex(OSError,'child启动后的异常'):
+                    executor.command([reference['path']])
+            self.assertEqual(len(attempts),2);self.assertIsNone(executor.child)
+            self.assertTrue(executor.commands[0]['reaped'])
+            self.assertFalse(aliases[0].parent.exists())
 
 
 class OwnerTests(unittest.TestCase):

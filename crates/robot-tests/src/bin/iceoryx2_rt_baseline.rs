@@ -222,6 +222,7 @@ OPTIONS:
 // ============================================================================
 
 fn main() {
+    robot_logging::set_process_name("robot-rt-base");
     let args = match Args::parse() {
         Ok(a) => a,
         Err(msg) => {

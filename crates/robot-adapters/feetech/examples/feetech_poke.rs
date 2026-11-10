@@ -336,6 +336,7 @@ fn do_write<T: robot_adapter_feetech::SerialTransport>(
 }
 
 fn main() -> ExitCode {
+    robot_logging::set_process_name("robot-feetech");
     let args: Vec<String> = std::env::args().collect();
     if args.get(3).map(String::as_str) == Some("mixed-hold-wheel9") {
         return mixed_maintenance::main(&args);

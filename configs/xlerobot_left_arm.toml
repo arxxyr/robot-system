@@ -49,4 +49,5 @@ command_mode = "joint_position"
 
 [monitor]
 interval_secs        = 1
-interested_processes = ["s0_daemon", "s1_daemon", "robot_rpc_gatew"]
+# 保留旧 comm，兼容尚未更新的安装产物。
+interested_processes = ["robot-s0", "robot-s1", "robot-gateway", "s0_daemon", "s1_daemon", "robot_rpc_gatew"]

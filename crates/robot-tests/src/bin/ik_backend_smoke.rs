@@ -302,6 +302,7 @@ P = selftest|happy|monotonic|unreachable_clamp|invalid_input|all\n  \
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> ExitCode {
+    robot_logging::set_process_name("robot-ik");
     let _ = robot_logging::init();
     let args = match Args::parse() {
         Ok(a) => a,

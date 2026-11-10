@@ -1750,6 +1750,7 @@ async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
 }
 
 fn main() -> ExitCode {
+    robot_logging::set_process_name("robot-demo");
     let _ = robot_logging::init();
     let args = match Args::parse() {
         Ok(a) => a,

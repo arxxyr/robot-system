@@ -331,6 +331,7 @@ EXIT CODES:
 // ============================================================================
 
 fn main() {
+    robot_logging::set_process_name("robot-s1");
     let _ = robot_logging::init();
 
     let args = match Args::parse() {

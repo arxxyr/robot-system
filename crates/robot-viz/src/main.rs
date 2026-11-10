@@ -1,12 +1,12 @@
 //! 独立只读观测工具；真实 SDK 在可回收的专用子进程中运行。
 
-use robot_logging as _;
 use robot_viz::{runtime, supervisor};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    robot_logging::set_process_name("robot-viz");
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.is_empty() || args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(

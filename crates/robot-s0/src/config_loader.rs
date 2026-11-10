@@ -209,7 +209,7 @@ pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSec
 /// [monitor]
 /// interval_secs = 5
 /// top_n = 5
-/// interested_processes = ["s0_daemon", "mock_s1", "robotctl"]
+/// interested_processes = ["robot-s0", "robot-mock-s1", "robot-ctl"]
 /// ```
 ///
 /// 所有字段缺省 → `MonitorSection::default()`（5 s / top 5 / 空列表）。

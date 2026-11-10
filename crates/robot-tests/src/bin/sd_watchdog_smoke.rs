@@ -431,6 +431,7 @@ struct CaseResult {
 }
 
 fn main() {
+    robot_logging::set_process_name("robot-watchdog");
     let _ = robot_logging::init();
     let args = match Args::parse() {
         Ok(a) => a,

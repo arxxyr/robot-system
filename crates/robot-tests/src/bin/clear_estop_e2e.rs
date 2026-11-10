@@ -183,6 +183,7 @@ OPTIONS:
 // ============================================================================
 
 fn main() -> std::process::ExitCode {
+    robot_logging::set_process_name("robot-estop");
     let _ = robot_logging::init();
 
     let args = match Args::parse() {
