@@ -23,13 +23,13 @@
 
 2026-11-09 分别仅 ID9、仅 ID7 的20秒测试及现场确认，证明其对应自身左、右轮，结束后三轮完全停止。配置收敛提交 `36e663f` 在 Orin 通过319项不同 Rust、153项 Python 测试及 fmt/Clippy；此软件候选未部署、未做新实机动作。单轮通过不代替混合、默认 S0 或整车联动验收；原 run 因固件合同 `DEFERRED` 的整体 FAIL 保留。
 
-混合维护曾在启用前发现右3 `PP2992 > 2991`、右6 `PP1371 < 1384`；这是历史读数，下轮须核新鲜锚点和范围，不能 clamp、自动挪位置或放宽限位来冒充原位保持。该次未完成停止读回，原 `NEEDS_MANUAL_POWER_CUT` 与失败保留；后续断电重连回执不回填旧轮次，也不代替新现场就绪。左腕 `I=1`、头部 `P=32` 仍是临时已测候选，左1偶发根因 `UNKNOWN`。
+2026-11-09右臂18项只读再次确认：右3肘关节 `PP2992 > 2991`、右6夹爪 `PP1371 < 1384`，其余四臂关节在范围内；六电机采样时 TE/PV均0。原帧、身份与资源收尾通过，仅为 `DIAGNOSTIC_CAPTURED / OUTSIDE`，不等于混合动作或整机停止验收。下一步先核对肘部和夹爪的实际姿态与标定端点，不能 clamp、自动挪位置或放宽限位来冒充原位保持。历史混合失败与 `NEEDS_MANUAL_POWER_CUT` 保留；本次不回填旧轮次。左腕 `I=1`、头部 `P=32` 仍是临时已测候选，左1偶发根因 `UNKNOWN`。
 
 ## 实机合同与近期顺序
 
 raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无 SI 换算，不放行名义 profile。三轮停止快照14读要求首末 TE/GV0、PV仅0/±50、1秒五组 PP 跨度≤1且包含快照位置，总预算1.5秒，原字保留。20秒动作、21秒启用上限、500毫秒零速观察及各阶段原判据不放宽，不向其他电机或未批准阶段推广。TE1零速前两组沿原0..1000及−50观察，末组只接受0/±50；SDK初始/断扭后仅±50同连接触发一次新14读，0沿原路径，断扭后保留原1秒观察，不续GO/21秒预算，失败不重试。见[SDK停止复核合同](../.verify/sdk_wheel_stop_stability_2026-10-22_r1/summary.json)。
 
-1. 先用维护入口 `--bus2-arm-range-only` 核右臂六电机的 TE/PV/PP，共18项单ID `SYNC_READ` 原帧，定位右3/右6原位范围阻塞。只读不写、不自动串联动作；校准越界逐项记录，不能拿本次顺序采样替代混合启用时的新鲜锚点。脚本和 `PLAN_ONLY` 备好后才确认当次现场条件，不沿用旧 GO；硬件入口用固定 Python。
+1. 右臂范围只读已完成，右3/右6仍越界。先核对现场姿态；如需物理调整，须另行现场指令，之后才复用 `--bus2-arm-range-only` 做必要复核。不自动重读或串联动作；已消费 GO 不重用，本次顺序采样不能替代混合启用时的新鲜锚点。
 2. 条件满足后，只验六臂固定原位＋ID9 `+500/20秒`、另两轮零速，再执行既有零速、断扭和全总线停止检查；原时效、失败粘性及停止规则保持。
 3. 维护实机通过后，按实际授权接默认 S0 入口并独立验收；随后沿 SoftRT 与 `ImageHeader + blob` 接单条相机流，验证采集、发布、退出、不阻塞执行器及连续采集。
 
@@ -38,7 +38,7 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 ## 按需证据与源码
 
 - 当前映射：[配置软件验证](../.verify/wheel_config_mapping_2026-11-09/summary.json)、[ID9左轮实机](../.verify/right_wheel_mapping_2026-11-09/summary.json)、[ID7右轮实机](../.verify/wheel_id7_mapping_2026-11-09/summary.json)。
-- 右臂范围：[只读软件及启动准备](../.verify/arm_range_readonly_2026-11-09/summary.json)；等待当次现场确认，尚无新位置读数。
+- 右臂范围：[软件及准备](../.verify/arm_range_readonly_2026-11-09/summary.json)、[本次18项原帧与越界结果](../.verify/arm_range_readonly_2026-11-09/hardware/summary.json)。
 - 混合与停止：[维护软件准备](../.verify/s0_bus2_raw_maintenance_2026-10-23_r1/summary.json)、[工作线程离线验证](../.verify/s0_hal_worker_2026-11-03/summary.json)、[历史混合失败](../.verify/front_wheel_name_2026-11-05/hardware/mixed-summary.json)、[历史反馈与目视矛盾](../.verify/front_wheel_name_2026-11-05/hardware/summary.json)。后续结果不回写旧失败或未知归因。
 - 基础修复：[非法位置、早期失败回执与观测错误处理](../.verify/foundation_errors_2026-11-06/summary.json)。
 - 执行器：[接口](../crates/robot-core/src/adapter.rs)、[分组](../crates/robot-s0/src/grouped_position.rs)、[混合驱动](../crates/robot-adapters/feetech/src/mixed_bus.rs)、[工厂](../crates/robot-adapters/feetech/src/factory.rs)、[命令解析](../crates/robot-s0/src/ipc_thread.rs)、[daemon](../crates/robot-s0/src/bin/s0_daemon.rs)。

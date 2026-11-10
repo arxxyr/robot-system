@@ -1,0 +1,1 @@
+{"motor_id":1,"operation":"sync_read","raw_unsigned":0,"register":"Torque_Enable","requested_register_address":40,"rx":[255,255,1,3,0,0,251],"serial_device":"/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00","tx":[255,255,254,5,130,40,1,1,80],"width":1}
