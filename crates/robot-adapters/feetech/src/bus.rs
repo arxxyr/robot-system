@@ -804,7 +804,7 @@ fn encode_value(reg_name: &'static str, value: i32) -> Result<u32, FeetechError>
     Ok(value as u32)
 }
 
-fn decode_value(reg_name: &'static str, raw: u32) -> i32 {
+pub(crate) fn decode_value(reg_name: &'static str, raw: u32) -> i32 {
     sign_bit_for(reg_name).map_or(raw as i32, |bit| decode_sign_magnitude(raw, bit))
 }
 

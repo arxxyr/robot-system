@@ -637,8 +637,8 @@ fn drain_serial_diag(
     let Some(diag) = diag else { return };
     for _ in 0..256 {
         let Some(event) = diag.pop() else { break };
-        if event.site == 31 && matches!(event.kind, 0 | 1) {
-            // Feetech 同连接零速原字观测；不是故障或安全状态提交。
+        if matches!(event.site, 31 | 32) && matches!(event.kind, 0 | 1) {
+            // Feetech 同连接零速/周期状态原字；不是故障或安全状态提交。
             tracing::debug!(
                 target: "s0_wheel_observation",
                 site = event.site,
@@ -1066,6 +1066,7 @@ mod tests {
             );
             let before = ctrl.authority().snapshot();
             let mut events = raw_group(100).to_vec();
+            events.extend(raw_group(100).map(|event| DiagEvent { site: 32, ..event }));
             events.extend([
                 DiagEvent {
                     stamp_ns: 101,
@@ -1094,25 +1095,12 @@ mod tests {
             });
             let captured = captured.lock().unwrap();
             assert_eq!(captured.len(), events.len());
-            let levels = [
-                Level::DEBUG,
-                Level::DEBUG,
-                Level::DEBUG,
-                Level::DEBUG,
-                Level::WARN,
-                Level::WARN,
-            ];
-            let targets = [
-                "s0_wheel_observation",
-                "s0_wheel_observation",
-                "s0_wheel_observation",
-                "s0_wheel_observation",
-                "robot_s0::pub_thread",
-                "robot_s0::pub_thread",
-            ];
-            for (((actual, expected), level), target) in
-                captured.iter().zip(&events).zip(levels).zip(targets)
-            {
+            for (index, (actual, expected)) in captured.iter().zip(&events).enumerate() {
+                let (level, target) = if index < 8 {
+                    (Level::DEBUG, "s0_wheel_observation")
+                } else {
+                    (Level::WARN, "robot_s0::pub_thread")
+                };
                 assert_eq!(actual.target, target);
                 assert_eq!(actual.level, level);
                 assert_eq!(

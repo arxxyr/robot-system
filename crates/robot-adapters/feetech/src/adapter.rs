@@ -186,6 +186,8 @@ pub struct FeetechAdapter<T: SerialTransport> {
     mixed_zero_target_confirmed: bool,
     /// 观测尝试的独立限频，不随重复零目标或非零目标重置。
     mixed_zero_observation_last_ns: Option<u64>,
+    /// 周期状态中的原字观测限频，不增加串口事务。
+    mixed_motion_observation_last_ns: Option<u64>,
     command_budget_ns: u64,
     info: AdapterInfo,
     bus: FeetechBus<T>,
@@ -323,6 +325,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             mixed_arm_anchor: None,
             mixed_zero_target_confirmed: false,
             mixed_zero_observation_last_ns: None,
+            mixed_motion_observation_last_ns: None,
             command_budget_ns: u64::try_from(config.call_deadline.as_nanos()).unwrap_or(u64::MAX),
             info: AdapterInfo {
                 name: config.adapter_name,
@@ -663,6 +666,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     fn connect(&mut self) -> Result<(), RobotError> {
         self.mixed_zero_target_confirmed = false;
         self.mixed_zero_observation_last_ns = None;
+        self.mixed_motion_observation_last_ns = None;
         let class = self
             .preempt
             .as_ref()
@@ -681,6 +685,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     fn disconnect(&mut self) -> Result<(), RobotError> {
         self.mixed_zero_target_confirmed = false;
         self.mixed_zero_observation_last_ns = None;
+        self.mixed_motion_observation_last_ns = None;
         self.bus.set_op_class(BusOpClass::NormalEffectful);
         self.connected = false;
         self.bus.disconnect();
@@ -690,22 +695,25 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
     fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
         self.require_connected().map_err(RobotError::from)?;
         self.bus.set_op_class(BusOpClass::PeriodicRead);
-        // Step 7 task 27c follow-up：走 by-id API + 复用预分配 raw 缓冲，
-        // 完全跳过 HashMap String compare（火焰图 hot path 优化）。
-        // pos_raw / vel_raw 在 new() 已 vec![0; joint_count]，size 与 joint_count
-        // 对齐，sync_read_by_id_into 写满 joint_ids.len() 个槽位即可。
-        self.bus
-            .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)
-            .map_err(|e| {
-                self.record_error(4, &e);
-                RobotError::from(e)
+        if self.raw_mixed() && self.diag.is_some() {
+            self.read_raw_mixed_state().map_err(|error| {
+                self.record_error(4, &error);
+                RobotError::from(error)
             })?;
-        self.bus
-            .sync_read_by_id_into("Present_Velocity", &self.joint_ids, &mut self.vel_raw)
-            .map_err(|e| {
-                self.record_error(4, &e);
-                RobotError::from(e)
-            })?;
+        } else {
+            self.bus
+                .sync_read_by_id_into("Present_Position", &self.joint_ids, &mut self.pos_raw)
+                .map_err(|e| {
+                    self.record_error(4, &e);
+                    RobotError::from(e)
+                })?;
+            self.bus
+                .sync_read_by_id_into("Present_Velocity", &self.joint_ids, &mut self.vel_raw)
+                .map_err(|e| {
+                    self.record_error(4, &e);
+                    RobotError::from(e)
+                })?;
+        }
 
         let n = self.joint_ids.len();
         for i in 0..n {

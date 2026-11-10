@@ -355,6 +355,8 @@ sd-watchdog-smoke = [
 #   `client::dual_arm_workflow`，端点适配为本 bin 内纯 I/O 第二份（PX-12
 #   同款并存先例）。
 supervised-demo = ["dep:tokio", "dep:tonic", "dep:robot-rpc", "robot-rpc/client"]
+# 同步附着默认 S0，仅使用现有 IPC 和 Feetech 纯换算，不打开串口。
+supervised-s0 = ["supervised-demo", "dep:robot-s0", "dep:serde_json", "dep:robot-adapter-feetech"]
 real-hw = ["robot-adapter-feetech?/real-hw"]
 
 [lints]

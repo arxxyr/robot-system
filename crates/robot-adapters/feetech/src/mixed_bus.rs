@@ -27,6 +27,7 @@ const JOINTS: [&str; 9] = [
 ];
 
 const ZERO_OBSERVATION_INTERVAL_NS: u64 = 20_000_000;
+const MOTION_OBSERVATION_INTERVAL_NS: u64 = 50_000_000;
 
 #[derive(Clone, Copy)]
 enum Profiles {
@@ -252,6 +253,69 @@ impl<T: SerialTransport> FeetechAdapter<T> {
     pub(super) fn raw_mixed(&self) -> bool {
         self.mixed_bus2
             .is_some_and(|layout| matches!(layout.profiles, Profiles::ObservedRaw(_)))
+    }
+
+    /// 复用周期状态的两次请求，保留无符号原字后再按原规则解码状态。
+    pub(super) fn read_raw_mixed_state(&mut self) -> Result<(), crate::FeetechError> {
+        let started = self.clock.now().0;
+        let mut tx = [0_u8; 17];
+        let mut rx = [0_u8; 72];
+        let mut positions = [0_u32; 9];
+        let mut velocities = [0_u32; 9];
+        for (register, words) in [
+            ("Present_Position", &mut positions),
+            ("Present_Velocity", &mut velocities),
+        ] {
+            self.bus.sync_read_by_id_raw_into(
+                register,
+                &self.joint_ids,
+                words,
+                &mut tx,
+                &mut rx,
+            )?;
+        }
+        if let Some(reason) = self
+            .preempt
+            .as_ref()
+            .and_then(|probe| probe.should_abort(BusOpClass::PeriodicRead))
+        {
+            return Err(crate::FeetechError::Aborted(reason));
+        }
+        for index in 0..self.joint_ids.len() {
+            self.pos_raw[index] = crate::bus::decode_value("Present_Position", positions[index]);
+            self.vel_raw[index] = crate::bus::decode_value("Present_Velocity", velocities[index]);
+        }
+        if self.mixed_motion_observation_last_ns.is_some_and(|last| {
+            started
+                .checked_sub(last)
+                .is_none_or(|elapsed| elapsed < MOTION_OBSERVATION_INTERVAL_NS)
+        }) {
+            return Ok(());
+        }
+        self.mixed_motion_observation_last_ns = Some(started);
+        let finished = self.clock.now().0;
+        if let (Some(diag), Some(layout)) = (&self.diag, self.mixed_bus2) {
+            diag.record(DiagEvent {
+                stamp_ns: started,
+                site: 32,
+                kind: 0,
+                a: 3,
+                b: 0,
+                seq_lo: 0,
+            });
+            for (id, slot) in layout.wheel_ids.into_iter().zip(layout.wheel_slots) {
+                // 两个寄存器均为两字节；保留负零等位型，不从有符号状态反推。
+                diag.record(DiagEvent {
+                    stamp_ns: finished,
+                    site: 32,
+                    kind: 1,
+                    a: id,
+                    b: 0,
+                    seq_lo: positions[slot] | (velocities[slot] << 16),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// 只记录设备原字，不把零目标、记录成功或丢记录当作停止/权限事实。
@@ -888,6 +952,86 @@ mod tests {
     }
 
     #[test]
+    fn motion_observation_reuses_two_reads_and_preserves_words_with_configured_slots() {
+        let ids = [9, 3, 6, 1, 8, 4, 2, 7, 5];
+        let (mut f, connected) = Fixture::with_mapping(ids, 0, 12, false, true, [8, 9, 7]);
+        connected.unwrap();
+        let diag = attach_diagnostics(&mut f);
+        let positions = [123_u16, 2047, 2047, 2047, 4095, 2047, 2047, 567, 2047];
+        let velocities = [0x8032_u16, 0, 0, 0, 0x8000, 0, 0, 500, 0];
+        for time in [
+            0,
+            MOTION_OBSERVATION_INTERVAL_NS - 1,
+            MOTION_OBSERVATION_INTERVAL_NS,
+        ] {
+            f.clock.set(MonoRawNs(time));
+            let _ = f.handle.drain_tx();
+            for row in [positions, velocities] {
+                for (id, word) in ids.into_iter().zip(row) {
+                    f.handle.push_rx(&read_status(id, &word.to_le_bytes()));
+                }
+            }
+            let mut state = JointStateBuf::default();
+            f.adapter.read_state(&mut state).unwrap();
+            let bytes = f.handle.drain_tx();
+            let requests = frames(&bytes);
+            assert_eq!(requests.len(), 2);
+            for (request, address) in requests.into_iter().zip([56, 58]) {
+                assert_eq!((request[4], request[5], request[6]), (0x82, address, 2));
+                assert_eq!(&request[7..16], ids);
+            }
+            assert!(state.velocities[..9].iter().all(|v| v.is_nan()));
+            assert_eq!((f.adapter.vel_raw[0], f.adapter.vel_raw[4]), (-50, 0));
+        }
+        let events = diag.0.lock().unwrap();
+        assert_eq!(events.len(), 8);
+        for (index, group) in events.as_chunks::<4>().0.iter().enumerate() {
+            assert_eq!((group[0].site, group[0].kind, group[0].a), (32, 0, 3));
+            for (event, slot) in group[1..].iter().zip([4, 0, 7]) {
+                assert_eq!(
+                    (event.site, event.kind, event.a, event.b),
+                    (32, 1, ids[slot], 0)
+                );
+                assert_eq!(
+                    event.seq_lo,
+                    u32::from(positions[slot]) | (u32::from(velocities[slot]) << 16)
+                );
+                assert_eq!(
+                    event.stamp_ns,
+                    index as u64 * MOTION_OBSERVATION_INTERVAL_NS
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn incomplete_or_preempted_state_has_no_motion_observation() {
+        for abort_after_reads in [false, true] {
+            let (mut f, connected) =
+                Fixture::with_profile([1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 12, false, true);
+            connected.unwrap();
+            let diag = attach_diagnostics(&mut f);
+            if abort_after_reads {
+                f.queue_state();
+                let probe = Arc::new(ObservationProbe {
+                    inner: Probe::new(),
+                    checkpoints: AtomicUsize::new(0),
+                    abort_at: 4,
+                });
+                f.adapter.preempt = Some(probe.clone());
+                f.adapter.bus.set_services(Some(probe), None);
+            } else {
+                for id in f.ids {
+                    f.handle.push_rx(&read_status(id, &[0xff, 7]));
+                }
+            }
+            assert!(f.adapter.read_state(&mut JointStateBuf::default()).is_err());
+            assert!(diag.0.lock().unwrap().iter().all(|e| e.site != 32));
+            assert_eq!(f.adapter.mixed_motion_observation_last_ns, None);
+        }
+    }
+
+    #[test]
     fn raw_zero_observation_reads_configured_ids_in_order_and_preserves_unsigned_words() {
         for wheel_ids in [
             [7, 8, 9],
@@ -906,7 +1050,7 @@ mod tests {
             let mut state = JointStateBuf::default();
             f.adapter.read_state(&mut state).unwrap();
             assert_eq!(frames(&f.handle.drain_tx()).len(), 2);
-            assert!(diagnostics.0.lock().unwrap().is_empty());
+            assert!(diagnostics.0.lock().unwrap().iter().all(|e| e.site != 31));
 
             f.write_zero();
             let _ = f.handle.drain_tx();
@@ -929,7 +1073,14 @@ mod tests {
                 assert_eq!((request[4], request[5], request[6]), (0x82, address, width));
                 assert_eq!(&request[7..10], wheel_ids);
             }
-            let events = diagnostics.0.lock().unwrap();
+            let events: Vec<_> = diagnostics
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .copied()
+                .filter(|e| e.site == 31)
+                .collect();
             assert_eq!(events.len(), 4);
             assert_eq!(
                 events[0],
@@ -972,7 +1123,16 @@ mod tests {
         f.queue_observation([[1; 3], [0; 3], [0; 3]]);
         f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
         assert_eq!(f.adapter.mixed_zero_observation_last_ns, Some(0));
-        assert_eq!(diagnostics.0.lock().unwrap().len(), 4);
+        assert_eq!(
+            diagnostics
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.site == 31)
+                .count(),
+            4
+        );
         for elapsed in [1, ZERO_OBSERVATION_INTERVAL_NS - 1] {
             f.clock.set(MonoRawNs(elapsed));
             let mut nonzero = f.command();
@@ -986,7 +1146,16 @@ mod tests {
             f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
             assert_eq!(frames(&f.handle.drain_tx()).len(), 2);
             assert_eq!(f.adapter.mixed_zero_observation_last_ns, Some(0));
-            assert_eq!(diagnostics.0.lock().unwrap().len(), 4);
+            assert_eq!(
+                diagnostics
+                    .0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e.site == 31)
+                    .count(),
+                4
+            );
         }
         f.clock.set(MonoRawNs(ZERO_OBSERVATION_INTERVAL_NS));
         f.write_zero();
@@ -995,7 +1164,16 @@ mod tests {
         f.queue_observation([[1; 3], [0; 3], [0; 3]]);
         f.adapter.read_state(&mut JointStateBuf::default()).unwrap();
         assert_eq!(frames(&f.handle.drain_tx()).len(), 5);
-        assert_eq!(diagnostics.0.lock().unwrap().len(), 8);
+        assert_eq!(
+            diagnostics
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.site == 31)
+                .count(),
+            8
+        );
     }
 
     #[test]
