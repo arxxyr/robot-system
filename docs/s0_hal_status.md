@@ -2,7 +2,7 @@
 
 更新：2026-11-10（America/Los_Angeles；本次实机验收对应 UTC 2026-11-11）。本页集中记录当前边界与下一步；架构以 [冻结设计](00_design.md) 为准，过往轮次从 [历史索引](handoffs/README.md) 按需查阅。
 
-执行器默认接线和多路独立 RGB 的软件实现已完成；默认S0维护入口已分别通过右臂六关节保持＋前轮ID8 raw `+500/20秒`，以及左臂六关节＋头部两关节原位保持20秒的实机验证，现场确认与停止检查均通过。三路真实相机已在模拟执行器的默认S0中完成共同10秒采集、发布和正常退出。三路有效画面及双腕左右映射已确认，真实执行器与相机组合仍待完成，不能称全身HAL已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
+执行器默认接线和多路独立 RGB 的软件实现已完成；默认S0维护入口已分别通过右臂六关节保持＋前轮ID8 raw `+500/20秒`，以及左臂六关节＋头部两关节原位保持20秒的实机验证，现场确认与停止检查均通过。三路真实相机已在模拟执行器的默认S0中完成共同10秒采集、发布和正常退出。三路有效画面及双腕左右映射已确认；左臂、头部与头/左腕两路RGB组合实机已通过，右臂/底盘与右腕RGB组合仍待完成，不能称全身HAL已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
 
 ## 完成边界
 
@@ -13,9 +13,9 @@
 | 混合接线 | TOML 显式选择原 raw factory；混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 验证，默认S0维护入口的右臂保持＋前轮非零raw实机已通过 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；右混合试验不覆盖左右总线同时使能或整车联动 |
 | 状态反馈 | `JointState`/`Heartbeat` 保留；混合实例未标定速度、未测力矩为 NaN，不把 raw/占位0当SI量 | 内部寄存器原值仍用于诊断和停止；NaN 不作为静止证据 |
 | 相机契约 | `[[sensor]]` 按 `hardware_id` 归属；每路 `SensorAdapter`、BGR 帧槽和图像 topic 独立，复用原 SoftRT/`ImageHeader + blob` | 正式配置已含头部及双腕RGB：左实例采头/左腕，右实例采右腕；不含深度、IMU或多相机同步 |
-| 相机生命周期 | 全部配置相机取得合法新帧才就绪；一路失流只回收该路；Pub轮转且每轮最多一张，状态和心跳优先；三路真实RGB＋模拟执行器的采集、发布和退出已验证 | TERM宽限按两帧周期加100ms计算；顺序回收可能短暂延迟其他相机；保留1秒帧龄/失流检查，未支持低于1Hz；时间戳为读取完成时刻；真实执行器组合未验 |
+| 相机生命周期 | 全部配置相机取得合法新帧才就绪；一路失流只回收该路；Pub轮转且每轮最多一张，状态和心跳优先；三路真实RGB＋模拟执行器的采集、发布和退出已验证 | TERM宽限按两帧周期加100ms计算；顺序回收可能短暂延迟其他相机；保留1秒帧龄/失流检查，未支持低于1Hz；时间戳为读取完成时刻；左侧真实执行器组合已验，右侧组合待验 |
 
-组合验证沿现有维护入口和 `supervised_demo` 增加显式 `--with-cameras`：左侧保持20秒并采头/左腕，右侧混合20秒并采右腕；检查同一动作窗口内图像推进及1秒帧龄，确认断扭后保存最后一帧原BGR并核对helper退出。Orin已通过72项Rust、226项Python（另4项跳过）及7项不同PTY用例，覆盖正常组合与失流收尾；fmt/Clippy通过。修正了helper动态调度状态误判、Orin缺少`task/children`接口，以及收齐三组后的额外零速样本误报；原500ms和停止判据不变。失流夹具的GV500残留仍判STOP51 FAIL并保留人工处置，不冒充停止通过。[软件与实机准备证据](../.verify/s0_camera_combined_2026-11-10/summary.json)保留首次失败；组合实机尚未执行。
+组合验证沿现有维护入口和 `supervised_demo` 增加显式 `--with-cameras`：左侧保持20秒并采头/左腕，右侧混合20秒并采右腕；检查同一动作窗口内图像推进及1秒帧龄，确认断扭后保存最后一帧原BGR并核对helper退出。Orin已通过72项Rust、226项Python（另4项跳过）及7项不同PTY用例，覆盖正常组合与失流收尾；fmt/Clippy通过。修正了helper动态调度状态误判、Orin缺少`task/children`接口，以及收齐三组后的额外零速样本误报；原500ms和停止判据不变。失流夹具的GV500残留仍判STOP51 FAIL并保留人工处置，不冒充停止通过。[软件与实机准备证据](../.verify/s0_camera_combined_2026-11-10/summary.json)保留首次失败；左侧组合实机已通过，右侧组合仍待执行。
 
 ## 轮位与阻塞
 
@@ -49,11 +49,11 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 
 2026-11-10（America/Los_Angeles）首次通过既有默认S0维护入口完成右臂六关节保持＋前轮ID8 raw `+500/20秒`：固定400次IPC发送、79组运动反馈，sender的位置累计量为9820 raw。TE1零速阶段前轮PV原字为 `300→0→0`；左轮ID9中间组的 `+50` 原字保留，末组为0。随后Disable/TorqueOff、EStop持久化、daemon退出0，外层STOP51、位置和身份检查均为PASS，`manual=false`。用户亲自确认“全部看清，动作和停止均符合”。[本次默认S0实机摘要](../.verify/s0_default_mixed_hardware_2026-11-10/summary.json)将现场确认与软件结果分开记录；原run/sender文件不回写，sender仍为 `SOFTWARE_PATH_PASS`。
 
-清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。后续未验范围为真实执行器与相机组合；任何后续实机动作均须使用对应计划、GO及本轮现场条件。
+清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。后续未验范围为右臂/底盘与右腕相机组合；任何后续实机动作均须使用对应计划、GO及本轮现场条件。
 
-左臂六关节＋头部两关节已通过默认S0原位保持20秒实机验证，复用 `supervised_demo` 和维护脚本的 `--s0-position-hold`。400组八关节反馈相对冻结锚点的最大偏差均为0raw，外层前后位置不变；Disable/TorqueOff、EStop持久化、daemon退出0、原STOP51、位置及身份检查均PASS，`manual=false`。现场确认“全程看清，保持正常，结束后整机静止”。底盘ID9的停止复核仍保留PV原字 `[0,0,50,0,0x8032]`，PP为2306–2307、跨度1，按既有合同通过，不将±50原值抹成0。原run/sender保留 `NOT_OBSERVED`，现场确认另存；[本轮摘要与原件](../.verify/s0_left_position_2026-11-10/summary.json)区分软件、反馈与现场证据。
+左臂六关节＋头部两关节与头部/左腕两路真实RGB，已通过默认S0共同20秒实机验证，复用原 `--s0-position-hold --with-cameras`。400组八关节反馈相对冻结锚点最大偏差均为0raw；头部299帧、左腕101帧，最大帧龄23.91ms。两张640×480原BGR在断扭后保存，预览内容已核对。Disable/TorqueOff、EStop持久化、daemon及两路helper退出、原STOP51、位置和122项身份检查均PASS，`manual=false`。现场确认“全程看清，保持正常，结束后整机静止”；原run/sender的`NOT_OBSERVED`保留，回执单独记录。底盘ID9初始复核PV仍有`[0x8032,0x8032,0,0,50]`，末尾为`[0,0,50,0,50]`，PP均2306–2307，按原合同通过，不把原字改成0。[本次组合实机证据](../.verify/s0_camera_combined_2026-11-10/left-hardware-summary.json)与[此前无相机保持证据](../.verify/s0_left_position_2026-11-10/summary.json)分别保留。
 
-本轮沿同份TOML校准及逐电机容差拒绝越界，不clamp目标，保持原±4raw检查。右双锁全程由维护入口持有，左双锁交回后才读整机停止。候选仅排除sensor段，正式配置、参数及校准未改；不覆盖动态往返或相机组合。此前Orin 66项Rust、207项Python、4项daemon/PTY测试及fmt/Clippy通过，另4项Python按条件跳过，首次软件准备失败原件保留。收尾核对374个所属PID均不存在，2个串口与4个锁的12次普通/sudo查询均无占用，tmux已结束。本轮GO已消费，Orin `/home/loosqk/robot-checks/s0-left-position-20261111/hardware/launch.sh` 仅留档，禁止重放。
+本次启用至断扭20.106秒，原校准容差、±4raw位置门及停止预算未变。清场实查400个所属PID均不存在；2个串口、4个锁及2个相机设备的16次普通/sudo查询均无占用，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-camera-combined-20261111/hardware-left-r2/launch.sh` 只留档，禁止重放。右侧组合须按本次改变后的保护文件元数据重新绑定计划，并取得对应现场确认。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
