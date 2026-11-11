@@ -2,15 +2,15 @@
 
 更新：2026-11-10（America/Los_Angeles；本次实机验收对应 UTC 2026-11-11）。本页集中记录当前边界与下一步；架构以 [冻结设计](00_design.md) 为准，过往轮次从 [历史索引](handoffs/README.md) 按需查阅。
 
-执行器默认混合接线和多路独立 RGB 的软件实现已完成；右总线已通过默认S0维护入口完成右臂六关节原位保持＋前轮ID8 raw `+500/20秒`，用户确认动作和停止均符合。三路真实相机已在模拟执行器的默认S0中完成共同10秒采集、发布和正常退出。左臂/头部的默认S0实机验收、双腕有效画面及左右映射、真实执行器与相机组合仍待完成，不能称全身HAL已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
+执行器默认接线和多路独立 RGB 的软件实现已完成；默认S0维护入口已分别通过右臂六关节保持＋前轮ID8 raw `+500/20秒`，以及左臂六关节＋头部两关节原位保持20秒的实机验证，现场确认与停止检查均通过。三路真实相机已在模拟执行器的默认S0中完成共同10秒采集、发布和正常退出。双腕有效画面及左右映射、真实执行器与相机组合仍待完成，不能称全身HAL已收尾。**D15 `OPEN/DEFERRED`，`deployable=false`。**
 
 ## 完成边界
 
 | 部分 | 已有能力 | 未完成或限制 |
 |---|---|---|
 | 执行器契约 | 既有 `ManipulatorAdapter`/`SerialRtAdapter` 的连接、命令、状态、启停、限位和停止读回 | 底盘沿同总线的显式 raw 速度槽；尚无标定后的 SI 速度合同，不另建 `BaseAdapter` 实现 |
-| 总线内分组 | 左臂1–6＋头7/8 Position 分组；右臂1–6位置＋三轮 raw 速度 | 17电机由两个 daemon 各管一条总线；各自保留唯一串口所有者、命令流、控制权和停止域 |
-| 混合接线 | TOML 显式选择原 raw factory；混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 验证，默认S0维护入口的右臂保持＋前轮非零raw实机已通过 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；本次不覆盖左总线或整车联动 |
+| 总线内分组 | 左臂1–6＋头7/8 Position 分组，默认S0八关节保持实机通过；右臂1–6位置＋三轮 raw 速度 | 17电机由两个 daemon 各管一条总线；各自保留唯一串口所有者、命令流、控制权和停止域 |
+| 混合接线 | TOML 显式选择原 raw factory；混合 wire 经 IPC→命令槽→真实 SerialRT→Feetech 验证，默认S0维护入口的右臂保持＋前轮非零raw实机已通过 | 旧 Position wire 不携带轮 raw；S1 的 Idle/Scripted 当前仅发送轮 raw0；右混合试验不覆盖左右总线同时使能或整车联动 |
 | 状态反馈 | `JointState`/`Heartbeat` 保留；混合实例未标定速度、未测力矩为 NaN，不把 raw/占位0当SI量 | 内部寄存器原值仍用于诊断和停止；NaN 不作为静止证据 |
 | 相机契约 | `[[sensor]]` 按 `hardware_id` 归属；每路 `SensorAdapter`、BGR 帧槽和图像 topic 独立，复用原 SoftRT/`ImageHeader + blob` | 正式配置仅有已核实头部；双腕设备对应待确认；不含深度、IMU或多相机同步 |
 | 相机生命周期 | 全部配置相机取得合法新帧才就绪；一路失流只回收该路；Pub轮转且每轮最多一张，状态和心跳优先；三路真实RGB＋模拟执行器的采集、发布和退出已验证 | TERM宽限按两帧周期加100ms计算；顺序回收可能短暂延迟其他相机；保留1秒帧龄/失流检查，未支持低于1Hz；时间戳为读取完成时刻；真实执行器组合未验 |
@@ -47,9 +47,11 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 
 2026-11-10（America/Los_Angeles）首次通过既有默认S0维护入口完成右臂六关节保持＋前轮ID8 raw `+500/20秒`：固定400次IPC发送、79组运动反馈，sender的位置累计量为9820 raw。TE1零速阶段前轮PV原字为 `300→0→0`；左轮ID9中间组的 `+50` 原字保留，末组为0。随后Disable/TorqueOff、EStop持久化、daemon退出0，外层STOP51、位置和身份检查均为PASS，`manual=false`。用户亲自确认“全部看清，动作和停止均符合”。[本次默认S0实机摘要](../.verify/s0_default_mixed_hardware_2026-11-10/summary.json)将现场确认与软件结果分开记录；原run/sender文件不回写，sender仍为 `SOFTWARE_PATH_PASS`。
 
-清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。后续未验范围为左臂/头部默认S0、双腕有效画面与左右映射，以及真实执行器与相机组合；任何后续实机动作均须使用对应计划、GO及本轮现场条件。
+清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。后续未验范围为双腕有效画面与左右映射，以及真实执行器与相机组合；任何后续实机动作均须使用对应计划、GO及本轮现场条件。
 
-左臂六关节＋头部两关节的默认S0原位保持20秒入口已完成软件准备，复用 `supervised_demo` 和维护脚本的 `--s0-position-hold`。按同份TOML校准及逐电机边界容差检查八槽反馈，越界直接拒绝，不clamp目标；400拍反馈保持原±4raw要求。只将左双锁交给默认S0，右双锁持续由维护入口持有，收尾仍为Disable、EStop、真实退出、锁归还及原STOP51。候选配置仅排除sensor段，hardware与robot内容和正式bus1配置相同，正式配置未改；本轮不验证相机或动态往返。Orin 66项Rust、207项Python及4项真实daemon/虚拟串口测试通过，另4项Python按条件跳过；fmt→根目录及发送器特性Clippy零警告。左完整保持和启用失败收尾、右原路径回归均覆盖，26项设备/占用预检及83项引用绑定复核通过。[准备证据](../.verify/s0_left_position_2026-11-10/summary.json)保留首次lint、测试夹具及隔离helper导入失败原件。实机尚未执行，未创建GO；Orin一次性入口为 `/home/loosqk/robot-checks/s0-left-position-20261111/hardware/launch.sh`，等待本轮现场确认。
+左臂六关节＋头部两关节已通过默认S0原位保持20秒实机验证，复用 `supervised_demo` 和维护脚本的 `--s0-position-hold`。400组八关节反馈相对冻结锚点的最大偏差均为0raw，外层前后位置不变；Disable/TorqueOff、EStop持久化、daemon退出0、原STOP51、位置及身份检查均PASS，`manual=false`。现场确认“全程看清，保持正常，结束后整机静止”。底盘ID9的停止复核仍保留PV原字 `[0,0,50,0,0x8032]`，PP为2306–2307、跨度1，按既有合同通过，不将±50原值抹成0。原run/sender保留 `NOT_OBSERVED`，现场确认另存；[本轮摘要与原件](../.verify/s0_left_position_2026-11-10/summary.json)区分软件、反馈与现场证据。
+
+本轮沿同份TOML校准及逐电机容差拒绝越界，不clamp目标，保持原±4raw检查。右双锁全程由维护入口持有，左双锁交回后才读整机停止。候选仅排除sensor段，正式配置、参数及校准未改；不覆盖动态往返或相机组合。此前Orin 66项Rust、207项Python、4项daemon/PTY测试及fmt/Clippy通过，另4项Python按条件跳过，首次软件准备失败原件保留。收尾核对374个所属PID均不存在，2个串口与4个锁的12次普通/sudo查询均无占用，tmux已结束。本轮GO已消费，Orin `/home/loosqk/robot-checks/s0-left-position-20261111/hardware/launch.sh` 仅留档，禁止重放。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 
