@@ -240,9 +240,10 @@ class S0UnitInstaller:
         services = self._services()
         targets = self._targets(services, rollback_record=rollback_record)
         if rollback_record is None:
+            unit_owner = self.unit_directory.stat()
             for name in UNIT_NAMES:
                 expected = {**document["candidate_files"]["systemd/" + name],
-                            "mode": 0o644, "uid": os.geteuid(), "gid": os.getegid()}
+                            "mode": 0o644, "uid": unit_owner.st_uid, "gid": unit_owner.st_gid}
                 require(not targets[name]["exists"] or same_content(targets[name], expected),
                         "新 unit 路径已被非候选文件占用：" + name)
         self._devices(document)

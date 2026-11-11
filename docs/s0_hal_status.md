@@ -4,9 +4,11 @@
 
 **通用机器人控制架构的 S0 阶段：首个 XLeRobot 后端已通过受监督 raw 最小闭环。** 默认S0维护入口分别完成：左臂六关节＋头部两关节保持20秒并采头/左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`并采右腕RGB。三路画面和双腕映射已确认，两侧动作观察、断扭、EStop持久化、原STOP51、位置/身份及清场检查均通过，`manual=false`。
 
-**D15 `OPEN/DEFERRED`，`deployable=false`；旧名冻结候选已安装；统一命名后的候选正在重新验证，正式启动验收待完成。** 已有实机验收为左右分别执行，不覆盖两总线同时联动、无人值守、深度/IMU或标定后的SI速度。
+**D15 `OPEN/DEFERRED`，`deployable=false`；统一命名后的冻结候选已安装，43项PLAN_ONLY预检通过，正式启动验收前须补齐新要求的实时调度与零分配。** 已有实机验收为左右分别执行，不覆盖两总线同时联动、无人值守、深度/IMU或标定后的SI速度。
 
-源码已统一为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`；绑定同批配置，保留`xlerobot_left/right`保护目录。上一批已备份并安装旧名三个unit，reload及只读复核通过；两侧服务未启动，旧handoff原active/exited状态和12个保护文件未变。新名安装将备份六个路径、写新三份并撤旧三份，不迁移旧完成态。回滚使用`/var/lib/robot/deploy-backup-s0-units-38f6e275`原件，不回滚保护状态。配置矩阵打包及安装脚本的软件结果见[准备记录](../.verify/s0_install_prepare_2026-11-11/summary.json)，本轮安装与启动结果见[正式服务验收记录](../.verify/s0_systemd_acceptance_2026-11-11/summary.json)。
+当前链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。候选从`6ae663d`构建，使用Rerun 0.43.0；软件验证、六路径备份、安装、reload和只读复核通过。三份旧unit已撤，新三份均为inactive/dead、PID0、disabled；12个保护文件未变，没有启动服务或访问UART。新预检不继承旧handoff完成态。
+
+本轮回滚使用`/var/lib/robot/deploy-backup-s0-rename-6ae663d`及本轮冻结安装器，不回滚保护状态。配置矩阵及安装准备见[准备记录](../.verify/s0_install_prepare_2026-11-11/summary.json)，实际安装与启动边界见[正式服务验收记录](../.verify/s0_systemd_acceptance_2026-11-11/summary.json)。
 
 ## 已有边界
 
@@ -17,6 +19,7 @@
 | 硬件适配器 | 沿既有`ManipulatorAdapter`/`SerialRtAdapter`封装Feetech协议；左总线臂1–6＋头7/8位置分组，右总线臂1–6位置＋三轮raw速度 |
 | RGB | `[[sensor]]`按`hardware_id`归属；左实例采头/左腕，右实例采右腕；独立`SensorAdapter`、BGR帧槽和topic，经SoftRT采集，状态/心跳优先；保留1秒帧龄/失流检查，尚不支持低于1Hz，时间戳为读取完成时刻 |
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
+| 调度与内存 | Orin已隔离CPU4/5；当前full-bus候选未绑核、未启用FIFO/mlock，服务禁止实时提权；驱动有部分预分配，但普通位置读写仍有逐次Vec分配，SerialRT主循环未覆盖分配守卫，不能称为严格实时或全路径零分配 |
 
 轮位唯一来源为[xlerobot-bus2.toml](../configs/xlerobot-bus2.toml)的同下标`joints`/`motor_ids`，当前**前8、左9、右7**，只支持既有ID7/8/9排列；校准数值按物理ID保留。改配置必须重建计划，旧GO失效，不在代码复制映射。
 
@@ -33,11 +36,12 @@
 
 - 左1偶发根因仍为`UNKNOWN`；左腕`I=1`、头部`P=32`仅为临时已测候选。
 - 右6单程开合仅限`GP1600/1397`、绝对增量≤256，GP写即动作起点；放宽至±5raw后尚未重做合回动作，不改速度、PID或硬件限位。
+- 旧arm-only模板的FIFO70、CPU4/5及RT资源限额未沿用到本轮full-bus候选；实时调度、锁页和SerialRT全通讯路径零分配仍需单独实现并验证，当前只验功能闭环。
 - 正式服务启动验收、D15硬件fail-safe及下列roadmap尚未完成；历史失败和未观察结果保留在原件，不被新容差或后续通过覆盖。
 
 ## Roadmap
 
-1. **S0结案验收**：按左、右顺序验证正式systemd启动、状态与图像输出、退出后的停止和资源释放。启动前通知并确认当轮现场条件；保持`auto_enable=false`和EStop锁存，不启用关节或轮子；启动仍会进行UART停止收敛写入。
+1. **S0结案验收**：先按新要求补齐TOML可配置绑核/FIFO、严格锁页及SerialRT周期零动态分配，完成软件验证后重新冻结候选；再按左、右顺序验证正式systemd启动、实际线程属性、状态与图像输出、退出后的停止和资源释放。启动前通知并确认当轮现场条件；保持`auto_enable=false`和EStop锁存，不启用关节或轮子；启动仍会进行UART停止收敛写入。
 2. **结案发布**：上述验收通过后，将根Cargo版本和锁文件中自有包版本从`0.1.2`统一为`0.0.1`；结案提交采用`v0.0.1+<7位提交SHA>`标签发布。配置矩阵打包纳入该版本；当前不提前改版或打tag，D15继续延期。
 3. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 4. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。

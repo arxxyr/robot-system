@@ -356,6 +356,38 @@ class UnitInstallerTests(unittest.TestCase):
         self.assertEqual(before, {path: reference(Path(path)) for path in before})
         self.assert_no_reload()
 
+    def test_check_installed_units_accepts_caller_with_different_uid_and_gid(self):
+        self.subject.backup(self.fixture.backup_dir)
+        self.subject.install(self.fixture.backup_dir)
+        self.fixture.commands.calls.clear()
+        before = {str(path): reference(path) for path in self.fixture.root.rglob("*") if path.is_file()}
+        owner = self.fixture.unit_directory.stat()
+        with patch.object(installer.os, "geteuid", return_value=owner.st_uid + 1), \
+                patch.object(installer.os, "getegid", return_value=owner.st_gid + 1):
+            result = self.subject.check()
+        self.assertEqual(result["result"], "CHECK_PASS")
+        self.assertEqual(before, {path: reference(Path(path)) for path in before})
+        self.assert_no_reload()
+
+    def test_check_installed_units_rejects_wrong_uid_or_gid(self):
+        self.subject.backup(self.fixture.backup_dir)
+        self.subject.install(self.fixture.backup_dir)
+        self.fixture.commands.calls.clear()
+        target = self.fixture.unit_directory / UNIT_NAMES[0]
+        real_identity = installer.installed_file_identity
+        for field in ("uid", "gid"):
+            with self.subTest(field=field):
+                def wrong_owner(path):
+                    row = real_identity(path)
+                    if Path(path) == target:
+                        row[field] += 1
+                    return row
+
+                with patch.object(installer, "installed_file_identity", side_effect=wrong_owner):
+                    with self.assertRaisesRegex(ValueError, "新 unit 路径已被非候选文件占用"):
+                        self.subject.check()
+        self.assert_no_reload()
+
     def test_backup_records_six_paths_and_copies_only_existing_targets(self):
         unrelated = self.fixture.unit_directory / "unrelated.service"
         unrelated.write_bytes(b"unrelated\n")
