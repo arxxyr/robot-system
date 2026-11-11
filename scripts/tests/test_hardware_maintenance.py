@@ -4317,9 +4317,10 @@ class S0MixedBridgeTests(unittest.TestCase):
             m.inspect_processes(executor,self.bindings,helper(identity,[{'pid':999}]),owned=[identity])
 
     def run_bridge(self,fault=None,*,pin_latches=False):
-        events=[];identities={};daemon_locks=[];contract=self.plan['s0_mixed_hold']
+        events=[];identities={};daemon_locks=[];key,active_side=m.s0_plan_entry(self.plan);contract=self.plan[key]
+        held_side='left' if active_side=='right' else 'right'
         pin_fds={};actual_open=os.open
-        latch_paths={self.bindings['protection']['right'][name]['path'] for name in ('estop_latch','estop_latch.bak')}
+        latch_paths={self.bindings['protection'][active_side][name]['path'] for name in ('estop_latch','estop_latch.bak')}
         def open_pin(path,flags,*args,**kwargs):
             fd=actual_open(path,flags,*args,**kwargs)
             if pin_latches and str(path) in latch_paths:
@@ -4354,39 +4355,39 @@ class S0MixedBridgeTests(unittest.TestCase):
                 for stream in daemon_locks:stream.close()
                 return 0
         def spawn(argv,**kwargs):
-            events.append(('spawn',));self.assertTrue(locks_present('left'));self.assertFalse(locks_present('right'))
+            events.append(('spawn',));self.assertTrue(locks_present(held_side));self.assertFalse(locks_present(active_side))
             process=Process(910001,argv)
             for name in ('rx_trust.lock','estop_latch.lock'):
-                path=Path(self.bindings['protection']['right'][name]['path'])
+                path=Path(self.bindings['protection'][active_side][name]['path'])
                 stream=path.open('r+b');daemon_locks.append(stream);m.fcntl.flock(stream,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
                 stream.seek(0);stream.truncate();stream.write(f'{process.pid}\n'.encode());stream.flush()
             for name in ('rx_trust_marker','rx_trust_marker.bak'):
-                Path(self.bindings['protection']['right'][name]['path']).write_bytes(b'1\n')
+                Path(self.bindings['protection'][active_side][name]['path']).write_bytes(b'1\n')
             kwargs['stdout'].write(b'No config\nboot_ready spawned_ns=1 first_exit_ns=2 ready_ns=3\n');kwargs['stdout'].flush()
             if fault=='daemon_bind':identities[process.pid]['argv']=['wrong']
             return process
         def command(argv,**kwargs):
             if kwargs.get('s0_control'):
                 operation=argv[2];events.append((operation,))
-                self.assertTrue(locks_present('left'))
-                self.assertFalse(locked(self.bindings['protection']['right']['rx_trust.lock']['path']))
-                if operation=='authorize':self.assertTrue(locked(self.bindings['protection']['right']['estop_latch.lock']['path']))
+                self.assertTrue(locks_present(held_side))
+                self.assertFalse(locked(self.bindings['protection'][active_side]['rx_trust.lock']['path']))
+                if operation=='authorize':self.assertTrue(locked(self.bindings['protection'][active_side]['estop_latch.lock']['path']))
                 if operation=='authorize' and pin_latches:
                     self.assertEqual(set(pin_fds),latch_paths)
                     for name in ('estop_latch','estop_latch.bak'):
-                        ref=self.bindings['protection']['right'][name];info=os.fstat(pin_fds[ref['path']])
+                        ref=self.bindings['protection'][active_side][name];info=os.fstat(pin_fds[ref['path']])
                         self.assertEqual((info.st_dev,info.st_ino,info.st_nlink),(ref['device'],ref['inode'],1))
                 for name in ('rx_trust_marker','rx_trust_marker.bak'):
-                    Path(self.bindings['protection']['right'][name]['path']).write_bytes(b'0\n' if operation=='authorize' else b'1\n')
+                    Path(self.bindings['protection'][active_side][name]['path']).write_bytes(b'0\n' if operation=='authorize' else b'1\n')
                 if operation=='authorize' and fault=='authorize':raise ValueError('授权已生效但回执失败')
                 return ''
-            self.assertTrue(kwargs.get('s0_sender'));events.append(('sender',));self.assertTrue(locks_present('left'))
-            self.assertTrue(locks_present('right'));executor.child=Process(910002,argv);executor.s0_sender_started=True
+            self.assertTrue(kwargs.get('s0_sender'));self.assertIn('--s0-position-hold' if active_side=='left' else '--s0-mixed-hold',argv);events.append(('sender',));self.assertTrue(locks_present(held_side))
+            self.assertTrue(locks_present(active_side));executor.child=Process(910002,argv);executor.s0_sender_started=True
             executor.s0_bind_process(executor.child,argv,'sender');kwargs['mixed_stop_check']()
             result=self.receipt()
             if fault=='sender':result.update(result='FAIL',error='未知收尾',manual_power_cut_required=True)
             for name in ('estop_latch','estop_latch.bak'):
-                ref=self.bindings['protection']['right'][name];path=Path(ref['path'])
+                ref=self.bindings['protection'][active_side][name];path=Path(ref['path'])
                 if pin_latches:
                     for value in (b'0\n',b'1\n'):
                         replacement=self.root/'replacement-latch';replacement.write_bytes(value);replacement.chmod(0o640)
@@ -4408,8 +4409,8 @@ class S0MixedBridgeTests(unittest.TestCase):
             process_snapshot=lambda *args,**kwargs:{'clean':not identities,'related':list(identities.values()),'unreadable':[]})
         def holder(*args,**kwargs):
             events.append(('holder',));self.assertFalse(identities)
-            self.assertTrue(locks_present('left'));self.assertTrue(locks_present('right'));return {}
-        def check_owned(*args):self.assertTrue(locks_present('right'))
+            self.assertTrue(locks_present(held_side));self.assertTrue(locks_present(active_side));return {}
+        def check_owned(*args):self.assertTrue(locks_present(active_side))
         with contextlib.ExitStack() as stack:
             locks={}
             for side in m.SERIALS:
@@ -4425,7 +4426,7 @@ class S0MixedBridgeTests(unittest.TestCase):
                         m.run_s0_mixed_hold(engine,{'expires_at_ns':self.expiry},helper,locks,report)
                     events.append(('primary_error',str(caught.exception)))
                 else:m.run_s0_mixed_hold(engine,{'expires_at_ns':self.expiry},helper,locks,report)
-            self.assertTrue(locks_present('left'))
+            self.assertTrue(locks_present(held_side))
             for fd in pin_fds.values():
                 with self.assertRaises(OSError):os.fstat(fd)
         for stream in daemon_locks:
@@ -4490,6 +4491,175 @@ class S0MixedBridgeTests(unittest.TestCase):
         executor,engine,report,events=self.run_bridge('latch')
         self.assertIsNone(executor.s0_daemon);self.assertTrue(engine.manual_cut);self.assertFalse(executor.s0_post_ready)
         self.assertIn(('wait',8.0),events)
+
+
+class S0PositionBridgeTests(unittest.TestCase):
+    run_bridge=S0MixedBridgeTests.run_bridge
+
+    def setUp(self):
+        S0MixedBridgeTests.setUp(self)
+        config=write_bus_fixture(self.root/'left-position.toml',side='left')
+        calibration=self.root/'calibration.json'
+        config.write_text('[robot]\nid="bridge_fixture"\nconfig_version="test"\n'+config.read_text()+
+            '\nid="left_arm_full_with_head"\nauto_enable=false\ncalibration_paths='+json.dumps([str(calibration)])+'\n')
+        m.configure_bus_mapping(BUS_FIXTURE_PATH,config)
+        self.bindings['s0_hardware_id']='left_arm_full_with_head'
+        self.bindings['refs'].append(self.reference(config))
+        with patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent):
+            self.plan=m.make_plan(self.bindings,self.output,'bridge',self.root,s0_position_hold=True)
+
+    def receipt(self):
+        contract=self.plan['s0_position_hold'];enabled=1_000_000_000;start=enabled+100_000_000;end=start+20_000_000_000
+        cycles=[];samples=[]
+        for index in range(400):
+            scheduled=start+index*50_000_000;source=min(scheduled+200_000_000,enabled+21_000_000_000)
+            if index==0:source=min(source,enabled+200_000_000)
+            cycles.append({'cycle':index,'scheduled_ns':scheduled,'publish_attempt_ns':scheduled,
+                'publish_return_ns':scheduled+1000,'local_deadline_ns':scheduled+50_000_000,
+                'source_deadline_ns':source})
+            samples.append({'cycle':index,'stamp_ns':scheduled+2000,'observed_ns':scheduled+3000,'raw':[1000]*8})
+        return {'schema':'SUPERVISED_S0_POSITION_HOLD_V1','result':'SOFTWARE_PATH_PASS',
+            'config':contract['config']['path'],'hardware_id':contract['hardware_id'],'motor_ids':contract['motor_ids'],
+            'layout_id':123,'go_expires_at_unix_ns':self.expiry,'cleanup_errors':[],'manual_power_cut_required':False,
+            'hold_position_verified':True,'disable_retired':True,'torque_off_confirmed':True,'final_estop_published':True,
+            'physical_motion':'NOT_OBSERVED','stop51':'NOT_RUN','full_hardware_acceptance':False,'deployable':False,
+            'anchor':{'raw':[1000]*8,'target':[0.0]*8,'stamp_ns':enabled},'enable_attempt_ns':enabled,
+            'enable_deadline_ns':enabled+21_000_000_000,'enable_transition_deadline_ns':enabled+300_000_000,
+            'enable_confirmed_ns':start,'hold_start_ns':start,'hold_end_ns':end,
+            'disable_attempt_ns':end,'torque_off_confirmed_ns':end+100_000_000,
+            'final_estop_attempt_ns':end+100_000_000,'final_estop_publish_return_ns':end+100_001_000,
+            'finished_ns':end+100_002_000,'cycles':cycles,'hold_samples':samples}
+
+    def test_plan_only_and_left_plan_exclude_all_other_actions_and_sensor(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不得启动')),contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(run_main(['--s0-position-hold']),0)
+        self.assertEqual(json.loads(out.getvalue())['scope'],m.S0_POSITION_SCOPE)
+        for kwargs in ({'s0_mixed_hold':True},{'bus2_mixed_raw_hold':True},{'right_wheel_pulse':True},
+                       {'bus2_arm_range_only':True},{'right_gripper_release':True},{'position_target_names':['head-1']}):
+            with self.subTest(kwargs=kwargs),patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.output,'bridge',self.root,s0_position_hold=True,**kwargs)
+        config=Path(m.LEFT_BUS_CONFIG['path']);original=config.read_text()
+        for text in (original+'\n[[sensor]]\nhardware_id="left_arm_full_with_head"\n',
+                     original.replace('auto_enable=false','auto_enable=true'),original+'feetech_bus2_mixed_raw=true\n'):
+            config.write_text(text)
+            with self.assertRaises(ValueError):m.s0_position_contract(self.bindings)
+        config.write_text(original)
+        self.assertTrue(all(row['decision']=='DEFERRED' for row in self.plan['base_targets']))
+
+    def test_real_left_config_and_calibration_are_bound_and_rechecked(self):
+        m.verify_s0_mixed_refs(self.plan)
+        config=Path(m.LEFT_BUS_CONFIG['path']);original=config.read_bytes()
+        self.bindings['refs']=[ref for ref in self.bindings['refs'] if ref['path']!=str(config)]
+        with self.assertRaisesRegex(ValueError,'实际配置'):m.s0_position_contract(self.bindings)
+        self.bindings['refs'].append(self.reference(config))
+        config.write_bytes(original+b'\n')
+        with self.assertRaises(ValueError):m.verify_s0_mixed_refs(self.plan)
+
+    def test_receipt_rejects_false_success_missing_samples_stale_feedback_and_deadline_changes(self):
+        result=self.receipt()
+        self.assertEqual(m.parse_s0_position_result(json.dumps(result),self.plan,self.expiry),result)
+        for key,value in (('schema','SUPERVISED_S0_MIXED_V1'),('hardware_id','right'),('motor_ids',list(range(8))),
+                          ('hold_position_verified',False),('torque_off_confirmed',False),('disable_retired',False),
+                          ('manual_power_cut_required',True),('full_hardware_acceptance',True),('deployable',True),
+                          ('enable_deadline_ns',result['enable_deadline_ns']+1),
+                          ('enable_transition_deadline_ns',result['enable_transition_deadline_ns']+1),
+                          ('enable_confirmed_ns',result['enable_transition_deadline_ns']+1),('hold_end_ns',result['hold_end_ns']-1),
+                          ('torque_off_confirmed_ns',result['disable_attempt_ns']+200_000_001),
+                          ('finished_ns',result['enable_attempt_ns']+21_000_000_001)):
+            bad=copy.deepcopy(result);bad[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):m.parse_s0_position_result(json.dumps(bad),self.plan,self.expiry)
+        for mutate in (lambda row:row['cycles'].pop(),lambda row:row['hold_samples'].pop(),
+                       lambda row:row['motor_ids'].__setitem__(0,True),
+                       lambda row:row['cycles'][3].update(cycle=True),
+                       lambda row:row['cycles'][3].update(source_deadline_ns=0),
+                       lambda row:row['hold_samples'][0].update(stamp_ns=row['anchor']['stamp_ns']),
+                       lambda row:row['hold_samples'][4].update(stamp_ns=row['hold_samples'][3]['stamp_ns']),
+                       lambda row:row['hold_samples'][8].update(stamp_ns=row['hold_samples'][8]['observed_ns']-200_000_000),
+                       lambda row:row['hold_samples'][1].update(observed_ns=row['hold_start_ns']+100_000_000),
+                       lambda row:row['hold_samples'][200]['raw'].__setitem__(7,1005),
+                       lambda row:row['anchor']['raw'].pop()):
+            bad=copy.deepcopy(result);mutate(bad)
+            with self.assertRaises(ValueError):m.parse_s0_position_result(json.dumps(bad),self.plan,self.expiry)
+        shortened=copy.deepcopy(result)
+        shortened['anchor']['stamp_ns']=shortened['hold_start_ns']-199_000_000
+        first_deadline=shortened['anchor']['stamp_ns']+200_000_000
+        shortened['cycles'][0].update(local_deadline_ns=first_deadline,source_deadline_ns=first_deadline)
+        self.assertEqual(m.parse_s0_position_result(json.dumps(shortened),self.plan,self.expiry),shortened)
+        shortened['hold_samples'][0]['observed_ns']=first_deadline
+        with self.assertRaisesRegex(ValueError,'逐拍反馈'):
+            m.parse_s0_position_result(json.dumps(shortened),self.plan,self.expiry)
+
+    def test_left_handoff_preserves_right_locks_and_returns_all_eight_position_rows(self):
+        executor,engine,report,events=self.run_bridge(pin_latches=True)
+        self.assertEqual(events[:3],[('authorize',),('spawn',),('sender',)])
+        self.assertLess(events.index(('wait',8.0)),events.index(('holder',)))
+        self.assertTrue(executor.s0_post_ready);self.assertFalse(engine.manual_cut)
+        self.assertEqual([(row['side'],row['motor'],row['kind']) for row in engine.rows],
+                         [('left',motor,'position_hold') for motor in range(1,9)])
+        self.assertTrue(all(row['anchor_source']=='sender_frozen_joint_state' for row in engine.rows))
+        report.update(go={'expires_at_ns':self.expiry},probes=engine.rows,s0_post_ready=True,
+                      stop_verification={'status':'PASS'},identity_verification={'status':'PASS'},
+                      position_verification={'status':'PASS'})
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        for mutate in (lambda row:row['probes'].pop(),lambda row:row['probes'][0].update(side='right'),
+                       lambda row:row['probes'][7].update(anchor_raw=1001),
+                       lambda row:row.update(s0_post_ready=False),
+                       lambda row:row.update(error='原始错误粘性'),
+                       lambda row:row['plan']['base_targets'][0].update(decision='RAW_DIAGNOSTIC')):
+            bad=copy.deepcopy(report);mutate(bad)
+            self.assertEqual(m.classify_run_result(bad),'FAIL')
+
+    def test_left_failure_reclaims_locks_preserves_failure_and_never_retries_sender(self):
+        for fault in ('authorize','daemon_bind','sender','sender_stop','latch','daemon_timeout'):
+            with self.subTest(fault=fault):
+                self.output=self.root/f'failure-{fault}';self.output.mkdir();self.plan['output']=str(self.output)
+                executor,engine,report,events=self.run_bridge(fault)
+                self.assertLessEqual(sum(event[0]=='sender' for event in events),1)
+                if fault=='authorize':
+                    self.assertEqual(events[:2],[('authorize',),('revoke',)])
+                    self.assertTrue(executor.s0_post_ready)
+                elif fault=='daemon_timeout':
+                    self.assertFalse(executor.s0_post_ready);self.assertIsNotNone(executor.s0_daemon)
+                elif fault=='latch':self.assertFalse(executor.s0_post_ready)
+                else:self.assertTrue(executor.s0_post_ready)
+                if fault!='authorize':self.assertTrue(engine.manual_cut)
+                # 下一次仅为独立软件fixture；恢复原保护绑定，不复用任何运行结果。
+                for side,files in self.bindings['protection'].items():
+                    for name,ref in list(files.items()):
+                        path=Path(ref['path']);path.write_bytes(b'1\n');files[name]=self.reference(path)
+                with patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent):
+                    self.plan=m.make_plan(self.bindings,self.output,'bridge',self.root,s0_position_hold=True)
+
+    def test_left_go_requires_fresh_matching_scope_and_has_no_wheel_action_requirements(self):
+        physical={side:{**dict.fromkeys(m.FACTS,True),'confirmed_at_ns':100} for side in m.SERIALS}
+        physical['left'].update(position_hold_confirmation_scope=m.S0_POSITION_SCOPE,
+                                position_hold_confirmation_answer='本轮左八关节原位保持20秒')
+        go={'schema':'MAINTENANCE_GO_V2','artifact_root':self.plan['artifact_root'],'issued_by':'root',
+            'plan_sha256':m.digest(self.plan),'issued_at_ns':100,'expires_at_ns':600_000_000_100,
+            'host':self.bindings['host'],'source':'本轮现场','physical':physical}
+        m.validate_go(go,self.plan,101)
+        for mutate in (lambda row:row.update(expires_at_ns=row['expires_at_ns']+1),
+                       lambda row:row['physical']['left'].update(position_hold_confirmation_scope=m.S0_MIXED_SCOPE),
+                       lambda row:row['physical']['left'].update(position_hold_confirmation_answer=''),
+                       lambda row:row['physical']['right'].update(continuous_presence_until_cleanup=False)):
+            bad=copy.deepcopy(go);mutate(bad)
+            with self.assertRaises(ValueError):m.validate_go(bad,self.plan,101)
+
+    def test_only_left_persistent_replacement_is_allowed_and_final_positions_keep_four_raw_limit(self):
+        left=self.bindings['protection']['left'];right=self.bindings['protection']['right']
+        replacement=self.root/'replacement';replacement.write_bytes(b'1\n')
+        replacement.replace(Path(left['rx_trust_marker']['path']))
+        m.verify_s0_protection(self.bindings,'final','left')
+        Path(right['rx_trust_marker']['path']).write_bytes(b'0\n')
+        with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final','left')
+        baseline={key:{'Present_Position':1000,'Goal_Position':1000} for key in m.MOTOR_KEYS}
+        probes=[{'side':'left','motor':motor,'kind':'position_hold','anchor_raw':1000,'status':'PASS'} for motor in range(1,9)]
+        actual=copy.deepcopy(baseline);actual['left:8']['Present_Position']=1004
+        self.assertEqual(m.classify_position_snapshot(actual,baseline,probes)['status'],'PASS')
+        actual['left:8']['Present_Position']=1005
+        self.assertEqual(m.classify_position_snapshot(actual,baseline,probes)['status'],'FAIL')
+        actual=copy.deepcopy(baseline);actual['right:1']['Goal_Position']=1001
+        self.assertEqual(m.classify_position_snapshot(actual,baseline,probes)['status'],'FAIL')
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

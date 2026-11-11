@@ -47,7 +47,9 @@ raw 经验命令合同仅覆盖 Model777/FW3.10/Mode1/Phase12 的 `0/+500`，无
 
 2026-11-10（America/Los_Angeles）首次通过既有默认S0维护入口完成右臂六关节保持＋前轮ID8 raw `+500/20秒`：固定400次IPC发送、79组运动反馈，sender的位置累计量为9820 raw。TE1零速阶段前轮PV原字为 `300→0→0`；左轮ID9中间组的 `+50` 原字保留，末组为0。随后Disable/TorqueOff、EStop持久化、daemon退出0，外层STOP51、位置和身份检查均为PASS，`manual=false`。用户亲自确认“全部看清，动作和停止均符合”。[本次默认S0实机摘要](../.verify/s0_default_mixed_hardware_2026-11-10/summary.json)将现场确认与软件结果分开记录；原run/sender文件不回写，sender仍为 `SOFTWARE_PATH_PASS`。
 
-清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。下一步仍限未验范围：左臂/头部默认S0、双腕有效画面与左右映射，以及真实执行器与相机组合；任何后续实机动作均须重新准备对应计划、GO及本轮现场条件。
+清场实查记录的374个所属PID均已不存在；2个串口与4个锁共12次普通/sudo `fuser` 查询均为空，tmux已结束。本次GO已消费，Orin `/home/loosqk/robot-checks/s0-maintenance-camera-stop-20261110/launch.sh` 仅作已执行入口留档，不能复用。后续未验范围为左臂/头部默认S0、双腕有效画面与左右映射，以及真实执行器与相机组合；任何后续实机动作均须使用对应计划、GO及本轮现场条件。
+
+左臂六关节＋头部两关节的默认S0原位保持20秒入口已完成软件准备，复用 `supervised_demo` 和维护脚本的 `--s0-position-hold`。按同份TOML校准及逐电机边界容差检查八槽反馈，越界直接拒绝，不clamp目标；400拍反馈保持原±4raw要求。只将左双锁交给默认S0，右双锁持续由维护入口持有，收尾仍为Disable、EStop、真实退出、锁归还及原STOP51。候选配置仅排除sensor段，hardware与robot内容和正式bus1配置相同，正式配置未改；本轮不验证相机或动态往返。Orin 66项Rust、207项Python及4项真实daemon/虚拟串口测试通过，另4项Python按条件跳过；fmt→根目录及发送器特性Clippy零警告。左完整保持和启用失败收尾、右原路径回归均覆盖，26项设备/占用预检及83项引用绑定复核通过。[准备证据](../.verify/s0_left_position_2026-11-10/summary.json)保留首次lint、测试夹具及隔离helper导入失败原件。实机尚未执行，未创建GO；Orin一次性入口为 `/home/loosqk/robot-checks/s0-left-position-20261111/hardware/launch.sh`，等待本轮现场确认。
 
 当前不扩展 S2、模型推理、其他机器人、CAN-FD、新 HAL crate、插件、多相机同步或通用会话框架。
 

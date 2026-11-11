@@ -1,4 +1,4 @@
-//! 附着已有默认 S0 的固定前轮 raw500 发送与观测；外层维护计划、GO认领和锁尚未接线。
+//! 附着已有默认 S0，复用受监督生命周期执行右侧混合发送或左臂与头部原位保持。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -16,7 +16,7 @@ use robot_rpc::client::layout::{HardwareLayout, load_hardware_layout};
 use robot_s0::config_loader::{
     load_robot_config, resolve_hardware_section, validate_hardware_section,
 };
-use robot_s0::grouped_position::XleRobotBus2Layout;
+use robot_s0::grouped_position::{XleRobotBus1Layout, XleRobotBus2Layout};
 use robot_transport::iceoryx2::request_response::{Iceoryx2PendingResponse, Iceoryx2RrClient};
 use robot_transport::iceoryx2::{
     Iceoryx2Publisher, Iceoryx2Subscriber, RrProfile, StrictChannelStatus, TopicClass, publisher,
@@ -45,10 +45,19 @@ supervised_demo --s0-mixed-hold --config /绝对路径/bus2.toml --hardware-id I
   --s0-log /绝对路径/s0.json.log --output /绝对路径/全新结果.json \
   --go-expires-at-unix-ns UNIX纳秒 --ack-safety-checklist
 仅附着已有默认 S0，不启动服务、不打开UART；须持续看护并具备立即断电条件。
-只验证发送、原始PP/PV、零速原字和断扭；物理观察及外层STOP51尚未验收。";
+只验证发送、原始PP/PV、零速原字和断扭；物理观察及外层STOP51尚未验收。
+左臂与头部改用 --s0-position-hold：仅接受无sensor的左总线八关节配置，
+冻结新鲜反馈原位保持20秒；不需要 --s0-log，不执行往返或轮速度发送。";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Mixed,
+    PositionHold,
+}
 
 #[derive(Debug)]
 struct Args {
+    mode: Mode,
     config: PathBuf,
     hardware_id: String,
     log: PathBuf,
@@ -57,7 +66,7 @@ struct Args {
 }
 
 impl Args {
-    fn parse(mut raw: impl Iterator<Item = String>) -> Result<Option<Self>, String> {
+    fn parse(mut raw: impl Iterator<Item = String>, mode: Mode) -> Result<Option<Self>, String> {
         let mut config = None;
         let mut hardware_id = None;
         let mut log = None;
@@ -89,21 +98,29 @@ impl Args {
             }
         }
         if !ack {
-            return Err("必须确认支撑、卸载、三轮稳定架空、区域清空、持续看护及立即断电能力；缺少 --ack-safety-checklist".into());
+            return Err(match mode {
+                Mode::Mixed => "必须确认支撑、卸载、三轮稳定架空、区域清空、持续看护及立即断电能力；缺少 --ack-safety-checklist",
+                Mode::PositionHold => "必须确认左臂与头部支撑、卸载、区域清空、持续看护及立即断电能力；缺少 --ack-safety-checklist",
+            }.into());
         }
         let args = Self {
+            mode,
             config: PathBuf::from(config.ok_or("缺少 --config")?),
             hardware_id: hardware_id.ok_or("缺少 --hardware-id")?,
-            log: PathBuf::from(log.ok_or("缺少 --s0-log")?),
+            log: match (log, mode) {
+                (Some(path), _) => PathBuf::from(path),
+                (None, Mode::Mixed) => return Err("缺少 --s0-log".into()),
+                (None, Mode::PositionHold) => PathBuf::new(),
+            },
             output: PathBuf::from(output.ok_or("缺少 --output")?),
             expires_unix_ns: expires
                 .ok_or("缺少 --go-expires-at-unix-ns")?
                 .parse()
                 .map_err(|_| "GO到期必须为u64纳秒")?,
         };
-        if [&args.config, &args.log, &args.output]
-            .iter()
-            .any(|path| !path.is_absolute())
+        if !args.config.is_absolute()
+            || !args.output.is_absolute()
+            || (!args.log.as_os_str().is_empty() && !args.log.is_absolute())
         {
             return Err("配置、日志及输出必须为绝对路径".into());
         }
@@ -139,6 +156,7 @@ fn before(now: u64, deadline: u64) -> Result<(), String> {
 }
 
 struct Config {
+    mode: Mode,
     robot: String,
     hardware: String,
     layout: HardwareLayout,
@@ -146,6 +164,7 @@ struct Config {
     wheel_slots: [usize; 3],
     wheel_ids: [u8; 3],
     selected: usize,
+    position_ranges: Option<[(i32, i32); 8]>,
 }
 
 impl Config {
@@ -154,6 +173,32 @@ impl Config {
         let hardware = resolve_hardware_section(&loaded.parsed, &args.hardware_id)
             .ok_or("硬件ID不在配置内")?;
         validate_hardware_section(hardware).map_err(|e| e.to_string())?;
+        if args.mode == Mode::PositionHold {
+            if hardware.auto_enable != Some(false)
+                || hardware.feetech_bus2_mixed_raw
+                || !loaded.parsed.sensor.is_empty()
+            {
+                return Err("原位保持只接受auto_enable=false、无sensor的左总线Position配置".into());
+            }
+            XleRobotBus1Layout::from_hardware(hardware).map_err(|e| e.to_string())?;
+            let ranges = Self::load_position_ranges(hardware)?;
+            let layout =
+                load_hardware_layout(&args.config, &args.hardware_id).map_err(|e| e.to_string())?;
+            if std::fs::read(&args.config).map_err(|e| e.to_string())? != loaded.raw_bytes {
+                return Err("读取过程中配置改变".into());
+            }
+            return Ok(Self {
+                mode: args.mode,
+                robot: loaded.parsed.robot.id,
+                hardware: args.hardware_id.clone(),
+                layout,
+                arm_slots: [0; 6],
+                wheel_slots: [0; 3],
+                wheel_ids: [0; 3],
+                selected: 0,
+                position_ranges: Some(ranges),
+            });
+        }
         if !hardware.feetech_bus2_mixed_raw || hardware.auto_enable != Some(false) {
             return Err("只接受显式raw混合且auto_enable=false的默认S0配置".into());
         }
@@ -188,6 +233,7 @@ impl Config {
         }
         let wheel_ids = wheel_slots.map(|slot| hardware.motor_ids[slot]);
         Ok(Self {
+            mode: args.mode,
             robot: loaded.parsed.robot.id,
             hardware: args.hardware_id.clone(),
             wheel_ids,
@@ -195,7 +241,74 @@ impl Config {
             arm_slots,
             wheel_slots,
             selected,
+            position_ranges: None,
         })
+    }
+
+    fn load_position_ranges(
+        hardware: &robot_s0::config_loader::HardwareSection,
+    ) -> Result<[(i32, i32); 8], String> {
+        let paths = hardware
+            .extras
+            .get("calibration_paths")
+            .and_then(toml::Value::as_array)
+            .ok_or("左总线缺少原校准路径")?
+            .iter()
+            .map(|path| path.as_str().ok_or("校准路径必须为字符串"))
+            .collect::<Result<Vec<_>, _>>()?;
+        if paths.is_empty() {
+            return Err("左总线必须使用原校准，不能无边界发送".into());
+        }
+        let calibrations =
+            robot_adapter_feetech::load_and_merge(&paths).map_err(|e| e.to_string())?;
+        let mut ranges = Vec::with_capacity(8);
+        for (slot, (name, id)) in hardware.joints.iter().zip(&hardware.motor_ids).enumerate() {
+            let calibration = calibrations
+                .get(name)
+                .ok_or_else(|| format!("缺少原校准：{name}"))?;
+            if calibration.id != *id || calibration.range_min > calibration.range_max {
+                return Err(format!("原校准ID或上下界不符：{name}"));
+            }
+            let tolerance = hardware
+                .calibration_range_tolerances_raw
+                .as_ref()
+                .map_or(0, |values| values[slot]);
+            ranges.push((
+                i32::from(calibration.range_min.saturating_sub(tolerance)),
+                i32::from(calibration.range_max.saturating_add(tolerance).min(4095)),
+            ));
+        }
+        ranges.try_into().map_err(|_| "左总线校准必须八项".into())
+    }
+
+    fn position_slots(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.layout.motor_ids.len()).filter(|slot| match self.mode {
+            Mode::Mixed => self.arm_slots.contains(slot),
+            Mode::PositionHold => true,
+        })
+    }
+
+    fn check_position_target(&self, target: &[f64; 9]) -> Result<(), String> {
+        if let Some(ranges) = &self.position_ranges {
+            for (slot, &(min, max)) in ranges.iter().enumerate() {
+                let position = target[slot];
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    reason = "实际Position适配器将f64反馈目标转换成f32；发送前复核同一原字"
+                )]
+                let raw = robot_adapter_feetech::rad_to_raw(position as f32);
+                if !position.is_finite()
+                    || position.abs() > f64::from(f32::MAX)
+                    || !(min..=max).contains(&raw)
+                {
+                    return Err(format!(
+                        "原位目标越过原校准与容差边界，禁止publish/Enable：slot={slot}, id={}, raw={raw}, range={min}..={max}",
+                        self.layout.motor_ids[slot]
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -220,10 +333,16 @@ impl State {
             return Err("JointState layout不匹配".into());
         }
         let positions = value.position_rad().ok_or("缺少位置向量")?;
-        if positions.len() != 9 {
-            return Err("JointState必须完整九槽".into());
+        if positions.len() != config.layout.motor_ids.len() {
+            return Err("JointState必须完整匹配配置槽位".into());
         }
-        let positions: [f64; 9] = std::array::from_fn(|slot| positions.get(slot));
+        let positions: [f64; 9] = std::array::from_fn(|slot| {
+            if slot < positions.len() {
+                positions.get(slot)
+            } else {
+                0.0
+            }
+        });
         let stamp = value.stamp_ns();
         if now.checked_sub(stamp).is_none_or(|age| age > FRESH_NS) {
             return Err("JointState来自未来或超过200ms".into());
@@ -365,7 +484,7 @@ impl MotionCheck {
 impl Anchor {
     fn freeze(state: &State, config: &Config) -> Self {
         let mut target = [0.0; 9];
-        for slot in config.arm_slots {
+        for slot in config.position_slots() {
             target[slot] = state.positions[slot];
         }
         Self {
@@ -375,11 +494,11 @@ impl Anchor {
         }
     }
     fn check(&self, state: &State, config: &Config) -> Result<(), String> {
-        for slot in config.arm_slots.into_iter().chain(
+        for slot in config.position_slots().chain(
             config
                 .wheel_slots
                 .into_iter()
-                .filter(|slot| *slot != config.selected),
+                .filter(|slot| config.mode == Mode::Mixed && *slot != config.selected),
         ) {
             if (state.raw[slot] - self.raw[slot]).abs() > 4 {
                 return Err(format!("固定锚点偏差超过4raw：slot={slot}"));
@@ -539,7 +658,7 @@ struct Session {
     enable_attempt: Option<u64>,
     enable_deadline: Option<u64>,
     expires: u64,
-    observations: Observations,
+    observations: Option<Observations>,
     motion: Option<MotionCheck>,
     _node: iceoryx2::node::Node<Service>,
 }
@@ -559,7 +678,11 @@ fn publish<T: markers::BodyMarker>(
 }
 
 impl Session {
-    fn open(config: Config, expires: u64, observations: Observations) -> Result<Self, String> {
+    fn open(
+        config: Config,
+        expires: u64,
+        observations: Option<Observations>,
+    ) -> Result<Self, String> {
         let node = NodeBuilder::new()
             .create::<Service>()
             .map_err(|e| format!("{e:?}"))?;
@@ -676,6 +799,14 @@ impl Session {
     }
     fn command(&mut self, raw: i16, now: u64, deadline: u64) -> Result<(), String> {
         before(now, deadline)?;
+        if self.config.mode == Mode::PositionHold
+            && self.latest.as_ref().is_none_or(|state| {
+                now.checked_sub(state.stamp)
+                    .is_none_or(|age| age >= FRESH_NS)
+            })
+        {
+            return Err("左总线Position发布前缺少200ms内新鲜反馈".into());
+        }
         let target = match &self.anchor {
             Some(anchor) => anchor.target,
             None => {
@@ -686,22 +817,46 @@ impl Session {
                 .target
             }
         };
+        self.config.check_position_target(&target)?;
         let mut wheels = [0_i16; 9];
         wheels[self.config.selected] = raw;
         self.sequence += 1;
-        let body = build_helpers::build_mixed_joint_command(
-            self.config.layout.layout_id,
-            &target,
-            &wheels,
-            deadline,
-            10,
-            self.sequence,
-        );
+        let body = match self.config.mode {
+            Mode::Mixed => build_helpers::build_mixed_joint_command(
+                self.config.layout.layout_id,
+                &target,
+                &wheels,
+                deadline,
+                10,
+                self.sequence,
+            ),
+            Mode::PositionHold => {
+                if raw != 0 {
+                    return Err("左总线原位保持禁止速度目标".into());
+                }
+                build_helpers::build_joint_command(
+                    self.config.layout.layout_id,
+                    msg::ControlMode::Position,
+                    &target[..8],
+                    deadline,
+                    10,
+                    msg::StaleAction::Hold,
+                    self.sequence,
+                )
+            }
+        };
         publish(&mut self.commands, &body, self.sequence, now)
     }
     fn step(&mut self, zero: bool, cleanup: bool) -> Result<Vec<ZeroSample>, String> {
         let now = SystemClock.now().0;
         self.heartbeat(now)?;
+        // 左侧必须先刷新再决定能否发布；收尾时即使旧反馈已过期，也要读到新断扭反馈。
+        let now = if self.config.mode == Mode::PositionHold {
+            self.refresh_state()?;
+            SystemClock.now().0
+        } else {
+            now
+        };
         if zero
             && self.latest.is_some()
             && self
@@ -712,17 +867,22 @@ impl Session {
             self.command(0, now, deadline)?;
             self.last_zero = Some(now);
         }
-        self.refresh_state()?;
+        if self.config.mode == Mode::Mixed {
+            self.refresh_state()?;
+        }
         if !cleanup && let (Some(anchor), Some(state)) = (&self.anchor, &self.latest) {
             anchor.check(state, &self.config)?;
         }
-        let zeros = self.observations.poll(&SystemClock)?;
-        let motion_samples = self.observations.take_motion();
-        if !cleanup && let (Some(motion), Some(anchor)) = (&mut self.motion, &self.anchor) {
-            for sample in motion_samples {
-                motion.accept(&sample, &self.config, anchor)?;
+        let mut zeros = Vec::new();
+        if let Some(observations) = &mut self.observations {
+            zeros = observations.poll(&SystemClock)?;
+            let motion_samples = observations.take_motion();
+            if !cleanup && let (Some(motion), Some(anchor)) = (&mut self.motion, &self.anchor) {
+                for sample in motion_samples {
+                    motion.accept(&sample, &self.config, anchor)?;
+                }
+                motion.check_deadline(SystemClock.now().0)?;
             }
-            motion.check_deadline(SystemClock.now().0)?;
         }
         Ok(zeros)
     }
@@ -748,6 +908,10 @@ impl Session {
         dry: bool,
         deadline: u64,
     ) -> Result<Reply<markers::SetEnabledResponse>, String> {
+        if enabled && !dry && self.config.mode == Mode::PositionHold {
+            self.config
+                .check_position_target(&self.anchor.as_ref().ok_or("缺少启用前原位锚点")?.target)?;
+        }
         let id = self.id(if dry {
             "probe"
         } else if enabled {
@@ -759,12 +923,18 @@ impl Session {
         let body = build_helpers::build_set_enabled_request(
             &id,
             &id,
-            "supervised-s0-mixed",
+            match self.config.mode {
+                Mode::Mixed => "supervised-s0-mixed",
+                Mode::PositionHold => "supervised-s0-position-hold",
+            },
             msg::RpcRole::Maintainer,
             enabled,
             dry,
             deadline,
-            "固定前轮受监督发送验收",
+            match self.config.mode {
+                Mode::Mixed => "固定前轮受监督发送验收",
+                Mode::PositionHold => "左臂与头部受监督原位保持",
+            },
             now,
         );
         send(&self.enable_client, id, body)
@@ -887,6 +1057,8 @@ fn enable_and_start_pulse(
         io.latest.as_ref().ok_or("缺少启用前锚点")?,
         &io.config,
     ));
+    io.config
+        .check_position_target(&io.anchor.as_ref().unwrap().target)?;
     let attempted = SystemClock.now().0;
     let hard_end = add(attempted, TOTAL_NS)?;
     io.guard(attempted, add(attempted, ENABLE_NS)?)?;
@@ -894,7 +1066,11 @@ fn enable_and_start_pulse(
     io.enable_deadline = Some(hard_end);
     report["enable_attempt_ns"] = json!(attempted);
     report["enable_deadline_ns"] = json!(hard_end);
-    report["anchor"] = json!({"stamp_ns":io.anchor.as_ref().unwrap().stamp,"target":io.anchor.as_ref().unwrap().target,"raw":io.anchor.as_ref().unwrap().raw,"meaning":"发送端冻结反馈目标；不是adapter内部enable GP锚点"});
+    if io.config.mode == Mode::PositionHold {
+        report["enable_transition_deadline_ns"] = json!(add(attempted, ENABLE_NS)?);
+    }
+    let count = io.config.layout.motor_ids.len();
+    report["anchor"] = json!({"stamp_ns":io.anchor.as_ref().unwrap().stamp,"target":io.anchor.as_ref().unwrap().target[..count],"raw":io.anchor.as_ref().unwrap().raw[..count],"meaning":"发送端冻结反馈目标；不是adapter内部enable GP锚点"});
     controls.enable = Some(io.set_request(true, false, add(attempted, ENABLE_NS)?)?);
     let reply = controls.enable.as_mut().ok_or("缺少Enable原请求")?;
     let bytes = io.wait_reply(reply, add(attempted, ENABLE_NS)?)?;
@@ -911,6 +1087,9 @@ fn enable_and_start_pulse(
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+    if io.config.mode == Mode::PositionHold {
+        report["enable_confirmed_ns"] = json!(SystemClock.now().0);
+    }
     // 首拍前完成所有可变时长轮询；20秒只从紧邻首次发送尝试的时刻开始。
     io.step(false, false)?;
     if !io.latest.as_ref().is_some_and(State::torque_on) {
@@ -921,17 +1100,85 @@ fn enable_and_start_pulse(
     let (_, first_deadline) = cycle_deadline(start, io.anchor.as_ref().unwrap().stamp, 0)?;
     io.guard(start, first_deadline)?;
     let source = source_deadline(start, hard_end, Some(io.anchor.as_ref().unwrap().stamp))?;
-    io.command(500, start, source)?;
+    io.command(
+        match io.config.mode {
+            Mode::Mixed => 500,
+            Mode::PositionHold => 0,
+        },
+        start,
+        source,
+    )?;
     let returned = SystemClock.now().0;
     before(returned, first_deadline)?;
-    report["nonzero_start_ns"] = json!(start);
-    report["nonzero_end_ns"] = json!(pulse_end);
+    if io.config.mode == Mode::PositionHold {
+        io.refresh_state()?;
+        let observed = SystemClock.now().0;
+        before(observed, first_deadline)?;
+        record_hold_sample(io, report, 0, observed)?;
+    }
+    match io.config.mode {
+        Mode::Mixed => {
+            report["nonzero_start_ns"] = json!(start);
+            report["nonzero_end_ns"] = json!(pulse_end);
+            io.motion = Some(MotionCheck::new(start));
+        }
+        Mode::PositionHold => {
+            report["hold_start_ns"] = json!(start);
+            report["hold_end_ns"] = json!(pulse_end);
+        }
+    }
     report["cycles"]
         .as_array_mut()
         .unwrap()
         .push(json!({"cycle":0,"scheduled_ns":start,"publish_attempt_ns":start,"publish_return_ns":returned,"local_deadline_ns":first_deadline,"source_deadline_ns":source}));
-    io.motion = Some(MotionCheck::new(start));
     Ok((start, pulse_end, hard_end))
+}
+
+fn hold_sample(
+    state: &State,
+    anchor: &Anchor,
+    config: &Config,
+    cycle: u64,
+    observed: u64,
+    previous_stamp: Option<u64>,
+) -> Result<Value, String> {
+    if config.mode != Mode::PositionHold || cycle >= 400 || !state.torque_on() {
+        return Err("原位保持采样必须为左八槽且Enabled.Active/TorqueOn".into());
+    }
+    if state.stamp <= anchor.stamp
+        || observed
+            .checked_sub(state.stamp)
+            .is_none_or(|age| age >= FRESH_NS)
+        || previous_stamp.is_some_and(|previous| state.stamp <= previous)
+    {
+        return Err("原位保持反馈超过200ms、来自未来或时间未推进".into());
+    }
+    anchor.check(state, config)?;
+    Ok(json!({"cycle":cycle,"stamp_ns":state.stamp,"observed_ns":observed,"raw":state.raw[..8]}))
+}
+
+fn record_hold_sample(
+    io: &Session,
+    report: &mut Value,
+    cycle: u64,
+    observed: u64,
+) -> Result<(), String> {
+    let samples = report["hold_samples"]
+        .as_array_mut()
+        .ok_or("缺少原位保持采样数组")?;
+    let previous_stamp = samples
+        .last()
+        .and_then(|sample| sample["stamp_ns"].as_u64());
+    let sample = hold_sample(
+        io.latest.as_ref().ok_or("缺少原位保持反馈")?,
+        io.anchor.as_ref().ok_or("缺少冻结原位锚点")?,
+        &io.config,
+        cycle,
+        observed,
+        previous_stamp,
+    )?;
+    samples.push(sample);
+    Ok(())
 }
 
 fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result<(), String> {
@@ -953,9 +1200,22 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
         let sent = SystemClock.now().0;
         io.guard(sent, deadline)?;
         let source = source_deadline(sent, hard_end, None)?;
-        io.command(500, sent, source)?;
+        io.command(
+            match io.config.mode {
+                Mode::Mixed => 500,
+                Mode::PositionHold => 0,
+            },
+            sent,
+            source,
+        )?;
         let returned = SystemClock.now().0;
         before(returned, deadline)?;
+        if io.config.mode == Mode::PositionHold {
+            io.refresh_state()?;
+            let observed = SystemClock.now().0;
+            before(observed, deadline)?;
+            record_hold_sample(io, report, cycle, observed)?;
+        }
         report["cycles"].as_array_mut().unwrap().push(
             json!({"cycle":cycle,"scheduled_ns":scheduled,"publish_attempt_ns":sent,"publish_return_ns":returned,"local_deadline_ns":deadline,"source_deadline_ns":source}),
         );
@@ -963,8 +1223,28 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
     while SystemClock.now().0 < pulse_end {
         io.guard(SystemClock.now().0, pulse_end)?;
         io.step(false, false)?;
+        if io.config.mode == Mode::PositionHold && !io.latest.as_ref().is_some_and(State::torque_on)
+        {
+            return Err("原位保持尾拍S0不再Enabled.Active/TorqueOn".into());
+        }
         std::thread::sleep(Duration::from_millis(1));
     }
+    match io.config.mode {
+        Mode::Mixed => finish_wheel_zero(io, report, hard_end)?,
+        Mode::PositionHold => {
+            if report["hold_samples"]
+                .as_array()
+                .is_none_or(|samples| samples.len() != 400)
+            {
+                return Err("原位保持未取得400拍新鲜反馈".into());
+            }
+            report["hold_position_verified"] = json!(true);
+        }
+    }
+    disable_and_stop(io, controls, report, hard_end)
+}
+
+fn finish_wheel_zero(io: &mut Session, report: &mut Value, hard_end: u64) -> Result<(), String> {
     let zero_start = SystemClock.now().0;
     io.guard(zero_start, hard_end)?;
     let zero_end = add(zero_start, ZERO_NS)?;
@@ -1000,8 +1280,9 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
                 report["zero_samples"].as_array_mut().unwrap().push(json!({"started_ns":sample.started_ns,"finished_ns":sample.finished_ns,"wheels":sample.wheels.map(|wheel|json!({"id":wheel.id,"torque":wheel.torque,"goal":wheel.goal,"velocity":wheel.velocity}))}));
                 accepted += 1;
                 if accepted == 3 {
-                    report["zero_summary_baseline"] = json!(io.observations.summary_count());
-                    report["zero_summary_seen"] = json!(io.observations.summary_after_last_zero());
+                    let observations = io.observations.as_ref().ok_or("缺少轮日志观测")?;
+                    report["zero_summary_baseline"] = json!(observations.summary_count());
+                    report["zero_summary_seen"] = json!(observations.summary_after_last_zero());
                 }
             }
         }
@@ -1010,14 +1291,24 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
     if accepted != 3 {
         return Err("原500ms内未取得三个分区间完整零速组".into());
     }
+    Ok(())
+}
+
+fn disable_and_stop(
+    io: &mut Session,
+    controls: &mut Controls,
+    report: &mut Value,
+    hard_end: u64,
+) -> Result<(), String> {
     let disabled_at = SystemClock.now().0;
     let deadline = add(disabled_at, DISABLE_NS)?.min(hard_end);
+    report["disable_attempt_ns"] = json!(disabled_at);
     controls.disable = Some(io.set_request(false, false, deadline)?);
     let reply = controls.disable.as_mut().ok_or("缺少Disable原请求")?;
     let bytes = io.wait_reply(reply, deadline)?;
     check_set(&bytes, &reply.id, false)?;
     report["disable_retired"] = json!(true);
-    loop {
+    let confirmed_at = loop {
         io.guard(SystemClock.now().0, deadline)?;
         io.step(true, false)?;
         if io
@@ -1025,16 +1316,27 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
             .as_ref()
             .is_some_and(|state| state.stamp >= disabled_at && state.torque_off())
         {
-            break;
+            let confirmed_at = SystemClock.now().0;
+            if io.config.mode == Mode::PositionHold {
+                before(confirmed_at, deadline)?;
+            }
+            break confirmed_at;
         }
         std::thread::sleep(Duration::from_millis(1));
-    }
+    };
     report["torque_off_confirmed"] = json!(true);
-    confirm_dropped_zero(io, report)?;
+    report["torque_off_confirmed_ns"] = json!(confirmed_at);
+    if io.config.mode == Mode::Mixed {
+        confirm_dropped_zero(io, report)?;
+    }
     io.sequence += 1;
     publish_final_estop(report, &SystemClock, |body, stamp| {
         publish(&mut io.estop, body, io.sequence, stamp)
-    })
+    })?;
+    if io.config.mode == Mode::PositionHold {
+        before(SystemClock.now().0, hard_end)?;
+    }
+    Ok(())
 }
 
 fn publish_final_estop(
@@ -1069,12 +1371,13 @@ fn confirm_dropped_zero(io: &mut Session, report: &mut Value) -> Result<(), Stri
         if INTERRUPTED.load(Ordering::Acquire) {
             return Err("只读尾窗收到SIGINT/SIGTERM".into());
         }
-        io.observations.poll(&SystemClock)?;
-        let _ = io.observations.take_motion();
+        let observations = io.observations.as_mut().ok_or("缺少轮日志观测")?;
+        observations.poll(&SystemClock)?;
+        let _ = observations.take_motion();
         before(SystemClock.now().0, deadline)?;
-        if io.observations.summary_after_last_zero() {
+        if observations.summary_after_last_zero() {
             report["diagnostics_dropped_zero_verified"] = json!(true);
-            report["final_summary_count"] = json!(io.observations.summary_count());
+            report["final_summary_count"] = json!(observations.summary_count());
             report["readonly_tail_finished_ns"] = json!(SystemClock.now().0);
             return Ok(());
         }
@@ -1112,6 +1415,7 @@ fn finalize_error(io: &mut Session, controls: &mut Controls, report: &mut Value)
             state.stamp >= started && state.safety == msg::S0SafetyState::TorqueOffConfirmed
         }) {
             report["torque_off_confirmed"] = json!(true);
+            report["torque_off_confirmed_ns"] = json!(SystemClock.now().0);
             break;
         }
         if SystemClock.now().0 >= deadline {
@@ -1172,9 +1476,9 @@ fn run(
     args: &Args,
     config: Config,
     mut file: File,
-    observer: Observations,
+    observer: Option<Observations>,
 ) -> Result<bool, String> {
-    let mut report = json!({"schema":"SUPERVISED_S0_MIXED_V1","result":"FAIL","config":args.config,"hardware_id":config.hardware,"layout_id":config.layout.layout_id,"selected_motor_id":config.layout.motor_ids[config.selected],"wheel_ids":config.wheel_ids,"go_expires_at_unix_ns":args.expires_unix_ns,"outer_maintenance_plan_go_locks_connected":false,"full_hardware_acceptance":false,"deployable":false,"motion_position_verified":false,"motion_velocity_raw":"NOT_EVALUATED","physical_motion":"NOT_OBSERVED","stop51":"NOT_RUN","cycles":[],"motion_samples":[],"zero_samples":[],"disable_retired":false,"torque_off_confirmed":false,"final_estop_attempt_ns":null,"final_estop_publish_return_ns":null,"final_estop_published":false,"cleanup_errors":[],"manual_power_cut_required":false});
+    let mut report = initial_report(args, &config);
     let initialized = (|| {
         Ok::<_, String>((
             Signals::install()?,
@@ -1211,6 +1515,36 @@ fn run(
     save_report(&mut file, &report)
 }
 
+fn initial_report(args: &Args, config: &Config) -> Value {
+    let mut report = json!({"result":"FAIL","config":args.config,"hardware_id":config.hardware,"layout_id":config.layout.layout_id,"go_expires_at_unix_ns":args.expires_unix_ns,"outer_maintenance_plan_go_locks_connected":false,"full_hardware_acceptance":false,"deployable":false,"physical_motion":"NOT_OBSERVED","stop51":"NOT_RUN","cycles":[],"disable_retired":false,"torque_off_confirmed":false,"final_estop_attempt_ns":null,"final_estop_publish_return_ns":null,"final_estop_published":false,"cleanup_errors":[],"manual_power_cut_required":false});
+    match config.mode {
+        Mode::Mixed => {
+            report["schema"] = json!("SUPERVISED_S0_MIXED_V1");
+            report["selected_motor_id"] = json!(config.layout.motor_ids[config.selected]);
+            report["wheel_ids"] = json!(config.wheel_ids);
+            report["motion_position_verified"] = json!(false);
+            report["motion_velocity_raw"] = json!("NOT_EVALUATED");
+            report["motion_samples"] = json!([]);
+            report["zero_samples"] = json!([]);
+        }
+        Mode::PositionHold => {
+            report["schema"] = json!("SUPERVISED_S0_POSITION_HOLD_V1");
+            report["motor_ids"] = json!(config.layout.motor_ids);
+            report["hold_start_ns"] = Value::Null;
+            report["hold_end_ns"] = Value::Null;
+            report["hold_position_verified"] = json!(false);
+            report["hold_samples"] = json!([]);
+            report["enable_attempt_ns"] = Value::Null;
+            report["enable_deadline_ns"] = Value::Null;
+            report["enable_transition_deadline_ns"] = Value::Null;
+            report["enable_confirmed_ns"] = Value::Null;
+            report["disable_attempt_ns"] = Value::Null;
+            report["torque_off_confirmed_ns"] = Value::Null;
+        }
+    }
+    report
+}
+
 fn save_report(file: &mut File, report: &Value) -> Result<bool, String> {
     serde_json::to_writer_pretty(&mut *file, report)
         .map_err(|e| format!("结果写入失败：{e}；原报告={report}"))?;
@@ -1224,8 +1558,13 @@ fn save_report(file: &mut File, report: &Value) -> Result<bool, String> {
 #[path = "supervised_mixed/tests.rs"]
 mod tests;
 
-pub(super) fn main_entry(raw: impl Iterator<Item = String>) -> ExitCode {
-    let args = match Args::parse(raw) {
+pub(super) fn main_entry(raw: impl Iterator<Item = String>, position_hold: bool) -> ExitCode {
+    let mode = if position_hold {
+        Mode::PositionHold
+    } else {
+        Mode::Mixed
+    };
+    let args = match Args::parse(raw, mode) {
         Ok(Some(args)) => args,
         Ok(None) => {
             println!("{HELP}");
@@ -1238,7 +1577,10 @@ pub(super) fn main_entry(raw: impl Iterator<Item = String>) -> ExitCode {
     };
     let prepared = (|| {
         let config = Config::load(&args)?;
-        let observer = Observations::open(&args.log, config.wheel_ids)?;
+        let observer = match config.mode {
+            Mode::Mixed => Some(Observations::open(&args.log, config.wheel_ids)?),
+            Mode::PositionHold => None,
+        };
         let file = OpenOptions::new()
             .create_new(true)
             .write(true)

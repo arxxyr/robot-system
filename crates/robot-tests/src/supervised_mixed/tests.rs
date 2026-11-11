@@ -25,6 +25,7 @@ fn fixture_config() -> Config {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus2_full.toml");
     Config::load(&Args {
+        mode: Mode::Mixed,
         config: path,
         hardware_id: "right_arm_full_with_base".into(),
         log: PathBuf::new(),
@@ -32,6 +33,208 @@ fn fixture_config() -> Config {
         expires_unix_ns: u64::MAX,
     })
     .unwrap()
+}
+
+fn left_fixture_args(directory: &std::path::Path) -> Args {
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus1_full.toml");
+    let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
+    value.as_table_mut().unwrap().remove("sensor");
+    let hardware = &mut value["hardware"][0];
+    let mut records = serde_json::Map::new();
+    for (name, id) in hardware["joints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(hardware["motor_ids"].as_array().unwrap())
+    {
+        records.insert(
+            name.as_str().unwrap().into(),
+            json!({"id": id.as_integer().unwrap(),
+            "drive_mode":0,"homing_offset":0,"range_min":1000,"range_max":3000}),
+        );
+    }
+    let calibration = directory.join("calibration.json");
+    std::fs::write(&calibration, serde_json::to_vec(&records).unwrap()).unwrap();
+    hardware["calibration_paths"] = toml::Value::Array(vec![toml::Value::String(
+        calibration.to_str().unwrap().into(),
+    )]);
+    let path = directory.join("left.toml");
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    Args {
+        mode: Mode::PositionHold,
+        config: path,
+        hardware_id: "left_arm_full_with_head".into(),
+        log: PathBuf::new(),
+        output: directory.join("report.json"),
+        expires_unix_ns: u64::MAX,
+    }
+}
+
+#[test]
+fn position_hold_requires_original_left_layout_manual_enable_and_no_sensor() {
+    let directory = tempfile::tempdir().unwrap();
+    let args = left_fixture_args(directory.path());
+    let original: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&args.config).unwrap()).unwrap();
+    let config = Config::load(&args).unwrap();
+    assert_eq!(config.mode, Mode::PositionHold);
+    assert_eq!(config.layout.motor_ids, [1, 2, 3, 4, 5, 6, 7, 8]);
+    for changed in [
+        "auto_enable",
+        "feetech_bus2_mixed_raw",
+        "motor_ids",
+        "sensor",
+    ] {
+        let mut value = original.clone();
+        match changed {
+            "auto_enable" | "feetech_bus2_mixed_raw" => {
+                value["hardware"][0]
+                    .as_table_mut()
+                    .unwrap()
+                    .insert(changed.into(), toml::Value::Boolean(true));
+            }
+            "motor_ids" => value["hardware"][0]["motor_ids"]
+                .as_array_mut()
+                .unwrap()
+                .swap(6, 7),
+            "sensor" => {
+                let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../configs/xlerobot_bus1_full.toml");
+                let full: toml::Value =
+                    toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
+                value
+                    .as_table_mut()
+                    .unwrap()
+                    .insert("sensor".into(), full["sensor"].clone());
+            }
+            _ => unreachable!(),
+        }
+        std::fs::write(&args.config, toml::to_string(&value).unwrap()).unwrap();
+        assert!(Config::load(&args).is_err(), "必须拒绝{changed}");
+    }
+    let right = Args {
+        config: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../configs/xlerobot_bus2_full.toml"),
+        hardware_id: "right_arm_full_with_base".into(),
+        ..args
+    };
+    assert!(Config::load(&right).is_err());
+}
+
+#[test]
+fn position_hold_checks_each_original_calibration_tolerance_without_clamping() {
+    let directory = tempfile::tempdir().unwrap();
+    let args = left_fixture_args(directory.path());
+    let mut value: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&args.config).unwrap()).unwrap();
+    let tolerances = [0_u16, 20, 7, 0, 20, 7, 0, 20];
+    value["hardware"][0]["calibration_range_tolerances_raw"] = toml::Value::Array(
+        tolerances
+            .map(|n| toml::Value::Integer(i64::from(n)))
+            .into(),
+    );
+    std::fs::write(&args.config, toml::to_string(&value).unwrap()).unwrap();
+    let config = Config::load(&args).unwrap();
+    for (slot, tolerance) in tolerances.into_iter().enumerate() {
+        for (raw, accepted) in [
+            (1000 - i32::from(tolerance), true),
+            (3000 + i32::from(tolerance), true),
+            (999 - i32::from(tolerance), false),
+            (3001 + i32::from(tolerance), false),
+        ] {
+            let mut target = [0.0; 9];
+            target[slot] = f64::from(robot_adapter_feetech::raw_to_rad(raw));
+            let original = target;
+            assert_eq!(
+                config.check_position_target(&target).is_ok(),
+                accepted,
+                "slot={slot},raw={raw}"
+            );
+            assert_eq!(target, original);
+        }
+    }
+    let mut target = [0.0; 9];
+    target[7] = f64::NAN;
+    assert!(config.check_position_target(&target).is_err());
+    target[7] = f64::MAX;
+    assert!(config.check_position_target(&target).is_err());
+}
+
+#[test]
+fn position_hold_samples_require_all_eight_anchors_new_timestamps_and_active_torque() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = Config::load(&left_fixture_args(directory.path())).unwrap();
+    let mut snapshot = state(&config);
+    let anchor = Anchor::freeze(&snapshot, &config);
+    snapshot.mode = msg::S0Mode::Enabled;
+    snapshot.link = msg::S0ControlLink::Ok;
+    snapshot.output = msg::S0OutputMode::Active;
+    snapshot.safety = msg::S0SafetyState::TorqueOn;
+    let mut previous = None;
+    for cycle in 0..400 {
+        snapshot.stamp = anchor.stamp + 1 + cycle * PERIOD_NS;
+        let sample = hold_sample(
+            &snapshot,
+            &anchor,
+            &config,
+            cycle,
+            snapshot.stamp + 1,
+            previous,
+        )
+        .unwrap();
+        assert_eq!(sample["raw"].as_array().unwrap().len(), 8);
+        assert_eq!(sample["cycle"], cycle);
+        previous = Some(snapshot.stamp);
+    }
+    assert!(hold_sample(&snapshot, &anchor, &config, 399, snapshot.stamp, previous).is_err());
+    assert!(hold_sample(&snapshot, &anchor, &config, 400, snapshot.stamp, None).is_err());
+    assert!(hold_sample(&snapshot, &anchor, &config, 0, snapshot.stamp - 1, None).is_err());
+    assert!(
+        hold_sample(
+            &snapshot,
+            &anchor,
+            &config,
+            0,
+            snapshot.stamp + FRESH_NS,
+            None
+        )
+        .is_err()
+    );
+    for slot in 0..8 {
+        let mut drifted = snapshot.clone();
+        drifted.raw[slot] += 4;
+        hold_sample(&drifted, &anchor, &config, 1, snapshot.stamp + 1, None).unwrap();
+        drifted.raw[slot] += 1;
+        assert!(hold_sample(&drifted, &anchor, &config, 1, snapshot.stamp + 1, None).is_err());
+    }
+    snapshot.safety = msg::S0SafetyState::TorqueOffConfirmed;
+    assert!(hold_sample(&snapshot, &anchor, &config, 0, snapshot.stamp, None).is_err());
+}
+
+#[test]
+fn position_hold_report_has_no_wheel_evidence_and_does_not_require_a_log() {
+    let directory = tempfile::tempdir().unwrap();
+    let args = left_fixture_args(directory.path());
+    let config = Config::load(&args).unwrap();
+    let report = initial_report(&args, &config);
+    assert_eq!(report["schema"], "SUPERVISED_S0_POSITION_HOLD_V1");
+    assert_eq!(report["motor_ids"], json!([1, 2, 3, 4, 5, 6, 7, 8]));
+    for key in [
+        "selected_motor_id",
+        "wheel_ids",
+        "motion_samples",
+        "zero_samples",
+        "nonzero_start_ns",
+        "motion_velocity_raw",
+    ] {
+        assert!(report.get(key).is_none(), "左报告不能伪造轮证据：{key}");
+    }
+    let mut raw = arguments(args.output.to_str().unwrap());
+    let index = raw.iter().position(|value| value == "--s0-log").unwrap();
+    raw.drain(index..index + 2);
+    assert!(Args::parse(raw.clone().into_iter(), Mode::PositionHold).is_ok());
+    assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
 }
 
 fn state(_config: &Config) -> State {
@@ -56,21 +259,25 @@ fn cli_requires_explicit_ack_expiry_absolute_paths_and_fresh_output() {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("new.json");
     let mut raw = arguments(output.to_str().unwrap());
-    assert!(Args::parse(raw.clone().into_iter()).unwrap().is_some());
+    assert!(
+        Args::parse(raw.clone().into_iter(), Mode::Mixed)
+            .unwrap()
+            .is_some()
+    );
     raw.pop();
-    assert!(Args::parse(raw.into_iter()).is_err());
+    assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
     let mut raw = arguments(output.to_str().unwrap());
     let expiry = raw
         .iter()
         .position(|value| value == "--go-expires-at-unix-ns")
         .unwrap();
     raw[expiry + 1] = "0".into();
-    assert!(Args::parse(raw.into_iter()).is_err());
+    assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
     let mut raw = arguments(output.to_str().unwrap());
     raw[1] = "relative.toml".into();
-    assert!(Args::parse(raw.into_iter()).is_err());
+    assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
     std::fs::write(&output, b"existing").unwrap();
-    assert!(Args::parse(arguments(output.to_str().unwrap()).into_iter()).is_err());
+    assert!(Args::parse(arguments(output.to_str().unwrap()).into_iter(), Mode::Mixed).is_err());
     assert_eq!(std::fs::read(output).unwrap(), b"existing");
 }
 
@@ -98,6 +305,7 @@ fn configuration_selects_only_the_front_wheel_from_the_original_toml() {
     let path = directory.path().join("remapped.toml");
     std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
     let remapped = Config::load(&Args {
+        mode: Mode::Mixed,
         config: path,
         hardware_id: config.hardware,
         log: PathBuf::new(),

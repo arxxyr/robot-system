@@ -36,6 +36,10 @@ S0_MIXED_SCOPE = ('默认S0独占右总线，typed ClearEStop/SetEnabled及心�
                   '六臂冻结新鲜反馈位置，配置前轮raw+500持续20秒，其余轮raw0；'
                   '500毫秒零速原字观测、Disable及EStop，退出并取回右锁后原整机STOP51；'
                   '左双锁全程持有，不解除D15或物理验收')
+S0_POSITION_SCOPE = ('默认S0独占左总线，typed ClearEStop/SetEnabled及心跳命令流；'
+                     '左臂六关节与头部两关节冻结新鲜反馈原位保持20秒，400拍逐拍检查八关节±4raw；'
+                     'Disable及EStop，退出并取回左锁后原整机STOP51与原4raw位置检查；'
+                     '右双锁全程持有，不启动相机，不解除D15或物理验收')
 MOTOR_KEYS = tuple(f'{side}:{motor}' for side in SERIALS
                    for motor in range(1,9 if side=='left' else 10))
 # 维护动作只要求当次现场安全条件；底盘动作仍固定 DEFERRED。
@@ -446,19 +450,37 @@ def mixed_raw_contract(bindings,selected_motor_id=9):
 
 
 def s0_mixed_contract(bindings):
+    return s0_hold_contract(bindings,'right')
+
+
+def s0_position_contract(bindings):
+    return s0_hold_contract(bindings,'left')
+
+
+def s0_hold_contract(bindings,active_side):
     """同份TOML及既有引用绑定默认S0，不借用维护adapter内部锚点合同。"""
-    require(BUS_CONFIG is not None,'默认S0必须先绑定右总线配置')
-    document=tomllib.loads(Path(BUS_CONFIG['path']).read_text())
+    require(active_side in SERIALS,'默认S0活动侧错误')
+    config=BUS_CONFIG if active_side=='right' else LEFT_BUS_CONFIG
+    require(config is not None,'默认S0必须先绑定活动总线配置')
+    document=tomllib.loads(Path(config['path']).read_text())
     hardware=document['hardware'][0]
     robot=document.get('robot',{}).get('id')
     hardware_id=hardware.get('id')
     require(isinstance(robot,str) and robot and isinstance(hardware_id,str) and hardware_id
             and bindings.get('s0_hardware_id')==hardware_id
-            and hardware.get('auto_enable') is False and hardware.get('feetech_bus2_mixed_raw') is True,
-            '默认S0须同robot/hardware身份且显式禁止auto_enable并开启mixed raw')
+            and hardware.get('auto_enable') is False
+            and hardware.get('feetech_bus2_mixed_raw',False) is (active_side=='right'),
+            '默认S0须同robot/hardware身份且显式禁止auto_enable并匹配活动侧模式')
     require(not any(document.get(key) for key in ('sensor','camera','cameras')),
             '本轮默认S0不得启动相机或helper')
     references={ref['path']:ref for ref in bindings.get('refs',[])}
+    if active_side=='left':
+        ref=references.get(config['path'])
+        require(isinstance(ref,dict) and all(ref.get(key)==config[key] for key in ('path','bytes','sha256'))
+                and all(key in ref for key in MIXED_REF_IDENTITY)
+                and ref.get('symlink') is False and ref.get('nlink')==1,
+                '左侧默认S0实际配置必须进入完整refs')
+        config={**config,**ref}
     binaries={}
     for name in ('s0_daemon','supervised_demo'):
         ref=bindings.get(name)
@@ -473,24 +495,32 @@ def s0_mixed_contract(bindings):
     require(type(paths) is list and paths and len(set(paths))==len(paths)
             and all(isinstance(path,str) and Path(path).is_absolute() and path in references for path in paths),
             '默认S0校准必须沿TOML实际路径进入原refs')
-    protection=bindings.get('protection',{}).get('right',{})
+    protection=bindings.get('protection',{}).get(active_side,{})
     names=('rx_trust.lock','estop_latch.lock','rx_trust_marker','rx_trust_marker.bak','estop_latch','estop_latch.bak')
-    require(set(protection)==set(names),'默认S0需要既有右侧六项保护文件绑定')
+    require(set(protection)==set(names),'默认S0需要活动侧既有六项保护文件绑定')
     trust=Path(protection['rx_trust.lock']['path']).parent
     latch=Path(protection['estop_latch']['path'])
     require(all(Path(protection[name]['path'])==trust/name for name in names if name.startswith('rx_'))
             and latch.name=='estop_latch' and Path(protection['estop_latch.bak']['path'])==Path(str(latch)+'.bak')
             and Path(protection['estop_latch.lock']['path'])==latch.parent/'estop_latch.lock',
             '默认S0必须使用原信任目录和latch路径，禁止空目录替代')
-    return {'schema':'MAINTENANCE_S0_MIXED_V1','scope':S0_MIXED_SCOPE,
+    contract={'schema':'MAINTENANCE_S0_MIXED_V1' if active_side=='right' else 'MAINTENANCE_S0_POSITION_HOLD_V1',
+            'scope':S0_MIXED_SCOPE if active_side=='right' else S0_POSITION_SCOPE,
             'robot_id':robot,'hardware_id':hardware_id,**binaries,
-            'config':dict(BUS_CONFIG),'calibrations':[dict(references[path]) for path in paths],
+            'config':dict(config),'calibrations':[dict(references[path]) for path in paths],
             'rx_trust_dir':str(trust),'latch_path':str(latch),'motor_ids':list(hardware['motor_ids']),
-            'selected_motor_id':WHEEL_PULSE_TARGETS['front'][1],
-            'wheel_ids':[motor for name,motor in zip(hardware['joints'],hardware['motor_ids'])
-                         if name.startswith('base_') and name.endswith('_wheel')],
             'child_budget_ns':MIXED_CHILD_BUDGET_NS,'daemon_ready_budget_ns':8_000_000_000,
             'daemon_exit_budget_ns':8_000_000_000,'final_latch_budget_ns':1_000_000_000}
+    if active_side=='right':
+        contract.update(selected_motor_id=WHEEL_PULSE_TARGETS['front'][1],
+            wheel_ids=[motor for name,motor in zip(hardware['joints'],hardware['motor_ids'])
+                       if name.startswith('base_') and name.endswith('_wheel')])
+    else:
+        contract.update(joint_names=list(hardware['joints']),hold_duration_ns=20_000_000_000,
+                        cycle_period_ns=50_000_000,cycle_count=400,anchor_freshness_ns=200_000_000,
+                        return_tolerance_raw=4,enable_budget_ns=300_000_000,
+                        enabled_budget_ns=21_000_000_000,disable_budget_ns=200_000_000)
+    return contract
 
 
 def validate_s0_mixed_plan(plan):
@@ -498,14 +528,33 @@ def validate_s0_mixed_plan(plan):
             and plan.get('scope')==S0_MIXED_SCOPE and plan.get('position_targets')==[]
             and not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold',
-                'bus2_arm_range_only','right_gripper_release')),
+                'bus2_arm_range_only','right_gripper_release','s0_position_hold')),
             '默认S0模式不得混用维护动作或修改固定合同')
 
 
+def validate_s0_position_plan(plan):
+    require(plan.get('s0_position_hold')==s0_position_contract(plan['bindings'])
+            and plan.get('scope')==S0_POSITION_SCOPE and plan.get('position_targets')==[]
+            and not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
+                'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold',
+                'bus2_arm_range_only','right_gripper_release','s0_mixed_hold'))
+            and plan.get('base_targets')==[{'side':side,'motor':motor,'name':name,'decision':'DEFERRED',
+                'reason_code':'BASE_FIRMWARE_CONTRACT_UNVERIFIED'} for side,motor,name in BASE_TARGETS],
+            '左侧默认S0不得混用其他动作、解除轮子DEFERRED或修改固定合同')
+
+
+def s0_plan_entry(plan):
+    require(sum(key in plan for key in ('s0_mixed_hold','s0_position_hold'))==1,'默认S0须唯一活动侧')
+    key='s0_position_hold' if 's0_position_hold' in plan else 's0_mixed_hold'
+    return key,'left' if key=='s0_position_hold' else 'right'
+
+
 def verify_s0_mixed_refs(plan):
-    validate_s0_mixed_plan(plan)
-    contract=plan['s0_mixed_hold']
-    for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations']]:
+    key,active_side=s0_plan_entry(plan)
+    (validate_s0_mixed_plan if active_side=='right' else validate_s0_position_plan)(plan)
+    contract=plan[key]
+    for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations'],
+                *([contract['config']] if active_side=='left' else [])]:
         verify_ref(ref,executable=ref in (contract['s0_daemon'],contract['supervised_demo']))
         verify_s0_ref_metadata(ref)
     verify_bus_config(plan)
@@ -519,13 +568,14 @@ def verify_s0_ref_metadata(ref):
     require(all(ref.get(key)==value for key,value in actual.items()),'默认S0产物/校准元数据变化')
 
 
-def verify_s0_protection(bindings,phase):
-    """左侧不变；右锁保留inode，右持久值只允许本轮合法替换。"""
+def verify_s0_protection(bindings,phase,active_side='right'):
+    """非活动侧不变；活动侧锁保留inode，持久值只允许本轮合法替换。"""
+    require(active_side in SERIALS,'默认S0活动侧错误')
     expected_marker=b'0\n' if phase=='authorized' else b'1\n'
     evidence=[]
     for side,files in bindings['protection'].items():
         for name,ref in files.items():
-            if side!='right':
+            if side!=active_side:
                 evidence.append(verify_protection_file(side,name,ref));continue
             path=Path(ref['path']);info=path.lstat()
             mode=stat.S_IMODE(info.st_mode)
@@ -535,18 +585,18 @@ def verify_s0_protection(bindings,phase):
                     and all(actual==ref[key] for key,actual in
                             (('uid',info.st_uid),('gid',info.st_gid)))
                     and (mode==ref['mode'] or latch_writer_mode),
-                    f'右侧保护文件身份/权限变化：{name} phase={phase} '
+                    f'{side}侧保护文件身份/权限变化：{name} phase={phase} '
                     f'expected dev/ino/mode/uid/gid/nlink={ref["device"]}/{ref["inode"]}/{ref["mode"]:04o}/'
                     f'{ref["uid"]}/{ref["gid"]}/1 actual={info.st_dev}/{info.st_ino}/{mode:04o}/'
                     f'{info.st_uid}/{info.st_gid}/{info.st_nlink}')
             raw=path.read_bytes()
             if name.endswith('.lock'):
-                require(info.st_ino==ref['inode'] and info.st_dev==ref['device'],'右侧锁inode变化')
+                require(info.st_ino==ref['inode'] and info.st_dev==ref['device'],'活动侧锁inode变化')
             elif name.startswith('rx_trust_marker'):
-                require(raw==expected_marker,'右侧marker阶段值错误')
+                require(raw==expected_marker,'活动侧marker阶段值错误')
             else:
                 require(raw in ((b'0\n',b'1\n') if phase=='running' else (b'1\n',)),
-                        '右侧latch阶段值错误')
+                        '活动侧latch阶段值错误')
             evidence.append({'path':str(path),'device':info.st_dev,'inode':info.st_ino,'mode':mode,
                              'sha256':hashlib.sha256(raw).hexdigest(),
                              'bytes':len(raw),'phase':phase})
@@ -637,6 +687,75 @@ def parse_s0_mixed_result(text,plan,expiry):
     return result
 
 
+def parse_s0_position_result(text,plan,expiry):
+    result=strict_json(text);contract=plan['s0_position_hold']
+    require(isinstance(result,dict) and result.get('schema')=='SUPERVISED_S0_POSITION_HOLD_V1'
+            and result.get('config')==contract['config']['path']
+            and result.get('hardware_id')==contract['hardware_id']
+            and isinstance(result.get('motor_ids'),list) and all(type(motor) is int for motor in result['motor_ids'])
+            and result.get('motor_ids')==contract['motor_ids']
+            and result.get('go_expires_at_unix_ns')==expiry
+            and type(result.get('layout_id')) is int and 0<=result['layout_id']<2**64,
+            '左侧默认S0 sender回执身份不符')
+    require(result.get('result')=='SOFTWARE_PATH_PASS' and not result.get('error')
+            and result.get('cleanup_errors')==[] and result.get('manual_power_cut_required') is False
+            and all(result.get(key) is True for key in ('hold_position_verified','disable_retired',
+                    'torque_off_confirmed','final_estop_published'))
+            and result.get('physical_motion')=='NOT_OBSERVED' and result.get('stop51')=='NOT_RUN'
+            and result.get('full_hardware_acceptance') is False and result.get('deployable') is False,
+            '左侧默认S0 sender失败或停止/观测证据不完整')
+    anchor=result.get('anchor',{});raw=anchor.get('raw');target=anchor.get('target')
+    require(isinstance(raw,list) and len(raw)==8 and all(type(v) is int and 0<=v<=4095 for v in raw)
+            and isinstance(target,list) and len(target)==8
+            and all(type(v) in (int,float) and abs(v)<float('inf') for v in target)
+            and type(anchor.get('stamp_ns')) is int and anchor['stamp_ns']>=0,
+            '左侧默认S0固定八关节锚点不完整')
+    timing=('enable_attempt_ns','enable_deadline_ns','enable_transition_deadline_ns','enable_confirmed_ns',
+            'hold_start_ns','hold_end_ns','disable_attempt_ns',
+            'torque_off_confirmed_ns','final_estop_attempt_ns','final_estop_publish_return_ns','finished_ns')
+    require(all(type(result.get(key)) is int and result[key]>=0 for key in timing),'左侧默认S0时刻缺失')
+    enabled=result['enable_attempt_ns'];start=result['hold_start_ns'];end=result['hold_end_ns']
+    require(result['enable_deadline_ns']==enabled+21_000_000_000
+            and result['enable_transition_deadline_ns']==enabled+300_000_000
+            and enabled<=result['enable_confirmed_ns']<=result['enable_transition_deadline_ns']
+            and result['enable_confirmed_ns']<=start<=result['enable_transition_deadline_ns']
+            and end==start+20_000_000_000
+            and 0<=start-anchor['stamp_ns']<200_000_000
+            and end<=result['disable_attempt_ns']<=result['torque_off_confirmed_ns']
+            <=result['disable_attempt_ns']+200_000_000
+            and result['torque_off_confirmed_ns']<=result['final_estop_attempt_ns']
+            <=result['final_estop_publish_return_ns']<=result['finished_ns']<=enabled+21_000_000_000,
+            '左侧默认S0启用300毫秒/保持20秒/停止200毫秒/总21秒或锚点期限不符')
+    cycles=result.get('cycles');samples=result.get('hold_samples')
+    require(isinstance(cycles,list) and len(cycles)==400 and isinstance(samples,list) and len(samples)==400,
+            '左侧默认S0周期/逐拍反馈组数不完整')
+    previous=anchor['stamp_ns']
+    for index,(row,sample) in enumerate(zip(cycles,samples)):
+        scheduled=start+index*50_000_000
+        deadline=min(scheduled+50_000_000,anchor['stamp_ns']+200_000_000) if index==0 else scheduled+50_000_000
+        require(isinstance(row,dict) and isinstance(sample,dict)
+                and all(type(row.get(key)) is int and row[key]>=0 for key in
+                        ('cycle','scheduled_ns','local_deadline_ns','publish_attempt_ns','publish_return_ns','source_deadline_ns')),
+                '左侧默认S0周期时刻字段错误')
+        source=min(row['publish_attempt_ns']+200_000_000,enabled+21_000_000_000)
+        if index==0:source=min(source,anchor['stamp_ns']+200_000_000)
+        require(row['cycle']==index and row['scheduled_ns']==scheduled and row['local_deadline_ns']==deadline
+                and scheduled<=row['publish_attempt_ns']<=row['publish_return_ns']<deadline
+                and row['publish_attempt_ns']<row['source_deadline_ns']==source,
+                '左侧默认S0绝对拍次/命令期限错误')
+        observed=sample.get('observed_ns');stamp=sample.get('stamp_ns');positions=sample.get('raw')
+        require(type(sample.get('cycle')) is int and sample['cycle']==index
+                and type(stamp) is int and type(observed) is int and previous<stamp<=observed
+                and observed-stamp<200_000_000
+                and row['publish_return_ns']<=observed<deadline
+                and isinstance(positions,list) and len(positions)==8
+                and all(type(value) is int and 0<=value<=4095 and abs(value-anchor_raw)<=4
+                        for value,anchor_raw in zip(positions,raw)),
+                '左侧默认S0逐拍反馈未推进、不新鲜、越窗或相对锚点超过4raw')
+        previous=stamp
+    return result
+
+
 def s0_trust_argv(contract,operation):
     return [contract['s0_daemon']['path'],'rx-trust',operation,'--robot-id',contract['robot_id'],
             '--rx-trust-dir',contract['rx_trust_dir'],'--latch-path',contract['latch_path']]
@@ -668,21 +787,22 @@ def s0_ready_chunk(pending,chunk):
     return pending,ready
 
 
-def verify_s0_daemon_locks(bindings,identity):
+def verify_s0_daemon_locks(bindings,identity,active_side='right'):
     """锁内容与内核FLOCK所有者同时绑定，busy本身不等于本轮daemon持有。"""
+    require(active_side in SERIALS,'默认S0活动侧错误')
     rows=[row.split() for row in Path('/proc/locks').read_text().splitlines()]
     for name in ('rx_trust.lock','estop_latch.lock'):
-        ref=bindings['protection']['right'][name]
+        ref=bindings['protection'][active_side][name]
         key=f'{os.major(ref["device"]):02x}:{os.minor(ref["device"]):02x}:{ref["inode"]}'
         require(any(len(row)>=6 and row[1:4]==['FLOCK','ADVISORY','WRITE']
                     and row[4]==str(identity['pid']) and row[5]==key for row in rows)
                 and Path(ref['path']).read_bytes()==f'{identity["pid"]}\n'.encode(),
-                '默认S0未真实独占既有右侧双锁')
+                '默认S0未真实独占既有活动侧双锁')
 
 
 def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
-    """左锁不交接；真实退出并取回右锁之前绝不恢复维护UART。"""
-    io=engine.io;plan=engine.plan;bindings=plan['bindings'];contract=plan['s0_mixed_hold']
+    """仅交接活动侧；真实退出并取回双锁之前绝不恢复维护UART。"""
+    io=engine.io;plan=engine.plan;bindings=plan['bindings'];key,active_side=s0_plan_entry(plan);contract=plan[key]
     io.s0_contract=contract;io.s0_post_ready=False
     io.s0_environment=proc_helper.clean_environment(os.environ)
     io.s0_sender_started=False
@@ -690,7 +810,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
     record=io.s0_daemon_record;report['s0_daemon']=record
     report['s0_cleanup_errors']=[]
     daemon_log=io.output/'s0.jsonl';sender_output=io.output/'s0-sender.json'
-    right=[locks[('right',name)] for name in ('rx_trust.lock','estop_latch.lock')]
+    active_locks=[locks[(active_side,name)] for name in ('rx_trust.lock','estop_latch.lock')]
     released=set();authorized=False;spawned=False;log=None;failure=None;pinned_latches=[]
 
     def collect_sender_result():
@@ -722,14 +842,15 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
 
     def runtime_gate():
         io.check();validate_go(go,plan,time.time_ns())
-        for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations']]:
+        for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations'],
+                    *([contract['config']] if active_side=='left' else [])]:
             verify_s0_ref_metadata(ref)
         identity=daemon_alive()
         # poll只回收本轮自有sender，消解其自然退出与/proc读取之间的竞态。
         if io.child is not None:io.child.poll()
         inspect_processes(io,bindings,proc_helper,owned=io.s0_identities)
-        verify_s0_protection(bindings,'running')
-        verify_s0_daemon_locks(bindings,identity)
+        verify_s0_protection(bindings,'running',active_side)
+        verify_s0_daemon_locks(bindings,identity,active_side)
 
     def stop_daemon():
         process=io.s0_daemon
@@ -762,21 +883,21 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         require(go['expires_at_ns']-time.time_ns()>=contract['daemon_ready_budget_ns']+MIXED_CHILD_BUDGET_NS,
                 '本次GO不足启动及完整sender预算')
         for name in ('estop_latch','estop_latch.bak'):
-            ref=bindings['protection']['right'][name]
+            ref=bindings['protection'][active_side][name]
             fd=os.open(ref['path'],os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
             pinned_latches.append(fd)
             info=os.fstat(fd)
             require(stat.S_ISREG(info.st_mode) and info.st_nlink==1
                     and (info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
                     ==(ref['device'],ref['inode'],ref['uid'],ref['gid'],ref['mode']),
-                    '持有原右侧latch inode前身份变化：'+name)
+                    '持有原活动侧latch inode前身份变化：'+name)
         # 只读FD阻止原inode在本轮多次rename后被回收复用，不阻碍S0合法替换路径。
-        fcntl.flock(right[0].fileno(),fcntl.LOCK_UN);released.add(0)
+        fcntl.flock(active_locks[0].fileno(),fcntl.LOCK_UN);released.add(0)
         authorized=True
         io.command(s0_trust_argv(contract,'authorize'),s0_control=True)
-        report['s0_authorized_protection']=verify_s0_protection(bindings,'authorized')
+        report['s0_authorized_protection']=verify_s0_protection(bindings,'authorized',active_side)
         io.check();validate_go(go,plan,time.time_ns());verify_s0_mixed_refs(plan)
-        fcntl.flock(right[1].fileno(),fcntl.LOCK_UN);released.add(1)
+        fcntl.flock(active_locks[1].fileno(),fcntl.LOCK_UN);released.add(1)
         argv=[contract['s0_daemon']['path'],'--config',contract['config']['path'],
               '--hardware-id',contract['hardware_id'],'--latch-path',contract['latch_path'],
               '--rx-trust-dir',contract['rx_trust_dir'],'--notify-mode','standalone']
@@ -799,7 +920,8 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
                     runtime_gate();record['ready_ns']=io.now();break
                 require(io.now()<ready_deadline,'默认S0启动超过固定8秒预算')
                 io.sleep(.01)
-        argv=[contract['supervised_demo']['path'],'--s0-mixed-hold','--config',contract['config']['path'],
+        argv=[contract['supervised_demo']['path'],'--s0-mixed-hold' if active_side=='right' else '--s0-position-hold',
+              '--config',contract['config']['path'],
               '--hardware-id',contract['hardware_id'],'--s0-log',str(daemon_log),'--output',str(sender_output),
               '--ack-safety-checklist','--go-expires-at-unix-ns',str(go['expires_at_ns'])]
         io.s0_sender_argv=tuple(argv)
@@ -813,20 +935,22 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         if report['s0_sender_result'].get('manual_power_cut_required') is True:
             engine.manual_cut=True
         require(io.commands[-1]['exit_code']==0,'默认S0 sender退出码非零')
-        result=parse_s0_mixed_result(raw.decode(),plan,go['expires_at_ns'])
-        for motor,name in enumerate(MIXED_ARM_NAMES,1):
+        result=(parse_s0_mixed_result if active_side=='right' else parse_s0_position_result)(raw.decode(),plan,go['expires_at_ns'])
+        targets=list(zip(range(1,7),MIXED_ARM_NAMES)) if active_side=='right' else list(zip(contract['motor_ids'],contract['joint_names']))
+        for motor,name in targets:
             slot=contract['motor_ids'].index(motor)
-            engine.rows.append({'side':'right','motor':motor,'name':name,'kind':'position_hold','status':'PASS',
+            engine.rows.append({'side':active_side,'motor':motor,'name':name,'kind':'position_hold','status':'PASS',
                 'anchor_raw':result['anchor']['raw'][slot],'sampled_ns':result['anchor']['stamp_ns'],
                 'anchor_source':'sender_frozen_joint_state','cleanup_errors':[]})
-        selected=contract['selected_motor_id']
-        engine.rows.append({'side':'right','motor':selected,'name':WHEEL_PULSE_TARGETS['front'][2],
-                            'kind':'velocity','status':'PASS','raw_velocity':500,'cleanup_errors':[]})
+        if active_side=='right':
+            selected=contract['selected_motor_id']
+            engine.rows.append({'side':'right','motor':selected,'name':WHEEL_PULSE_TARGETS['front'][2],
+                                'kind':'velocity','status':'PASS','raw_velocity':500,'cleanup_errors':[]})
         # EStop发布不等于持久化；断扭后只读等双latch，不追加命令或延长启用预算。
         deadline=io.now()+contract['final_latch_budget_ns']
         while True:
             daemon_alive()
-            latch=bindings['protection']['right']
+            latch=bindings['protection'][active_side]
             if all(Path(latch[name]['path']).read_bytes()==b'1\n' for name in ('estop_latch','estop_latch.bak')):
                 report['s0_final_latch_observed_ns']=io.now();break
             require(io.now()<deadline,'sender EStop后固定1秒内未见双latch1')
@@ -863,12 +987,12 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
             try:
                 inspect_processes(io,bindings,proc_helper,cleanup=True)
                 for index in sorted(released):
-                    ref=bindings['protection']['right'][('rx_trust.lock','estop_latch.lock')[index]]
-                    require(Path(ref['path']).stat().st_ino==os.fstat(right[index].fileno()).st_ino==ref['inode'],
-                            '回收右锁前inode变化')
-                    fcntl.flock(right[index].fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
-                for elevated in (False,True):inspect_holder(io,DEVICES['right'],elevated,cleanup=True)
-                report['s0_final_protection']=verify_s0_protection(bindings,'final')
+                    ref=bindings['protection'][active_side][('rx_trust.lock','estop_latch.lock')[index]]
+                    require(Path(ref['path']).stat().st_ino==os.fstat(active_locks[index].fileno()).st_ino==ref['inode'],
+                            '回收活动侧锁前inode变化')
+                    fcntl.flock(active_locks[index].fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                for elevated in (False,True):inspect_holder(io,DEVICES[active_side],elevated,cleanup=True)
+                report['s0_final_protection']=verify_s0_protection(bindings,'final',active_side)
                 io.s0_post_ready=True
             except BaseException as error:report['s0_cleanup_errors'].append('handoff_back:'+repr(error))
         if not io.s0_post_ready:
@@ -1305,6 +1429,9 @@ def position_targets_from_plan(plan):
     if 's0_mixed_hold' in plan:
         validate_s0_mixed_plan(plan)
         return []
+    if 's0_position_hold' in plan:
+        validate_s0_position_plan(plan)
+        return []
     if 'right_gripper_release' in plan:
         validate_gripper_release_plan(plan)
         return []
@@ -1339,7 +1466,7 @@ def position_targets_from_plan(plan):
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
               left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
-              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,s0_mixed_hold=False):
+              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,s0_mixed_hold=False,s0_position_hold=False):
     require(arm_range_id is None or bus2_arm_range_only and type(arm_range_id) is int and arm_range_id==3,
             '单ID3选择只能附加到右臂范围只读')
     require(mixed_wheel_id is None or bus2_mixed_raw_hold and type(mixed_wheel_id) is int and mixed_wheel_id in (7,8,9),
@@ -1355,15 +1482,15 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
     require(type(right_wheel_pulse) is bool and type(right_wheel_feedback_only) is bool
             and type(front_wheel_feedback_only) is bool and type(left_wheel_feedback_only) is bool
             and type(bus2_mixed_raw_hold) is bool and type(bus2_arm_range_only) is bool
-            and type(right_gripper_release) is bool and type(s0_mixed_hold) is bool
+            and type(right_gripper_release) is bool and type(s0_mixed_hold) is bool and type(s0_position_hold) is bool
             and sum((bool(pulse_requested),right_wheel_feedback_only,front_wheel_feedback_only,
-                     left_wheel_feedback_only,bus2_mixed_raw_hold,bus2_arm_range_only,right_gripper_release,s0_mixed_hold))<=1
+                     left_wheel_feedback_only,bus2_mixed_raw_hold,bus2_arm_range_only,right_gripper_release,s0_mixed_hold,s0_position_hold))<=1
             and not ((pulse_requested or right_wheel_feedback_only or front_wheel_feedback_only
-                      or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only or right_gripper_release or s0_mixed_hold)
+                      or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only or right_gripper_release or s0_mixed_hold or s0_position_hold)
                      and position_target_names is not None),
             '轮诊断禁止互相混用或混用位置选择')
     position_targets = [] if (pulse_requested or right_wheel_feedback_only or front_wheel_feedback_only
-                             or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only or right_gripper_release or s0_mixed_hold) else select_position_targets(position_target_names)
+                             or left_wheel_feedback_only or bus2_mixed_raw_hold or bus2_arm_range_only or right_gripper_release or s0_mixed_hold or s0_position_hold) else select_position_targets(position_target_names)
     require(bindings["schema"] == "MAINTENANCE_BINDINGS_V1", "绑定 schema 错误")
     require(bindings["tool"]["sha256"] == TOOL_SHA and bindings["tool"]["bytes"] == TOOL_BYTES,
             "必须采用 root 指定冻结 poke")
@@ -1422,6 +1549,12 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
         plan['limitations']=['默认S0软件链与原STOP51分开留证；冻结反馈不是adapter内部enable锚点',
                              'D15 OPEN/DEFERRED；不声明物理动作、无人值守或生产验收完成']
         validate_s0_mixed_plan(plan)
+    if s0_position_hold:
+        plan['s0_position_hold']=s0_position_contract(bindings)
+        plan['scope']=S0_POSITION_SCOPE
+        plan['limitations']=['左总线默认S0八关节原位保持；不包含相机、动态动作或电机参数调整',
+                             '原STOP51与原4raw位置检查独立后验；D15 OPEN/DEFERRED，deployable=false']
+        validate_s0_position_plan(plan)
     if bus2_arm_range_only:
         plan['bus2_arm_range_only']=arm_range_contract(bindings,arm_range_id)
         plan['scope']=plan['bus2_arm_range_only']['scope']
@@ -1441,6 +1574,8 @@ def validate_go(go, plan, now_ns):
     position_targets_from_plan(plan)
     if 's0_mixed_hold' in plan:
         validate_s0_mixed_plan(plan)
+    if 's0_position_hold' in plan:
+        validate_s0_position_plan(plan)
     require(plan['schema']=='MAINTENANCE_PLAN_V2' and go["schema"] == "MAINTENANCE_GO_V2" and go["issued_by"] == "root"
             and go["plan_sha256"] == digest(plan) and go['artifact_root']==plan['artifact_root'],
             "拒绝旧V1或未绑定显式根目录的root当次GO")
@@ -1456,6 +1591,14 @@ def validate_go(go, plan, now_ns):
         require(type(facts["confirmed_at_ns"]) is int
                 and go["issued_at_ns"] - 3600_000_000_000 <= facts["confirmed_at_ns"] <= now_ns,
                 "现场确认时间错误")
+    if 's0_position_hold' in plan:
+        facts=go['physical']['left']
+        require(0<go['expires_at_ns']-go['issued_at_ns']<=600_000_000_000
+                and 0<=now_ns-facts['confirmed_at_ns']<=600_000_000_000,
+                '左侧默认S0现场/GO最多600秒')
+        require(facts.get('position_hold_confirmation_scope')==S0_POSITION_SCOPE
+                and isinstance(facts.get('position_hold_confirmation_answer'),str)
+                and facts['position_hold_confirmation_answer'].strip(),'缺本轮左侧八关节保持具体现场确认')
     if 'bus2_arm_range_only' in plan:
         facts=go['physical']['right']
         verify_arm_calibration(plan)
@@ -3233,14 +3376,15 @@ def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=
     """复用非UART后验；只读序列不借此产生停止判定。"""
     if identity_checks is None:
         identity_checks=[]
-    s0_mode='s0_mixed_hold' in report.get('plan',{})
-    right_paths={ref['path'] for ref in bindings['protection'].get('right',{}).values()} if s0_mode else set()
+    s0_mode=any(key in report.get('plan',{}) for key in ('s0_mixed_hold','s0_position_hold'))
+    active_side=s0_plan_entry(report['plan'])[1] if s0_mode else None
+    active_paths={ref['path'] for ref in bindings['protection'].get(active_side,{}).values()} if s0_mode else set()
     tasks=[(f"ref:{reference['path']}",lambda reference=reference:verify_ref(reference))
-           for reference in bindings['refs'] if reference['path'] not in right_paths]
+           for reference in bindings['refs'] if reference['path'] not in active_paths]
     tasks += [(f'protection:{side}/{name}',lambda side=side,name=name,reference=reference:verify_protection_file(side,name,reference))
-              for side,files in bindings['protection'].items() for name,reference in files.items() if not (s0_mode and side=='right')]
+              for side,files in bindings['protection'].items() for name,reference in files.items() if not (s0_mode and side==active_side)]
     if s0_mode:
-        tasks.append(('s0_protection',lambda:verify_s0_protection(bindings,'final')))
+        tasks.append(('s0_protection',lambda:verify_s0_protection(bindings,'final',active_side)))
     tasks += [(f'service:{unit}',lambda unit=unit:inspect_unit(io,unit,cleanup=True))
               for unit in UNITS+OLD_UNITS+['xlerobot-handoff.service']]
     tasks.append(('process_snapshot',lambda:inspect_processes(io,bindings,proc_helper,cleanup=True)))
@@ -3282,6 +3426,25 @@ def classify_run_result(report):
                     '右夹爪单程探针必须唯一为物理6')
             require(probes[0].get('goal_raw')==report['plan']['right_gripper_release']['goal_raw'],
                     '右夹爪探针目标与本次计划不符')
+        except BaseException:
+            return 'FAIL'
+        return 'PASS'
+    if 's0_position_hold' in report.get('plan',{}):
+        try:
+            plan=report['plan'];validate_s0_position_plan(plan)
+            require(report.get('s0_post_ready') is True and not report.get('s0_cleanup_errors'),
+                    '左侧默认S0未完成锁交回/收尾')
+            result=parse_s0_position_result(json.dumps(report['s0_sender_result']),plan,report['go']['expires_at_ns'])
+            contract=plan['s0_position_hold']
+            require([(p['side'],p['motor'],p['kind']) for p in probes]
+                    ==[('left',motor,'position_hold') for motor in contract['motor_ids']],
+                    '左侧默认S0八关节探针集合错误')
+            for slot,probe in enumerate(probes):
+                require(probe.get('name')==contract['joint_names'][slot]
+                        and probe.get('anchor_source')=='sender_frozen_joint_state'
+                        and probe.get('anchor_raw')==result['anchor']['raw'][slot]
+                        and probe.get('sampled_ns')==result['anchor']['stamp_ns'],
+                        '左侧默认S0冻结反馈目标不符')
         except BaseException:
             return 'FAIL'
         return 'PASS'
@@ -3396,7 +3559,7 @@ def execute(plan, go, approval):
     arm_range_only='bus2_arm_range_only' in plan
     feedback_only=any(f'{role}_wheel_feedback_only' in plan for role in WHEEL_ROLES)
     diagnostic_only=arm_range_only or feedback_only
-    s0_mode='s0_mixed_hold' in plan
+    s0_mode=any(key in plan for key in ('s0_mixed_hold','s0_position_hold'))
     feedback_motor=feedback_entry(plan)[1] if feedback_only else None
     front_feedback_only=feedback_motor in (8,9)
     feedback_verification=('arm_range_capture' if arm_range_only else f'{WHEEL_STOP_TARGETS[feedback_motor]}{feedback_motor}_feedback_capture'
@@ -3428,7 +3591,7 @@ def execute(plan, go, approval):
     if 'bus2_mixed_raw_hold' in plan:
         report['hardware_layer']='维护层真实FeetechAdapter混合链'
     if s0_mode:
-        report.update(hardware_layer='默认S0混合命令与原维护STOP51',
+        report.update(hardware_layer='默认S0左侧八关节保持与原维护STOP51' if 's0_position_hold' in plan else '默认S0混合命令与原维护STOP51',
                       outer_maintenance_plan_go_locks_connected=True,physical_motion='NOT_OBSERVED')
     if diagnostic_only:
         report['stop_verification']={'status':'NOT_EVALUATED_DIAGNOSTIC_ONLY'}
@@ -3617,6 +3780,7 @@ def main(argv=None):
     parser.add_argument('--bus2-mixed-raw-hold',action='store_true',
                         help='仅FW3.10/Phase12：六臂原位保持及所选轮raw+500/20秒，默认物理9；复用整机停止后验')
     parser.add_argument('--s0-mixed-hold',action='store_true',help=S0_MIXED_SCOPE)
+    parser.add_argument('--s0-position-hold',action='store_true',help=S0_POSITION_SCOPE)
     parser.add_argument('--mixed-wheel-id',type=int,choices=(7,8,9),
                         help='仅附加到混合维护：选择物理7/8/9，缺省物理9；其余两轮保持raw0')
     parser.add_argument('--bus2-arm-range-only',action='store_true',
@@ -3638,19 +3802,19 @@ def main(argv=None):
     require(not options.zero_stop_check or pulse_requested,'零速保持使能检查只能附加到单轮pulse')
     require(sum((bool(pulse_requested),options.right_wheel_feedback_only,options.front_wheel_feedback_only,
                  options.left_wheel_feedback_only,options.bus2_mixed_raw_hold,options.bus2_arm_range_only,
-                 gripper_requested,options.s0_mixed_hold))<=1
+                 gripper_requested,options.s0_mixed_hold,options.s0_position_hold))<=1
             and not ((pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
                       or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold or options.bus2_arm_range_only
-                      or gripper_requested or options.s0_mixed_hold)
+                      or gripper_requested or options.s0_mixed_hold or options.s0_position_hold)
                      and options.position_target is not None),'轮诊断禁止互相混用或混用位置选择')
     selected_targets = [] if (pulse_requested or options.right_wheel_feedback_only or options.front_wheel_feedback_only
                              or options.left_wheel_feedback_only or options.bus2_mixed_raw_hold
-                             or options.bus2_arm_range_only or gripper_requested or options.s0_mixed_hold) else select_position_targets(options.position_target)
+                             or options.bus2_arm_range_only or gripper_requested or options.s0_mixed_hold or options.s0_position_hold) else select_position_targets(options.position_target)
     if not all((options.bindings,options.output,options.run_id,options.artifact_root)):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
                           'position_targets':selected_targets,
-                          'scope':S0_MIXED_SCOPE if options.s0_mixed_hold else
+                          'scope':S0_POSITION_SCOPE if options.s0_position_hold else S0_MIXED_SCOPE if options.s0_mixed_hold else
                               GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else
                               (ARM_ELBOW_RANGE_SCOPE if options.arm_range_id==3 else ARM_RANGE_SCOPE)
                               if options.bus2_arm_range_only else
@@ -3664,7 +3828,7 @@ def main(argv=None):
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
                    right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id,
-                   mixed_wheel_id=options.mixed_wheel_id,s0_mixed_hold=options.s0_mixed_hold)
+                   mixed_wheel_id=options.mixed_wheel_id,s0_mixed_hold=options.s0_mixed_hold,s0_position_hold=options.s0_position_hold)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

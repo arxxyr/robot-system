@@ -67,9 +67,10 @@ def packet(motor, status, payload=b""):
 
 
 class ServoPty:
-    """固定九电机协议夹具，覆盖本次入口实际使用的寄存器。"""
+    """左八位置关节或右九混合电机协议夹具，只实现本次所用寄存器。"""
 
-    def __init__(self, fail_enable=False):
+    def __init__(self, fail_enable=False, position_only=False):
+        self.position_only = position_only
         self.master, self.slave = pty.openpty()
         self.path = os.ttyname(self.slave)
         if not self.path.startswith("/dev/pts/"):
@@ -82,6 +83,7 @@ class ServoPty:
         self.last_update = time.monotonic()
         self.enable_attempts = 0
         self.nonzero_writes = []
+        self.position_writes = []
         self.stop_writes = 0
         self.error = None
         self.stop = threading.Event()
@@ -90,7 +92,7 @@ class ServoPty:
 
     def advance(self):
         now = time.monotonic()
-        for motor in (7, 8, 9):
+        for motor in (() if self.position_only else (7, 8, 9)):
             if self.enabled[motor]:
                 raw = self.goals[motor]
                 speed = -(raw & 0x7fff) if raw & 0x8000 else raw
@@ -100,7 +102,7 @@ class ServoPty:
     def read(self, motor, register, width):
         self.advance()
         values = {
-            0: 3, 1: 10, 3: 777, 18: 12, 33: int(motor >= 7),
+            0: 3, 1: 10, 3: 777, 18: 12, 33: int(motor >= 7 and not self.position_only),
             40: self.enabled[motor], 42: self.goal_positions[motor],
             46: self.goals[motor], 56: round(self.positions[motor]) % 4096,
             58: self.goals[motor] if self.enabled[motor] else 0,
@@ -121,15 +123,16 @@ class ServoPty:
             self.enabled[motor] = value
             self.stop_writes += int(value == 0)
         elif register == 42:
-            if motor >= 7:
+            if motor >= 7 and not self.position_only:
                 raise AssertionError("轮子不能接收位置目标")
             if value != 2047:
-                raise AssertionError("六臂原位目标被改变")
+                raise AssertionError("原位目标被改变")
+            self.position_writes.append((motor, value, time.monotonic()))
             self.goal_positions[motor] = value
             self.positions[motor] = float(value)
         elif register == 46:
-            if motor < 7:
-                raise AssertionError("机械臂不能接收轮速目标")
+            if motor < 7 or self.position_only:
+                raise AssertionError("位置关节不能接收轮速目标")
             self.goals[motor] = value
             if value:
                 self.nonzero_writes.append((motor, value, time.monotonic()))
@@ -201,7 +204,9 @@ class ServoPty:
 @unittest.skipUnless(sys.platform == "linux" and os.uname().machine == "aarch64" and os.environ.get("ROBOT_TEST_S0_BIN")
                      and os.environ.get("ROBOT_TEST_MIXED_BIN"), "需要显式绑定同源Linux软件测试产物")
 class MixedSenderIntegration(unittest.TestCase):
-    def run_case(self, fail_enable):
+    def run_case(self, fail_enable, position_only=False):
+        active = "left" if position_only else "right"
+        passive = "right" if position_only else "left"
         daemon_bin = Path(os.environ["ROBOT_TEST_S0_BIN"]).resolve(strict=True)
         sender_bin = Path(os.environ["ROBOT_TEST_MIXED_BIN"]).resolve(strict=True)
         evidence_root = os.environ.get("ROBOT_TEST_EVIDENCE_DIR")
@@ -210,14 +215,18 @@ class MixedSenderIntegration(unittest.TestCase):
                      if evidence_root else Path(temporary.name)).resolve()
         maintenance = load_script("run_hardware_maintenance")
         proc_helper = load_script("run_post_e_h2")
-        servo = ServoPty(fail_enable)
+        servo = ServoPty(fail_enable, position_only)
         executor = monitor = None
         monitoring_done, daemon_locks_seen = threading.Event(), threading.Event()
-        lock_checks = {"left": 0, "right": 0, "right_reacquired_after_wait": 0, "errors": []}
+        lock_checks = {"left": 0, "right": 0, "active_reacquired_after_wait": 0, "errors": []}
         report = {}
         try:
             robot = f"mixed_pty_{os.getpid()}_{time.monotonic_ns()}"
-            joints = list(maintenance.MIXED_ARM_NAMES) + ["base_right_wheel", "base_front_wheel", "base_left_wheel"]
+            right_names = list(maintenance.MIXED_ARM_NAMES) + ["base_right_wheel", "base_front_wheel", "base_left_wheel"]
+            left_names = [name.replace("right_", "left_", 1) for name in maintenance.MIXED_ARM_NAMES]
+            left_names += ["head_motor_1", "head_motor_2"]
+            joints = left_names if position_only else right_names
+            hardware_id = "left_arm_full_with_head" if position_only else "right_arm_full_with_base"
             calibration = directory / "calibration.json"
             calibration.write_text(json.dumps({name: {"id": index, "drive_mode": 0, "homing_offset": 0,
                                                        "range_min": 0, "range_max": 4095}
@@ -227,23 +236,23 @@ class MixedSenderIntegration(unittest.TestCase):
 id = "{robot}"
 config_version = "pty-only"
 [[hardware]]
-id = "right_arm_full_with_base"
+id = "{hardware_id}"
 adapter = "feetech_sts3215"
 auto_enable = false
-feetech_bus2_mixed_raw = true
+feetech_bus2_mixed_raw = {str(not position_only).lower()}
 address = "{servo.path}"
 joints = {json.dumps(joints)}
-motor_ids = [1,2,3,4,5,6,7,8,9]
+motor_ids = {json.dumps(list(range(1, len(joints) + 1)))}
 calibration_paths = [{json.dumps(str(calibration))}]
-calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
+calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [20] * 6 + [0] * 3)}
 ''')
-            left_device = str(directory / "left-no-uart")
-            left_config = directory / "left.toml"
-            left_names = [name.replace("right_", "left_", 1) for name in maintenance.MIXED_ARM_NAMES]
-            left_names += ["head_motor_1", "head_motor_2"]
-            left_config.write_text('[[hardware]]\nadapter = "feetech_sts3215"\naddress = '
-                                   + json.dumps(left_device) + '\njoints = ' + json.dumps(left_names)
-                                   + '\nmotor_ids = [1,2,3,4,5,6,7,8]\n')
+            passive_device = str(directory / "passive-no-uart")
+            passive_config = directory / "passive.toml"
+            passive_names = right_names if position_only else left_names
+            passive_config.write_text('[[hardware]]\nadapter = "feetech_sts3215"\naddress = '
+                                      + json.dumps(passive_device) + '\njoints = ' + json.dumps(passive_names)
+                                      + '\nmotor_ids = ' + json.dumps(list(range(1, len(passive_names) + 1))) + '\n')
+            devices = {active: servo.path, passive: passive_device}
             environment = {key: value for key, value in os.environ.items()
                            if not key.startswith("ROBOT_TEST_") and key not in
                            ("NOTIFY_SOCKET", "INVOCATION_ID", "WATCHDOG_USEC", "WATCHDOG_PID")}
@@ -257,7 +266,7 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                 latch.write_text("1\n")
                 Path(str(latch) + ".bak").write_text("1\n")
                 for path in (latch, Path(str(latch) + ".bak")):
-                    path.chmod(0o600 if side == "right" else 0o640)
+                    path.chmod(0o600 if side == active else 0o640)
                 # rx-trust子命令不创建latch锁；仅为本次新PTY夹具预建稳定锁inode。
                 (trust / "estop_latch.lock").touch(mode=0o600)
                 command = [str(daemon_bin), "rx-trust", "revoke", "--robot-id", robot,
@@ -274,26 +283,30 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                 "schema": "MAINTENANCE_BINDINGS_V1", "tool": dict(maintenance.RIGHT_PULSE_WRITE),
                 "host": {"hostname": os.uname().nodename, "uid": os.getuid(), "gid": os.getgid(),
                          "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip()},
-                "usb": {side: {"device": left_device if side == "left" else servo.path,
+                "usb": {side: {"device": devices[side],
                                 "serial": maintenance.SERIALS[side]} for side in maintenance.SERIALS},
-                "refs": [daemon_ref, sender_ref, full_reference(calibration), helper_ref],
+                "refs": [daemon_ref, sender_ref, full_reference(calibration), helper_ref, full_reference(config)],
                 "binary_paths": [str(daemon_bin), str(sender_bin)], "protection": protection,
                 "proc_helper": helper_ref, "s0_daemon": daemon_ref, "supervised_demo": sender_ref,
-                "s0_hardware_id": "right_arm_full_with_base",
+                "s0_hardware_id": hardware_id,
             }
             with contextlib.ExitStack() as stack:
                 stack.enter_context(patch.dict(os.environ, environment, clear=True))
-                stack.enter_context(patch.object(maintenance, "DEVICES", {"left": left_device, "right": servo.path}))
+                stack.enter_context(patch.object(maintenance, "DEVICES", devices))
                 stack.enter_context(patch.object(maintenance, "MAINTENANCE_NAMESPACE", directory.parent))
-                maintenance.configure_bus_mapping(config, left_config)
+                maintenance.configure_bus_mapping(passive_config if position_only else config,
+                                                  config if position_only else passive_config)
                 plan = maintenance.make_plan(bindings, directory / "run", "pty-fail" if fail_enable else "pty-ok",
-                                             directory, s0_mixed_hold=True)
+                                             directory, **({"s0_position_hold": True} if position_only else {"s0_mixed_hold": True}))
                 issued = time.time_ns()
                 facts = {side: {**dict.fromkeys(maintenance.FACTS, True), "confirmed_at_ns": issued}
                          for side in maintenance.SERIALS}
                 facts["right"].update(all_three_wheels_off_ground=True, base_stably_supported=True,
                     continuous_wheel_observation=True, base_confirmation_kind="CURRENT_SETUP_READY",
                     base_confirmation_scope=plan["scope"], base_confirmation_answer="PTY软件夹具；不代表现场事实或物理验收")
+                if position_only:
+                    facts["left"].update(position_hold_confirmation_scope=plan["scope"],
+                        position_hold_confirmation_answer="PTY软件夹具；不是现场确认")
                 go = {"schema": "MAINTENANCE_GO_V2", "issued_by": "root", "plan_sha256": maintenance.digest(plan),
                       "artifact_root": str(directory), "host": bindings["host"], "source": "PTY软件夹具",
                       "issued_at_ns": issued, "expires_at_ns": issued + 60_000_000_000, "physical": facts}
@@ -330,42 +343,42 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                     result = {}
                     for side in maintenance.SERIALS:
                         for motor in range(1, 9 if side == "left" else 10):
-                            if side == "right":
+                            if side == active:
                                 result[f"{side}:{motor}"] = {register: int.from_bytes(servo.read(motor, address, width), "little")
                                     for register, address, width in (("Operating_Mode", 33, 1), ("Torque_Enable", 40, 1),
                                         ("Present_Position", 56, 2), ("Present_Velocity", 58, 2),
                                         ("Goal_Position", 42, 2), ("Goal_Velocity", 46, 2))}
                             else:
-                                result[f"{side}:{motor}"] = dict(Operating_Mode=0, Torque_Enable=0,
+                                result[f"{side}:{motor}"] = dict(Operating_Mode=int(side == "right" and motor >= 7), Torque_Enable=0,
                                     Present_Position=2047, Present_Velocity=0, Goal_Position=2047, Goal_Velocity=0)
                     return result
 
                 report.update(schema="MAINTENANCE_PTY_INTEGRATION_V1", result="FAIL", plan=plan, go=go,
-                    before=fixture_snapshot(), fixture_boundaries={"uart": "唯一ServoPty九电机，不是物理串口",
-                        "left_uart": "NOT_OPENED", "external_systemd_usb": "NOT_RUN_DIRECT_RUN_FIXTURE",
+                    before=fixture_snapshot(), fixture_boundaries={"uart": "唯一ServoPty八位置关节" if position_only else "唯一ServoPty九电机，不是物理串口",
+                        "passive_uart": "NOT_OPENED", "external_systemd_usb": "NOT_RUN_DIRECT_RUN_FIXTURE",
                         "external_stop51": "PTY_STATE_MODEL_NOT_UART", "physical_motion": "NOT_OBSERVED", "deployable": False})
                 original_verify_locks = maintenance.verify_s0_daemon_locks
 
-                def verified_daemon_locks(bound, identity):
-                    original_verify_locks(bound, identity)
+                def verified_daemon_locks(bound, identity, *args, **kwargs):
+                    original_verify_locks(bound, identity, *args, **kwargs)
                     daemon_locks_seen.set()
 
                 def watch_locks():
                     try:
                         while not monitoring_done.is_set():
                             for name in ("rx_trust.lock", "estop_latch.lock"):
-                                if not lock_is_busy(protection["left"][name]["path"]):
-                                    raise AssertionError("左侧保护锁在编排中被释放")
-                                lock_checks["left"] += 1
+                                if not lock_is_busy(protection[passive][name]["path"]):
+                                    raise AssertionError("非活动侧保护锁在编排中被释放")
+                                lock_checks[passive] += 1
                             process = executor.s0_daemon
                             stopping = report.get("s0_daemon", {}).get("signals_sent")
-                            # 协作退出可先析构锁再exit；运行阶段才要求右锁持续busy。
+                            # 协作退出可先析构锁再exit；运行阶段要求活动侧锁持续busy。
                             if daemon_locks_seen.is_set() and not stopping and process is not None and process.poll() is None:
                                 for name in ("rx_trust.lock", "estop_latch.lock"):
-                                    busy = lock_is_busy(protection["right"][name]["path"])
+                                    busy = lock_is_busy(protection[active][name]["path"])
                                     if not busy and process.poll() is None and not report["s0_daemon"]["signals_sent"]:
-                                        raise AssertionError("右侧锁在本轮daemon运行阶段可被重新取得")
-                                    lock_checks["right"] += 1
+                                        raise AssertionError("活动侧锁在本轮daemon运行阶段可被重新取得")
+                                    lock_checks[active] += 1
                             monitoring_done.wait(0.002)
                     except BaseException as error:
                         lock_checks["errors"].append(repr(error))
@@ -380,14 +393,14 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                 stack.enter_context(patch.object(maintenance, "verify_s0_daemon_locks", verified_daemon_locks))
                 stack.enter_context(patch.object(maintenance, "inspect_holder", isolated_pty_holder))
                 original_flock = fcntl.flock
-                right_fds = {handle.fileno() for (side, _), handle in locks.items() if side == "right"}
+                active_fds = {handle.fileno() for (side, _), handle in locks.items() if side == active}
 
                 def ordered_flock(file, operation):
                     fd = file if isinstance(file, int) else file.fileno()
-                    if fd in right_fds and operation & fcntl.LOCK_EX:
-                        self.assertIsNone(executor.s0_daemon, "父程序不得在真实wait前取回右锁")
+                    if fd in active_fds and operation & fcntl.LOCK_EX:
+                        self.assertIsNone(executor.s0_daemon, "父程序不得在真实wait前取回活动侧锁")
                         self.assertTrue(report["s0_daemon"]["reaped"])
-                        lock_checks["right_reacquired_after_wait"] += 1
+                        lock_checks["active_reacquired_after_wait"] += 1
                     return original_flock(file, operation)
 
                 stack.enter_context(patch.object(maintenance.fcntl, "flock", ordered_flock))
@@ -407,7 +420,7 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                 self.assertGreater(lock_checks["left"], 0)
                 self.assertTrue(daemon_locks_seen.is_set())
                 self.assertGreater(lock_checks["right"], 0)
-                self.assertEqual(lock_checks["right_reacquired_after_wait"], 2)
+                self.assertEqual(lock_checks["active_reacquired_after_wait"], 2)
                 for key, handle in locks.items():
                     ref = protection[key[0]][key[1]]
                     self.assertTrue(lock_is_busy(ref["path"]))
@@ -420,7 +433,7 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                 self.assertTrue(executor.process_snapshots[-1]["clean"])
                 if executor.s0_post_ready:
                     self.assertEqual(holder_calls, [(servo.path, False), (servo.path, True)])
-                    maintenance.verify_s0_protection(bindings, "final")
+                    maintenance.verify_s0_protection(bindings, "final", active)
                 else:
                     self.assertTrue(fail_enable, report.get("s0_cleanup_errors"))
                     self.assertTrue(engine.manual_cut)
@@ -459,20 +472,30 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
                     self.assertIsNone(failure, repr(failure))
                     self.assertEqual(sender_report["result"], "SOFTWARE_PATH_PASS")
                     self.assertEqual(len(sender_report["cycles"]), 400)
-                    self.assertEqual(len(sender_report["motion_samples"]), 79)
-                    self.assertEqual(len(sender_report["zero_samples"]), 3)
                     self.assertTrue(sender_report["disable_retired"])
                     self.assertTrue(sender_report["torque_off_confirmed"])
                     self.assertTrue(sender_report["final_estop_published"])
-                    self.assertTrue(sender_report["motion_position_verified"])
-                    self.assertEqual(sender_report["motion_velocity_raw"], "PASS")
                     self.assertEqual(sender_report["stop51"], "NOT_RUN")
                     self.assertFalse(sender_report["manual_power_cut_required"])
-                    self.assertTrue(servo.nonzero_writes)
-                    self.assertTrue(all(motor == 8 and raw == 500 for motor, raw, _ in servo.nonzero_writes))
-                    elapsed = servo.nonzero_writes[-1][2] - servo.nonzero_writes[0][2]
-                    self.assertGreater(elapsed, 19.8)
-                    self.assertLess(elapsed, 20.1)
+                    if position_only:
+                        self.assertTrue(sender_report["hold_position_verified"])
+                        self.assertEqual(len(sender_report["hold_samples"]), 400)
+                        self.assertFalse(servo.nonzero_writes)
+                        self.assertEqual({motor for motor, _, _ in servo.position_writes}, set(range(1, 9)))
+                        self.assertGreater(len(servo.position_writes), 8)
+                        self.assertTrue(all(raw == 2047 for _, raw, _ in servo.position_writes))
+                        self.assertEqual(servo.goal_positions[1:9], [2047] * 8)
+                        self.assertEqual(sender_report["hold_end_ns"] - sender_report["hold_start_ns"], 20_000_000_000)
+                    else:
+                        self.assertEqual(len(sender_report["motion_samples"]), 79)
+                        self.assertEqual(len(sender_report["zero_samples"]), 3)
+                        self.assertTrue(sender_report["motion_position_verified"])
+                        self.assertEqual(sender_report["motion_velocity_raw"], "PASS")
+                        self.assertTrue(servo.nonzero_writes)
+                        self.assertTrue(all(motor == 8 and raw == 500 for motor, raw, _ in servo.nonzero_writes))
+                        elapsed = servo.nonzero_writes[-1][2] - servo.nonzero_writes[0][2]
+                        self.assertGreater(elapsed, 19.8)
+                        self.assertLess(elapsed, 20.1)
                     report["result"] = "SOFTWARE_ORCHESTRATION_PASS_NOT_PHYSICAL"
                 report["lock_checks"] = lock_checks
         finally:
@@ -503,6 +526,12 @@ calibration_range_tolerances_raw = [20,20,20,20,20,20,0,0,0]
 
     def test_enable_failure_stops_without_any_nonzero_command(self):
         self.run_case(True)
+
+    def test_left_eight_positions_hold_twenty_seconds_through_default_s0_and_pty(self):
+        self.run_case(False, position_only=True)
+
+    def test_left_enable_failure_stops_without_velocity_command(self):
+        self.run_case(True, position_only=True)
 
 
 if __name__ == "__main__":

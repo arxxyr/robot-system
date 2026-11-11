@@ -1756,12 +1756,18 @@ async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
 fn main() -> ExitCode {
     robot_logging::set_process_name("robot-demo");
     let _ = robot_logging::init();
-    if std::env::args().nth(1).as_deref() == Some("--s0-mixed-hold") {
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("--s0-mixed-hold" | "--s0-position-hold")
+    ) {
         #[cfg(all(target_os = "linux", feature = "supervised-s0"))]
-        return supervised_mixed::main_entry(std::env::args().skip(2));
+        return supervised_mixed::main_entry(
+            std::env::args().skip(2),
+            std::env::args().nth(1).as_deref() == Some("--s0-position-hold"),
+        );
         #[cfg(not(all(target_os = "linux", feature = "supervised-s0")))]
         {
-            eprintln!("爸爸，--s0-mixed-hold 仅支持 Linux，并须启用 supervised-s0 feature");
+            eprintln!("爸爸，S0受监督发送仅支持 Linux，并须启用 supervised-s0 feature");
             return ExitCode::from(2);
         }
     }
