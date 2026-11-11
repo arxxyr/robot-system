@@ -1,56 +1,20 @@
-//! **D2 身份绑定校验**（v0.5 候选 E 段(9)，reviewer round 1 P0-1 回修）。
-//!
-//! ## 为什么必须有
-//!
-//! [`DeployArm`] 决定**安全写序**（左 `[T1..T8]` / 右
-//! `[T1..T6, V7,T7, V8,T8, V9,T9]`），config 决定**打开哪条物理串口**。
-//! 首版两者**互不校验**：`--arm left --config …right_arm.toml` 会打开 bus2
-//! 却执行左侧写序——**干扰已在跑的右臂，且漏掉 wheel ID 9**（右侧 7-9 的
-//! 零速+断扭全不发）。这是纯静默的错 bus 操作，没有任何运行期信号。
-//!
-//! 故：**打开串口之前**先按 D2 身份表逐字校验 config，失败即 fail-closed。
-//!
-//! ## D2 身份表（Spec D2 拍板表，本模块是代码侧唯一副本）
-//!
-//! | 项 | 左臂 | 右臂 |
-//! |---|---|---|
-//! | `robot_id` | `xlerobot_left` | `xlerobot_right` |
-//! | `hardware_id` | `left_arm` | `right_arm` |
-//! | adapter | `feetech_sts3215` | 同 |
-//! | 串口 by-id（**完整路径逐字**） | `…usb-1a86_USB_Single_Serial_5A7C121427-if00`（bus1） | `…_5A7C122340-if00`（bus2） |
-//! | `calibration_paths` | **恰好一项** `left_arm.json` | **恰好一项** `right_arm.json` |
-//! | `motor_ids` | `[1,2,3,4,5,6]` | `[1,2,3,4,5,6]` |
-//! | joints | `left_arm_*` 6 项 | `right_arm_*` 6 项（同构） |
-//! | `auto_enable` | `false`（D15-R (c1+) 安全边界 ②） | 同 |
-//!
-//! `motor_ids` 两侧相同**正是**这条校验存在的理由：单看电机号无从判归属，
-//! 只有 `robot_id` / `hardware_id` / 串口路径 / joint 名前缀能定死是哪条 bus。
-//!
-//! ## 为什么串口要逐字比而不是 `contains(串号)`（round 2 P0-1）
-//!
-//! 子串匹配会放行**伪后缀**（`…_5A7C121427-if01`）与**更长的伪串号**
-//! （`…_5A7C1214270-if00`）——两者都是"串号出现过"但指向另一个设备节点。
-//! by-id 路径是稳定且完整可枚举的，直接**整串相等**。
-//!
-//! ## 为什么必须校验 `calibration_paths`（round 2 P0-1）
-//!
-//! 该字段住在 `[[hardware]].extras`，`s0_daemon` 读它时是
-//! `get(..).and_then(as_array).map(filter_map(as_str)).unwrap_or_default()`
-//! ——**缺失 / 非数组 / 元素非字符串一律静默变成空数组**；而 feetech factory
-//! 对空数组的语义是"无标定、不做 clamp"，于是**照常启动一个未标定的
-//! adapter**。整条链上没有任何报错。故身份校验必须把它钉死：恰好一项、
-//! 绝对路径、文件名 == 本臂标定文件。
-//!
-//! **本校验不覆盖 `[[hardware]].motor_ids` 与安全写序的关系**——写序取
-//! [`DeployArm::all_ids`]（本 bus 全量 8 / 9 个），config 的 6 个只是本臂
-//! 关节；两者本就不同源（D13 round 8 P0-2 扩程）。
+//! 部署入口的总线身份校验，在取锁、计数及打开串口之前拒绝错侧配置。
+//! arm-only 保留 D2 的六关节、单份臂标定精确合同；既有
+//! `xlerobot_bus1_full` / `xlerobot_bus2_full` 显式选择完整总线配置，
+//! 复用分组布局、硬件及相机验证器，不另存轮位映射。
+//! 两种配置都逐字核对完整 by-id 路径并要求 `auto_enable=false`；
+//! 安全写序始终由 [`DeployArm::all_ids`] 决定。
 
 use std::path::Path;
 
 use thiserror::Error;
 
 use super::types::DeployArm;
-use crate::config_loader::{ConfigLoadError, HardwareSection, LoadedConfig, load_robot_config};
+use crate::config_loader::{
+    ConfigLoadError, HardwareSection, LoadedConfig, load_robot_config, validate_camera_sections,
+    validate_hardware_section,
+};
+use crate::grouped_position::{XleRobotBus1Layout, XleRobotBus2Layout};
 
 /// 唯一支持的 adapter 字面（`[[hardware]].adapter`）。
 pub const EXPECTED_ADAPTER: &str = "feetech_sts3215";
@@ -119,6 +83,19 @@ pub const fn expected(arm: DeployArm) -> &'static ArmIdentity {
     }
 }
 
+/// 运行身份显式选择本侧 arm-only 或完整总线，其他身份均拒绝。
+pub(crate) fn expected_hardware_id(arm: DeployArm, robot_id: &str) -> Option<&'static str> {
+    let arm_identity = expected(arm);
+    if robot_id == arm_identity.robot_id {
+        return Some(arm_identity.hardware_id);
+    }
+    match (arm, robot_id) {
+        (DeployArm::Left, "xlerobot_bus1_full") => Some("left_arm_full_with_head"),
+        (DeployArm::Right, "xlerobot_bus2_full") => Some("right_arm_full_with_base"),
+        _ => None,
+    }
+}
+
 /// 身份校验失败——**一律 fail-closed，绝不打开串口**。
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum IdentityError {
@@ -165,7 +142,7 @@ pub struct VerifiedArmConfig {
     pub hardware_id: String,
     /// 串口 by-id 绝对路径。
     pub address: String,
-    /// 本臂标定文件绝对路径（`calibration_paths` 唯一一项）。
+    /// 本臂标定文件绝对路径（完整总线的第二份标定也已校验）。
     pub calibration_path: String,
 }
 
@@ -183,7 +160,7 @@ fn mismatch(
     }
 }
 
-/// 按 D2 身份表逐字校验一份已加载的 arm config。
+/// 按本侧显式运行身份校验 arm-only 或完整总线配置。
 ///
 /// # Errors
 ///
@@ -195,14 +172,15 @@ pub fn verify_arm_config(
     let want = expected(arm);
     let path = loaded.source_path.display().to_string();
 
-    if loaded.parsed.robot.id != want.robot_id {
-        return Err(mismatch(
+    let hardware_id = expected_hardware_id(arm, &loaded.parsed.robot.id).ok_or_else(|| {
+        mismatch(
             arm,
             "[robot].id",
-            want.robot_id,
+            "本侧 arm-only 或完整总线身份",
             &loaded.parsed.robot.id,
-        ));
-    }
+        )
+    })?;
+    let full_bus = loaded.parsed.robot.id != want.robot_id;
 
     let hardware = match loaded.parsed.hardware.as_slice() {
         [only] => only,
@@ -215,13 +193,8 @@ pub fn verify_arm_config(
         }
     };
 
-    if hardware.id != want.hardware_id {
-        return Err(mismatch(
-            arm,
-            "[[hardware]].id",
-            want.hardware_id,
-            &hardware.id,
-        ));
+    if hardware.id != hardware_id {
+        return Err(mismatch(arm, "[[hardware]].id", hardware_id, &hardware.id));
     }
     if hardware.adapter != EXPECTED_ADAPTER {
         return Err(mismatch(
@@ -242,9 +215,9 @@ pub fn verify_arm_config(
         return Err(mismatch(arm, "[[hardware]].address", want.address, address));
     }
 
-    let calibration_path = verify_calibration_paths(arm, want, hardware)?;
+    let calibration_path = verify_calibration_paths(arm, want, hardware, full_bus)?;
 
-    if hardware.motor_ids != want.motor_ids {
+    if !full_bus && hardware.motor_ids != want.motor_ids {
         return Err(mismatch(
             arm,
             "[[hardware]].motor_ids",
@@ -252,7 +225,7 @@ pub fn verify_arm_config(
             &hardware.motor_ids,
         ));
     }
-    if hardware.joints != want.joints {
+    if !full_bus && hardware.joints != want.joints {
         return Err(mismatch(
             arm,
             "[[hardware]].joints",
@@ -269,6 +242,9 @@ pub fn verify_arm_config(
             hardware.auto_enable,
         ));
     }
+    if full_bus {
+        verify_full_bus(arm, loaded, hardware)?;
+    }
 
     Ok(VerifiedArmConfig {
         arm,
@@ -279,19 +255,57 @@ pub fn verify_arm_config(
     })
 }
 
-/// `calibration_paths` 必须是**恰好一项、绝对路径、文件名 == 本臂标定文件**
-/// 的数组（round 2 P0-1）。
-///
-/// 该字段住 `extras`，`s0_daemon` 的读法把"缺失 / 非数组 / 元素非字符串"
-/// 全部静默折叠成空数组，而空数组在 feetech factory 里等价于"无标定照常
-/// 启动"——所以这里的每一档都必须显式拒绝。
+fn verify_full_bus(
+    arm: DeployArm,
+    loaded: &LoadedConfig,
+    hardware: &HardwareSection,
+) -> Result<(), IdentityError> {
+    let mixed_raw = arm == DeployArm::Right;
+    if hardware.feetech_bus2_mixed_raw != mixed_raw {
+        return Err(mismatch(
+            arm,
+            "[[hardware]].feetech_bus2_mixed_raw",
+            mixed_raw,
+            hardware.feetech_bus2_mixed_raw,
+        ));
+    }
+    validate_hardware_section(hardware)
+        .map_err(|e| mismatch(arm, "[[hardware]]", "合法完整总线配置", e.to_string()))?;
+    match arm {
+        DeployArm::Left => XleRobotBus1Layout::from_hardware(hardware).map(|_| ()),
+        DeployArm::Right => XleRobotBus2Layout::from_hardware(hardware).map(|_| ()),
+    }
+    .map_err(|e| {
+        mismatch(
+            arm,
+            "[[hardware]].layout",
+            "本侧完整总线布局",
+            e.to_string(),
+        )
+    })?;
+    validate_camera_sections(&loaded.parsed)
+        .map_err(|e| mismatch(arm, "[[sensor]]", "本侧合法相机归属与参数", e.to_string()))?;
+    Ok(())
+}
+
+/// arm-only 恰好一份臂标定；完整总线追加本侧 head/base 标定。
+/// 每项都必须是绝对路径，并按当前配置顺序逐字核对文件名。
 fn verify_calibration_paths(
     arm: DeployArm,
     want: &ArmIdentity,
     hardware: &HardwareSection,
+    full_bus: bool,
 ) -> Result<String, IdentityError> {
     const FIELD: &str = "[[hardware]].calibration_paths";
-    let expected = format!("[<abs dir>/{}]", want.calibration_file);
+    let files = [
+        want.calibration_file,
+        match arm {
+            DeployArm::Left => "head.json",
+            DeployArm::Right => "base_left9_right7.json",
+        },
+    ];
+    let expected_files = &files[..if full_bus { 2 } else { 1 }];
+    let expected = format!("绝对路径标定 {expected_files:?}");
 
     let Some(value) = hardware.extras.get("calibration_paths") else {
         return Err(mismatch(arm, FIELD, expected, "<missing>"));
@@ -299,25 +313,23 @@ fn verify_calibration_paths(
     let Some(array) = value.as_array() else {
         return Err(mismatch(arm, FIELD, expected, value));
     };
-    // 恰好一项：arm-only 不需要 head.json / base.json（D2），多一项即错配。
-    let [only] = array.as_slice() else {
+    if array.len() != expected_files.len() {
         return Err(mismatch(arm, FIELD, expected, array));
-    };
-    let Some(text) = only.as_str() else {
-        return Err(mismatch(arm, FIELD, expected, only));
-    };
-    let path = Path::new(text);
-    if !path.is_absolute() {
-        return Err(mismatch(arm, FIELD, expected, text));
     }
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or_default();
-    if file_name != want.calibration_file {
-        return Err(mismatch(arm, FIELD, want.calibration_file, file_name));
+    let mut calibration_path = String::new();
+    for (index, (value, file)) in array.iter().zip(expected_files).enumerate() {
+        let Some(text) = value.as_str() else {
+            return Err(mismatch(arm, FIELD, &expected, value));
+        };
+        let path = Path::new(text);
+        if !path.is_absolute() || path.file_name().and_then(|n| n.to_str()) != Some(*file) {
+            return Err(mismatch(arm, FIELD, &expected, text));
+        }
+        if index == 0 {
+            calibration_path = text.to_string();
+        }
     }
-    Ok(text.to_string())
+    Ok(calibration_path)
 }
 
 /// 读 config 并校验 D2 身份。
@@ -347,6 +359,19 @@ mod tests {
     fn repo_config(arm: DeployArm) -> PathBuf {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../configs");
         PathBuf::from(format!("{root}/xlerobot_{}_arm.toml", arm.label()))
+    }
+
+    fn full_config(arm: DeployArm) -> LoadedConfig {
+        let file = match arm {
+            DeployArm::Left => "xlerobot_bus1_full.toml",
+            DeployArm::Right => "xlerobot_bus2_full.toml",
+        };
+        load_robot_config(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../configs")
+                .join(file),
+        )
+        .expect("读取完整总线配置")
     }
 
     /// 把权威 config 文本做一处定点改写后落到 tempdir。
@@ -551,6 +576,137 @@ mod tests {
             load_and_verify_arm_config(arm, &path).expect_err("必须拒绝"),
             IdentityError::HardwareCount { found: 2, .. }
         ));
+    }
+
+    #[test]
+    fn full_configs_match_their_bus_and_keep_the_arm_calibration() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let loaded = full_config(arm);
+            let verified = verify_arm_config(arm, &loaded).expect("本侧完整总线应通过");
+            assert_eq!(verified.robot_id, loaded.parsed.robot.id);
+            assert_eq!(verified.hardware_id, loaded.parsed.hardware[0].id);
+            assert_eq!(verified.address, expected(arm).address);
+            assert!(
+                verified
+                    .calibration_path
+                    .ends_with(expected(arm).calibration_file)
+            );
+            let other = match arm {
+                DeployArm::Left => DeployArm::Right,
+                DeployArm::Right => DeployArm::Left,
+            };
+            assert!(matches!(
+                verify_arm_config(other, &loaded),
+                Err(IdentityError::FieldMismatch {
+                    field: "[robot].id",
+                    ..
+                })
+            ));
+        }
+        // 轮位仍来自配置；部署校验不得另冻结前/左/右轮排列。
+        let mut reordered = full_config(DeployArm::Right);
+        reordered.parsed.hardware[0].motor_ids[6..].rotate_left(1);
+        verify_arm_config(DeployArm::Right, &reordered).expect("合法轮位排列应通过");
+    }
+
+    #[test]
+    fn full_configs_reject_wrong_bus_enable_mode_and_incomplete_layout() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let original = full_config(arm);
+            for auto_enable in [None, Some(true)] {
+                let mut loaded = original.clone();
+                loaded.parsed.hardware[0].auto_enable = auto_enable;
+                assert!(verify_arm_config(arm, &loaded).is_err());
+            }
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].feetech_bus2_mixed_raw = arm != DeployArm::Right;
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].address = Some("/dev/ttyACM0".to_string());
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].id = expected(arm).hardware_id.to_string();
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].motor_ids.pop();
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].joints[0] = "unknown_joint".to_string();
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            let mut loaded = original;
+            loaded.parsed.hardware[0].motor_ids[1] = loaded.parsed.hardware[0].motor_ids[0];
+            assert!(verify_arm_config(arm, &loaded).is_err());
+        }
+    }
+
+    #[test]
+    fn full_configs_require_both_correct_absolute_calibration_paths() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let original = full_config(arm);
+            let mut loaded = original.clone();
+            loaded.parsed.hardware[0].extras.remove("calibration_paths");
+            assert!(verify_arm_config(arm, &loaded).is_err());
+
+            for bad in [
+                toml::Value::Array(vec![]),
+                toml::Value::String("/calibration/left_arm.json".to_string()),
+                toml::Value::Array(vec![toml::Value::Integer(1)]),
+            ] {
+                let mut loaded = original.clone();
+                loaded.parsed.hardware[0]
+                    .extras
+                    .insert("calibration_paths".to_string(), bad);
+                assert!(verify_arm_config(arm, &loaded).is_err());
+            }
+            for bad_second in ["wrong.json", "head.json", "base_left9_right7.json"] {
+                let mut loaded = original.clone();
+                let paths = loaded.parsed.hardware[0].extras["calibration_paths"]
+                    .as_array_mut()
+                    .unwrap();
+                paths[1] = toml::Value::String(bad_second.to_string());
+                assert!(verify_arm_config(arm, &loaded).is_err(), "相对路径必须拒绝");
+            }
+            let mut loaded = original.clone();
+            let paths = loaded.parsed.hardware[0].extras["calibration_paths"]
+                .as_array_mut()
+                .unwrap();
+            paths.pop();
+            assert!(
+                verify_arm_config(arm, &loaded).is_err(),
+                "缺第二份标定必须拒绝"
+            );
+
+            let mut loaded = original;
+            let paths = loaded.parsed.hardware[0].extras["calibration_paths"]
+                .as_array_mut()
+                .unwrap();
+            paths[1] = toml::Value::String("/calibration/wrong.json".to_string());
+            assert!(verify_arm_config(arm, &loaded).is_err(), "错侧标定必须拒绝");
+        }
+    }
+
+    #[test]
+    fn full_config_sensors_use_the_existing_ownership_and_parameter_checks() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let mut loaded = full_config(arm);
+            loaded.parsed.sensor[0].hardware_id = expected(arm).hardware_id.to_string();
+            assert!(
+                verify_arm_config(arm, &loaded).is_err(),
+                "不得指向arm-only实例"
+            );
+
+            let mut loaded = full_config(arm);
+            loaded.parsed.sensor[0].fps = 0;
+            assert!(
+                verify_arm_config(arm, &loaded).is_err(),
+                "无效采集参数必须拒绝"
+            );
+        }
     }
 
     /// 读不到 config → `Load`（不是 panic，也不是"当作通过"）。

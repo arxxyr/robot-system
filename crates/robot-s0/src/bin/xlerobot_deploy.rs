@@ -8,13 +8,13 @@
 //! ## 子命令
 //!
 //! ```text
-//! xlerobot_deploy guard --arm <left|right> --config <arm config>
+//! xlerobot_deploy guard --arm <left|right> --config <arm/full config>
 //!                       --s0-bin <绝对路径> [--runtime-dir <dir>]
 //!                       [--robot-id <id>] -- <s0 args，不含 --config>
-//! xlerobot_deploy preflight-arm --arm <left|right> --config <arm config>
+//! xlerobot_deploy preflight-arm --arm <left|right> --config <arm/full config>
 //! xlerobot_deploy preflight-handoff --left-config <path>
 //!                                   --right-config <path>
-//! xlerobot_deploy provision [--config <arm config>] [--robot-id <id>]
+//! xlerobot_deploy provision [--config <arm/full config>] [--robot-id <id>]
 //!                           [--latch-path <path>]
 //! ```
 //!
@@ -279,7 +279,7 @@ fn to_utf8(value: &OsString) -> String {
         .to_string()
 }
 
-/// 从 arm config 的 `[robot] id` 取运行身份（单源：不另给默认值）。
+/// 从部署config的 `[robot] id` 取运行身份（单源：不另给默认值）。
 fn robot_id_from_config(path: &Path) -> String {
     match load_robot_config(path) {
         Ok(loaded) => loaded.parsed.robot.id,
@@ -313,12 +313,12 @@ fn print_help() {
 xlerobot_deploy —— XLeRobot 真机部署件（v0.5 候选 E 段(9)）
 
 用法：
-  xlerobot_deploy guard --arm <left|right> --config <arm config>
+  xlerobot_deploy guard --arm <left|right> --config <arm/full config>
                         --s0-bin <绝对路径> [--runtime-dir <dir>]
                         [--robot-id <id>] -- <s0 args，不含 --config>
-  xlerobot_deploy preflight-arm --arm <left|right> --config <arm config>
+  xlerobot_deploy preflight-arm --arm <left|right> --config <arm/full config>
   xlerobot_deploy preflight-handoff --left-config <path> --right-config <path>
-  xlerobot_deploy provision [--config <arm config>] [--robot-id <id>]
+  xlerobot_deploy provision [--config <arm/full config>] [--robot-id <id>]
                             [--latch-path <path>]
 
 说明：

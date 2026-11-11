@@ -1,5 +1,4 @@
-//! **guard**：arm S0 unit 的 `ExecStart` 主进程（v0.5 候选 E 段(9)，
-//! Spec D13 r8 Y1 + r11 AB1 六步 + P.2.9 QA1/R10-1 + AC-E22）。
+//! S0 部署主进程：校验本侧 arm-only 或显式完整总线身份，再执行原六步。
 //!
 //! ## 为什么 guard 必须是主进程（QA1 / Y1 终拍）
 //!
@@ -28,18 +27,16 @@
 //! 放在取锁**之前**：这类错误每次重试必然重现，不该消耗连败预算，且
 //! 86 本身已停掉自动重启。
 //!
-//! ## 身份绑定（round 1 P0-1 / P0-3）
+//! ## 身份绑定
 //!
 //! `--arm` 决定**安全写序**，config 决定**物理 bus**，s0 argv 决定 daemon
-//! 的**运行身份**——三者必须锁在同一条 D2 行上，否则会静默操作错 bus。
+//! 的**运行身份**——三者必须选择同一侧、同一种配置，否则会操作错 bus。
 //! 故 guard 在**取锁之前**做两级校验：
 //!
-//! 1. **纯 argv 级**（[`validate_invocation`]）：`GuardConfig.robot_id` ==
-//!    [`identity::expected`]`(arm).robot_id`；s0 argv 的 `--robot-id` /
-//!    `--hardware-id` 必须**存在**且与 D2 一致；`--config` 一律拒绝；
-//! 2. **config 文件级**（[`GuardSteps::verify_identity`]）：按 D2 表逐字
-//!    校验 `[robot].id` / `[[hardware]].id` / adapter / by-id 串号 /
-//!    `motor_ids` / joints / `auto_enable=false`。
+//! 1. **纯 argv 级**（[`validate_invocation`]）：本侧既有 robot ID 选择
+//!    arm-only/full；转发的 robot/hardware ID 必须一致，禁止重复 config；
+//! 2. **config 文件级**（[`GuardSteps::verify_identity`]）：复用身份、布局、
+//!    标定与相机校验，并核对实际 config 与 argv 的运行身份相同。
 //!
 //! 两级都是**配置级、不可自动恢复**错误 → 退 86，且**不消耗连败预算**。
 //!
@@ -56,9 +53,11 @@
 //! ## latch 路径单源
 //!
 //! provision 的目标路径**跟随 s0 args**：`--latch-path <p>` 在场即用它，
-//! 否则回填 `/var/lib/robot/<robot_id>/estop_latch`（与 `s0_daemon` 的默认
+//! arm-only 缺省时回填 `/var/lib/robot/<robot_id>/estop_latch`（与 daemon 的默认
 //! 回填规则逐字一致）——保证 guard provision 的文件正是 daemon 将要读的
 //! 那一份。
+//! 完整总线必须显式给出 `--latch-path` 与同父目录的 `--rx-trust-dir`，
+//! 不按新 robot ID 隐式新建保护目录。
 //!
 //! **解析规则必须与 `s0_daemon::Args::parse` 同规则**（round 1 P0-3）：
 //! daemon 只认 `--opt <value>` 空格形式、**不认 `--opt=value`**，且对重复
@@ -92,6 +91,8 @@ pub const PROVISION_FAIL_EXIT_CODE: u8 = 71;
 const FORBIDDEN_S0_OPT: &str = "--config";
 /// latch 路径选项（单源解析，**不**禁止；必须唯一且为空格形式）。
 const LATCH_PATH_OPT: &str = "--latch-path";
+/// 完整总线必须显式绑定既有保护目录。
+const RX_TRUST_DIR_OPT: &str = "--rx-trust-dir";
 /// 运行身份选项——必须存在且与 D2 一致（round 1 P0-1）。
 const ROBOT_ID_OPT: &str = "--robot-id";
 /// 硬件身份选项——必须存在且与 D2 一致（round 1 P0-1）。
@@ -111,7 +112,7 @@ pub struct GuardConfig {
     pub s0_bin: PathBuf,
     /// systemd `RuntimeDirectory` 注入的计数目录。
     pub runtime_dir: PathBuf,
-    /// 运行身份（计数 / 锁 / latch 路径均按它派生）。
+    /// 运行身份（计数 / 实例锁按它派生；完整总线显式绑定保护路径）。
     pub robot_id: String,
     /// `--` 之后透传给 `s0_daemon` 的参数。
     pub s0_args: Vec<OsString>,
@@ -139,6 +140,11 @@ impl GuardConfig {
     pub fn resolve_latch_path(&self) -> Result<PathBuf, String> {
         match scan_opt(&self.s0_args, LATCH_PATH_OPT)? {
             Some(p) => Ok(PathBuf::from(p)),
+            None if identity::expected_hardware_id(self.arm, &self.robot_id).is_some()
+                && self.robot_id != identity::expected(self.arm).robot_id =>
+            {
+                Err("完整总线必须显式指定 --latch-path".to_string())
+            }
             None => Ok(PathBuf::from(format!(
                 "/var/lib/robot/{}/estop_latch",
                 self.robot_id
@@ -361,20 +367,19 @@ pub fn validate_invocation(cfg: &GuardConfig) -> Result<(), GuardExit> {
         ));
     }
 
-    // D2 身份：guard 自身的 robot_id 必须就是本臂的。
-    let want = identity::expected(cfg.arm);
-    if cfg.robot_id != want.robot_id {
-        return Err(reject(
+    // 既有 robot ID 选择本侧 arm-only/full，不另加布局开关。
+    let hardware_id = identity::expected_hardware_id(cfg.arm, &cfg.robot_id).ok_or_else(|| {
+        reject(
             "--robot-id",
-            format!("expected {:?}, got {:?}", want.robot_id, cfg.robot_id),
-        ));
-    }
+            format!("不是 {} 的受支持运行身份: {:?}", cfg.arm, cfg.robot_id),
+        )
+    })?;
 
     // 转发给 s0_daemon 的身份必须存在且一致——否则 daemon 会以别的身份
     // （或 ROBOT_ID env / "default"）跑起来，topic / latch / 计数全错位。
     for (opt, expected_value) in [
-        (ROBOT_ID_OPT, want.robot_id),
-        (HARDWARE_ID_OPT, want.hardware_id),
+        (ROBOT_ID_OPT, cfg.robot_id.as_str()),
+        (HARDWARE_ID_OPT, hardware_id),
     ] {
         let found = scan_opt(&cfg.s0_args, opt).map_err(|e| reject(opt, e))?;
         let Some(value) = found else {
@@ -404,6 +409,41 @@ pub fn validate_invocation(cfg: &GuardConfig) -> Result<(), GuardExit> {
         );
         return Err(GuardExit::LatchConfig);
     }
+    if cfg.robot_id != identity::expected(cfg.arm).robot_id {
+        let trust = scan_opt(&cfg.s0_args, RX_TRUST_DIR_OPT)
+            .map_err(|e| reject(RX_TRUST_DIR_OPT, e))?
+            .ok_or_else(|| reject(RX_TRUST_DIR_OPT, "完整总线必须显式绑定保护目录".to_string()))?;
+        let trust = PathBuf::from(trust);
+        if !latch_path.is_absolute()
+            || !trust.is_absolute()
+            || latch_path.parent() != Some(trust.as_path())
+        {
+            return Err(reject(
+                RX_TRUST_DIR_OPT,
+                "完整总线的绝对 latch 路径必须位于显式 RX 保护目录中".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "xlerobot-real", test))]
+fn verify_config_identity(cfg: &GuardConfig) -> Result<(), String> {
+    let verified = identity::load_and_verify_arm_config(cfg.arm, &cfg.config_path)
+        .map_err(|e| e.to_string())?;
+    if verified.robot_id != cfg.robot_id {
+        return Err(format!(
+            "config [robot].id {:?} != guard robot_id {:?}",
+            verified.robot_id, cfg.robot_id
+        ));
+    }
+    tracing::info!(
+        arm = %cfg.arm,
+        robot_id = %verified.robot_id,
+        hardware_id = %verified.hardware_id,
+        address = %verified.address,
+        "guard: bus identity verified"
+    );
     Ok(())
 }
 
@@ -511,7 +551,6 @@ pub mod real {
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    use super::super::identity::load_and_verify_arm_config;
     use super::super::preflight::{ensure_safe_arm, feetech::open_arm_bus};
     use super::super::provision::provision_latch;
     use super::{GuardConfig, GuardSteps, ProvisionStepError};
@@ -521,24 +560,7 @@ pub mod real {
 
     impl GuardSteps for RealGuardSteps {
         fn verify_identity(&mut self, cfg: &GuardConfig) -> Result<(), String> {
-            let verified =
-                load_and_verify_arm_config(cfg.arm, &cfg.config_path).map_err(|e| e.to_string())?;
-            // 与 validate_invocation 的 argv 侧合起来闭环：
-            // argv 身份 == D2 == config 身份。
-            if verified.robot_id != cfg.robot_id {
-                return Err(format!(
-                    "config [robot].id {:?} != guard robot_id {:?}",
-                    verified.robot_id, cfg.robot_id
-                ));
-            }
-            tracing::info!(
-                arm = %cfg.arm,
-                robot_id = %verified.robot_id,
-                hardware_id = %verified.hardware_id,
-                address = %verified.address,
-                "guard: D2 identity verified"
-            );
-            Ok(())
+            super::verify_config_identity(cfg)
         }
 
         fn preflight(&mut self, cfg: &GuardConfig) -> Result<(), String> {
@@ -593,6 +615,7 @@ mod tests {
     /// 可编排的 [`GuardSteps`]：记录调用序 + 在 preflight 时窥探计数文件
     /// （证明 pre-increment 已生效）。
     struct ScriptedSteps {
+        verify_config: bool,
         identity_result: Result<(), String>,
         preflight_result: Result<(), String>,
         provision_result: Result<(), ProvisionStepError>,
@@ -605,6 +628,7 @@ mod tests {
     impl ScriptedSteps {
         fn ok() -> Self {
             Self {
+                verify_config: false,
                 identity_result: Ok(()),
                 preflight_result: Ok(()),
                 provision_result: Ok(()),
@@ -622,9 +646,12 @@ mod tests {
 
     impl GuardSteps for ScriptedSteps {
         fn verify_identity(&mut self, cfg: &GuardConfig) -> Result<(), String> {
-            let _ = cfg;
             self.calls.borrow_mut().push("verify_identity");
-            self.identity_result.clone()
+            if self.verify_config {
+                verify_config_identity(cfg)
+            } else {
+                self.identity_result.clone()
+            }
         }
 
         fn preflight(&mut self, cfg: &GuardConfig) -> Result<(), String> {
@@ -648,7 +675,7 @@ mod tests {
     }
 
     struct Fixture {
-        _dir: TempDir,
+        dir: TempDir,
         cfg: GuardConfig,
     }
 
@@ -673,7 +700,7 @@ mod tests {
                 dir.path().join("estop_latch").into_os_string(),
             ],
         };
-        Fixture { _dir: dir, cfg }
+        Fixture { dir, cfg }
     }
 
     /// D2 合法的最小身份 argv（不含 `--latch-path`）。
@@ -684,6 +711,39 @@ mod tests {
             OsString::from("--hardware-id"),
             OsString::from("left_arm"),
         ]
+    }
+
+    fn full_fixture(arm: DeployArm) -> Fixture {
+        let mut f = fixture();
+        let (robot_id, hardware_id, config) = match arm {
+            DeployArm::Left => (
+                "xlerobot_bus1_full",
+                "left_arm_full_with_head",
+                "xlerobot_bus1_full.toml",
+            ),
+            DeployArm::Right => (
+                "xlerobot_bus2_full",
+                "right_arm_full_with_base",
+                "xlerobot_bus2_full.toml",
+            ),
+        };
+        let trust = f.dir.path().join("protection");
+        f.cfg.arm = arm;
+        f.cfg.robot_id = robot_id.to_string();
+        f.cfg.config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../configs")
+            .join(config);
+        f.cfg.s0_args = vec![
+            OsString::from(ROBOT_ID_OPT),
+            OsString::from(robot_id),
+            OsString::from(HARDWARE_ID_OPT),
+            OsString::from(hardware_id),
+            OsString::from(LATCH_PATH_OPT),
+            trust.join("estop_latch").into_os_string(),
+            OsString::from(RX_TRUST_DIR_OPT),
+            trust.into_os_string(),
+        ];
+        f
     }
 
     fn count_of(cfg: &GuardConfig) -> u8 {
@@ -709,6 +769,120 @@ mod tests {
         );
         // exec 前锁已显式关闭 → 可以再次获取。
         acquire_instance_lock(&f.cfg.lock_file()).expect("锁必须已释放");
+    }
+
+    #[test]
+    fn full_configs_pass_identity_before_the_original_guard_steps() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let f = full_fixture(arm);
+            let mut steps = ScriptedSteps::ok();
+            steps.verify_config = true;
+            evaluate_guard(&f.cfg, &mut steps).expect("完整总线应沿原六步通过");
+            assert_eq!(
+                steps.calls(),
+                ["verify_identity", "preflight", "provision", "exec"]
+            );
+            assert_eq!(*steps.seen_count.borrow(), Some(1));
+            assert_eq!(count_of(&f.cfg), 0);
+        }
+    }
+
+    #[test]
+    fn full_guard_rejects_missing_or_ambiguous_protection_before_any_step() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            for opt in [LATCH_PATH_OPT, RX_TRUST_DIR_OPT] {
+                let mut f = full_fixture(arm);
+                let index = f.cfg.s0_args.iter().position(|arg| arg == opt).unwrap();
+                f.cfg.s0_args.drain(index..index + 2);
+                let mut steps = ScriptedSteps::ok();
+                assert_eq!(
+                    evaluate_guard(&f.cfg, &mut steps),
+                    Err(GuardExit::ExecFailed)
+                );
+                assert_eq!(steps.calls(), Vec::<&str>::new());
+                assert!(!f.cfg.lock_file().exists());
+                assert!(!f.cfg.count_file().exists());
+            }
+            for trust in [
+                OsString::from("relative"),
+                OsString::from("/another/protection"),
+            ] {
+                let mut f = full_fixture(arm);
+                *f.cfg.s0_args.last_mut().unwrap() = trust;
+                let mut steps = ScriptedSteps::ok();
+                assert_eq!(
+                    evaluate_guard(&f.cfg, &mut steps),
+                    Err(GuardExit::ExecFailed)
+                );
+                assert_eq!(steps.calls(), Vec::<&str>::new());
+                assert!(!f.cfg.lock_file().exists());
+                assert!(!f.cfg.count_file().exists());
+            }
+            let mut f = full_fixture(arm);
+            f.cfg.s0_args.extend([
+                OsString::from(RX_TRUST_DIR_OPT),
+                OsString::from("/duplicate"),
+            ]);
+            let mut steps = ScriptedSteps::ok();
+            assert_eq!(
+                evaluate_guard(&f.cfg, &mut steps),
+                Err(GuardExit::ExecFailed)
+            );
+            assert_eq!(steps.calls(), Vec::<&str>::new());
+            assert!(!f.cfg.lock_file().exists());
+            assert!(!f.cfg.count_file().exists());
+        }
+    }
+
+    #[test]
+    fn full_and_arm_only_identity_cannot_be_mixed_before_lock_or_counter() {
+        for arm in [DeployArm::Left, DeployArm::Right] {
+            let mut f = full_fixture(arm);
+            let index = f
+                .cfg
+                .s0_args
+                .iter()
+                .position(|arg| arg == HARDWARE_ID_OPT)
+                .unwrap();
+            f.cfg.s0_args[index + 1] = OsString::from(identity::expected(arm).hardware_id);
+            let mut steps = ScriptedSteps::ok();
+            assert_eq!(
+                evaluate_guard(&f.cfg, &mut steps),
+                Err(GuardExit::ExecFailed)
+            );
+            assert_eq!(steps.calls(), Vec::<&str>::new());
+            assert!(!f.cfg.lock_file().exists());
+            assert!(!f.cfg.count_file().exists());
+
+            let mut f = full_fixture(arm);
+            f.cfg.config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../configs")
+                .join(format!("xlerobot_{}_arm.toml", arm.label()));
+            let mut steps = ScriptedSteps::ok();
+            steps.verify_config = true;
+            assert_eq!(
+                evaluate_guard(&f.cfg, &mut steps),
+                Err(GuardExit::ExecFailed)
+            );
+            assert_eq!(steps.calls(), ["verify_identity"]);
+            assert!(!f.cfg.lock_file().exists());
+            assert!(!f.cfg.count_file().exists());
+
+            let mut f = full_fixture(arm);
+            let other = match arm {
+                DeployArm::Left => DeployArm::Right,
+                DeployArm::Right => DeployArm::Left,
+            };
+            f.cfg.arm = other;
+            let mut steps = ScriptedSteps::ok();
+            assert_eq!(
+                evaluate_guard(&f.cfg, &mut steps),
+                Err(GuardExit::ExecFailed)
+            );
+            assert_eq!(steps.calls(), Vec::<&str>::new());
+            assert!(!f.cfg.lock_file().exists());
+            assert!(!f.cfg.count_file().exists());
+        }
     }
 
     /// **pre-increment 硬契约**：preflight 执行时计数文件已经是 n+1。

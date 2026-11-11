@@ -1,4 +1,4 @@
-# XLeRobot handoff transaction —— 旧栈 → 新 arm-only 双栈的**唯一交接入口**
+# XLeRobot handoff：旧栈退出后，对两条总线的17个电机执行原停止预检。
 # （v0.5 候选 E 段(9)；Spec D13 启动拓扑 r5 V1 + r6 W1 + R9-1）。
 #
 # ## 为什么需要它（单臂直启不得留下另一 bus 的安全空窗）
@@ -29,9 +29,9 @@ After=network-online.target dev-ttyACM0.device dev-ttyACM1.device
 Requires=dev-ttyACM0.device dev-ttyACM1.device
 
 # **旧栈停止顺序的第一责任人**：conflict 目标的 stop job 按 After 排序在本
-# unit start 之前完成 —— dimos 两 unit + 旧 full S0 unit。
-Conflicts=xlerobot-coordinator.service xlerobot-web.service xlerobot-s0-bus1.service xlerobot-s0-bus2.service
-After=xlerobot-coordinator.service xlerobot-web.service xlerobot-s0-bus1.service xlerobot-s0-bus2.service
+# unit start 之前完成。升级后的full-bus是本unit的消费者，不列为旧栈。
+Conflicts=xlerobot-coordinator.service xlerobot-web.service
+After=xlerobot-coordinator.service xlerobot-web.service
 
 [Service]
 Type=oneshot

@@ -1,93 +1,57 @@
-# XLeRobot S0 全总线模板：右臂六关节＋三轮。
-# 引用当前 configs/xlerobot_bus2_full.toml，随配置演进，不是冻结回滚版本。
-# 当前完整 S0 的实机验收边界见 docs/s0_hal_status.md；部署入口见本目录 README.md。
-# 每条总线保留独占所有者；安装和启动前使用现有交接、保护文件及现场确认流程。
+# XLeRobot 全总线候选：原guard预检后exec默认S0，不自动启用。
+# 显式沿用本侧已验保护目录，不迁移或复制安全状态。
+# 安装前冻结产物/配置；启动前仍须当轮现场确认，见README.md。
 
 [Unit]
-Description=XLeRobot S0 daemon (bus2 9-motor: right_arm + base 3 wheel)
-Documentation=file:///home/loosqk/repo/robot/robot-system/docs/00_design.md
-Documentation=file:///home/loosqk/repo/robot/robot-system/docs/handoffs/2026-04-26_3.md
-
-# bus2 USB 串口出现才启动（避免 ttyACM 还没枚举就跑导致 connect 失败）。
-# **注意**：systemd 默认**不**为 `/dev/serial/by-id/...` 创建 device unit，
-# 只为内核侧 `/dev/ttyACMx` 创建。我们 daemon 里仍走 by-id 路径开串口（固定
-# motor 1a86 / serial 5A7C122340 → 物理唯一），但 systemd 端的 dependency
-# 只能挂到 `dev-ttyACM1.device`。这意味着 ACM enum 顺序变化时（dimos /
-# 多 USB 串口同时插拔）unit 路径要更新；v0.2 单 robot 部署接受此约束。
-# 永久方案需要 udev rule + SYMLINK + SystemdAlias，留 v0.3+ 做。
+Description=XLeRobot S0 daemon (bus2 full, guard-wrapped)
+Documentation=file:///home/loosqk/repo/robot/robot-system/scripts/systemd/README.md
 After=network-online.target dev-ttyACM1.device
 Requires=dev-ttyACM1.device
-
-# 不跟 dimos service 同时跑（同一根 ttyACM1 互斥）。如果 dimos 在跑这个
-# unit 不会启动；deploy 流程上必须 `sudo systemctl stop xlerobot-coordinator
-# xlerobot-web` 后再 start 本 unit。
-Conflicts=xlerobot-coordinator.service xlerobot-web.service
-
-# 防失控重启：60s 内挂 ≥ 5 次就停止 retry，进 failed 状态由人介入。
-# **systemd 230+** 这两条搬到 `[Unit]` 节（旧版在 `[Service]`），systemd 249
-# 实测放 `[Service]` 会 "Unknown key name" warning 并被忽略。
+Requires=xlerobot-handoff.service
+After=xlerobot-handoff.service
+Conflicts=xlerobot-coordinator.service xlerobot-web.service xlerobot-s0-left-arm.service xlerobot-s0-right-arm.service
+After=xlerobot-coordinator.service xlerobot-web.service xlerobot-s0-left-arm.service xlerobot-s0-right-arm.service
 StartLimitIntervalSec=60s
 StartLimitBurst=5
 
 [Service]
-# `Type=notify` 让 systemd 等 daemon 调 sd_notify(READY=1) 才认为 active；
-# 详 crates/robot-health/src/systemd.rs。
 Type=notify
 NotifyAccess=main
-
-# 实机部署填实路径
 User=loosqk
 Group=loosqk
 SupplementaryGroups=dialout
 WorkingDirectory=/home/loosqk/repo/robot/robot-system
+RuntimeDirectory=robot-system/preflight
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
-ExecStart=/home/loosqk/repo/robot/robot-system/target/release/s0_daemon \
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/xlerobot_deploy guard \
+    --arm right \
+    --config /home/loosqk/repo/robot/robot-system/configs/xlerobot_bus2_full.toml \
+    --s0-bin /home/loosqk/repo/robot/robot-system/target/release/s0_daemon \
+    --robot-id xlerobot_bus2_full \
+    -- \
     --robot-id xlerobot_bus2_full \
     --hardware-id right_arm_full_with_base \
-    --config /home/loosqk/repo/robot/robot-system/configs/xlerobot_bus2_full.toml \
-    --latch-path /var/lib/robot/xlerobot_bus2_full/estop_latch \
-    --tick-hz 50
+    --latch-path /var/lib/robot/xlerobot_right/estop_latch \
+    --rx-trust-dir /var/lib/robot/xlerobot_right \
+    --tick-hz 50 \
+    --notify-mode required
 
-# Watchdog: 2s 不来 ping 就视为僵死。daemon 内部按 `WATCHDOG_USEC / 2 = 1s`
-# 周期 ping，留 50% 余量吸收 jitter。看 §6.4 systemd unit 约束。
+# 预检仍执行原完整聚合；不在部分安全写完成时截断。
+TimeoutStartSec=infinity
 WatchdogSec=2s
-
-# Restart 策略：on-failure（含 watchdog timeout、abnormal exit、SIGKILL），但
-# **不**含 `clean exit` (exit code 0，例如 --smoke-duration 到期 / SIGTERM
-# graceful)。这样 daemon 主动停下来 systemd 不会拉起；操作员意图清楚。
 Restart=on-failure
 RestartSec=2s
-
-# Latch / log 写权限（user 拥有 /var/lib/robot/<robot_id>/）。
-# 安装时按上面 "## 安装" §2 创建目录 + 改 owner。
-ReadWritePaths=/var/lib/robot/xlerobot_bus2_full
-
-# 日志统一走 journald；可在 unit override 切 ROBOT_LOG_FORMAT=json 适配
-# vector / fluentbit 采集（详 docs/logging.md）。
+RestartPreventExitStatus=86 87 89
+ReadWritePaths=/var/lib/robot/xlerobot_right
 StandardOutput=journal
 StandardError=journal
 Environment=ROBOT_LOG_FORMAT=json
 Environment=RUST_LOG=info,robot=debug
 
-# 安全收紧（**不**影响 /dev/serial 串口访问；ttyACM* 在 dialout group 内
-# 受 SupplementaryGroups 兜底）。
-#
-# **不能**用 `PrivateTmp=yes`：iceoryx2 service 元数据 + shared memory 都在
-# `/tmp/iceoryx2/{nodes,services}/`（详 docs/handoffs/2026-04-26_bus2_runbook.md
-# §0），systemd 私有 /tmp 命名空间会让 daemon 在隔离 /tmp 创建 service，宿主
-# 跑的 mock_s1 / robotctl watch / robotctl estop 看不到 → 通信完全断。
-# 安全权衡：daemon 不写 /tmp 任何东西（除了 iceoryx2 自己），不接收 untrusted
-# 用户 input 路径，PrivateTmp 收益微小；其它 Protect* + ReadWritePaths 已把
-# daemon 锁死在 /var/lib/robot/<id>/ + 串口设备节点。
-# **PrivateTmp 故意不开**——若未来 iceoryx2 0.9+ 切到 abstract socket 或
-# /run/iceoryx2/ 才能重新评估。
-#
-# **不能**用 `ProtectSystem=strict`：实测会让 iceoryx2 0.8.1
-# `NodeBuilder::create::<IxService>` 返 InternalError（s0_ipc_thread panic
-# at s0_daemon.rs:556）。`strict` 把 /var 整体只读（`ReadWritePaths` 只放行
-# 显式列出的子路径），iceoryx2 似乎还会写 /var 其它路径。降级到 `full`：
-# /usr /boot /efi /etc 只读，/var 默认可写（实测 iceoryx2 跑得通）。**reviewer
-# 在 commit 4eeb584 后阻断验证发现**，详 docs/handoffs/<再续>_3.md（待写）。
+# 与已验默认S0保持相同调度；本轮不另加RT调度参数。
+# iceoryx2需要共享宿主IPC路径，不启用PrivateTmp。
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=read-only

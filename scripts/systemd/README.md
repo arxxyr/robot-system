@@ -6,22 +6,27 @@
 |---|---|---|
 | 现有 arm-only S0 | `xlerobot-s0-left-arm.service`、`xlerobot-s0-right-arm.service` | 经 `xlerobot_deploy guard` 启动；使用 `/etc/robot/xlerobot_{left,right}_arm.toml` |
 | 现有 S1、gateway 与交接 | `xlerobot-s1-*.service`、`xlerobot-gateway-*.service`、`xlerobot-handoff.service` | 安装、备份及回滚按[交接操作单](README_dimos_replace.md) |
-| 全身 S0 候选 | `xlerobot-s0-bus1.service`、`xlerobot-s0-bus2.service` | 分别引用 `configs/xlerobot_bus{1,2}_full.toml`；默认S0实机结论见[当前状态](../../docs/s0_hal_status.md)，模板安装与启动仍待验证 |
+| 全身 S0 候选 | `xlerobot-s0-bus1.service`、`xlerobot-s0-bus2.service` | 原handoff→guard→S0链，按两份full TOML校验；默认S0实机结论见[当前状态](../../docs/s0_hal_status.md)，服务安装与启动仍待验证 |
 | systemd 故障测试 | `xlerobot-*-freeze-test.service` | 仅由对应 smoke 渲染占位符后使用，不直接安装或启动模板 |
 
 ## 配置与产物边界
 
 - 全总线 unit 引用随开发变化的配置，**不是冻结的回滚版本**。回滚使用事先备份并验证过的二进制、配置和 unit；不能仅切换 unit 名称。
-- arm-only 与 full-bus 的 robot ID、保护文件和控制范围不同，不自动迁移或混用。`Conflicts=` 只是服务互斥的一部分，还须核对手工进程及串口所有权。
+- arm-only与full-bus的运行ID、控制范围不同；full候选显式复用已验物理总线保护域：bus1→`/var/lib/robot/xlerobot_left`，bus2→`/var/lib/robot/xlerobot_right`。latch和rx-trust目录必须一致，不复制、重置或迁移保护状态。`Conflicts=`不能替代手工进程及串口独占检查。
 - 先按[当前配置](../../configs/README.md)选择明确文件，不使用已退出当前流程的试验配置。
 - 测试构建使用隔离目录。`run_clear_estop_smoke.sh` 构建与运行同一份隔离产物，不改服务引用的 `target/release`；安装仍走既有部署步骤。
 
 ## 启停与保护状态
 
-- 现有 arm-only 部署、交接、首次 provision 和故障恢复统一走[交接操作单](README_dimos_replace.md)及原工具。全总线模板接入须核对运行身份与保护目录，不能照抄 arm-only 的身份或保护路径；默认S0维护入口通过不代替服务安装与启动验证。
+- 复用[交接操作单](README_dimos_replace.md)的原工具和安装/回滚步骤。guard按显式robot ID严格选择arm-only或full布局；全总线不会绕过原17电机交接和本侧预检。默认S0维护入口通过不代替服务安装与启动验证。
+- handoff源模板保留arm-only配置以兼容旧安装；full候选须将handoff两侧参数和两个guard绑定到同批冻结full TOML。handoff只与旧coordinator/web冲突，不能与依赖它的full服务冲突。实际切换前确认旧进程已退出；daemon-reload不会补做已运行进程的启动依赖。
 - EStop latch、RX marker、锁文件不是可回滚的普通配置。**不得删除、覆盖为0或复制旧保护文件来解除急停**；解除沿原 `ClearEStop` 权限和验证流程。
 - `auto_enable=false` 只禁止自动启用，不代表启动无硬件写入；默认 S0 启动会执行停止收敛。实机启动仍须当次现场条件和动作通知。
 - `Type=notify`、worker 存活检查和 systemd watchdog 保留；这些软件机制不替代未完成的 D15 硬件 fail-safe。
+
+## 离线准备
+
+只生成隔离候选，绑定已验S0二进制、新guard工具、TOML、校准、相机helper与固定解释器的SHA；保持`auto_enable=false`。候选沿现有三个unit生成，`systemd-analyze verify`只解析依赖，不安装、不启动。真实`guard`、`preflight-*`和`provision`都有副作用，不能拿来作离线检查；软件测试使用既有假steps和临时目录。
 
 ## 历史验证
 

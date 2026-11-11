@@ -1,4 +1,4 @@
-//! **unit 文件指令文本断言**（v0.5 候选 E 段(9)，AC-E22 unit 级）。
+//! 部署模板与原guard的离线接线检查，不启动服务或访问硬件。
 //!
 //! 锁的是 systemd 侧的**部署契约**，不碰真硬件：
 //!
@@ -28,6 +28,10 @@ const ARM_UNITS: [(&str, &str); 2] = [
     ("left", "xlerobot-s0-left-arm.service"),
     ("right", "xlerobot-s0-right-arm.service"),
 ];
+const FULL_UNITS: [(&str, &str); 2] = [
+    ("left", "xlerobot-s0-bus1.service"),
+    ("right", "xlerobot-s0-bus2.service"),
+];
 const S1_UNITS: [(&str, &str); 2] = [
     ("left", "xlerobot-s1-left.service"),
     ("right", "xlerobot-s1-right.service"),
@@ -36,7 +40,7 @@ const GATEWAY_UNITS: [(&str, &str, &str); 2] = [
     ("left", "xlerobot-gateway-left.service", "127.0.0.1:50051"),
     ("right", "xlerobot-gateway-right.service", "127.0.0.1:50052"),
 ];
-/// 旧栈四件（dimos ×2 + 旧 full S0 ×2）——handoff 与 arm unit 都要互斥。
+/// arm-only与旧控制栈、全总线S0互斥；handoff仅与前两项旧控制栈互斥。
 const LEGACY_UNITS: [&str; 4] = [
     "xlerobot-coordinator.service",
     "xlerobot-web.service",
@@ -130,12 +134,13 @@ fn s0_args_of(argv: &[String]) -> Vec<String> {
 // ============================================================================
 
 #[test]
-fn seven_units_exist() {
+fn deployment_units_exist() {
     let mut names = vec![HANDOFF.to_string()];
     names.extend(ARM_UNITS.iter().map(|(_, n)| (*n).to_string()));
+    names.extend(FULL_UNITS.iter().map(|(_, n)| (*n).to_string()));
     names.extend(S1_UNITS.iter().map(|(_, n)| (*n).to_string()));
     names.extend(GATEWAY_UNITS.iter().map(|(_, n, _)| (*n).to_string()));
-    assert_eq!(names.len(), 7, "unit ×7（撤『六件』笔误）");
+    assert_eq!(names.len(), 9, "handoff + 两组S0 + S1 + gateway");
     for name in names {
         assert!(systemd_dir().join(&name).is_file(), "缺 unit {name}");
     }
@@ -153,9 +158,9 @@ fn seven_units_exist() {
 fn handoff_is_oneshot_remain_after_exit_and_conflicts_legacy() {
     assert_eq!(single(HANDOFF, "Type"), "oneshot");
     assert_eq!(single(HANDOFF, "RemainAfterExit"), "yes");
-    assert_contains_all(HANDOFF, "Conflicts", &LEGACY_UNITS);
+    assert_contains_all(HANDOFF, "Conflicts", &LEGACY_UNITS[..2]);
     // 旧栈停止顺序的第一责任人：conflict 目标同时要排 After。
-    assert_contains_all(HANDOFF, "After", &LEGACY_UNITS);
+    assert_contains_all(HANDOFF, "After", &LEGACY_UNITS[..2]);
 }
 
 #[test]
@@ -202,7 +207,7 @@ fn arm_units_have_no_exec_start_pre_and_run_guard() {
 
 #[test]
 fn arm_units_lock_exit_86_and_both_budgets() {
-    for (_, name) in ARM_UNITS {
+    for (_, name) in ARM_UNITS.into_iter().chain(FULL_UNITS) {
         let mut prevented: Vec<i32> = single(name, "RestartPreventExitStatus")
             .split_whitespace()
             .map(|value| value.parse().expect("退出码必须为整数"))
@@ -233,7 +238,13 @@ fn arm_units_lock_exit_86_and_both_budgets() {
 /// 的 unit 必须 `infinity`。
 #[test]
 fn ensure_safe_units_never_time_out_mid_aggregation() {
-    for name in [HANDOFF, ARM_UNITS[0].1, ARM_UNITS[1].1] {
+    for name in [
+        HANDOFF,
+        ARM_UNITS[0].1,
+        ARM_UNITS[1].1,
+        FULL_UNITS[0].1,
+        FULL_UNITS[1].1,
+    ] {
         assert_eq!(
             single(name, "TimeoutStartSec"),
             "infinity",
@@ -295,7 +306,7 @@ fn production_watchdog_values_are_five_seconds() {
 
 #[test]
 fn arm_units_declare_runtime_directory_triple() {
-    for (_, name) in ARM_UNITS {
+    for (_, name) in ARM_UNITS.into_iter().chain(FULL_UNITS) {
         assert_eq!(
             single(name, "RuntimeDirectory"),
             "robot-system/preflight",
@@ -335,7 +346,7 @@ fn guard_config_from_unit(name: &str, arm: DeployArm, robot_id: &str) -> GuardCo
 
 #[test]
 fn s0_args_must_not_carry_config_in_the_unit() {
-    for (_, name) in ARM_UNITS {
+    for (_, name) in ARM_UNITS.into_iter().chain(FULL_UNITS) {
         let argv = exec_start_argv(name);
         let s0_args = s0_args_of(&argv);
         assert!(
@@ -418,6 +429,69 @@ fn latch_path_follows_the_unit_argv() {
             PathBuf::from(format!("/var/lib/robot/{robot_id}/estop_latch")),
             "{name}"
         );
+    }
+}
+
+/// 全总线沿已验物理保护域启动；运行ID变化不能创建另一套干净安全状态。
+#[test]
+fn full_bus_units_bind_config_and_existing_protection_to_guard() {
+    for (index, (side, name)) in FULL_UNITS.into_iter().enumerate() {
+        let bus = index + 1;
+        let arm = DeployArm::parse(side).unwrap();
+        let robot_id = format!("xlerobot_bus{bus}_full");
+        let argv = exec_start_argv(name);
+        assert!(argv[0].ends_with("xlerobot_deploy"));
+        assert_eq!(argv[1], "guard");
+        assert_eq!(opt(&argv, "--arm"), side);
+        assert_eq!(opt(&argv, "--robot-id"), robot_id);
+        assert_eq!(directives(name, "ExecStartPre"), Vec::<String>::new());
+        assert_eq!(single(name, "Type"), "notify");
+        assert_eq!(opt(&argv, "--notify-mode"), "required");
+
+        let mut cfg = guard_config_from_unit(name, arm, &robot_id);
+        // 纯校验只检查二进制存在；本测试绝不exec。
+        cfg.s0_bin = std::env::current_exe().unwrap();
+        robot_s0::deploy::guard::validate_invocation(&cfg).unwrap();
+        let file = cfg.config_path.file_name().unwrap();
+        let repository_config = systemd_dir().join("../../configs").join(file);
+        let verified =
+            robot_s0::deploy::identity::load_and_verify_arm_config(arm, &repository_config)
+                .expect("实际全总线TOML必须被同一guard身份校验接受");
+        assert_eq!(verified.robot_id, robot_id);
+        assert_eq!(verified.hardware_id, opt(&argv, "--hardware-id"));
+
+        let protection = format!("/var/lib/robot/xlerobot_{side}");
+        assert_eq!(
+            cfg.resolve_latch_path().unwrap(),
+            Path::new(&protection).join("estop_latch")
+        );
+        assert_eq!(opt(&argv, "--rx-trust-dir"), protection);
+        assert_eq!(single(name, "ReadWritePaths"), protection);
+        let forwarded = build_s0_args(&cfg).unwrap();
+        assert_eq!(forwarded[forwarded.len() - 2], "--config");
+        assert_eq!(forwarded.last().unwrap(), &cfg.config_path.into_os_string());
+    }
+}
+
+/// handoff不再把其full-bus消费者作为冲突旧栈；两种S0仍互斥。
+#[test]
+fn full_bus_handoff_dependencies_do_not_conflict_with_consumers() {
+    for (_, name) in FULL_UNITS {
+        assert_contains_all(name, "Requires", &[HANDOFF]);
+        assert_contains_all(name, "After", &[HANDOFF]);
+        assert_contains_all(name, "Conflicts", &LEGACY_UNITS[..2]);
+        for (_, arm_name) in ARM_UNITS {
+            assert_contains_all(name, "Conflicts", &[arm_name]);
+            assert_contains_all(arm_name, "Conflicts", &[name]);
+        }
+        for directive in ["Conflicts", "After"] {
+            assert!(
+                !directives(HANDOFF, directive)
+                    .join(" ")
+                    .split_whitespace()
+                    .any(|unit| unit == name)
+            );
+        }
     }
 }
 
