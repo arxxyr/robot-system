@@ -1,6 +1,7 @@
 """仅用 Linux ARM64 PTY 验证维护编排、默认 S0 与发送器；不连接物理串口。
 
 显式设置 ROBOT_TEST_S0_BIN、ROBOT_TEST_MIXED_BIN 后运行；普通单测跳过。
+相机用例仅运行真实 RCAM helper 协议进程，不打开摄像头。
 """
 
 import errno
@@ -22,6 +23,41 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
+
+
+CAMERA_HELPER = r"""
+import os
+from pathlib import Path
+import signal
+import struct
+import sys
+import time
+
+directory = Path(__file__).parent
+stream_index = int(directory.name.rsplit('-', 1)[1])
+last_stamp = None
+
+def stop(_signum, _frame):
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, stop)
+try:
+    (directory / 'camera-pid').write_text(str(os.getpid()))
+    while True:
+        if (directory / 'camera-stall').exists():
+            (directory / 'camera-stalled').write_text(str(time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)))
+            while True:
+                time.sleep(0.01)
+        last_stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+        if not (directory / 'camera-first-frame').exists():
+            (directory / 'camera-first-frame').write_text(str(last_stamp))
+        pixels = bytes(range(stream_index + 1, stream_index + 7))
+        sys.stdout.buffer.write(struct.pack('<4sIIIQ', b'RCAM', 2, 1, 6, last_stamp) + pixels)
+        sys.stdout.buffer.flush()
+        time.sleep(0.05)
+finally:
+    (directory / 'camera-stopped').write_text(str(last_stamp))
+"""
 
 
 def load_script(name):
@@ -204,14 +240,17 @@ class ServoPty:
 @unittest.skipUnless(sys.platform == "linux" and os.uname().machine == "aarch64" and os.environ.get("ROBOT_TEST_S0_BIN")
                      and os.environ.get("ROBOT_TEST_MIXED_BIN"), "需要显式绑定同源Linux软件测试产物")
 class MixedSenderIntegration(unittest.TestCase):
-    def run_case(self, fail_enable, position_only=False):
+    def run_case(self, fail_enable, position_only=False, *, camera_count=0, camera_stall=False):
+        self.assertFalse(camera_stall and (fail_enable or position_only or camera_count != 1),
+                         "失流夹具只用于已启用的右侧单路相机")
+        expected_failure = fail_enable or camera_stall
         active = "left" if position_only else "right"
         passive = "right" if position_only else "left"
         daemon_bin = Path(os.environ["ROBOT_TEST_S0_BIN"]).resolve(strict=True)
         sender_bin = Path(os.environ["ROBOT_TEST_MIXED_BIN"]).resolve(strict=True)
         evidence_root = os.environ.get("ROBOT_TEST_EVIDENCE_DIR")
         temporary = None if evidence_root else tempfile.TemporaryDirectory(prefix="robot-mixed-pty-")
-        directory = (Path(tempfile.mkdtemp(prefix="mixed-fail-" if fail_enable else "mixed-ok-", dir=evidence_root))
+        directory = (Path(tempfile.mkdtemp(prefix="mixed-fail-" if expected_failure else "mixed-ok-", dir=evidence_root))
                      if evidence_root else Path(temporary.name)).resolve()
         maintenance = load_script("run_hardware_maintenance")
         proc_helper = load_script("run_post_e_h2")
@@ -219,6 +258,8 @@ class MixedSenderIntegration(unittest.TestCase):
         executor = monitor = None
         monitoring_done, daemon_locks_seen = threading.Event(), threading.Event()
         lock_checks = {"left": 0, "right": 0, "active_reacquired_after_wait": 0, "errors": []}
+        camera_directories = []
+        camera_stall_injected = threading.Event()
         report = {}
         try:
             robot = f"mixed_pty_{os.getpid()}_{time.monotonic_ns()}"
@@ -246,6 +287,44 @@ motor_ids = {json.dumps(list(range(1, len(joints) + 1)))}
 calibration_paths = [{json.dumps(str(calibration))}]
 calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [20] * 6 + [0] * 3)}
 ''')
+            cameras, camera_refs = [], []
+            if camera_count:
+                # 只复用当前解释器；路径链、实际exe和venv配置仍由维护入口真实绑定。
+                python_executable = Path(sys.executable).resolve(strict=True)
+                python_home = directory / "camera-python"
+                (python_home / "bin").mkdir(parents=True)
+                python = python_home / "bin" / "python"
+                python.symlink_to(python_executable)
+                venv = python_home / "pyvenv.cfg"
+                venv.write_text(f"home = {python_executable.parent}\ninclude-system-site-packages = false\n")
+                python_ref, venv_ref = full_reference(python_executable), full_reference(venv)
+                camera_refs.extend((python_ref, venv_ref))
+                sensor_config = []
+                for index in range(camera_count):
+                    camera_directory = directory / f"camera-{index}"
+                    camera_directory.mkdir()
+                    camera_directories.append(camera_directory)
+                    helper, device = camera_directory / "camera_fixture.py", camera_directory / "fixture-video"
+                    helper.write_text(CAMERA_HELPER)
+                    device.write_text("RCAM协议夹具，不是V4L2设备\n")
+                    camera = dict(id=f"fixture_camera_{index}", device=str(device), width=2, height=1, fps=20,
+                                  python=str(python), helper=str(helper), python_executable=python_ref,
+                                  venv_config=venv_ref, python_paths=maintenance.s0_python_paths(python))
+                    cameras.append(camera)
+                    camera_refs.append(full_reference(helper))
+                    sensor_config.append(f'''\n[[sensor]]
+adapter = "opencv_v4l2"
+hardware_id = {json.dumps(hardware_id)}
+id = {json.dumps(camera['id'])}
+device = {json.dumps(camera['device'])}
+python = {json.dumps(camera['python'])}
+helper = {json.dumps(camera['helper'])}
+width = 2
+height = 1
+fps = 20
+''')
+                with config.open("a") as stream:
+                    stream.write("".join(sensor_config))
             passive_device = str(directory / "passive-no-uart")
             passive_config = directory / "passive.toml"
             passive_names = right_names if position_only else left_names
@@ -285,8 +364,9 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                          "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip()},
                 "usb": {side: {"device": devices[side],
                                 "serial": maintenance.SERIALS[side]} for side in maintenance.SERIALS},
-                "refs": [daemon_ref, sender_ref, full_reference(calibration), helper_ref, full_reference(config)],
-                "binary_paths": [str(daemon_bin), str(sender_bin)], "protection": protection,
+                "refs": [daemon_ref, sender_ref, full_reference(calibration), helper_ref, full_reference(config), *camera_refs],
+                "binary_paths": [str(daemon_bin), str(sender_bin), *[camera['helper'] for camera in cameras]],
+                "protection": protection,
                 "proc_helper": helper_ref, "s0_daemon": daemon_ref, "supervised_demo": sender_ref,
                 "s0_hardware_id": hardware_id,
             }
@@ -294,10 +374,24 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                 stack.enter_context(patch.dict(os.environ, environment, clear=True))
                 stack.enter_context(patch.object(maintenance, "DEVICES", devices))
                 stack.enter_context(patch.object(maintenance, "MAINTENANCE_NAMESPACE", directory.parent))
+                if cameras:
+                    original_camera_identity = maintenance.s0_camera_device_identity
+
+                    def fixture_camera_identity(device):
+                        if device in {camera['device'] for camera in cameras}:
+                            # 仅此新建普通文件替身video身份；Python/进程身份仍走真实/proc与元数据。
+                            return {**maintenance.s0_path_identity(device), "fixture": "RCAM_NOT_V4L2"}
+                        return original_camera_identity(device)
+
+                    stack.enter_context(patch.object(maintenance, "s0_camera_device_identity", fixture_camera_identity))
+                    for camera in cameras:
+                        camera['device_identity'] = fixture_camera_identity(camera['device'])
+                    bindings['cameras'] = cameras
                 maintenance.configure_bus_mapping(passive_config if position_only else config,
                                                   config if position_only else passive_config)
-                plan = maintenance.make_plan(bindings, directory / "run", "pty-fail" if fail_enable else "pty-ok",
-                                             directory, **({"s0_position_hold": True} if position_only else {"s0_mixed_hold": True}))
+                plan = maintenance.make_plan(bindings, directory / "run", "pty-fail" if expected_failure else "pty-ok",
+                                             directory, with_cameras=bool(cameras),
+                                             **({"s0_position_hold": True} if position_only else {"s0_mixed_hold": True}))
                 issued = time.time_ns()
                 facts = {side: {**dict.fromkeys(maintenance.FACTS, True), "confirmed_at_ns": issued}
                          for side in maintenance.SERIALS}
@@ -357,6 +451,8 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                     before=fixture_snapshot(), fixture_boundaries={"uart": "唯一ServoPty八位置关节" if position_only else "唯一ServoPty九电机，不是物理串口",
                         "passive_uart": "NOT_OPENED", "external_systemd_usb": "NOT_RUN_DIRECT_RUN_FIXTURE",
                         "external_stop51": "PTY_STATE_MODEL_NOT_UART", "physical_motion": "NOT_OBSERVED", "deployable": False})
+                if cameras:
+                    report['fixture_boundaries']['cameras'] = '真实RCAM helper进程；2x1 BGR软件帧，不打开V4L2'
                 original_verify_locks = maintenance.verify_s0_daemon_locks
 
                 def verified_daemon_locks(bound, identity, *args, **kwargs):
@@ -379,14 +475,24 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                                     if not busy and process.poll() is None and not report["s0_daemon"]["signals_sent"]:
                                         raise AssertionError("活动侧锁在本轮daemon运行阶段可被重新取得")
                                     lock_checks[active] += 1
+                            if (camera_stall and not camera_stall_injected.is_set() and servo.nonzero_writes
+                                    and time.monotonic() - servo.nonzero_writes[0][2] >= .25):
+                                stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+                                (camera_directories[0] / 'camera-stall').write_text(str(stamp))
+                                report['camera_stall_injected_ns'] = stamp
+                                camera_stall_injected.set()
                             monitoring_done.wait(0.002)
                     except BaseException as error:
                         lock_checks["errors"].append(repr(error))
 
-                holder_calls = []
+                holder_calls, camera_holder_calls = [], []
                 def isolated_pty_holder(io, device, elevated, *, cleanup=False):
                     # 夹具自己一直持有PTY主从FD；这里只替身物理USB/fuser外层门。
                     self.assertIsNone(io.s0_daemon, "取回UART门不得早于daemon真实退出")
+                    if device in {camera['device'] for camera in cameras}:
+                        camera_holder_calls.append((device, elevated, cleanup))
+                        return {'fixture': 'RCAM_NOT_V4L2', 'path': device, 'elevated': elevated,
+                                'stdout_empty': True, 'exit_code': 1}
                     holder_calls.append((device, elevated))
                     return {"fixture": "PTY_HOLDER_NOT_PHYSICAL_USB", "device": device, "elevated": elevated}
 
@@ -435,7 +541,7 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                     self.assertEqual(holder_calls, [(servo.path, False), (servo.path, True)])
                     maintenance.verify_s0_protection(bindings, "final", active)
                 else:
-                    self.assertTrue(fail_enable, report.get("s0_cleanup_errors"))
+                    self.assertTrue(expected_failure, report.get("s0_cleanup_errors"))
                     self.assertTrue(engine.manual_cut)
                 for side in maintenance.SERIALS:
                     for name in ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak"):
@@ -444,7 +550,8 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                 sender_report = report["s0_sender_result"]
                 sender_command = next(row for row in executor.commands if row["argv"][0] == str(sender_bin))
                 self.assertTrue(sender_command["reaped"])
-                self.assertEqual(sender_command["exit_code"], 1 if fail_enable else 0)
+                self.assertEqual(sender_command["exit_code"], 1 if expected_failure else 0)
+                self.assertEqual('--with-cameras' in sender_command['argv'], bool(cameras))
                 self.assertGreater(servo.enable_attempts, 0)
                 self.assertTrue(all(value == 0 for value in servo.enabled[1:]))
                 # 原编排确认真实退出及四锁取回后，才允许软件STOP51替身取值。
@@ -457,17 +564,61 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                     report["fixture_stop51"] = maintenance.classify_stop_snapshot(stop_values,
                         child_active=executor.child is not None or executor.s0_daemon is not None)
                     self.assertEqual(len(post_reads), 51)
-                    self.assertEqual(report["fixture_stop51"]["status"], "PASS")
+                    if camera_stall:
+                        # EStop可先断扭、拒绝尚未落地的零目标；严格STOP51原判定不得改写。
+                        for row in stop_values.values():
+                            self.assertEqual(row['Torque_Enable'], 0)
+                            self.assertEqual(row['Present_Velocity'], 0)
+                        if report['fixture_stop51']['status'] == 'FAIL':
+                            self.assertEqual(report['fixture_stop51']['issues'], [
+                                {'code': 'STOP_REGISTER_NONZERO', 'status': 'FAIL', 'motor': 'right:8',
+                                 'register': 'Goal_Velocity', 'actual': 500}])
+                        else:
+                            self.assertEqual(report['fixture_stop51']['status'], 'PASS')
+                    else:
+                        self.assertEqual(report["fixture_stop51"]["status"], "PASS")
                 else:
                     self.assertEqual(post_reads, [])
                 report["fixture_post_reads"] = post_reads
                 report["manual_power_cut_required"] = engine.manual_cut
-                if fail_enable:
+                if expected_failure:
                     self.assertIsNotNone(failure)
-                    self.assertFalse(servo.nonzero_writes)
                     self.assertEqual(sender_report["result"], "FAIL")
                     # 保留原sender失败/人工处置事实，不为夹具改成成功。
                     self.assertIsInstance(sender_report["manual_power_cut_required"], bool)
+                    if camera_stall:
+                        self.assertTrue(engine.manual_cut, '外层原失败状态必须保持人工处置粘性')
+                        self.assertTrue(report['manual_power_cut_required'])
+                        self.assertEqual(report['result'], 'FAIL')
+                        self.assertTrue(camera_stall_injected.is_set())
+                        self.assertTrue((camera_directories[0] / 'camera-stalled').is_file())
+                        self.assertTrue(servo.nonzero_writes)
+                        self.assertLess(len(sender_report['cycles']), 400)
+                        camera_error = f"{cameras[0]['id']} 相机失流超过1秒或时钟回退"
+                        if sender_report.get('error') != camera_error:
+                            # S0的一秒帧龄门可能先停helper；只接受由该首因触发的外层协作停止。
+                            self.assertEqual(sender_report.get('error'), '收到SIGINT/SIGTERM')
+                            self.assertIn('已绑定相机helper提前退出或脱离S0',
+                                          sender_command.get('mixed_stop_requested', ''))
+                            self.assertTrue(any(row['signal'] == int(signal.SIGINT)
+                                                for row in sender_command['signals_sent']))
+                            log_rows = [json.loads(line) for line in Path(report['s0_daemon']['log_path']).read_text().splitlines()
+                                        if line.startswith('{')]
+                            self.assertTrue(any(row.get('message') ==
+                                '相机超过新鲜度期限未产新帧，停用并回收相机'
+                                and row.get('camera_index') == 0 for row in log_rows),
+                                'helper提前退出必须有本路相机失流的生产IO日志首因')
+                        last_frame = sender_report['camera_observations']['cameras'][0]['frames'][-1]
+                        self.assertGreaterEqual(sender_report['finished_ns'], last_frame['stamp_ns'] + 1_000_000_000)
+                        self.assertGreater(sender_report['finished_ns'], report['camera_stall_injected_ns'])
+                        # 既有失败收尾发零目标+EStop；不把未执行的正常Disable伪装成已退休。
+                        self.assertIn('prior_torque_off_confirmed', sender_report)
+                        self.assertFalse(any(error.startswith('EStop：') for error in sender_report['cleanup_errors']))
+                        self.assertTrue(sender_report['torque_off_confirmed'])
+                        self.assertEqual(sender_report['latest_state']['safety'], 'TorqueOffConfirmed')
+                        self.assertGreater(servo.stop_writes, 0)
+                    else:
+                        self.assertFalse(servo.nonzero_writes)
                 else:
                     self.assertIsNone(failure, repr(failure))
                     self.assertEqual(sender_report["result"], "SOFTWARE_PATH_PASS")
@@ -497,6 +648,12 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                         self.assertGreater(elapsed, 19.8)
                         self.assertLess(elapsed, 20.1)
                     report["result"] = "SOFTWARE_ORCHESTRATION_PASS_NOT_PHYSICAL"
+                if cameras:
+                    self.assert_camera_evidence(sender_report, cameras, camera_directories, report,
+                                                camera_holder_calls, proc_helper, success=not expected_failure)
+                else:
+                    self.assertNotIn('camera_observations', sender_report)
+                    self.assertNotIn('s0_camera_helpers', report)
                 report["lock_checks"] = lock_checks
         finally:
             monitoring_done.set()
@@ -511,6 +668,22 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
                         except subprocess.TimeoutExpired:
                             process.kill()
                             process.wait(timeout=3)
+                # 断言失败也只清理已精确绑定的本轮helper；原退出失败证据保留在报告中。
+                for helper in getattr(executor, 's0_camera_helpers', []):
+                    identity = helper['identity']
+                    observed = proc_helper.read_process(identity['pid'])
+                    if observed['status'] != 'observed' or not maintenance.s0_same_process(observed['identity'], identity):
+                        continue
+                    report.setdefault('fixture_forced_camera_cleanup', []).append(observed)
+                    os.kill(identity['pid'], signal.SIGTERM)
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        observed = proc_helper.read_process(identity['pid'])
+                        if observed['status'] != 'observed' or not maintenance.s0_same_process(observed['identity'], identity):
+                            break
+                        time.sleep(.01)
+                    if observed['status'] == 'observed' and maintenance.s0_same_process(observed['identity'], identity):
+                        os.kill(identity['pid'], signal.SIGKILL)
             try:
                 report["lock_checks"] = lock_checks
                 (directory / "integration.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
@@ -532,6 +705,78 @@ calibration_range_tolerances_raw = {json.dumps([20] * 8 if position_only else [2
 
     def test_left_enable_failure_stops_without_velocity_command(self):
         self.run_case(True, position_only=True)
+
+    def test_left_positions_and_two_cameras_share_twenty_second_window(self):
+        self.run_case(False, position_only=True, camera_count=2)
+
+    def test_right_mixed_and_one_camera_share_twenty_second_window(self):
+        self.run_case(False, camera_count=1)
+
+    def test_camera_stall_uses_existing_estop_and_reaps_real_helper(self):
+        self.run_case(False, camera_count=1, camera_stall=True)
+
+    def assert_camera_evidence(self, sender, cameras, directories, report, holder_calls, proc_helper, *, success):
+        observations = sender['camera_observations']
+        self.assertEqual(observations['schema'], 'S0_CAMERA_OBSERVATIONS_V1')
+        start = sender['hold_start_ns'] if 'hold_start_ns' in sender else sender['nonzero_start_ns']
+        end = sender['hold_end_ns'] if 'hold_end_ns' in sender else sender['nonzero_end_ns']
+        self.assertEqual(observations['window_started_ns'], start)
+        self.assertEqual(observations['window_finished_ns'], end)
+        self.assertEqual(end - start, 20_000_000_000)
+        rows = observations['cameras']
+        self.assertEqual([row['id'] for row in rows], [camera['id'] for camera in cameras])
+        helpers = {row['id']: row for row in report['s0_camera_helpers']}
+        self.assertEqual(set(helpers), {camera['id'] for camera in cameras})
+        exit_checks = report['s0_camera_helper_exit_checks']
+        self.assertEqual({row['id'] for row in exit_checks}, set(helpers))
+        self.assertTrue(all(row['terminated'] and row['observation']['status'] == 'vanished' for row in exit_checks))
+        self.assertTrue(any(row['phase'] == 'runtime' for row in report['s0_camera_helper_checks']))
+        expected_holders = [(camera['device'], elevated, cleanup) for cleanup in (False, True)
+                            for camera in cameras for elevated in (False, True)]
+        self.assertEqual(holder_calls, expected_holders)
+        if success:
+            self.assertTrue(report['s0_camera_handoff_closed'])
+            self.assertEqual(len(report['s0_camera_snapshots']), len(cameras))
+        for index, (camera, fixture, row) in enumerate(zip(cameras, directories, rows)):
+            pid = int((fixture / 'camera-pid').read_text())
+            helper = helpers[camera['id']]
+            self.assertEqual(helper['identity']['pid'], pid)
+            self.assertEqual(helper['parent_pid'], report['s0_daemon']['pid'])
+            self.assertEqual(helper['identity']['exe'], camera['python_executable']['path'])
+            self.assertEqual(helper['identity']['argv'], [camera['python'], '-I', '-S', '-B', '-u', camera['helper'],
+                '--device', camera['device'], '--width', '2', '--height', '1', '--fps', '20'])
+            self.assertTrue((fixture / 'camera-stopped').is_file(), 'helper未走真实finally停止')
+            self.assertEqual(proc_helper.read_process(pid)['status'], 'vanished')
+            self.assertEqual([row[key] for key in ('device', 'width', 'height', 'step', 'fps_requested')],
+                             [camera['device'], 2, 1, 6, 20])
+            self.assertEqual((row['encoding'], row['color_order']), ('bgr8', 'BGR'))
+            frames = row['frames']
+            self.assertGreaterEqual(len(frames), 2)
+            for previous, current in zip(frames, frames[1:]):
+                self.assertGreater(current['stamp_ns'], previous['stamp_ns'])
+                self.assertGreater(current['observed_ns'], previous['observed_ns'])
+                self.assertLessEqual(current['stamp_ns'] - previous['stamp_ns'], 1_000_000_000)
+            self.assertTrue(all(start <= frame['stamp_ns'] <= frame['observed_ns'] <= end
+                                and frame['observed_ns'] - frame['stamp_ns'] <= 1_000_000_000 for frame in frames))
+            if success:
+                self.assertLessEqual(frames[0]['stamp_ns'] - start, 1_000_000_000)
+                self.assertLessEqual(end - frames[-1]['stamp_ns'], 1_000_000_000)
+            else:
+                self.assertLess(frames[-1]['stamp_ns'], end - 1_000_000_000)
+            snapshot = row['snapshot']
+            self.assertIsInstance(snapshot, dict, '已确认断扭后应保留最后收到的原始BGR')
+            pixels = bytes(range(index + 1, index + 7))
+            self.assertEqual(Path(snapshot['path']).read_bytes(), pixels)
+            self.assertEqual(snapshot['bytes'], len(pixels))
+            self.assertEqual(snapshot['stamp_ns'], frames[-1]['stamp_ns'])
+            self.assertEqual((snapshot['encoding'], snapshot['color_order']), ('bgr8', 'BGR'))
+            self.assertGreaterEqual(snapshot['saved_at_ns'], sender['torque_off_confirmed_ns'])
+            if success:
+                self.assertGreaterEqual(snapshot['saved_at_ns'], end)
+                reference = report['s0_camera_snapshots'][index]
+                self.assertEqual(reference['id'], camera['id'])
+                self.assertEqual(reference['path'], snapshot['path'])
+                self.assertEqual(reference['sha256'], hashlib.sha256(pixels).hexdigest())
 
 
 if __name__ == "__main__":

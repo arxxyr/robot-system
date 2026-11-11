@@ -33,3 +33,15 @@ calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/right_arm.json",
     "/home/loosqk/repo/dimensional-applications/calibration/base_left9_right7.json",
 ]
+
+# 现场画面已确认：机器人自身右腕接 USB 端口 2.1。
+[[sensor]]
+hardware_id = "right_arm_full_with_base"
+id = "right_wrist_color"
+adapter = "opencv_v4l2"
+device = "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.0-video-index0"
+python = "/home/loosqk/repo/dimensional-applications/.venv/bin/python"
+helper = "/home/loosqk/repo/robot/robot-system/scripts/camera_capture.py"
+width = 640
+height = 480
+fps = 5

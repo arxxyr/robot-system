@@ -40,6 +40,12 @@ S0_POSITION_SCOPE = ('默认S0独占左总线，typed ClearEStop/SetEnabled及�
                      '左臂六关节与头部两关节冻结新鲜反馈原位保持20秒，400拍逐拍检查八关节±4raw；'
                      'Disable及EStop，退出并取回左锁后原整机STOP51与原4raw位置检查；'
                      '右双锁全程持有，不启动相机，不解除D15或物理验收')
+S0_CAMERA_SCOPE = '同活动hardware_id的1..3路配置sensor并行采集完整20秒，核对逐帧新鲜度、原BGR及helper退出/设备释放'
+
+
+def s0_scope(active_side,with_cameras=False):
+    scope=S0_MIXED_SCOPE if active_side=='right' else S0_POSITION_SCOPE
+    return scope.replace('不启动相机，','')+'；'+S0_CAMERA_SCOPE if with_cameras else scope
 MOTOR_KEYS = tuple(f'{side}:{motor}' for side in SERIALS
                    for motor in range(1,9 if side=='left' else 10))
 # 维护动作只要求当次现场安全条件；底盘动作仍固定 DEFERRED。
@@ -449,15 +455,99 @@ def mixed_raw_contract(bindings,selected_motor_id=9):
             'zero_final_raw_unsigned':[0,50,0x8032],'typed_velocity_profile_released':False}
 
 
-def s0_mixed_contract(bindings):
-    return s0_hold_contract(bindings,'right')
+def s0_mixed_contract(bindings,with_cameras=False):
+    return s0_hold_contract(bindings,'right',with_cameras)
 
 
-def s0_position_contract(bindings):
-    return s0_hold_contract(bindings,'left')
+def s0_position_contract(bindings,with_cameras=False):
+    return s0_hold_contract(bindings,'left',with_cameras)
 
 
-def s0_hold_contract(bindings,active_side):
+def s0_path_identity(path):
+    path=Path(path);info=path.lstat()
+    require(path.is_absolute() and str(path)==os.path.normpath(path),'相机身份路径不是规范绝对路径')
+    return {'path':str(path),'resolved':str(path.resolve(strict=True)),'device':info.st_dev,'inode':info.st_ino,
+            'mode':stat.S_IMODE(info.st_mode),'uid':info.st_uid,'gid':info.st_gid,
+            'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,
+            'symlink_target':os.readlink(path) if stat.S_ISLNK(info.st_mode) else None}
+
+
+def s0_python_paths(python):
+    paths=[];current=Path(python);seen=set()
+    while True:
+        require(str(current) not in seen and len(paths)<16,'相机Python符号链接循环或过深')
+        seen.add(str(current));row=s0_path_identity(current);paths.append(row)
+        if row['symlink_target'] is None:
+            require(stat.S_ISREG(current.lstat().st_mode) and os.access(current,os.X_OK),
+                    '相机Python最终路径不是可执行普通文件')
+            return paths
+        target=Path(row['symlink_target'])
+        current=Path(os.path.normpath(target if target.is_absolute() else current.parent/target))
+
+
+def s0_camera_device_identity(device):
+    path=Path(device);identity=s0_path_identity(path);info=path.stat()
+    require(path.parent==Path('/dev/v4l/by-path') and identity['symlink_target'] is not None
+            and stat.S_ISCHR(info.st_mode) and Path(identity['resolved']).parent==Path('/dev')
+            and re.fullmatch(r'video[0-9]+',Path(identity['resolved']).name),
+            '相机须使用稳定by-path并解析到当前video字符设备')
+    return {**identity,'target_device':info.st_dev,'target_inode':info.st_ino,'rdev':info.st_rdev,
+            'target_mode':stat.S_IMODE(info.st_mode),'target_uid':info.st_uid,'target_gid':info.st_gid}
+
+
+def verify_s0_camera_identity(camera):
+    require(s0_python_paths(camera['python'])==camera['python_paths'],'相机固定Python路径/venv身份变化')
+    require(s0_camera_device_identity(camera['device'])==camera['device_identity'],
+            '相机稳定by-path或当前video字符设备身份变化')
+    return {'id':camera['id'],'python_paths':camera['python_paths'],'device_identity':camera['device_identity']}
+
+
+def s0_camera_contract(document,hardware_id,bindings,references):
+    sensors=document.get('sensor')
+    require(isinstance(sensors,list) and sensors,'显式相机模式须有配置sensor')
+    ids=set();hardware_ids={row.get('id') for row in document.get('hardware',[])}
+    for sensor in sensors:
+        require(isinstance(sensor,dict) and sensor.get('adapter')=='opencv_v4l2'
+                and isinstance(sensor.get('id'),str) and re.fullmatch(r'[A-Za-z0-9_-]+',sensor['id'])
+                and sensor['id'] not in ids and isinstance(sensor.get('hardware_id'),str)
+                and sensor['hardware_id'] in hardware_ids
+                and all(isinstance(sensor.get(key),str) and Path(sensor[key]).is_absolute()
+                        for key in ('device','python','helper'))
+                and all(type(sensor.get(key)) is int and sensor[key]>0 for key in ('width','height','fps'))
+                and sensor['width']*sensor['height']*3<=16*1024*1024-4096,
+                '配置sensor身份/adapter/形状非法')
+        ids.add(sensor['id'])
+    selected=[sensor for sensor in sensors if sensor['hardware_id']==hardware_id]
+    rows=bindings.get('cameras')
+    require(1<=len(selected)<=3 and isinstance(rows,list)
+            and [row.get('id') for row in rows]==[sensor['id'] for sensor in selected],
+            '活动hardware_id须绑定配置的1..3路sensor')
+    result=[]
+    for sensor,row in zip(selected,rows):
+        keys=('id','device','width','height','fps','python','helper')
+        require(all(row.get(key)==sensor[key] for key in keys),'相机绑定必须来自同一TOML')
+        paths=s0_python_paths(sensor['python']);executable=row.get('python_executable',{})
+        venv=row.get('venv_config',{});venv_path=Path(sensor['python']).parent.parent/'pyvenv.cfg'
+        require(row.get('python_paths')==paths and executable.get('path')==paths[-1]['resolved']
+                and venv.get('path')==str(venv_path),'相机固定Python实际解释器/venv路径未绑定')
+        helper=references.get(sensor['helper'])
+        for ref in (helper,executable,venv):
+            require(isinstance(ref,dict) and ref.get('path') in references and references[ref['path']]==ref
+                    and all(key in ref for key in MIXED_REF_IDENTITY)
+                    and ref.get('symlink') is False and ref.get('nlink')==1,
+                    '相机helper/Python/venv必须进入完整refs')
+        require(sensor['helper'] in bindings.get('binary_paths',[])
+                and executable['path'] not in bindings.get('binary_paths',[]),
+                '只把配置helper纳入进程名单，禁止通用Python放行')
+        camera={key:sensor[key] for key in keys}
+        camera.update(helper_ref=dict(helper),python_executable=dict(executable),venv_config=dict(venv),
+                      python_paths=copy.deepcopy(paths),device_identity=copy.deepcopy(row.get('device_identity')))
+        verify_s0_camera_identity(camera)
+        result.append(camera)
+    return result
+
+
+def s0_hold_contract(bindings,active_side,with_cameras=False):
     """同份TOML及既有引用绑定默认S0，不借用维护adapter内部锚点合同。"""
     require(active_side in SERIALS,'默认S0活动侧错误')
     config=BUS_CONFIG if active_side=='right' else LEFT_BUS_CONFIG
@@ -471,10 +561,11 @@ def s0_hold_contract(bindings,active_side):
             and hardware.get('auto_enable') is False
             and hardware.get('feetech_bus2_mixed_raw',False) is (active_side=='right'),
             '默认S0须同robot/hardware身份且显式禁止auto_enable并匹配活动侧模式')
-    require(not any(document.get(key) for key in ('sensor','camera','cameras')),
-            '本轮默认S0不得启动相机或helper')
+    require(type(with_cameras) is bool,'相机必须显式opt-in')
+    require(not document.get('camera') and not document.get('cameras')
+            and (with_cameras or not document.get('sensor')),'本轮默认S0不得隐式启动相机或helper')
     references={ref['path']:ref for ref in bindings.get('refs',[])}
-    if active_side=='left':
+    if active_side=='left' or with_cameras:
         ref=references.get(config['path'])
         require(isinstance(ref,dict) and all(ref.get(key)==config[key] for key in ('path','bytes','sha256'))
                 and all(key in ref for key in MIXED_REF_IDENTITY)
@@ -505,12 +596,14 @@ def s0_hold_contract(bindings,active_side):
             and Path(protection['estop_latch.lock']['path'])==latch.parent/'estop_latch.lock',
             '默认S0必须使用原信任目录和latch路径，禁止空目录替代')
     contract={'schema':'MAINTENANCE_S0_MIXED_V1' if active_side=='right' else 'MAINTENANCE_S0_POSITION_HOLD_V1',
-            'scope':S0_MIXED_SCOPE if active_side=='right' else S0_POSITION_SCOPE,
+            'scope':s0_scope(active_side,with_cameras),
             'robot_id':robot,'hardware_id':hardware_id,**binaries,
             'config':dict(config),'calibrations':[dict(references[path]) for path in paths],
             'rx_trust_dir':str(trust),'latch_path':str(latch),'motor_ids':list(hardware['motor_ids']),
             'child_budget_ns':MIXED_CHILD_BUDGET_NS,'daemon_ready_budget_ns':8_000_000_000,
             'daemon_exit_budget_ns':8_000_000_000,'final_latch_budget_ns':1_000_000_000}
+    if with_cameras:
+        contract['cameras']=s0_camera_contract(document,hardware_id,bindings,references)
     if active_side=='right':
         contract.update(selected_motor_id=WHEEL_PULSE_TARGETS['front'][1],
             wheel_ids=[motor for name,motor in zip(hardware['joints'],hardware['motor_ids'])
@@ -524,8 +617,9 @@ def s0_hold_contract(bindings,active_side):
 
 
 def validate_s0_mixed_plan(plan):
-    require(plan.get('s0_mixed_hold')==s0_mixed_contract(plan['bindings'])
-            and plan.get('scope')==S0_MIXED_SCOPE and plan.get('position_targets')==[]
+    with_cameras='cameras' in plan.get('s0_mixed_hold',{})
+    require(plan.get('s0_mixed_hold')==s0_mixed_contract(plan['bindings'],with_cameras)
+            and plan.get('scope')==s0_scope('right',with_cameras) and plan.get('position_targets')==[]
             and not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold',
                 'bus2_arm_range_only','right_gripper_release','s0_position_hold')),
@@ -533,8 +627,9 @@ def validate_s0_mixed_plan(plan):
 
 
 def validate_s0_position_plan(plan):
-    require(plan.get('s0_position_hold')==s0_position_contract(plan['bindings'])
-            and plan.get('scope')==S0_POSITION_SCOPE and plan.get('position_targets')==[]
+    with_cameras='cameras' in plan.get('s0_position_hold',{})
+    require(plan.get('s0_position_hold')==s0_position_contract(plan['bindings'],with_cameras)
+            and plan.get('scope')==s0_scope('left',with_cameras) and plan.get('position_targets')==[]
             and not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only','bus2_mixed_raw_hold',
                 'bus2_arm_range_only','right_gripper_release','s0_mixed_hold'))
@@ -553,11 +648,19 @@ def verify_s0_mixed_refs(plan):
     key,active_side=s0_plan_entry(plan)
     (validate_s0_mixed_plan if active_side=='right' else validate_s0_position_plan)(plan)
     contract=plan[key]
-    for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations'],
-                *([contract['config']] if active_side=='left' else [])]:
+    for ref in s0_contract_refs(contract,active_side):
         verify_ref(ref,executable=ref in (contract['s0_daemon'],contract['supervised_demo']))
         verify_s0_ref_metadata(ref)
     verify_bus_config(plan)
+    for camera in contract.get('cameras',[]):verify_s0_camera_identity(camera)
+
+
+def s0_contract_refs(contract,active_side):
+    refs=[contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations'],
+          *([contract['config']] if active_side=='left' or 'cameras' in contract else [])]
+    for camera in contract.get('cameras',[]):
+        refs.extend([camera['helper_ref'],camera['python_executable'],camera['venv_config']])
+    return list({ref['path']:ref for ref in refs}.values())
 
 
 def verify_s0_ref_metadata(ref):
@@ -601,6 +704,104 @@ def verify_s0_protection(bindings,phase,active_side='right'):
                              'sha256':hashlib.sha256(raw).hexdigest(),
                              'bytes':len(raw),'phase':phase})
     return evidence
+
+
+def s0_camera_snapshot_refs(result,plan,contract):
+    """图像必须覆盖本次保持窗口；原BGR独立留SHA，不用结束快照代替连续帧。"""
+    cameras=contract.get('cameras')
+    if cameras is None:
+        require('camera_observations' not in result,'无相机计划不得接受sensor回执')
+        return []
+    observations=result.get('camera_observations',{})
+    start=result['nonzero_start_ns'] if 'nonzero_start_ns' in result else result['hold_start_ns']
+    end=result['nonzero_end_ns'] if 'nonzero_end_ns' in result else result['hold_end_ns']
+    require(isinstance(observations,dict) and observations.get('schema')=='S0_CAMERA_OBSERVATIONS_V1'
+            and observations.get('window_started_ns')==start
+            and observations.get('window_finished_ns')==end and end-start==20_000_000_000,
+            '相机观测必须绑定同一完整20秒控制窗口')
+    rows=observations.get('cameras')
+    require(isinstance(rows,list) and [row.get('id') for row in rows]==[row['id'] for row in cameras],
+            '相机逐路集合/顺序与配置不符')
+    references=[]
+    for expected,row in zip(cameras,rows):
+        width=expected['width'];height=expected['height'];size=width*height*3
+        require(row.get('device')==expected['device'] and row.get('width')==width
+                and row.get('height')==height and row.get('step')==width*3
+                and row.get('fps_requested')==expected['fps']
+                and row.get('encoding')=='bgr8' and row.get('color_order')=='BGR'
+                and all(type(row.get(key)) is int for key in ('width','height','step','fps_requested')),
+                '相机身份/帧形状与配置不符')
+        frames=row.get('frames')
+        require(isinstance(frames,list) and len(frames)>=2,'相机缺连续帧观测')
+        previous_stamp=None;previous_observed=None
+        for frame in frames:
+            stamp=frame.get('stamp_ns');observed=frame.get('observed_ns')
+            require(type(stamp) is int and type(observed) is int and stamp>=0
+                    and 0<=observed-stamp<=1_000_000_000
+                    and start<=observed<=end,'相机帧时刻/新鲜度不符')
+            if previous_stamp is not None:
+                require(0<stamp-previous_stamp<=1_000_000_000
+                        and 0<observed-previous_observed<=1_000_000_000,
+                        '相机帧不严格推进或失流超过1秒')
+            previous_stamp=stamp;previous_observed=observed
+        require(frames[0]['observed_ns']<=start+1_000_000_000
+                and frames[0]['stamp_ns']<=start+1_000_000_000
+                and frames[-1]['stamp_ns']>=end-1_000_000_000
+                and frames[-1]['observed_ns']>=end-1_000_000_000,
+                '相机连续帧未覆盖完整20秒窗口首尾')
+        snapshot=row.get('snapshot',{})
+        path=Path(plan['output'])/f"camera-{expected['id']}.bgr"
+        require(snapshot.get('path')==str(path) and snapshot.get('bytes')==size
+                and snapshot.get('stamp_ns')==frames[-1]['stamp_ns']
+                and type(snapshot.get('saved_at_ns')) is int and snapshot['saved_at_ns']>=result['finished_ns']
+                and snapshot.get('encoding')=='bgr8' and snapshot.get('color_order')=='BGR',
+                '相机末帧原件身份/编码不符')
+        info=path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_uid==os.getuid()
+                and info.st_size==size,'相机原件不是本次独立完整BGR文件')
+        raw=path.read_bytes()
+        require(len(raw)==size,'相机原件大小变化')
+        references.append({'id':expected['id'],'path':str(path),'bytes':len(raw),
+            'sha256':hashlib.sha256(raw).hexdigest(),'uid':info.st_uid,'gid':info.st_gid,
+            'mode':stat.S_IMODE(info.st_mode),'device':info.st_dev,'inode':info.st_ino,
+            'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns,'nlink':info.st_nlink,'symlink':False})
+    return references
+
+
+def verify_s0_camera_report(report):
+    plan=report['plan'];key,_=s0_plan_entry(plan);contract=plan[key]
+    if 'cameras' not in contract:return None
+    expected_ids=[camera['id'] for camera in contract['cameras']]
+    helpers=report.get('s0_camera_helpers',[]);exits=report.get('s0_camera_helper_exit_checks',[])
+    require(report.get('s0_camera_handoff_closed') is True
+            and sorted(row.get('id') for row in helpers)==sorted(expected_ids)
+            and len(helpers)==len(expected_ids) and len(exits)==len(expected_ids),
+            '相机helper绑定/退出证据未闭合')
+    release=report.get('s0_camera_release_checks',[])
+    require(len(release)==2*len(expected_ids)
+            and {(row.get('id'),row.get('path'),row.get('elevated')) for row in release}
+                =={(camera['id'],camera['device'],elevated) for camera in contract['cameras'] for elevated in (False,True)}
+            and all(row.get('stdout_empty') is True and row.get('exit_code')==1 for row in release),
+            '相机设备ordinary/sudo释放证据不完整')
+    daemon=report['s0_daemon']['daemon_identity']
+    for camera in contract['cameras']:
+        helper=next(row for row in helpers if row['id']==camera['id']);identity=helper['identity']
+        exit_row=[row for row in exits if row.get('id')==camera['id']]
+        require(helper.get('parent_pid')==daemon['pid'] and identity.get('argv')==s0_camera_argv(camera)
+                and identity.get('exe')==camera['python_executable']['path']
+                and identity.get('uids')==daemon['uids'] and identity.get('boot_id')==daemon['boot_id']
+                and identity.get('pgid')==daemon['pgid']
+                and len(exit_row)==1 and exit_row[0].get('identity')==identity
+                and exit_row[0].get('terminated') is True
+                and exit_row[0].get('observation',{}).get('status')=='vanished',
+                '相机helper最终身份/原PID终结不符')
+    checks=report.get('s0_camera_helper_checks',[])
+    require(any(row.get('phase')=='runtime'
+                and sorted(helper['id'] for helper in row.get('helpers',[]))==sorted(expected_ids)
+                for row in checks),'相机缺控制期间完整helper核验')
+    actual=s0_camera_snapshot_refs(report['s0_sender_result'],plan,contract)
+    require(report.get('s0_camera_snapshots')==actual,'相机原BGR SHA/文件身份变化或首次引用缺失')
+    return actual
 
 
 def parse_s0_mixed_result(text,plan,expiry):
@@ -684,6 +885,7 @@ def parse_s0_mixed_result(text,plan,expiry):
                     and (w['velocity'] in (0,50,0x8032) if index==2 else
                          0<=w['velocity']<=1000 or w['velocity']==0x8032)
                     for w in row['wheels']),'默认S0零速原字不满足原合同')
+    s0_camera_snapshot_refs(result,plan,contract)
     return result
 
 
@@ -753,6 +955,7 @@ def parse_s0_position_result(text,plan,expiry):
                         for value,anchor_raw in zip(positions,raw)),
                 '左侧默认S0逐拍反馈未推进、不新鲜、越窗或相对锚点超过4raw')
         previous=stamp
+    s0_camera_snapshot_refs(result,plan,contract)
     return result
 
 
@@ -771,11 +974,97 @@ def s0_process_identity(io,proc_helper,pid):
     row=proc_helper.read_process(pid)
     if row['status']=='observed':return row['identity']
     require(row['status']=='permission','默认S0进程身份未知：'+repr(row))
-    snapshot=proc_helper.process_snapshot(pid,io.output,[],probe_runner=proc_helper.privileged_process_probe)
+    snapshot=proc_helper.process_snapshot(row.get('before',{}).get('pgid',pid),io.output,[],
+                                         probe_runner=proc_helper.privileged_process_probe)
     io.process_snapshots.append(snapshot)
     identities=[identity for identity in snapshot['related'] if identity.get('pid')==pid]
     require(not snapshot['unreadable'] and len(identities)==1,'默认S0提权身份核验失败')
     return identities[0]
+
+
+def s0_camera_argv(camera):
+    return [camera['python'],'-I','-S','-B','-u',camera['helper'],'--device',camera['device'],
+            '--width',str(camera['width']),'--height',str(camera['height']),'--fps',str(camera['fps'])]
+
+
+def s0_child_pids(pid,proc=Path('/proc')):
+    """按PPID枚举直接子进程，兼容未启用task/children接口的Orin内核。"""
+    children=set()
+    for path in proc.iterdir():
+        if not path.name.isdigit():continue
+        child=int(path.name)
+        try:parent=s0_parent_pid(child,proc=proc)
+        except FileNotFoundError:continue
+        if parent==pid:children.add(child)
+    return sorted(children)
+
+
+def s0_parent_pid(pid,proc=Path('/proc')):
+    raw=(proc/str(pid)/'stat').read_text();opening=raw.find('(');closing=raw.rfind(')')
+    require(opening>0 and closing>opening and int(raw[:opening].strip())==pid,'helper stat身份非法')
+    parent=int(raw[closing+2:].split()[1])
+    require(parent>=0,'helper父PID非法')
+    return parent
+
+
+def inspect_s0_camera_helpers(io,proc_helper,contract,daemon_identity,*,complete,cleanup=False):
+    """只给每路已配置相机绑定一个原PID；已绑定后不允许替换或丢失。"""
+    cameras=contract.get('cameras',[])
+    if not cameras:return []
+    previous={row['id']:row for row in io.s0_camera_helpers}
+    children=s0_child_pids(daemon_identity['pid']);found={}
+    for pid in children:
+        identity=s0_process_identity(io,proc_helper,pid)
+        matches=[camera for camera in cameras if identity.get('argv')==s0_camera_argv(camera)]
+        require(len(matches)==1,'S0存在未知或重复相机helper argv')
+        camera=matches[0];camera_id=camera['id']
+        parent=s0_parent_pid(pid)
+        require(camera_id not in found and parent==daemon_identity['pid']
+                and identity.get('uids')==daemon_identity['uids']
+                and identity.get('boot_id')==daemon_identity['boot_id']
+                and identity.get('pgid')==daemon_identity['pgid']
+                and identity.get('exe')==camera['python_executable']['path']
+                and identity.get('zombie',False) is False,
+                '相机helper父进程/UID/boot/exe身份不符')
+        verified=s0_process_identity(io,proc_helper,pid)
+        require(s0_same_process(verified,identity),'相机helper核验期间身份变化')
+        row={'id':camera_id,'parent_pid':parent,'identity':identity}
+        if camera_id in previous:
+            require(parent==previous[camera_id]['parent_pid']
+                    and s0_same_process(identity,previous[camera_id]['identity']),'相机helper原PID被替换')
+            row=previous[camera_id]
+        else:
+            io.s0_camera_helpers.append(row)
+            io.s0_identities.append(identity)
+        found[camera_id]=row
+    missing=set(previous)-set(found)
+    if cleanup:
+        for camera_id in sorted(missing):
+            observed=proc_helper.read_process(previous[camera_id]['identity']['pid'])
+            require(observed.get('status')=='vanished','已知相机helper脱离S0且原PID未证实终结')
+    else:
+        require(not missing,'已绑定相机helper提前退出或脱离S0')
+    require(not complete or set(found)=={camera['id'] for camera in cameras},'配置相机helper未完整启动')
+    io.s0_camera_helper_checks.append({'phase':'cleanup' if cleanup else 'runtime' if complete else 'starting',
+        'daemon_pid':daemon_identity['pid'],'children':children,'helpers':copy.deepcopy(list(found.values()))})
+    return list(found.values())
+
+
+def verify_s0_camera_helpers_gone(io,proc_helper):
+    rows=[];failures=[]
+    for helper in io.s0_camera_helpers:
+        identity=helper['identity']
+        observed=proc_helper.read_process(identity['pid'])
+        row={'id':helper['id'],'identity':copy.deepcopy(identity),'observation':observed}
+        if observed.get('status')=='permission':
+            try:row['remaining_identity']=s0_process_identity(io,proc_helper,identity['pid'])
+            except BaseException as error:row['error']=repr(error)
+        row['terminated']=observed.get('status')=='vanished'
+        rows.append(row)
+        if not row['terminated']:failures.append(helper['id'])
+    io.s0_camera_helper_exit_checks=rows
+    require(not failures,'原相机helper PID未证实终结：'+repr(failures))
+    return rows
 
 
 def s0_ready_chunk(pending,chunk):
@@ -807,6 +1096,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
     io.s0_environment=proc_helper.clean_environment(os.environ)
     io.s0_sender_started=False
     io.s0_identities=[];io.s0_daemon_record={'argv':None,'pid':None,'reaped':False,'signals_sent':[]}
+    io.s0_camera_helpers=[];io.s0_camera_helper_checks=[];io.s0_camera_helper_exit_checks=[]
     record=io.s0_daemon_record;report['s0_daemon']=record
     report['s0_cleanup_errors']=[]
     daemon_log=io.output/'s0.jsonl';sender_output=io.output/'s0-sender.json'
@@ -842,10 +1132,11 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
 
     def runtime_gate():
         io.check();validate_go(go,plan,time.time_ns())
-        for ref in [contract['s0_daemon'],contract['supervised_demo'],*contract['calibrations'],
-                    *([contract['config']] if active_side=='left' else [])]:
+        for ref in s0_contract_refs(contract,active_side):
             verify_s0_ref_metadata(ref)
+        for camera in contract.get('cameras',[]):verify_s0_camera_identity(camera)
         identity=daemon_alive()
+        inspect_s0_camera_helpers(io,proc_helper,contract,identity,complete=True)
         # poll只回收本轮自有sender，消解其自然退出与/proc读取之间的竞态。
         if io.child is not None:io.child.poll()
         inspect_processes(io,bindings,proc_helper,owned=io.s0_identities)
@@ -879,6 +1170,8 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
 
     try:
         verify_s0_mixed_refs(plan);engine.check_gate()
+        for camera in contract.get('cameras',[]):
+            for elevated in (False,True):inspect_holder(io,camera['device'],elevated)
         require(io.child is None and io.s0_daemon is None,'默认S0模式已有自有进程')
         require(go['expires_at_ns']-time.time_ns()>=contract['daemon_ready_budget_ns']+MIXED_CHILD_BUDGET_NS,
                 '本次GO不足启动及完整sender预算')
@@ -924,6 +1217,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
               '--config',contract['config']['path'],
               '--hardware-id',contract['hardware_id'],'--s0-log',str(daemon_log),'--output',str(sender_output),
               '--ack-safety-checklist','--go-expires-at-unix-ns',str(go['expires_at_ns'])]
+        if 'cameras' in contract:argv.append('--with-cameras')
         io.s0_sender_argv=tuple(argv)
         def sender_gate():
             runtime_gate()
@@ -936,6 +1230,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
             engine.manual_cut=True
         require(io.commands[-1]['exit_code']==0,'默认S0 sender退出码非零')
         result=(parse_s0_mixed_result if active_side=='right' else parse_s0_position_result)(raw.decode(),plan,go['expires_at_ns'])
+        if 'cameras' in contract:report['s0_camera_snapshots']=s0_camera_snapshot_refs(result,plan,contract)
         targets=list(zip(range(1,7),MIXED_ARM_NAMES)) if active_side=='right' else list(zip(contract['motor_ids'],contract['joint_names']))
         for motor,name in targets:
             slot=contract['motor_ids'].index(motor)
@@ -967,6 +1262,15 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
             except BaseException as error:
                 report['s0_sender_result_error']=repr(error)
                 io.evidence_errors.append('s0_sender_result:'+repr(error))
+        camera_handoff_ok=True
+        if spawned and 'cameras' in contract and io.s0_daemon is not None and io.s0_daemon.poll() is None:
+            # 启动/就绪前失败也先留下直接helper身份；未知child不能在停止后被忽略。
+            try:
+                identity=s0_process_identity(io,proc_helper,io.s0_daemon.pid)
+                inspect_s0_camera_helpers(io,proc_helper,contract,identity,complete=False,cleanup=True)
+            except BaseException as error:
+                camera_handoff_ok=False
+                report['s0_cleanup_errors'].append('camera_pre_stop:'+repr(error));engine.manual_cut=True
         try:stop_daemon()
         except BaseException as error:
             report['s0_cleanup_errors'].append('daemon_cleanup:'+repr(error));engine.manual_cut=True
@@ -983,7 +1287,24 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
                 raw=daemon_log.read_bytes()
                 record.update(log_bytes=len(raw),log_sha256=hashlib.sha256(raw).hexdigest())
             except BaseException as error:io.evidence_errors.append('s0_log:'+repr(error))
-        if io.child is None and io.s0_daemon is None:
+        if 'cameras' in contract:
+            report['s0_camera_release_checks']=[]
+            try:
+                require(io.s0_daemon is None,'daemon尚未真实wait，禁止相机退出判定')
+                verify_s0_camera_helpers_gone(io,proc_helper)
+                for camera in contract['cameras']:
+                    verify_s0_camera_identity(camera)
+                    for elevated in (False,True):
+                        evidence=inspect_holder(io,camera['device'],elevated,cleanup=True)
+                        report['s0_camera_release_checks'].append({'id':camera['id'],**evidence})
+            except BaseException as error:
+                camera_handoff_ok=False
+                report['s0_cleanup_errors'].append('camera_exit:'+repr(error));engine.manual_cut=True
+            report['s0_camera_helpers']=copy.deepcopy(io.s0_camera_helpers)
+            report['s0_camera_helper_checks']=copy.deepcopy(io.s0_camera_helper_checks)
+            report['s0_camera_helper_exit_checks']=copy.deepcopy(io.s0_camera_helper_exit_checks)
+            report['s0_camera_handoff_closed']=camera_handoff_ok
+        if io.child is None and io.s0_daemon is None and camera_handoff_ok:
             try:
                 inspect_processes(io,bindings,proc_helper,cleanup=True)
                 for index in sorted(released):
@@ -1466,7 +1787,10 @@ def position_targets_from_plan(plan):
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
               left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
-              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,s0_mixed_hold=False,s0_position_hold=False):
+              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,s0_mixed_hold=False,s0_position_hold=False,
+              with_cameras=False):
+    require(type(with_cameras) is bool and (not with_cameras or s0_mixed_hold or s0_position_hold),
+            '相机只能显式附加到默认S0保持模式')
     require(arm_range_id is None or bus2_arm_range_only and type(arm_range_id) is int and arm_range_id==3,
             '单ID3选择只能附加到右臂范围只读')
     require(mixed_wheel_id is None or bus2_mixed_raw_hold and type(mixed_wheel_id) is int and mixed_wheel_id in (7,8,9),
@@ -1541,8 +1865,8 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
                              '维护真实adapter链；不声明SerialTick、S0/S1、D15或生产验收完成']
         validate_mixed_raw_plan(plan)
     if s0_mixed_hold:
-        plan['s0_mixed_hold']=s0_mixed_contract(bindings)
-        plan['scope']=S0_MIXED_SCOPE
+        plan['s0_mixed_hold']=s0_mixed_contract(bindings,with_cameras)
+        plan['scope']=s0_scope('right',with_cameras)
         plan['base_targets']=[{'side':side,'motor':motor,'name':name,
             'decision':'RAW_DIAGNOSTIC' if motor==WHEEL_PULSE_TARGETS['front'][1] else 'RAW_ZERO_HOLD',
             'reason_code':'DEFAULT_S0_SUPERVISED_RAW_0_500_ONLY'} for side,motor,name in BASE_TARGETS]
@@ -1550,9 +1874,9 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
                              'D15 OPEN/DEFERRED；不声明物理动作、无人值守或生产验收完成']
         validate_s0_mixed_plan(plan)
     if s0_position_hold:
-        plan['s0_position_hold']=s0_position_contract(bindings)
-        plan['scope']=S0_POSITION_SCOPE
-        plan['limitations']=['左总线默认S0八关节原位保持；不包含相机、动态动作或电机参数调整',
+        plan['s0_position_hold']=s0_position_contract(bindings,with_cameras)
+        plan['scope']=s0_scope('left',with_cameras)
+        plan['limitations']=['左总线默认S0八关节原位保持；'+('配置sensor同步采集；' if with_cameras else '不包含相机；')+'不调整电机参数',
                              '原STOP51与原4raw位置检查独立后验；D15 OPEN/DEFERRED，deployable=false']
         validate_s0_position_plan(plan)
     if bus2_arm_range_only:
@@ -1596,7 +1920,7 @@ def validate_go(go, plan, now_ns):
         require(0<go['expires_at_ns']-go['issued_at_ns']<=600_000_000_000
                 and 0<=now_ns-facts['confirmed_at_ns']<=600_000_000_000,
                 '左侧默认S0现场/GO最多600秒')
-        require(facts.get('position_hold_confirmation_scope')==S0_POSITION_SCOPE
+        require(facts.get('position_hold_confirmation_scope')==plan['s0_position_hold']['scope']
                 and isinstance(facts.get('position_hold_confirmation_answer'),str)
                 and facts['position_hold_confirmation_answer'].strip(),'缺本轮左侧八关节保持具体现场确认')
     if 'bus2_arm_range_only' in plan:
@@ -1618,7 +1942,7 @@ def validate_go(go, plan, now_ns):
                     'continuous_wheel_observation'))
                 and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
                 and facts.get('base_confirmation_scope')==(
-                    S0_MIXED_SCOPE if 's0_mixed_hold' in plan else
+                    plan['s0_mixed_hold']['scope'] if 's0_mixed_hold' in plan else
                     plan['bus2_mixed_raw_hold']['scope'] if 'bus2_mixed_raw_hold' in plan else
                     LEFT_FEEDBACK_SCOPE if 'left_wheel_feedback_only' in plan else
                     FRONT_FEEDBACK_SCOPE if 'front_wheel_feedback_only' in plan else
@@ -3159,6 +3483,9 @@ def idle(io, bindings, proc_helper, *, cleanup=False):
     for device in DEVICES.values():
         for elevated in (False,True):
             inspect_holder(io,device,elevated,cleanup=cleanup)
+    for camera in bindings.get('cameras',[]):
+        require(s0_camera_device_identity(camera['device'])==camera['device_identity'],'相机字符设备身份变化')
+        for elevated in (False,True):inspect_holder(io,camera['device'],elevated,cleanup=cleanup)
 
 
 def usb_identity(io, side, expected, *, cleanup=False):
@@ -3385,6 +3712,15 @@ def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=
               for side,files in bindings['protection'].items() for name,reference in files.items() if not (s0_mode and side==active_side)]
     if s0_mode:
         tasks.append(('s0_protection',lambda:verify_s0_protection(bindings,'final',active_side)))
+        contract=report['plan'][s0_plan_entry(report['plan'])[0]]
+        if 'cameras' in contract:
+            tasks += [(f"camera_identity:{camera['id']}",lambda camera=camera:verify_s0_camera_identity(camera))
+                      for camera in contract['cameras']]
+            tasks.append(('camera_helpers_terminated',lambda:verify_s0_camera_helpers_gone(io,proc_helper)))
+            tasks += [(f"camera_holder:{camera['id']}:{elevated}",
+                       lambda camera=camera,elevated=elevated:inspect_holder(io,camera['device'],elevated,cleanup=True))
+                      for camera in contract['cameras'] for elevated in (False,True)]
+            tasks.append(('camera_report',lambda:verify_s0_camera_report(report)))
     tasks += [(f'service:{unit}',lambda unit=unit:inspect_unit(io,unit,cleanup=True))
               for unit in UNITS+OLD_UNITS+['xlerobot-handoff.service']]
     tasks.append(('process_snapshot',lambda:inspect_processes(io,bindings,proc_helper,cleanup=True)))
@@ -3435,6 +3771,7 @@ def classify_run_result(report):
             require(report.get('s0_post_ready') is True and not report.get('s0_cleanup_errors'),
                     '左侧默认S0未完成锁交回/收尾')
             result=parse_s0_position_result(json.dumps(report['s0_sender_result']),plan,report['go']['expires_at_ns'])
+            verify_s0_camera_report(report)
             contract=plan['s0_position_hold']
             require([(p['side'],p['motor'],p['kind']) for p in probes]
                     ==[('left',motor,'position_hold') for motor in contract['motor_ids']],
@@ -3458,6 +3795,7 @@ def classify_run_result(report):
             require(report.get('s0_post_ready') is True and not report.get('s0_cleanup_errors'),
                     '默认S0未完成锁交回/收尾')
             result=parse_s0_mixed_result(json.dumps(report['s0_sender_result']),plan,report['go']['expires_at_ns'])
+            verify_s0_camera_report(report)
             selected=plan['s0_mixed_hold']['selected_motor_id']
             require([(p['side'],p['motor'],p['kind']) for p in probes]
                     ==[('right',motor,'position_hold') for motor in range(1,7)]+[('right',selected,'velocity')],
@@ -3781,6 +4119,7 @@ def main(argv=None):
                         help='仅FW3.10/Phase12：六臂原位保持及所选轮raw+500/20秒，默认物理9；复用整机停止后验')
     parser.add_argument('--s0-mixed-hold',action='store_true',help=S0_MIXED_SCOPE)
     parser.add_argument('--s0-position-hold',action='store_true',help=S0_POSITION_SCOPE)
+    parser.add_argument('--with-cameras',action='store_true',help='仅附加默认S0保持：'+S0_CAMERA_SCOPE)
     parser.add_argument('--mixed-wheel-id',type=int,choices=(7,8,9),
                         help='仅附加到混合维护：选择物理7/8/9，缺省物理9；其余两轮保持raw0')
     parser.add_argument('--bus2-arm-range-only',action='store_true',
@@ -3792,6 +4131,8 @@ def main(argv=None):
     grippers.add_argument('--right-gripper-close',action='store_true',help=GRIPPER_TARGETS[1397]['scope'])
     options=parser.parse_args(argv)
     configure_bus_mapping(options.bus_config,options.left_bus_config)
+    require(not options.with_cameras or options.s0_mixed_hold or options.s0_position_hold,
+            '相机只能显式附加到默认S0保持模式')
     require(options.arm_range_id is None or options.bus2_arm_range_only,'单ID3选择只能附加到右臂范围只读')
     require(options.mixed_wheel_id is None or options.bus2_mixed_raw_hold,'混合选轮只能附加到混合维护')
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
@@ -3814,7 +4155,8 @@ def main(argv=None):
         require(not options.execute,'执行参数不完整')
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'required':['bindings','output','run-id','artifact-root'],
                           'position_targets':selected_targets,
-                          'scope':S0_POSITION_SCOPE if options.s0_position_hold else S0_MIXED_SCOPE if options.s0_mixed_hold else
+                          'scope':s0_scope('left',options.with_cameras) if options.s0_position_hold else
+                              s0_scope('right',options.with_cameras) if options.s0_mixed_hold else
                               GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else
                               (ARM_ELBOW_RANGE_SCOPE if options.arm_range_id==3 else ARM_RANGE_SCOPE)
                               if options.bus2_arm_range_only else
@@ -3828,7 +4170,8 @@ def main(argv=None):
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
                    right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id,
-                   mixed_wheel_id=options.mixed_wheel_id,s0_mixed_hold=options.s0_mixed_hold,s0_position_hold=options.s0_position_hold)
+                   mixed_wheel_id=options.mixed_wheel_id,s0_mixed_hold=options.s0_mixed_hold,
+                   s0_position_hold=options.s0_position_hold,with_cameras=options.with_cameras)
     if not options.execute:
         print(json.dumps({'result':'PLAN_ONLY','actions_started':0,'plan_sha256':digest(plan),'plan':plan},ensure_ascii=False,indent=2))
         return 0

@@ -14,7 +14,8 @@ use robot_core::time::{RobotClock, SystemClock};
 use robot_msg::{build_helpers, markers, msg};
 use robot_rpc::client::layout::{HardwareLayout, load_hardware_layout};
 use robot_s0::config_loader::{
-    load_robot_config, resolve_hardware_section, validate_hardware_section,
+    SensorSection, load_robot_config, resolve_camera_sections, resolve_hardware_section,
+    validate_camera_sections, validate_hardware_section,
 };
 use robot_s0::grouped_position::{XleRobotBus1Layout, XleRobotBus2Layout};
 use robot_transport::iceoryx2::request_response::{Iceoryx2PendingResponse, Iceoryx2RrClient};
@@ -28,6 +29,9 @@ use serde_json::{Value, json};
 #[path = "supervised_mixed/observation.rs"]
 mod observation;
 use observation::{MotionSample, Observations, ZeroSample, validate_zero_sample};
+#[path = "supervised_mixed/cameras.rs"]
+mod cameras;
+use cameras::CameraObservations;
 
 const FRESH_NS: u64 = 200_000_000;
 const HEARTBEAT_NS: u64 = 20_000_000;
@@ -46,8 +50,9 @@ supervised_demo --s0-mixed-hold --config /绝对路径/bus2.toml --hardware-id I
   --go-expires-at-unix-ns UNIX纳秒 --ack-safety-checklist
 仅附着已有默认 S0，不启动服务、不打开UART；须持续看护并具备立即断电条件。
 只验证发送、原始PP/PV、零速原字和断扭；物理观察及外层STOP51尚未验收。
-左臂与头部改用 --s0-position-hold：仅接受无sensor的左总线八关节配置，
-冻结新鲜反馈原位保持20秒；不需要 --s0-log，不执行往返或轮速度发送。";
+左臂与头部改用 --s0-position-hold：仅接受左总线八关节配置，
+冻结新鲜反馈原位保持20秒；不需要 --s0-log，不执行往返或轮速度发送。
+配置含sensor时必须显式 --with-cameras；沿同一20秒窗口验收本硬件的1至3路相机。";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
@@ -63,6 +68,7 @@ struct Args {
     log: PathBuf,
     output: PathBuf,
     expires_unix_ns: u64,
+    with_cameras: bool,
 }
 
 impl Args {
@@ -73,6 +79,7 @@ impl Args {
         let mut output = None;
         let mut expires = None;
         let mut ack = false;
+        let mut with_cameras = false;
         while let Some(arg) = raw.next() {
             if arg == "--help" {
                 return Ok(None);
@@ -82,6 +89,13 @@ impl Args {
                     return Err("安全确认参数重复".into());
                 }
                 ack = true;
+                continue;
+            }
+            if arg == "--with-cameras" {
+                if with_cameras {
+                    return Err("--with-cameras 参数重复".into());
+                }
+                with_cameras = true;
                 continue;
             }
             let value = raw.next().ok_or_else(|| format!("{arg} 缺少值"))?;
@@ -117,6 +131,7 @@ impl Args {
                 .ok_or("缺少 --go-expires-at-unix-ns")?
                 .parse()
                 .map_err(|_| "GO到期必须为u64纳秒")?,
+            with_cameras,
         };
         if !args.config.is_absolute()
             || !args.output.is_absolute()
@@ -165,6 +180,7 @@ struct Config {
     wheel_ids: [u8; 3],
     selected: usize,
     position_ranges: Option<[(i32, i32); 8]>,
+    cameras: Vec<SensorSection>,
 }
 
 impl Config {
@@ -173,12 +189,10 @@ impl Config {
         let hardware = resolve_hardware_section(&loaded.parsed, &args.hardware_id)
             .ok_or("硬件ID不在配置内")?;
         validate_hardware_section(hardware).map_err(|e| e.to_string())?;
+        let cameras = Self::load_cameras(args, &loaded.parsed)?;
         if args.mode == Mode::PositionHold {
-            if hardware.auto_enable != Some(false)
-                || hardware.feetech_bus2_mixed_raw
-                || !loaded.parsed.sensor.is_empty()
-            {
-                return Err("原位保持只接受auto_enable=false、无sensor的左总线Position配置".into());
+            if hardware.auto_enable != Some(false) || hardware.feetech_bus2_mixed_raw {
+                return Err("原位保持只接受auto_enable=false的左总线Position配置".into());
             }
             XleRobotBus1Layout::from_hardware(hardware).map_err(|e| e.to_string())?;
             let ranges = Self::load_position_ranges(hardware)?;
@@ -197,6 +211,7 @@ impl Config {
                 wheel_ids: [0; 3],
                 selected: 0,
                 position_ranges: Some(ranges),
+                cameras,
             });
         }
         if !hardware.feetech_bus2_mixed_raw || hardware.auto_enable != Some(false) {
@@ -242,7 +257,27 @@ impl Config {
             wheel_slots,
             selected,
             position_ranges: None,
+            cameras,
         })
+    }
+
+    fn load_cameras(
+        args: &Args,
+        parsed: &robot_s0::config_loader::RobotConfigToml,
+    ) -> Result<Vec<SensorSection>, String> {
+        if !args.with_cameras {
+            return if parsed.sensor.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Err("配置含sensor，必须显式 --with-cameras 才能并行验收".into())
+            };
+        }
+        validate_camera_sections(parsed).map_err(|error| error.to_string())?;
+        let cameras = resolve_camera_sections(parsed, &args.hardware_id);
+        if !(1..=3).contains(&cameras.len()) {
+            return Err("--with-cameras 只接受当前hardware_id的1至3路opencv_v4l2相机".into());
+        }
+        Ok(cameras.into_iter().cloned().collect())
     }
 
     fn load_position_ranges(
@@ -660,6 +695,7 @@ struct Session {
     expires: u64,
     observations: Option<Observations>,
     motion: Option<MotionCheck>,
+    cameras: Option<CameraObservations>,
     _node: iceoryx2::node::Node<Service>,
 }
 
@@ -726,6 +762,15 @@ impl Session {
             &RrProfile::S0_CONTROL,
         )
         .map_err(|e| e.to_string())?;
+        let cameras = if config.cameras.is_empty() {
+            None
+        } else {
+            Some(CameraObservations::open(
+                &node,
+                &config.robot,
+                &config.cameras,
+            )?)
+        };
         Ok(Self {
             config,
             commands,
@@ -744,6 +789,7 @@ impl Session {
             expires,
             observations,
             motion: None,
+            cameras,
             _node: node,
         })
     }
@@ -884,6 +930,10 @@ impl Session {
                 motion.check_deadline(SystemClock.now().0)?;
             }
         }
+        // 相机故障只影响本轮试验；失败收尾始终继续读取执行器停止状态。
+        if !cleanup && let Some(cameras) = &mut self.cameras {
+            cameras.poll()?;
+        }
         Ok(zeros)
     }
     fn wait_reply<T: markers::BodyMarker>(
@@ -920,6 +970,12 @@ impl Session {
             "disable"
         });
         let now = SystemClock.now().0;
+        if enabled
+            && !dry
+            && let Some(cameras) = &self.cameras
+        {
+            cameras.require_ready(now)?;
+        }
         let body = build_helpers::build_set_enabled_request(
             &id,
             &id,
@@ -949,6 +1005,14 @@ fn prepare(io: &mut Session, controls: &mut Controls) -> Result<(), String> {
         if let Some(state) = &io.latest {
             if !state.torque_off() {
                 return Err("初始状态必须Safe且TorqueOffConfirmed".into());
+            }
+            if io
+                .cameras
+                .as_ref()
+                .is_some_and(|cameras| !cameras.ready(SystemClock.now().0))
+            {
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
             }
             // Safe/Ready 的 wire link/output 固定 Unknown；这里只读评估 Ready 前置。
             // live退休与新鲜 Enabled.Active/TorqueOn（含linkOk）仍在启用后独立核验。
@@ -1029,13 +1093,22 @@ fn forward_step(previous: i32, current: i32) -> Result<i32, String> {
     Ok(step)
 }
 
-fn zero_slot(sample: &ZeroSample, started: u64, index: usize) -> Result<bool, String> {
+fn zero_slot(
+    sample: &ZeroSample,
+    started: u64,
+    index: usize,
+    observed_at: u64,
+) -> Result<bool, String> {
     let (lower, upper) = match index {
         0 => (50_000_000, 250_000_000),
         1 => (250_000_000, 450_000_000),
         2 => (450_000_000, ZERO_NS),
         _ => return Ok(false),
     };
+    // 已收齐三组时额外数据不再接纳；未收齐仍严格拒绝截止后的观测。
+    if observed_at >= add(started, ZERO_NS)? {
+        return Err("零速样本在原500ms截止后才接纳".into());
+    }
     if sample.started_ns < add(started, lower)? {
         return Ok(false);
     }
@@ -1100,6 +1173,9 @@ fn enable_and_start_pulse(
     let (_, first_deadline) = cycle_deadline(start, io.anchor.as_ref().unwrap().stamp, 0)?;
     io.guard(start, first_deadline)?;
     let source = source_deadline(start, hard_end, Some(io.anchor.as_ref().unwrap().stamp))?;
+    if let Some(cameras) = &mut io.cameras {
+        cameras.begin_window(start, pulse_end)?;
+    }
     io.command(
         match io.config.mode {
             Mode::Mixed => 500,
@@ -1229,6 +1305,9 @@ fn body(io: &mut Session, controls: &mut Controls, report: &mut Value) -> Result
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+    if let Some(cameras) = &mut io.cameras {
+        cameras.finish_window()?;
+    }
     match io.config.mode {
         Mode::Mixed => finish_wheel_zero(io, report, hard_end)?,
         Mode::PositionHold => {
@@ -1267,16 +1346,13 @@ fn finish_wheel_zero(io: &mut Session, report: &mut Value, hard_end: u64) -> Res
         let groups = io.step(true, false)?;
         let observed_at = SystemClock.now().0;
         for sample in groups {
-            if observed_at >= zero_end {
-                return Err("零速样本在原500ms截止后才接纳".into());
-            }
             if report.get("first_gv_zero_device_group").is_none()
                 && sample.started_ns >= zero_start
                 && sample.wheels.iter().all(|wheel| wheel.goal == 0)
             {
                 report["first_gv_zero_device_group"] = json!({"started_ns":sample.started_ns,"finished_ns":sample.finished_ns,"meaning":"设备观测区间，不是ACK或精确切换时刻"});
             }
-            if zero_slot(&sample, zero_start, accepted)? {
+            if zero_slot(&sample, zero_start, accepted, observed_at)? {
                 report["zero_samples"].as_array_mut().unwrap().push(json!({"started_ns":sample.started_ns,"finished_ns":sample.finished_ns,"wheels":sample.wheels.map(|wheel|json!({"id":wheel.id,"torque":wheel.torque,"goal":wheel.goal,"velocity":wheel.velocity}))}));
                 accepted += 1;
                 if accepted == 3 {
@@ -1512,6 +1588,16 @@ fn run(
         report["motion_samples"] = json!(motion.samples);
     }
     report["finished_ns"] = json!(SystemClock.now().0);
+    if let Some(cameras) = &mut io.cameras {
+        // 原 finished_ns 仍表示控制收尾完成；像素落盘不占用20秒或停止预算。
+        if report["torque_off_confirmed"] == true
+            && let Err(error) = cameras.save_snapshots(&args.output)
+        {
+            report["result"] = json!("FAIL");
+            report["camera_snapshot_error"] = json!(error);
+        }
+        report["camera_observations"] = cameras.report();
+    }
     save_report(&mut file, &report)
 }
 

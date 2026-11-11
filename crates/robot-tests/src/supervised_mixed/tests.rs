@@ -22,8 +22,13 @@ fn arguments(output: &str) -> Vec<String> {
 }
 
 fn fixture_config() -> Config {
-    let path =
+    let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus2_full.toml");
+    let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
+    value.as_table_mut().unwrap().remove("sensor");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("right.toml");
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
     Config::load(&Args {
         mode: Mode::Mixed,
         config: path,
@@ -31,6 +36,7 @@ fn fixture_config() -> Config {
         log: PathBuf::new(),
         output: PathBuf::new(),
         expires_unix_ns: u64::MAX,
+        with_cameras: false,
     })
     .unwrap()
 }
@@ -68,6 +74,7 @@ fn left_fixture_args(directory: &std::path::Path) -> Args {
         log: PathBuf::new(),
         output: directory.join("report.json"),
         expires_unix_ns: u64::MAX,
+        with_cameras: false,
     }
 }
 
@@ -235,6 +242,72 @@ fn position_hold_report_has_no_wheel_evidence_and_does_not_require_a_log() {
     raw.drain(index..index + 2);
     assert!(Args::parse(raw.clone().into_iter(), Mode::PositionHold).is_ok());
     assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
+    assert!(report.get("camera_observations").is_none());
+}
+
+#[test]
+fn camera_opt_in_is_explicit_unique_and_uses_production_configuration_validation() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut args = left_fixture_args(directory.path());
+    let mut parsed = load_robot_config(&args.config).unwrap().parsed;
+    let sensor = SensorSection {
+        hardware_id: args.hardware_id.clone(),
+        id: "fixture_camera".into(),
+        adapter: "opencv_v4l2".into(),
+        device: PathBuf::from("/software-fixture/video"),
+        python: PathBuf::from("/software-fixture/python"),
+        helper: PathBuf::from("/software-fixture/helper.py"),
+        width: 2,
+        height: 1,
+        fps: 10,
+    };
+    parsed.sensor.push(sensor.clone());
+    assert!(Config::load_cameras(&args, &parsed).is_err());
+    args.mode = Mode::Mixed;
+    assert!(Config::load_cameras(&args, &parsed).is_err());
+    args.with_cameras = true;
+    assert_eq!(
+        Config::load_cameras(&args, &parsed).unwrap(),
+        std::slice::from_ref(&sensor)
+    );
+    let mut other_hardware = parsed.hardware[0].clone();
+    other_hardware.id = "other_hardware".into();
+    parsed.hardware.push(other_hardware);
+    let mut other_sensor = sensor.clone();
+    other_sensor.hardware_id = "other_hardware".into();
+    other_sensor.id = "other_camera".into();
+    other_sensor.device = PathBuf::from("/software-fixture/other_video");
+    parsed.sensor.push(other_sensor);
+    assert_eq!(
+        Config::load_cameras(&args, &parsed).unwrap(),
+        std::slice::from_ref(&sensor)
+    );
+    let _ = parsed.sensor.pop();
+    parsed.sensor[0].hardware_id = "unconfigured_hardware".into();
+    assert!(Config::load_cameras(&args, &parsed).is_err());
+    parsed.sensor[0] = sensor.clone();
+    parsed.sensor[0].adapter = "other".into();
+    assert!(Config::load_cameras(&args, &parsed).is_err());
+    parsed.sensor[0] = sensor.clone();
+    for index in 1..=3 {
+        let mut extra = sensor.clone();
+        extra.id = format!("fixture_camera_{index}");
+        extra.device = PathBuf::from(format!("/software-fixture/video{index}"));
+        parsed.sensor.push(extra);
+        assert_eq!(Config::load_cameras(&args, &parsed).is_ok(), index < 3);
+    }
+    parsed.sensor.clear();
+    assert!(Config::load_cameras(&args, &parsed).is_err());
+    let mut raw = arguments(args.output.to_str().unwrap());
+    raw.push("--with-cameras".into());
+    assert!(
+        Args::parse(raw.clone().into_iter(), Mode::Mixed)
+            .unwrap()
+            .unwrap()
+            .with_cameras
+    );
+    raw.push("--with-cameras".into());
+    assert!(Args::parse(raw.into_iter(), Mode::Mixed).is_err());
 }
 
 fn state(_config: &Config) -> State {
@@ -293,6 +366,7 @@ fn configuration_selects_only_the_front_wheel_from_the_original_toml() {
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus2_full.toml");
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
+    value.as_table_mut().unwrap().remove("sensor");
     let hardware = &mut value["hardware"][0];
     let ids = hardware["motor_ids"].as_array_mut().unwrap();
     let front = config.selected;
@@ -311,6 +385,7 @@ fn configuration_selects_only_the_front_wheel_from_the_original_toml() {
         log: PathBuf::new(),
         output: PathBuf::new(),
         expires_unix_ns: u64::MAX,
+        with_cameras: false,
     })
     .unwrap();
     assert_eq!(
@@ -557,14 +632,14 @@ fn zero_groups_have_three_original_nonrenewable_intervals() {
     for (index, start, finish) in [
         (0, 50_000_000, 250_000_000),
         (1, 250_000_000, 450_000_000),
-        (2, 450_000_000, 500_000_000),
+        (2, 450_000_000, 499_999_999),
     ] {
         let sample = ZeroSample {
             started_ns: start,
             finished_ns: finish,
             wheels,
         };
-        assert!(zero_slot(&sample, 0, index).unwrap());
+        assert!(zero_slot(&sample, 0, index, finish).unwrap());
         assert!(
             zero_slot(
                 &ZeroSample {
@@ -572,7 +647,8 @@ fn zero_groups_have_three_original_nonrenewable_intervals() {
                     ..sample
                 },
                 0,
-                index
+                index,
+                finish + 1
             )
             .is_err()
         );
@@ -583,11 +659,31 @@ fn zero_groups_have_three_original_nonrenewable_intervals() {
                     ..sample
                 },
                 0,
-                index
+                index,
+                finish
             )
             .unwrap()
         );
     }
+}
+
+#[test]
+fn zero_deadline_rejects_missing_third_group_but_ignores_extra_groups() {
+    let sample = ZeroSample {
+        started_ns: 450_000_000,
+        finished_ns: 499_999_990,
+        wheels: [7, 8, 9].map(|id| WheelSample {
+            id,
+            torque: 1,
+            goal: 0,
+            velocity: 0,
+        }),
+    };
+    assert!(zero_slot(&sample, 0, 2, ZERO_NS - 1).unwrap());
+    assert!(zero_slot(&sample, 0, 2, ZERO_NS).is_err());
+    assert!(zero_slot(&sample, 0, 2, ZERO_NS + 1).is_err());
+    assert!(!zero_slot(&sample, 0, 3, ZERO_NS).unwrap());
+    assert!(!zero_slot(&sample, 0, 3, ZERO_NS + 1).unwrap());
 }
 
 fn motion_sample(config: &Config, anchor: &Anchor, window: u64, velocity: u16) -> MotionSample {

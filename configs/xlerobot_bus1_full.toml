@@ -1,5 +1,5 @@
 # XLeRobot 左总线：左臂 ID1..6、头部 ID7/8，沿既有唯一串口所有者。
-# 头部 D435i 彩色流由本实例的 SoftRT 采集；相机不会进入执行器线程。
+# 头部及左腕彩色流由本实例的 SoftRT 采集；相机不会进入执行器线程。
 # 校准仍取原 JSON；启用与真实动作需独立现场验收。
 
 [robot]
@@ -41,3 +41,15 @@ helper = "/home/loosqk/repo/robot/robot-system/scripts/camera_capture.py"
 width = 640
 height = 480
 fps = 15
+
+# 现场画面已确认：机器人自身左腕接 USB 端口 2.2。
+[[sensor]]
+hardware_id = "left_arm_full_with_head"
+id = "left_wrist_color"
+adapter = "opencv_v4l2"
+device = "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0"
+python = "/home/loosqk/repo/dimensional-applications/.venv/bin/python"
+helper = "/home/loosqk/repo/robot/robot-system/scripts/camera_capture.py"
+width = 640
+height = 480
+fps = 5

@@ -4352,11 +4352,17 @@ class S0MixedBridgeTests(unittest.TestCase):
                 events.append(('wait',timeout))
                 if fault=='daemon_timeout':raise subprocess.TimeoutExpired(process.argv,timeout)
                 process.done=True;identities.pop(process.pid,None)
+                if fault!='camera_stuck':
+                    for pid in [pid for pid in identities if pid>=910010]:identities.pop(pid)
                 for stream in daemon_locks:stream.close()
                 return 0
         def spawn(argv,**kwargs):
             events.append(('spawn',));self.assertTrue(locks_present(held_side));self.assertFalse(locks_present(active_side))
             process=Process(910001,argv)
+            for index,camera in enumerate(contract.get('cameras',[])):
+                child=Process(910010+index,m.s0_camera_argv(camera))
+                identities[child.pid].update(pgid=process.pid,exe=camera['python_executable']['path'])
+                if fault=='camera_argv':identities[child.pid]['argv'][-1]='999'
             for name in ('rx_trust.lock','estop_latch.lock'):
                 path=Path(self.bindings['protection'][active_side][name]['path'])
                 stream=path.open('r+b');daemon_locks.append(stream);m.fcntl.flock(stream,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
@@ -4383,7 +4389,13 @@ class S0MixedBridgeTests(unittest.TestCase):
                 return ''
             self.assertTrue(kwargs.get('s0_sender'));self.assertIn('--s0-position-hold' if active_side=='left' else '--s0-mixed-hold',argv);events.append(('sender',));self.assertTrue(locks_present(held_side))
             self.assertTrue(locks_present(active_side));executor.child=Process(910002,argv);executor.s0_sender_started=True
-            executor.s0_bind_process(executor.child,argv,'sender');kwargs['mixed_stop_check']()
+            if fault=='camera_replace':identities[910010]={**identities[910010],'start_ticks':13}
+            if fault=='camera_early_exit':identities.pop(910010)
+            executor.s0_bind_process(executor.child,argv,'sender')
+            try:kwargs['mixed_stop_check']()
+            except BaseException:
+                identities.pop(executor.child.pid);executor.child=None
+                raise
             result=self.receipt()
             if fault=='sender':result.update(result='FAIL',error='未知收尾',manual_power_cut_required=True)
             for name in ('estop_latch','estop_latch.bak'):
@@ -4404,10 +4416,13 @@ class S0MixedBridgeTests(unittest.TestCase):
             return ''
         executor.command=command
         helper=SimpleNamespace(clean_environment=lambda env:dict(env),
-            read_process=lambda pid:{'status':'observed','identity':identities[pid]},
+            read_process=lambda pid:({'status':'observed','identity':identities[pid]} if pid in identities else {'pid':pid,'status':'vanished'}),
             privileged_process_probe=lambda _:None,
             process_snapshot=lambda *args,**kwargs:{'clean':not identities,'related':list(identities.values()),'unreadable':[]})
         def holder(*args,**kwargs):
+            if args[1] not in m.DEVICES.values():
+                events.append(('camera_holder',args[1],args[2]));self.assertFalse(identities)
+                return {'path':args[1],'elevated':args[2],'stdout_empty':True,'exit_code':1}
             events.append(('holder',));self.assertFalse(identities)
             self.assertTrue(locks_present(held_side));self.assertTrue(locks_present(active_side));return {}
         def check_owned(*args):self.assertTrue(locks_present(active_side))
@@ -4420,6 +4435,8 @@ class S0MixedBridgeTests(unittest.TestCase):
             with (patch.object(m.os,'open',side_effect=open_pin),
                   patch.object(m.subprocess,'Popen',side_effect=spawn),patch.object(m,'validate_go'),
                   patch.object(m,'verify_s0_daemon_locks',side_effect=check_owned),
+                  patch.object(m,'s0_child_pids',side_effect=lambda pid:sorted(child for child in identities if child>=910010)),
+                  patch.object(m,'s0_parent_pid',return_value=910001),
                   patch.object(m,'inspect_holder',side_effect=holder),patch.object(m.time,'time_ns',return_value=0)):
                 if fault:
                     with self.assertRaises((ValueError,KeyError)) as caught:
@@ -4660,6 +4677,202 @@ class S0PositionBridgeTests(unittest.TestCase):
         self.assertEqual(m.classify_position_snapshot(actual,baseline,probes)['status'],'FAIL')
         actual=copy.deepcopy(baseline);actual['right:1']['Goal_Position']=1001
         self.assertEqual(m.classify_position_snapshot(actual,baseline,probes)['status'],'FAIL')
+
+
+class S0ChildEnumerationTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        self.proc=Path(temporary.name)
+        for pid,parent in ((100,1),(102,100),(101,100),(103,102),(104,1)):
+            directory=self.proc/str(pid);directory.mkdir()
+            (directory/'stat').write_text(f'{pid} (camera (fixture)) S {parent} 100 100 0\n')
+        (self.proc/'self').mkdir()
+
+    def test_direct_children_use_stat_without_optional_kernel_children_files(self):
+        self.assertFalse((self.proc/'100'/'task').exists())
+        self.assertEqual(m.s0_child_pids(100,proc=self.proc),[101,102])
+        self.assertEqual(m.s0_parent_pid(102,proc=self.proc),100)
+
+    def test_vanished_stat_is_skipped_without_discarding_other_children(self):
+        (self.proc/'101'/'stat').unlink()
+        self.assertEqual(m.s0_child_pids(100,proc=self.proc),[102])
+
+    def test_permission_denied_stat_remains_failure(self):
+        original=m.s0_parent_pid
+        def parent(pid,*,proc):
+            if pid==101:raise PermissionError('夹具禁止读取stat')
+            return original(pid,proc=proc)
+        with patch.object(m,'s0_parent_pid',side_effect=parent),self.assertRaises(PermissionError):
+            m.s0_child_pids(100,proc=self.proc)
+
+
+class S0CameraBridgeTests(unittest.TestCase):
+    run_bridge=S0MixedBridgeTests.run_bridge
+    active_side='left'
+
+    def setUp(self):
+        if self.active_side=='left':S0PositionBridgeTests.setUp(self)
+        else:S0MixedBridgeTests.setUp(self)
+        self.key='s0_position_hold' if self.active_side=='left' else 's0_mixed_hold'
+        python=self.root/'venv'/'bin'/'python';python.parent.mkdir(parents=True)
+        executable=self.root/'python-real';executable_ref=feedback_reference(executable)
+        python.symlink_to(executable)
+        venv=python.parent.parent/'pyvenv.cfg';venv.write_text('home=/fixture\n')
+        helper=self.root/'camera_capture.py';helper.write_text('# 固定协议相机夹具\n')
+        self.bindings['refs'] += [executable_ref,self.reference(venv),self.reference(helper)]
+        self.bindings['binary_paths'].append(str(helper))
+        config=Path(self.plan[self.key]['config']['path'])
+        count=2 if self.active_side=='left' else 1
+        self.device_rows={};self.bindings['cameras']=[]
+        text=config.read_text()
+        for index in range(count):
+            camera={'id':f'camera_{index}','device':f'/dev/v4l/by-path/fixture-{index}-video-index0',
+                    'width':2,'height':2,'fps':15,'python':str(python),'helper':str(helper)}
+            self.device_rows[camera['device']]={'path':camera['device'],'resolved':f'/dev/video{index}',
+                'device':1,'inode':index+1,'rdev':index+10,'mode':0o660,'uid':os.getuid(),'gid':os.getgid(),
+                'symlink_target':f'../../video{index}'}
+            text+='\n[[sensor]]\nhardware_id='+json.dumps(self.bindings['s0_hardware_id'])+'\n'
+            text+='adapter="opencv_v4l2"\n'+'\n'.join(f'{key}={json.dumps(value)}' for key,value in camera.items())+'\n'
+            self.bindings['cameras'].append({**camera,'python_executable':executable_ref,
+                'venv_config':self.reference(venv),'python_paths':m.s0_python_paths(python),
+                'device_identity':copy.deepcopy(self.device_rows[camera['device']])})
+        config.write_text(text)
+        self.bindings['refs']=[ref for ref in self.bindings['refs'] if ref['path']!=str(config)]+[self.reference(config)]
+        m.configure_bus_mapping(config if self.active_side=='right' else BUS_FIXTURE_PATH,
+                                config if self.active_side=='left' else LEFT_BUS_FIXTURE_PATH)
+        patcher=patch.object(m,'s0_camera_device_identity',side_effect=lambda path:copy.deepcopy(self.device_rows[str(path)]))
+        patcher.start();self.addCleanup(patcher.stop)
+        with patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent):
+            self.plan=m.make_plan(self.bindings,self.output,'camera-bridge',self.root,with_cameras=True,
+                                 **{self.key:True})
+
+    def receipt(self):
+        result=(S0PositionBridgeTests.receipt(self) if self.active_side=='left' else S0MixedBridgeTests.receipt(self))
+        start=result['hold_start_ns'] if self.active_side=='left' else result['nonzero_start_ns']
+        end=start+20_000_000_000;rows=[]
+        for camera in self.plan[self.key]['cameras']:
+            frames=[{'stamp_ns':start+index*500_000_000,'observed_ns':start+index*500_000_000+1000}
+                    for index in range(40)]
+            path=self.output/f"camera-{camera['id']}.bgr";path.write_bytes(bytes(range(12)))
+            rows.append({'id':camera['id'],'device':camera['device'],'width':2,'height':2,'step':6,
+                'encoding':'bgr8','color_order':'BGR','fps_requested':15,'frames':frames,
+                'snapshot':{'path':str(path),'bytes':12,'stamp_ns':frames[-1]['stamp_ns'],
+                    'encoding':'bgr8','color_order':'BGR','saved_at_ns':result['finished_ns']+1000}})
+        result['camera_observations']={'schema':'S0_CAMERA_OBSERVATIONS_V1','window_started_ns':start,
+                                      'window_finished_ns':end,'cameras':rows}
+        return result
+
+    def test_opt_in_binds_config_paths_and_explicit_sensor_scope(self):
+        self.assertIn('sensor',self.plan['scope'])
+        self.assertNotEqual(self.plan['scope'],m.s0_scope(self.active_side))
+        with self.assertRaises(ValueError):m.s0_hold_contract(self.bindings,self.active_side)
+        with patch.object(m,'MAINTENANCE_NAMESPACE',self.root.parent),self.assertRaises(ValueError):
+            m.make_plan(self.bindings,self.output,'invalid',self.root,with_cameras=True)
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('PLAN_ONLY不得启动')),contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(run_main(['--'+self.key.replace('_','-'),'--with-cameras']),0)
+        self.assertIn('sensor',json.loads(output.getvalue())['scope'])
+        config=self.plan[self.key]['config']['path']
+        m.configure_bus_mapping(config if self.active_side=='right' else BUS_FIXTURE_PATH,
+                                config if self.active_side=='left' else LEFT_BUS_FIXTURE_PATH)
+        m.verify_s0_mixed_refs(self.plan)
+        bad=copy.deepcopy(self.bindings);bad['cameras'][0]['fps']=16
+        with self.assertRaises(ValueError):m.s0_hold_contract(bad,self.active_side,True)
+        bad=copy.deepcopy(self.bindings);bad['binary_paths'].append(bad['cameras'][0]['python_executable']['path'])
+        with self.assertRaises(ValueError):m.s0_hold_contract(bad,self.active_side,True)
+        python=Path(self.bindings['cameras'][0]['python']);python.unlink();python.symlink_to('/bin/sh')
+        with self.assertRaises(ValueError):m.verify_s0_mixed_refs(self.plan)
+
+    def test_report_rejects_missing_route_shape_stale_frames_gaps_and_fake_snapshot(self):
+        receipt=self.receipt();parser=m.parse_s0_position_result if self.active_side=='left' else m.parse_s0_mixed_result
+        self.assertEqual(parser(json.dumps(receipt),self.plan,self.expiry),receipt)
+        changes=[lambda row:row.pop('camera_observations'),
+                 lambda row:row['camera_observations']['cameras'].pop(),
+                 lambda row:row['camera_observations'].update(window_finished_ns=1),
+                 lambda row:row['camera_observations']['cameras'][0].update(step=7),
+                 lambda row:row['camera_observations']['cameras'][0].update(encoding='rgb8'),
+                 lambda row:row['camera_observations']['cameras'][0].update(frames=[row['camera_observations']['cameras'][0]['frames'][-1]]),
+                 lambda row:row['camera_observations']['cameras'][0]['frames'][1].update(stamp_ns=1),
+                 lambda row:row['camera_observations']['cameras'][0]['frames'][1].update(**row['camera_observations']['cameras'][0]['frames'][0]),
+                 lambda row:row['camera_observations']['cameras'][0]['frames'].__delitem__(slice(1,4)),
+                 lambda row:row['camera_observations']['cameras'][0]['frames'].__delitem__(slice(-3,None)),
+                 lambda row:row['camera_observations']['cameras'][0]['snapshot'].update(path='/tmp/foreign.bgr'),
+                 lambda row:row['camera_observations']['cameras'][0]['snapshot'].update(stamp_ns=0),
+                 lambda row:row['camera_observations']['cameras'][0]['snapshot'].update(bytes=1),
+                 lambda row:row['camera_observations']['cameras'][0]['snapshot'].update(saved_at_ns=0)]
+        for index,change in enumerate(changes):
+            bad=copy.deepcopy(receipt);change(bad)
+            with self.subTest(index=index),self.assertRaises(ValueError):parser(json.dumps(bad),self.plan,self.expiry)
+        path=Path(receipt['camera_observations']['cameras'][0]['snapshot']['path']);path.write_bytes(b'bad')
+        with self.assertRaises(ValueError):parser(json.dumps(receipt),self.plan,self.expiry)
+
+    def test_helpers_keep_original_identity_exit_before_uart_and_hash_is_rechecked(self):
+        executor,engine,report,events=self.run_bridge()
+        self.assertTrue(executor.s0_post_ready);self.assertFalse(engine.manual_cut)
+        self.assertEqual(len(report['s0_camera_helpers']),len(self.bindings['cameras']))
+        self.assertTrue(all(row['terminated'] for row in report['s0_camera_helper_exit_checks']))
+        self.assertLess(events.index(('wait',8.0)),events.index(('holder',)))
+        self.assertEqual(len(report['s0_camera_release_checks']),2*len(self.bindings['cameras']))
+        m.verify_s0_camera_report(report)
+        first=report['s0_camera_snapshots'][0];Path(first['path']).write_bytes(bytes(reversed(range(12))))
+        with self.assertRaises(ValueError):m.verify_s0_camera_report(report)
+
+    def test_unknown_helper_argv_and_pid_replacement_block_uart_even_after_daemon_wait(self):
+        for fault in ('camera_argv','camera_replace','camera_stuck'):
+            with self.subTest(fault=fault):
+                executor,engine,report,events=self.run_bridge(fault)
+                self.assertIsNone(executor.s0_daemon);self.assertFalse(executor.s0_post_ready)
+                self.assertTrue(engine.manual_cut);self.assertFalse(any(event[0]=='holder' for event in events))
+                self.assertFalse(report['s0_camera_handoff_closed'])
+                executor.journal.close()
+                for path in self.output.iterdir():path.unlink()
+
+    def test_already_bound_helper_exit_keeps_failure_but_allows_proven_cleanup(self):
+        executor,engine,report,events=self.run_bridge('camera_early_exit')
+        self.assertTrue(executor.s0_post_ready);self.assertTrue(engine.manual_cut)
+        self.assertTrue(report['s0_camera_handoff_closed'])
+        self.assertTrue(all(row['terminated'] for row in report['s0_camera_helper_exit_checks']))
+
+    def test_pre_ready_failure_still_binds_and_reaps_camera_helpers(self):
+        executor,engine,report,events=self.run_bridge('daemon_bind')
+        self.assertTrue(engine.manual_cut);self.assertIsNone(executor.s0_daemon)
+        self.assertEqual(len(report['s0_camera_helpers']),len(self.bindings['cameras']))
+        self.assertTrue(all(row['terminated'] for row in report['s0_camera_helper_exit_checks']))
+        self.assertFalse(any(event[0]=='sender' for event in events))
+
+    def test_helper_running_sleeping_states_preserve_identity_but_uid_boot_parent_and_exe_fail(self):
+        contract=self.plan[self.key];daemon={'pid':901,'pgid':901,'boot_id':'fixture-boot','uids':[os.getuid()]*4}
+        identities={1000+index:{'pid':1000+index,'pgid':901,'start_ticks':123,'boot_id':'fixture-boot',
+            'uids':[os.getuid()]*4,'state':'R','zombie':False,'exe':camera['python_executable']['path'],
+            'argv':m.s0_camera_argv(camera)} for index,camera in enumerate(contract['cameras'])}
+        executor=SimpleNamespace(output=self.output,process_snapshots=[],s0_camera_helpers=[],s0_identities=[],s0_camera_helper_checks=[])
+        helper=SimpleNamespace(read_process=lambda pid:{'status':'observed','identity':copy.deepcopy(identities[pid])})
+        with patch.object(m,'s0_child_pids',return_value=sorted(identities)),patch.object(m,'s0_parent_pid',return_value=901):
+            m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
+            for identity in identities.values():identity['state']='S'
+            m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
+            self.assertEqual(executor.s0_camera_helpers[0]['identity']['state'],'R')
+            for key,value in (('uids',[0]*4),('boot_id','other'),('exe','/other/python'),('pgid',999),('zombie',True)):
+                original=copy.deepcopy(identities[1000]);identities[1000][key]=value
+                with self.subTest(key=key),self.assertRaises(ValueError):
+                    m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
+                identities[1000]=original
+            with patch.object(m,'s0_parent_pid',return_value=999),self.assertRaises(ValueError):
+                m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
+
+    def test_permission_fallback_selects_helper_parent_group_without_python_allowance(self):
+        identity={'pid':1234,'pgid':901,'boot_id':'fixture-boot','start_ticks':1,'uids':[os.getuid()]*4,
+                  'exe':'/bound/python','argv':['/bound/venv/bin/python','-I','/bound/helper']}
+        executor=SimpleNamespace(output=self.output,process_snapshots=[])
+        def snapshot(group,*args,**kwargs):
+            self.assertEqual(group,901)
+            return {'related':[identity],'unreadable':[],'ordinary_denied':[{'pid':1234}]}
+        helper=SimpleNamespace(read_process=lambda pid:{'status':'permission','before':{'pgid':901}},
+                               process_snapshot=snapshot,privileged_process_probe=lambda _:None)
+        self.assertEqual(m.s0_process_identity(executor,helper,1234),identity)
+
+
+class S0RightCameraBridgeTests(S0CameraBridgeTests):
+    active_side='right'
 
 
 if __name__=='__main__': unittest.main(verbosity=2)
