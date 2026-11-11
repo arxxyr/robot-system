@@ -2,6 +2,8 @@
 
 同一配置中的 `joints`、`motor_ids` 和逐电机容差按下标对应；轮位只在这里定义。更改配置后重新生成测试计划，不复用旧 GO。
 
+全总线配置在所选 `[[hardware]]` 下使用 `serial_rt = { cpu = 4, fifo_priority = 70 }`（右侧CPU为5）。该段启用严格FIFO、绑核和锁页检查，要求产物启用`rt_guard`；CPU范围0..1023、FIFO范围1..99，实际核可用性由启动设置验证。调度设置失败拒绝就绪；与CLI的`--cpu`/`--serial-fifo`重复指定也拒绝。省略该段的旧配置仍可用原CLI。修改值在下次启动生效；systemd只提供权限和普通线程CPU范围，不复制执行线程的配置值。
+
 | 用途 | 文件 | 边界 |
 |---|---|---|
 | 当前全身 S0 候选 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |

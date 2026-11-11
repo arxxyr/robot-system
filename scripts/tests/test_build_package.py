@@ -33,7 +33,7 @@ COMMIT = "1234567890abcdef1234567890abcdef12345678"
 RELEASE_TAG = "v0.1.2+1234567"
 EXPECTED_ARGV = [
     "cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0",
-    "--bin", "robot-s0", "--bin", "robot-deploy", "--features", "xlerobot-real",
+    "--bin", "robot-s0", "--bin", "robot-deploy", "--features", "xlerobot-real,rt_guard",
 ]
 PAYLOAD_NAMES = {
     "bin/robot-s0", "bin/robot-deploy",
@@ -256,7 +256,7 @@ class PackageBuilderTests(unittest.TestCase):
         self.assertEqual(entry["target"], "aarch64-unknown-linux-gnu")
         self.assertEqual(entry["cargo_package"], "robot-s0")
         self.assertIs(entry["default_features"], True)
-        self.assertEqual(entry["features"], ["xlerobot-real"])
+        self.assertEqual(entry["features"], ["xlerobot-real", "rt_guard"])
         self.assertEqual(entry["bins"], ["robot-s0", "robot-deploy"])
         self.assertEqual(len(entry["files"]), 6)
         self.assert_no_cargo()

@@ -10,6 +10,8 @@ config_version = "0.2.0-s0-head-camera"
 id          = "left_arm_full_with_head"
 adapter     = "feetech_sts3215"
 auto_enable = false
+# 启用即严格校验FIFO、锁页和绑核；只改变执行线程，要求产物启用rt_guard。
+serial_rt = { cpu = 4, fifo_priority = 70 }
 address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
 joints      = [
     "left_arm_shoulder_pan",

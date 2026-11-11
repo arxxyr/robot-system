@@ -167,9 +167,20 @@ pub struct HardwareSection {
     /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
     #[serde(default)]
     pub auto_enable: Option<bool>,
+    /// 串口执行线程的严格实时调度；省略时保持既有 CLI 配置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial_rt: Option<SerialRtConfig>,
     /// 适配器专用字段（`baud` / `poll_hz` / `wheel_radius` 等）。
     #[serde(flatten, default)]
     pub extras: toml::Table,
+}
+
+/// 仅配置执行线程；IPC、相机和日志线程保持普通调度。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SerialRtConfig {
+    pub cpu: usize,
+    pub fifo_priority: u8,
 }
 
 /// 按 resolved `hardware_id` 在 config 里 match `[[hardware]].id`（v0.5 候选 C B6：
@@ -189,6 +200,10 @@ pub fn resolve_hardware_section<'a>(
 /// [`Self::exit_code`]，AC-E3）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum HardwareSectionError {
+    #[error("[[hardware]] serial_rt.cpu={cpu} 超过 CPU 集合上限1023")]
+    InvalidSerialRtCpu { cpu: usize },
+    #[error("[[hardware]] serial_rt.fifo_priority={priority} 不在1..=99")]
+    InvalidSerialRtPriority { priority: u8 },
     #[error("[[hardware]] joints={actual} 超过上限 {max}")]
     TooManyJoints { actual: usize, max: usize },
     /// `joints` 为空（无法派生 layout / 驱动任何关节）。
@@ -242,6 +257,16 @@ impl ConfigLoadError {
 ///
 /// 见 [`HardwareSectionError`] 五 variant。
 pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSectionError> {
+    if let Some(rt) = hw.serial_rt {
+        if rt.cpu >= 1024 {
+            return Err(HardwareSectionError::InvalidSerialRtCpu { cpu: rt.cpu });
+        }
+        if !(1..=99).contains(&rt.fifo_priority) {
+            return Err(HardwareSectionError::InvalidSerialRtPriority {
+                priority: rt.fifo_priority,
+            });
+        }
+    }
     if hw.feetech_bus2_mixed_raw && hw.adapter != "feetech_sts3215" {
         return Err(HardwareSectionError::MixedRawRequiresFeetech { id: hw.id.clone() });
     }
@@ -836,6 +861,56 @@ fps = 30
         let f = write_temp(SAMPLE_TOML);
         let cfg = load_robot_config(f.path()).unwrap();
         cfg.parsed.hardware[0].clone()
+    }
+
+    #[test]
+    fn serial_rt_configuration_is_typed_and_checked() {
+        let mut hw = valid_hw();
+        assert!(hw.serial_rt.is_none());
+        hw.serial_rt = Some(SerialRtConfig {
+            cpu: 4,
+            fifo_priority: 70,
+        });
+        validate_hardware_section(&hw).unwrap();
+        let text = toml::to_string(&hw).unwrap();
+        let parsed: HardwareSection = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.serial_rt, hw.serial_rt);
+        assert!(!parsed.extras.contains_key("serial_rt"));
+        for cpu in [1024, usize::MAX] {
+            hw.serial_rt.as_mut().unwrap().cpu = cpu;
+            assert!(matches!(
+                validate_hardware_section(&hw),
+                Err(HardwareSectionError::InvalidSerialRtCpu { .. })
+            ));
+        }
+        hw.serial_rt.as_mut().unwrap().cpu = 4;
+        for priority in [0, 100, 255] {
+            hw.serial_rt.as_mut().unwrap().fifo_priority = priority;
+            assert!(matches!(
+                validate_hardware_section(&hw),
+                Err(HardwareSectionError::InvalidSerialRtPriority { .. })
+            ));
+        }
+        for priority in [1, 99] {
+            hw.serial_rt.as_mut().unwrap().fifo_priority = priority;
+            validate_hardware_section(&hw).unwrap();
+        }
+    }
+
+    #[test]
+    fn serial_rt_requires_complete_known_fields() {
+        for value in [
+            "{ cpu = 4 }",
+            "{ fifo_priority = 70 }",
+            "{ cpu = -1, fifo_priority = 70 }",
+            "{ cpu = 4, fifo_priority = 70, strict = false }",
+        ] {
+            let text = format!(
+                "serial_rt = {value}\n{}",
+                toml::to_string(&valid_hw()).unwrap()
+            );
+            assert!(toml::from_str::<HardwareSection>(&text).is_err(), "{value}");
+        }
     }
 
     #[test]

@@ -36,9 +36,8 @@
 //!
 //! ### 为什么不完全依赖 `assert_no_alloc`
 //!
-//! `assert_no_alloc` 只抓堆分配，抓不到 `Arc::clone` 导致的 **原子操作 + hidden retired
-//! list push**（arc-swap 的 Guard Deref 不 bump refcount，但用户代码里手写的
-//! `Arc::clone` 会）。`RtArc` 作为类型安全补充：把 Arc clone 在 RT scope 变成
+//! `assert_no_alloc` 不会拦截每次 `Arc::clone` 的引用计数原子操作。
+//! `RtArc` 作为类型安全补充：把 Arc clone 在 RT scope 变成
 //! 编译 / 运行时可观测事件。
 
 use std::cell::Cell;

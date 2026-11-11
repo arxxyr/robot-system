@@ -588,6 +588,10 @@ impl MockHandle {
 // Real serial transport（feature = "real-hw"）
 // ============================================================================
 
+#[cfg(all(feature = "real-hw", target_os = "linux"))]
+#[path = "linux_serial.rs"]
+mod linux_serial;
+
 /// `serialport` crate 的 [`SerialTransport`] 包装。**仅** `--features real-hw`
 /// 编译。
 ///
@@ -597,16 +601,23 @@ impl MockHandle {
 /// `serialport::SerialPort::set_timeout` 直传。
 #[cfg(feature = "real-hw")]
 pub mod real {
+    #[cfg(not(target_os = "linux"))]
+    use super::DeadlinePortTimeout;
     use super::{
-        Arc, DeadlinePortTimeout, DrainReport, Duration, FeetechError, RobotClock,
-        SerialPortTimeout, SerialTransport, SourceWriteDeadline, drain_until_quiet_bounded,
-        read_exact_bounded, write_all_bounded, write_all_until_bounded,
+        Arc, DrainReport, Duration, FeetechError, RobotClock, SerialPortTimeout, SerialTransport,
+        SourceWriteDeadline, drain_until_quiet_bounded, read_exact_bounded, write_all_bounded,
+        write_all_until_bounded,
     };
     use std::path::Path;
 
+    #[cfg(target_os = "linux")]
+    use super::linux_serial::NativeSerialPort as RuntimePort;
+    #[cfg(not(target_os = "linux"))]
+    type RuntimePort = Box<dyn serialport::SerialPort>;
+
     /// 真 USB-RS485 串口包装。
     pub struct RealSerialTransport {
-        port: Box<dyn serialport::SerialPort>,
+        port: RuntimePort,
         path: std::path::PathBuf,
         clock: Arc<dyn RobotClock>,
         call_timeout: Duration,
@@ -635,13 +646,17 @@ pub mod real {
             clock: Arc<dyn RobotClock>,
         ) -> Result<Self, FeetechError> {
             let call_timeout = Duration::from_millis(50);
-            let port = serialport::new(path.to_string_lossy(), baudrate)
-                .timeout(call_timeout)
-                .open()
-                .map_err(|e| FeetechError::TransportOpen {
-                    path: path.to_path_buf(),
-                    source: std::io::Error::other(e.to_string()),
-                })?;
+            let builder = serialport::new(path.to_string_lossy(), baudrate).timeout(call_timeout);
+            #[cfg(target_os = "linux")]
+            let opened = builder
+                .open_native()
+                .map(|port| RuntimePort::new(port, call_timeout));
+            #[cfg(not(target_os = "linux"))]
+            let opened = builder.open();
+            let port = opened.map_err(|e| FeetechError::TransportOpen {
+                path: path.to_path_buf(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
             Ok(Self {
                 port,
                 path: path.to_path_buf(),
@@ -657,14 +672,16 @@ pub mod real {
         }
     }
 
-    impl SerialPortTimeout for dyn serialport::SerialPort {
+    #[cfg(not(target_os = "linux"))]
+    impl SerialPortTimeout for Box<dyn serialport::SerialPort> {
         fn apply_timeout(&mut self, timeout: Duration) -> std::io::Result<()> {
             self.set_timeout(timeout)
                 .map_err(|error| std::io::Error::other(error.to_string()))
         }
     }
 
-    impl DeadlinePortTimeout for dyn serialport::SerialPort {
+    #[cfg(not(target_os = "linux"))]
+    impl DeadlinePortTimeout for Box<dyn serialport::SerialPort> {
         fn apply_timeout_kind(&mut self, timeout: Duration) -> Result<(), std::io::ErrorKind> {
             self.set_timeout(timeout).map_err(|error| match error.kind {
                 serialport::ErrorKind::NoDevice => std::io::ErrorKind::NotFound,
@@ -677,7 +694,7 @@ pub mod real {
 
     impl SerialTransport for RealSerialTransport {
         fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError> {
-            write_all_bounded(&mut *self.port, self.clock.as_ref(), self.call_timeout, buf)
+            write_all_bounded(&mut self.port, self.clock.as_ref(), self.call_timeout, buf)
         }
 
         fn write_all_until(
@@ -685,17 +702,17 @@ pub mod real {
             buf: &[u8],
             deadline: SourceWriteDeadline<'_>,
         ) -> Result<(), FeetechError> {
-            write_all_until_bounded(&mut *self.port, deadline, self.call_timeout, buf)
+            write_all_until_bounded(&mut self.port, deadline, self.call_timeout, buf)
         }
 
         fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), FeetechError> {
-            read_exact_bounded(&mut *self.port, self.clock.as_ref(), self.call_timeout, buf)
+            read_exact_bounded(&mut self.port, self.clock.as_ref(), self.call_timeout, buf)
         }
 
         fn set_timeout(&mut self, timeout: Duration) -> Result<(), FeetechError> {
             self.port
-                .set_timeout(timeout)
-                .map_err(|e| FeetechError::TransportRead(std::io::Error::other(e.to_string())))?;
+                .apply_timeout(timeout)
+                .map_err(FeetechError::TransportRead)?;
             self.call_timeout = timeout;
             Ok(())
         }
@@ -707,6 +724,11 @@ pub mod real {
         }
 
         fn discard_input(&mut self) -> Result<(), FeetechError> {
+            #[cfg(target_os = "linux")]
+            {
+                self.port.clear_input().map_err(FeetechError::DiscardFailed)
+            }
+            #[cfg(not(target_os = "linux"))]
             self.port
                 .clear(serialport::ClearBuffer::Input)
                 .map_err(|error| {
@@ -720,7 +742,7 @@ pub mod real {
             absolute_budget: Duration,
         ) -> Result<DrainReport, FeetechError> {
             drain_until_quiet_bounded(
-                &mut *self.port,
+                &mut self.port,
                 self.clock.as_ref(),
                 quiet_required,
                 absolute_budget,

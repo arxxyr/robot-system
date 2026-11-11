@@ -30,8 +30,8 @@ INSTALLED_NAMES = ("robot-s0", "robot-deploy", "robot-s1", "robot-gateway")
 BUILD_SPECS = {
     "production": {
         "s0": ("robot-s0", ("robot-s0", "robot-deploy"),
-               ("--features", "xlerobot-real"),
-               ("default", "feetech", "mock", "xlerobot", "xlerobot-real")),
+               ("--features", "xlerobot-real,rt_guard"),
+               ("default", "feetech", "mock", "rt_guard", "xlerobot", "xlerobot-real")),
         "s1": ("robot-s1", ("robot-s1",), (),
                ("backend-hold-pose", "backend-ik", "backend-mock-dwell", "backend-scripted", "default")),
         "gateway": ("robot-rpc", ("robot-gateway",), ("--no-default-features",), ()),

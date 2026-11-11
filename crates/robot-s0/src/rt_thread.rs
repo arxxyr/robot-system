@@ -8,7 +8,7 @@
 //! ```text
 //! clock.sleep_until(deadline)
 //! deadline += tick_period
-//! cmd = cmd_reader.load()                 // arc-swap Guard，零 refcount 触动
+//! cmd_reader.try_load()                  // 固定一次；失败沿用完整缓存
 //! adapter.write_command(&cmd.as_view())   // memcpy
 //! adapter.read_state(&mut state_buf)      // memcpy
 //! snapshot_pub.publish(&RtSnapshot { .. })// seqlock：2×atomic add + memcpy
@@ -292,19 +292,12 @@ fn run_rt_loop<A: HardRtAdapter>(
     let mut state_buf = JointStateBuf::default();
     let mut tick_seq: u64 = 0;
     let mut active_enable: Option<EnableFinishPending> = None;
+    let mut command = cmd_reader.initial_value();
     let mut deadline = Deadline(clock.now());
 
-    // ---- arc-swap / seqlock thread_local warmup（RT-critical）----
-    //
-    // arc-swap 的 hazard-pointer slot 是 *per-thread thread_local*，**第一次** load
-    // 在新线程上会 alloc ~128 bytes（hazard pointer 单 slot + retired list 初始 cap）。
-    // 同理 RtSnapshotPublisher 内部 seqlock writer 在首次 publish 时初始化 thread_local
-    // 计数。如果不在这里 warmup，第一个 rt_entry! 就 alloc → assert_no_alloc abort
-    // （Step 7 task 26 `rt_guard_soak` 集成测试发现）。
-    //
-    // warmup 在 rt_entry! 之前 + 在主循环之前，alloc 允许。完成后 thread_local 全
-    // 已初始化，主循环稳态 0 alloc。
-    drop(cmd_reader.load());
+    // 固定值槽不含reader TLS；在调度循环前初始化分配守卫的线程局部状态。
+    rt_entry!({});
+    // 初始快照保留原发布/耗尽合同，不承担命令槽预热职责。
     // S48 A3b：首次发布同样是失败出口——版本耗尽即不进入主循环、结束 worker。
     #[cfg(feature = "test-comm-fault-hook")]
     let warmup_attempt_started_ns = clock.now().0;
@@ -446,8 +439,10 @@ fn run_rt_loop<A: HardRtAdapter>(
                     | OutputPolicy::ReadyHold
             );
             if do_write {
-                let cmd_guard = cmd_reader.load();
-                let cmd = cmd_guard.as_view();
+                if let Some(latest) = cmd_reader.try_load() {
+                    command = latest;
+                }
+                let cmd = command.as_view();
                 if with_normal_lease(ctrl, NormalIoIntent::Motion, || {
                     write_full_bus(&mut adapter, &cmd)
                 })
@@ -883,7 +878,7 @@ mod tests {
         cmd.positions[0] = 1.23;
         cmd.positions[1] = 2.34;
         cmd.positions[2] = 3.45;
-        cmd_writer.store(cmd);
+        cmd_writer.store(cmd).unwrap();
 
         let cfg = RtThreadConfig {
             tick_period_ns: 1_000, // 1 µs
@@ -1570,7 +1565,7 @@ mod tests {
         };
         cmd.positions[0] = 1.0;
         cmd.positions[1] = 2.0;
-        cmd_writer.store(cmd);
+        cmd_writer.store(cmd).unwrap();
         // 等 mock echo（snap_rdr 反映 cmd.positions[0]=1.0）
         assert!(
             crate::test_util::wait_until(Duration::from_millis(500), || {
@@ -1606,7 +1601,7 @@ mod tests {
         };
         cmd2.positions[0] = 5.0;
         cmd2.positions[1] = 6.0;
-        cmd_writer.store(cmd2);
+        cmd_writer.store(cmd2).unwrap();
         // 让 rt 跑几 tick 验证 cmd2 不被 echo
         let baseline_tick = metrics.tick_count.load(Ordering::Relaxed);
         assert!(crate::test_util::wait_until(

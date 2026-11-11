@@ -46,6 +46,24 @@ use crate::registers::{
 use crate::transport::{DrainReport, SerialTransport, SourceWriteDeadline};
 use crate::types::Motor;
 
+// 容量覆盖原协议支持的全部 ID 数量，不把通用 by-id 入口缩为 MAX_JOINTS。
+const MAX_REGISTER_WIDTH: usize = {
+    let table = crate::registers::STS3215_CONTROL_TABLE;
+    let mut width = 0;
+    let mut index = 0;
+    while index < table.len() {
+        let current = table[index].1.length as usize;
+        if current > width {
+            width = current;
+        }
+        index += 1;
+    }
+    width
+};
+const READ_FRAME_CAPACITY: usize = crate::protocol::MIN_PACKET_LEN + crate::protocol::MAX_PARAMS;
+const READ_RESPONSE_CAPACITY: usize =
+    (crate::protocol::MAX_PARAMS - 2) * (crate::protocol::MIN_PACKET_LEN + MAX_REGISTER_WIDTH);
+
 /// 一条 Feetech bus。`T` 是 [`SerialTransport`] 实现（`MockTransport` /
 /// `serialport::SerialPort` 包装）。
 pub struct FeetechBus<T: SerialTransport> {
@@ -62,6 +80,9 @@ pub struct FeetechBus<T: SerialTransport> {
     op_class: BusOpClass,
     /// 仅为刚返回的 `StatusError` 保存已验 ID 的响应来源，不参与安全决策。
     device_status_motor: u8,
+    /// 单 owner 顺序复用的读帧与响应区，构造后不增长、不换出。
+    read_frame: [u8; READ_FRAME_CAPACITY],
+    read_response: [u8; READ_RESPONSE_CAPACITY],
 }
 
 /// 一个完整 request + response 持有一次执行权；所有失败和解析退出由 Drop 归还。
@@ -147,6 +168,8 @@ impl<T: SerialTransport> FeetechBus<T> {
             preempt: None,
             op_class: BusOpClass::NormalEffectful,
             device_status_motor: 0,
+            read_frame: [0; READ_FRAME_CAPACITY],
+            read_response: [0; READ_RESPONSE_CAPACITY],
         })
     }
 
@@ -310,9 +333,9 @@ impl<T: SerialTransport> FeetechBus<T> {
         lease.write(&mut self.transport, &tx[..n])?;
 
         let total = 6 + usize::from(reg.length); // FF FF ID LEN ERR <data..> CHK
-        let mut rx = vec![0u8; total];
-        lease.read(&mut self.transport, &mut rx)?;
-        let pkt = parse_status(&rx)?;
+        let mut rx = [0u8; crate::protocol::MIN_PACKET_LEN + MAX_REGISTER_WIDTH];
+        lease.read(&mut self.transport, &mut rx[..total])?;
+        let pkt = parse_status(&rx[..total])?;
         validate_response(&pkt, id, &mut self.device_status_motor)?;
         if pkt.params.len() != usize::from(reg.length) {
             return Err(FeetechError::ByteLengthMismatch {
@@ -474,16 +497,21 @@ impl<T: SerialTransport> FeetechBus<T> {
         let reg = get_register(reg_name)?;
 
         // 发请求
-        let mut tx = vec![0u8; 6 + 2 + ids.len()];
-        let n = build_sync_read(reg.addr, reg.length, ids, &mut tx)?;
-        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
-        lease.write(&mut self.transport, &tx[..n])?;
-
-        // 回包
+        let n = build_sync_read(reg.addr, reg.length, ids, &mut self.read_frame)?;
         let per_status_len = 6 + usize::from(reg.length);
         let total = per_status_len * ids.len();
-        let mut rx = vec![0u8; total];
-        lease.read(&mut self.transport, &mut rx)?;
+        let capacity = self.read_response.len();
+        let rx = self
+            .read_response
+            .get_mut(..total)
+            .ok_or(FeetechError::ByteLengthMismatch {
+                expected: total,
+                actual: capacity,
+            })?;
+        rx.fill(0);
+        let lease = BusTransactionLease::acquire(self.preempt.as_deref(), self.op_class)?;
+        lease.write(&mut self.transport, &self.read_frame[..n])?;
+        lease.read(&mut self.transport, rx)?;
 
         let mut cursor = 0usize;
         for (idx, &id) in ids.iter().enumerate() {
@@ -1270,6 +1298,49 @@ mod tests {
             } => {}
             other => panic!("预期响应 ID 不匹配，实际 {other:?}"),
         }
+    }
+
+    #[test]
+    fn signed_read_fixed_buffers_keep_protocol_capacity_and_partial_commit() {
+        let (mut bus, handle) = make_bus(&[]);
+        // 协议原有上限为 MAX_PARAMS - 2，不因 adapter 的 MAX_JOINTS 缩小。
+        let ids: Vec<_> = (1..=u8::try_from(crate::protocol::MAX_PARAMS - 2).unwrap()).collect();
+        bus.transport.write_all(&[0; READ_FRAME_CAPACITY]).unwrap();
+        drop(handle.drain_tx());
+        for &id in &ids {
+            handle.push_rx(&fake_status(id, 0, &[id, 0]));
+        }
+        let mut output = [i32::MIN; crate::protocol::MAX_PARAMS - 2];
+        assert_no_alloc::assert_no_alloc(|| {
+            bus.sync_read_by_id_into("Present_Position", &ids, &mut output)
+        })
+        .unwrap();
+        for (&actual, &id) in output.iter().zip(&ids) {
+            assert_eq!(actual, i32::from(id));
+        }
+        let request = handle.drain_tx();
+        assert_eq!(request.len(), READ_FRAME_CAPACITY);
+        assert_eq!(&request[7..request.len() - 1], ids);
+
+        handle.push_rx(&fake_status(1, 0, &[0x32, 0x80]));
+        handle.push_rx(&fake_status(2, 0x20, &[9, 0]));
+        let mut output = [99, 99];
+        let result = assert_no_alloc::assert_no_alloc(|| {
+            bus.sync_read_by_id_into("Present_Position", &[1, 2], &mut output)
+        });
+        assert!(matches!(result, Err(FeetechError::StatusError(0x20))));
+        assert_eq!(output, [-50, 99]);
+        drop(handle.drain_tx());
+        let too_many = [1; crate::protocol::MAX_PARAMS - 1];
+        let result = assert_no_alloc::assert_no_alloc(|| {
+            bus.sync_read_by_id_into(
+                "Present_Position",
+                &too_many,
+                &mut [0; crate::protocol::MAX_PARAMS - 1],
+            )
+        });
+        assert!(matches!(result, Err(FeetechError::BadPacketLength { .. })));
+        assert_eq!(handle.drain_tx(), [] as [u8; 0]);
     }
 
     // ── sync_write ────────────────────────────────────────────────────

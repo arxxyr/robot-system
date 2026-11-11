@@ -1,4 +1,4 @@
-//! 单写多读 seqlock —— **RT 侧 publish，非 RT 侧 load**。
+//! 单写多读固定值 seqlock；RT发布用 `publish`，RT读取用有界 `try_load`。
 //!
 //! 对应 `docs/00_design.md` §4.9 snapshot 同步规范的 **`rt_thread` → `pub_thread`**
 //! 方向；Step 6 Part 1 首次落地，S48 A3b 重做同步本体（PLAN P.6.14.4）。
@@ -8,8 +8,8 @@
 //! arc-swap 的 `store()` 内部 `Arc::new(T)` 要分配堆，破 RT 铁律（§4.9）。本模块
 //! 用预分配的原子字数组把"写 snapshot"做成固定数量的原子存储：零 alloc、零锁。
 //!
-//! 相反方向（非 RT 写 / RT 读）用 `super::command_slot::LatestCommandSlot`
-//! —— arc-swap Guard 在 RT 侧 `load()` 不 bump refcount，方向是天然契合的。
+//! 相反方向（非RT写/RT读）的 `super::command_slot::LatestCommandSlot` 也复用
+//! 此原子载荷，避免reader成为旧Arc值最后释放者。
 //!
 //! ### A3b 之前的问题（已由 Miri 实际报出，见 S48 A3b 复现证据）
 //!
@@ -283,6 +283,26 @@ impl<T: SnapshotValue> RtSnapshotPublisher<T> {
 }
 
 impl<T: SnapshotValue> RtSnapshotReader<T> {
+    /// 固定一次版本/载荷/版本读取；writer 正在写或读取期间变化即返回 `None`。
+    /// 不等待 writer、不触发分配或 Arc 操作；RT 调用者保留上个完整值及其原期限。
+    #[inline]
+    #[must_use]
+    pub fn try_load(&self) -> Option<T> {
+        let before = self.inner.version.load(Ordering::SeqCst);
+        if before & 1 != 0 {
+            return None;
+        }
+        let mut words = T::Words::zeroed();
+        for (word, slot) in words
+            .as_words_mut()
+            .iter_mut()
+            .zip(self.inner.payload.iter())
+        {
+            *word = slot.load(Ordering::SeqCst);
+        }
+        (before == self.inner.version.load(Ordering::SeqCst)).then(|| T::decode(&words))
+    }
+
     /// 读取当前值。
     ///
     /// 栈上固定 `Words`；读偶版本 → 全部载荷字 → 再读版本，一致后 `decode`，
@@ -334,6 +354,36 @@ impl<T: SnapshotValue> Clone for RtSnapshotReader<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_read_does_not_wait_for_a_writer_paused_at_an_odd_version() {
+        let (publisher, reader) = RtSnapshotPublisher::new(42u64);
+        let entered = Arc::new(std::sync::Barrier::new(2));
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let (worker_entered, worker_release) = (entered.clone(), release.clone());
+        let writer = std::thread::spawn(move || {
+            publisher.inner.version.store(1, Ordering::SeqCst);
+            publisher.inner.payload[0].store(99, Ordering::SeqCst);
+            worker_entered.wait();
+            worker_release.wait();
+            publisher.inner.version.store(2, Ordering::SeqCst);
+        });
+        entered.wait();
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        let trial = reader.clone();
+        let reading = std::thread::spawn(move || send.send(trial.try_load()).unwrap());
+        let observed = receive.recv_timeout(std::time::Duration::from_secs(5));
+        release.wait();
+        writer.join().unwrap();
+        reading.join().unwrap();
+        assert_eq!(observed, Ok(None), "RT读不能等待暂停中的writer");
+        let mut cached = 42;
+        if let Ok(Some(value)) = observed {
+            cached = value;
+        }
+        assert_eq!(cached, 42);
+        assert_eq!(reader.try_load(), Some(99));
+    }
     use std::sync::atomic::AtomicBool;
     use std::thread;
 

@@ -1,102 +1,127 @@
-//! 最新命令槽（`ipc_thread` 写 → `rt_thread` 读）。基于 `arc-swap`。
-//!
-//! 对应 `docs/00_design.md` §1.2 latest-command slot 的实现。与
-//! [`super::snapshot::RtSnapshotPublisher`] 镜像对称：两者方向相反，所以用不同
-//! 原语：
-//!
-//! | 方向 | 原语 | 位置 |
-//! |---|---|---|
-//! | `rt_thread` 写 → `pub_thread` 读 | 手写 seqlock | `snapshot.rs` |
-//! | `ipc_thread` 写 → `rt_thread` 读 | arc-swap | 本文件 |
-//!
-//! ### arc-swap 在 RT 侧安全的理由
-//!
-//! `ArcSwap<T>::load()` 返回 `Guard<Arc<T>>`，底层用 hazard pointer，**不 bump
-//! refcount**。RT 线程在 scope 内调用 `load()` → deref 读数据 → Guard drop，全程
-//! 不触发 `Arc::clone` / `Arc::drop`（§4.9 RT 铁律豁免）。
-//!
-//! writer 侧 `store(T)` 内部 `Arc::new(T)`，会分配堆 —— 但 `ipc_thread` 是非 RT 线程，
-//! 可以分配。
-//!
-//! ### 单写多读
-//!
-//! - `LatestCommandWriter`：**`!Clone`**（单一 `ipc_thread` 写）
-//! - `LatestCommandReader`：`Clone`（如果 `rt_thread` + watchdog 都想读）
-//!
-//! Part 2 watchdog 可能要判断 "latest command 过期"，需要自己的 reader handle。
+//! 最新命令的固定值槽：非RT写端串行发布，RT读端只读预分配原子载荷。
+//! RT必须使用固定一次的 `try_load`；失败保留上个完整命令及其原时间戳/期限。
+//! 句柄的构造、派生与最终析构均在RT循环外，周期读不持Arc Guard或writer锁。
 
-use arc_swap::{ArcSwap, Guard};
-use std::sync::Arc;
+use std::sync::Mutex;
 
-/// 构造器 —— 一次返回 writer + reader。
-///
-/// 语义和 `RtSnapshotPublisher::new` 对称，但底层是 arc-swap。
-pub struct LatestCommandSlot<T: Send + Sync + 'static>(std::marker::PhantomData<T>);
+use crate::snapshot::{RtSnapshotPublisher, RtSnapshotReader, SnapshotPublishError, SnapshotValue};
 
-impl<T: Send + Sync + 'static> LatestCommandSlot<T> {
-    /// 创建带初始值的一对 writer / reader。
-    ///
-    /// 这里 `new` 不返回 `Self`（`LatestCommandSlot<T>` 本身只是命名空间，没实例）；
-    /// 命名优先对齐使用侧习惯 `LatestCommandSlot::new(init)`。
+/// 非RT命令发布失败；写端不再伪报成功，上一完整值保持可读。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CommandStoreError {
+    #[error("命令发布失败：{0}")]
+    Snapshot(#[from] SnapshotPublishError),
+    #[error("命令写端锁已中毒")]
+    WriterPoisoned,
+}
+
+/// 构造预分配的最新命令槽。
+pub struct LatestCommandSlot<T: SnapshotValue>(std::marker::PhantomData<T>);
+
+impl<T: SnapshotValue> LatestCommandSlot<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(initial: T) -> (LatestCommandWriter<T>, LatestCommandReader<T>) {
-        let inner = Arc::new(ArcSwap::from_pointee(initial));
+        let (publisher, reader) = RtSnapshotPublisher::new(initial);
+        Self::from_parts(initial, publisher, reader)
+    }
+
+    /// 仅供耗尽出口验收；生产组合不编译此入口。
+    ///
+    /// # Errors
+    /// 版本必须是有效偶数，沿底层快照构造规则拒绝非法值。
+    #[cfg(any(test, feature = "test-comm-fault-hook"))]
+    pub fn new_with_version(
+        initial: T,
+        version: u64,
+    ) -> Result<
+        (LatestCommandWriter<T>, LatestCommandReader<T>),
+        crate::snapshot::SnapshotVersionError,
+    > {
+        let (publisher, reader) = RtSnapshotPublisher::new_with_version(initial, version)?;
+        Ok(Self::from_parts(initial, publisher, reader))
+    }
+
+    fn from_parts(
+        initial: T,
+        publisher: RtSnapshotPublisher<T>,
+        reader: RtSnapshotReader<T>,
+    ) -> (LatestCommandWriter<T>, LatestCommandReader<T>) {
         (
             LatestCommandWriter {
-                inner: Arc::clone(&inner),
+                publisher: Mutex::new(publisher),
+                reader: reader.clone(),
+                initial,
             },
-            LatestCommandReader { inner },
+            LatestCommandReader { reader, initial },
         )
     }
 }
 
-/// 写端（`ipc_thread` 持有，**不可 Clone**）。
-pub struct LatestCommandWriter<T: Send + Sync + 'static> {
-    inner: Arc<ArcSwap<T>>,
+/// 单一非RT发布者；锁只保护写侧，不进入RT读取路径。
+pub struct LatestCommandWriter<T: SnapshotValue> {
+    publisher: Mutex<RtSnapshotPublisher<T>>,
+    reader: RtSnapshotReader<T>,
+    initial: T,
 }
 
-/// 读端（`rt_thread` + 其他非 RT 观察者持有，可 Clone）。
-pub struct LatestCommandReader<T: Send + Sync + 'static> {
-    inner: Arc<ArcSwap<T>>,
+/// 可在初始化期派生的读句柄；周期读取只搬固定值。
+pub struct LatestCommandReader<T: SnapshotValue> {
+    reader: RtSnapshotReader<T>,
+    initial: T,
 }
 
-impl<T: Send + Sync + 'static> LatestCommandWriter<T> {
-    /// 存入新值 —— `ipc_thread` 非 RT 路径调用，允许 `Arc::new` 分配堆。
+impl<T: SnapshotValue> LatestCommandWriter<T> {
+    /// 非RT发布；锁中毒与版本错误都必须由调用者处理。
+    ///
+    /// # Errors
+    /// 写端锁中毒或底层固定值发布失败。
     #[inline]
-    pub fn store(&self, value: T) {
-        self.inner.store(Arc::new(value));
+    pub fn store(&self, value: T) -> Result<(), CommandStoreError> {
+        self.publisher
+            .lock()
+            .map_err(|_| CommandStoreError::WriterPoisoned)?
+            .publish(&value)
+            .map_err(CommandStoreError::Snapshot)
     }
 
-    /// 从 Writer 派生一个额外 reader（启动期一次性）。
+    /// 只在初始化期派生句柄；此调用会克隆底层Arc。
     #[must_use]
     pub fn reader(&self) -> LatestCommandReader<T> {
         LatestCommandReader {
-            inner: Arc::clone(&self.inner),
+            reader: self.reader.clone(),
+            initial: self.initial,
         }
     }
 }
 
-impl<T: Send + Sync + 'static> LatestCommandReader<T> {
-    /// RT 侧调用：`Guard<Arc<T>>` 基于 hazard pointer，**不 bump refcount**。
-    ///
-    /// 用法：
-    /// ```ignore
-    /// let guard = reader.load();
-    /// let cmd: &T = &*guard;   // Deref，不触发 Arc ops
-    /// // guard drop：也不触发 Arc ops（hazard pointer 释放）
-    /// ```
+impl<T: SnapshotValue> LatestCommandReader<T> {
+    /// 构造槽时的完整初值，供RT建立本地缓存，不等待writer。
+    #[must_use]
+    pub const fn initial_value(&self) -> T {
+        self.initial
+    }
+
+    /// RT只尝试一次；未读到一致值时不修改调用方缓存。
     #[inline]
     #[must_use]
-    pub fn load(&self) -> Guard<Arc<T>> {
-        self.inner.load()
+    pub fn try_load(&self) -> Option<T> {
+        self.reader.try_load()
+    }
+
+    /// 非RT读取；可能等待正在发布的writer，RT调用者必须使用 `try_load`。
+    #[inline]
+    #[must_use]
+    pub fn load(&self) -> T {
+        self.reader.load()
     }
 }
 
-impl<T: Send + Sync + 'static> Clone for LatestCommandReader<T> {
+impl<T: SnapshotValue> Clone for LatestCommandReader<T> {
     fn clone(&self) -> Self {
         Self {
-            inner: Arc::clone(&self.inner),
+            reader: self.reader.clone(),
+            initial: self.initial,
         }
     }
 }
@@ -106,59 +131,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn store_then_load_returns_latest() {
-        let (w, r) = LatestCommandSlot::new(0u64);
-        assert_eq!(**r.load(), 0);
-        w.store(42);
-        assert_eq!(**r.load(), 42);
-        w.store(100);
-        assert_eq!(**r.load(), 100);
-    }
-
-    #[test]
-    fn reader_clone_sees_same_value() {
-        let (w, r1) = LatestCommandSlot::new(0u64);
-        let r2 = r1.clone();
-        w.store(777);
-        assert_eq!(**r1.load(), 777);
-        assert_eq!(**r2.load(), 777);
-    }
-
-    #[test]
-    fn writer_reader_helper_parallels_new() {
-        let (w, _r1) = LatestCommandSlot::new(0u64);
-        let r_extra = w.reader();
-        w.store(999);
-        assert_eq!(**r_extra.load(), 999);
-    }
-
-    /// 回归守卫：arc-swap Guard 的 Deref 不 bump refcount，RT scope 里用是安全的。
-    /// 如果未来 arc-swap 升级改了语义，这个测试会捕到 —— 到时候要重新评估。
-    #[test]
-    fn load_guard_does_not_bump_strong_count() {
-        let (w, r) = LatestCommandSlot::new(5u64);
-        // 初始：Arc 由 w 和 r 各持一份（Arc<ArcSwap<T>>），strong_count = 2
-        let initial = Arc::strong_count(&r.inner);
-        {
-            let _g = r.load();
-            let during = Arc::strong_count(&r.inner);
-            // load() 返回 Guard<Arc<T>>，外层 Arc<ArcSwap<T>> 的引用计数不动
-            assert_eq!(
-                during, initial,
-                "arc-swap Guard unexpectedly bumped Arc count"
-            );
+    fn initial_and_latest_value_are_preserved_for_all_readers() {
+        let (writer, reader) = LatestCommandSlot::new(42u64);
+        let cloned = reader.clone();
+        let derived = writer.reader();
+        assert_eq!(reader.initial_value(), 42);
+        writer.store(99).unwrap();
+        for current in [&reader, &cloned, &derived] {
+            assert_eq!(current.try_load(), Some(99));
+            assert_eq!(current.load(), 99);
+            assert_eq!(current.initial_value(), 42);
         }
-        let after = Arc::strong_count(&r.inner);
-        assert_eq!(after, initial);
-        // 再写一次也不影响外层 Arc<ArcSwap<T>> 的 count
-        w.store(10);
-        assert_eq!(Arc::strong_count(&r.inner), initial);
     }
 
     #[test]
-    fn sync_and_send_reader() {
+    fn writer_poison_is_reported_without_changing_the_previous_value() {
+        let (writer, reader) = LatestCommandSlot::new(42u64);
+        let _ = std::panic::catch_unwind(|| {
+            let _lock = writer.publisher.lock().unwrap();
+            panic!("只污染本测试写端锁");
+        });
+        assert_eq!(writer.store(99), Err(CommandStoreError::WriterPoisoned));
+        assert_eq!(reader.try_load(), Some(42));
+    }
+
+    #[test]
+    fn reader_and_writer_remain_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<LatestCommandReader<u64>>();
         assert_send_sync::<LatestCommandWriter<u64>>();
+    }
+
+    #[test]
+    fn exhausted_writer_reports_failure_and_keeps_the_previous_command() {
+        let (writer, reader) =
+            LatestCommandSlot::new_with_version(42u64, crate::snapshot::MAX_PUBLISHED_VERSION)
+                .unwrap();
+        assert_eq!(
+            writer.store(99),
+            Err(CommandStoreError::Snapshot(
+                SnapshotPublishError::VersionExhausted
+            ))
+        );
+        assert_eq!(reader.try_load(), Some(42));
     }
 }

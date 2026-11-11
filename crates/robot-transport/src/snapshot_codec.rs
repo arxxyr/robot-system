@@ -1,4 +1,4 @@
-//! `RtSnapshot` 的显式字段 codec（进程内快照编码，不改 wire / FlatBuffers 布局）。
+//! `RtSnapshot` 与 `JointCommandBuf` 的固定值codec，不改wire/FlatBuffers布局。
 //!
 //! 布局由 [`MAX_JOINTS`] 推导：每 2 个 `f32` 的 `to_bits` 打包为 1 个 `u64`（低半
 //! 字 = 偶数下标，高半字 = 奇数下标；奇数长度时尾字高半置 0，不读 padding），
@@ -9,7 +9,9 @@
 
 #![allow(clippy::doc_markdown)]
 
-use robot_core::adapter::{JointStateBuf, MAX_JOINTS, RtSnapshot};
+use robot_core::adapter::{
+    ControlModeRepr, JointCommandBuf, JointSelection, JointStateBuf, MAX_JOINTS, RtSnapshot,
+};
 
 use crate::snapshot::SnapshotValue;
 
@@ -86,10 +88,158 @@ impl SnapshotValue for RtSnapshot {
     }
 }
 
+const COMMAND_RAW_WORDS: usize = MAX_JOINTS.div_ceil(4);
+const COMMAND_TAIL: usize = 3 * F32_ARRAY_WORDS + COMMAND_RAW_WORDS;
+const COMMAND_WORDS: usize = COMMAND_TAIL + 8;
+
+impl SnapshotValue for JointCommandBuf {
+    type Words = [u64; COMMAND_WORDS];
+
+    fn encode(&self, words: &mut Self::Words) {
+        let (positions, rest) = words.split_at_mut(F32_ARRAY_WORDS);
+        let (velocities, rest) = rest.split_at_mut(F32_ARRAY_WORDS);
+        let (torques, rest) = rest.split_at_mut(F32_ARRAY_WORDS);
+        encode_f32_array(&self.positions, positions);
+        encode_f32_array(&self.velocities, velocities);
+        encode_f32_array(&self.torques, torques);
+        let (raw, tail) = rest.split_at_mut(COMMAND_RAW_WORDS);
+        for (word, chunk) in raw.iter_mut().zip(self.raw_velocities.chunks(4)) {
+            *word = 0;
+            for (index, value) in chunk.iter().enumerate() {
+                *word |= u64::from(u16::from_ne_bytes(value.to_ne_bytes())) << (index * 16);
+            }
+        }
+        tail[0] = self.mode as u64;
+        (tail[1], tail[2], tail[3]) = match self.selection {
+            JointSelection::All => (0, 0, 0),
+            JointSelection::Mask(mask) => (1, u64::from(mask), 0),
+            JointSelection::MixedPositionRawVelocity {
+                position_mask,
+                velocity_mask,
+            } => (2, u64::from(position_mask), u64::from(velocity_mask)),
+        };
+        tail[4] = self.stamp_ns;
+        tail[5] = self.deadline_ns;
+        tail[6] = u64::from(self.joint_count);
+        tail[7] = self.seq;
+    }
+
+    fn decode(words: &Self::Words) -> Self {
+        let mut command = Self::default();
+        decode_f32_array(&words[..F32_ARRAY_WORDS], &mut command.positions);
+        decode_f32_array(
+            &words[F32_ARRAY_WORDS..2 * F32_ARRAY_WORDS],
+            &mut command.velocities,
+        );
+        decode_f32_array(
+            &words[2 * F32_ARRAY_WORDS..3 * F32_ARRAY_WORDS],
+            &mut command.torques,
+        );
+        for (word, chunk) in words[3 * F32_ARRAY_WORDS..COMMAND_TAIL]
+            .iter()
+            .zip(command.raw_velocities.chunks_mut(4))
+        {
+            for (index, value) in chunk.iter_mut().enumerate() {
+                let bits = ((word >> (index * 16)) & 0xffff) as u16;
+                *value = i16::from_ne_bytes(bits.to_ne_bytes());
+            }
+        }
+        let tail = &words[COMMAND_TAIL..];
+        command.mode = match tail[0] {
+            1 => ControlModeRepr::Position,
+            2 => ControlModeRepr::Velocity,
+            3 => ControlModeRepr::Torque,
+            4 => ControlModeRepr::ServoPosition,
+            _ => ControlModeRepr::Stop,
+        };
+        command.selection = match tail[1] {
+            0 => JointSelection::All,
+            1 => JointSelection::Mask(low_half(tail[2])),
+            2 => JointSelection::MixedPositionRawVelocity {
+                position_mask: low_half(tail[2]),
+                velocity_mask: low_half(tail[3]),
+            },
+            // 载荷只由上面的typed encode产生；保守处理无法由合法编码产生的tag。
+            _ => JointSelection::Mask(0),
+        };
+        command.stamp_ns = tail[4];
+        command.deadline_ns = tail[5];
+        command.joint_count = (tail[6] & 0xff) as u8;
+        command.seq = tail[7];
+        command
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::snapshot::{RtSnapshotPublisher, SnapshotWords};
+
+    #[test]
+    fn command_codec_preserves_every_field_and_float_bit_pattern() {
+        for mode in [
+            ControlModeRepr::Stop,
+            ControlModeRepr::Position,
+            ControlModeRepr::Velocity,
+            ControlModeRepr::Torque,
+            ControlModeRepr::ServoPosition,
+        ] {
+            for selection in [
+                JointSelection::All,
+                JointSelection::Mask(0x8000_0001),
+                JointSelection::MixedPositionRawVelocity {
+                    position_mask: 0xaaaa_aaaa,
+                    velocity_mask: 0x5555_5555,
+                },
+            ] {
+                let bits = [0x7fc0_1234, 0x8000_0000, 0x7f80_0000, 0xff80_0000];
+                let raw = [i16::MIN, -500, -1, 0, 1, 500, i16::MAX];
+                let command = JointCommandBuf {
+                    positions: std::array::from_fn(|index| {
+                        f32::from_bits(bits[index % bits.len()])
+                    }),
+                    velocities: std::array::from_fn(|index| {
+                        f32::from_bits(bits[(index + 1) % bits.len()])
+                    }),
+                    torques: std::array::from_fn(|index| {
+                        f32::from_bits(bits[(index + 2) % bits.len()])
+                    }),
+                    raw_velocities: std::array::from_fn(|index| raw[index % raw.len()]),
+                    mode,
+                    selection,
+                    stamp_ns: u64::MAX,
+                    deadline_ns: 0,
+                    joint_count: u8::MAX,
+                    seq: u64::MAX - 1,
+                };
+                let mut words = <JointCommandBuf as SnapshotValue>::Words::zeroed();
+                command.encode(&mut words);
+                let actual = JointCommandBuf::decode(&words);
+                assert!(bits_equal(&actual.positions, &command.positions));
+                assert!(bits_equal(&actual.velocities, &command.velocities));
+                assert!(bits_equal(&actual.torques, &command.torques));
+                assert_eq!(actual.raw_velocities, command.raw_velocities);
+                assert_eq!(
+                    (
+                        actual.mode,
+                        actual.selection,
+                        actual.stamp_ns,
+                        actual.deadline_ns,
+                        actual.joint_count,
+                        actual.seq
+                    ),
+                    (
+                        command.mode,
+                        command.selection,
+                        command.stamp_ns,
+                        command.deadline_ns,
+                        command.joint_count,
+                        command.seq
+                    )
+                );
+            }
+        }
+    }
 
     fn roundtrip(snapshot: &RtSnapshot) -> RtSnapshot {
         let mut words = <[u64; RT_SNAPSHOT_WORDS] as SnapshotWords>::zeroed();

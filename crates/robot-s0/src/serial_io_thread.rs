@@ -34,10 +34,8 @@ pub use robot_core::adapter::SerialRtAdapter;
 pub struct SerialIoThreadConfig {
     /// tick 周期（纳秒）。SerialRT 受串口 RTT 限制，典型 5-20 ms（5 ms = 200 Hz）。
     pub tick_period_ns: u64,
-    /// **opt-in** `SCHED_FIFO` 优先级（2026-09-01 调度硬化）。`None`（默认）
-    /// = 维持既有普通优先级——"`SerialRT` 不进 SCHED_FIFO"仍是缺省语义，
-    /// 本字段是显式 opt-in（CLI `--serial-fifo <prio>`），偏离登记走
-    /// CHANGELOG。`Some(p)` 同时触发 `mlockall`。
+    /// 显式 `SCHED_FIFO` 优先级；配置的严格SerialRT传入此值并同时要求mlockall。
+    /// 无配置时保留CLI兼容行为；`None`不申请FIFO。
     pub sched_fifo_priority: Option<u8>,
     /// opt-in 绑核（CLI `--cpu`；配合 `isolcpus` 内核参数把本线程放上
     /// 隔离核）。`None` = 不绑。
@@ -140,8 +138,8 @@ impl SerialIoThreadHandle {
 
 /// 启动 `serial_io_thread`。
 ///
-/// 与 `spawn_rt_thread` 对称的入口，但**不**走 SCHED_FIFO，**不**强制
-/// RT 铁律：允许串口 read/write 阻塞 ms 级。
+/// 串口read/write允许原协议的毫秒级阻塞；周期执行仍禁止动态分配。
+/// FIFO、内存锁定与绑核由显式配置决定，严格模式任一失败即拒绝运行。
 ///
 /// - `cfg`：tick_period + confirm 阈值。
 /// - `clock`：`SystemClock` 生产 / `MockClock` 测试。
@@ -260,14 +258,29 @@ fn apply_serial_rt_setup(
             seq_lo: 0,
         });
     };
-    if let Some(priority) = cfg.sched_fifo_priority {
-        observe(1, robot_core::thread::set_sched_fifo(i32::from(priority)));
-        observe(2, robot_core::thread::mlockall());
-    }
     if let Some(cpu) = cfg.cpu_affinity {
         observe(3, robot_core::thread::pin_to_cpu(cpu));
     }
+    if let Some(priority) = cfg.sched_fifo_priority {
+        observe(2, robot_core::thread::mlockall());
+        observe(1, robot_core::thread::set_sched_fifo(i32::from(priority)));
+    }
     okay || !cfg.strict_rt
+}
+
+/// 初始化期预触碰后续调用栈工作区，不在周期路径按需分配。
+#[inline(never)]
+#[allow(
+    clippy::large_stack_arrays,
+    reason = "初始化期刻意预触碰线程栈页；移到堆上无法预触后续RT调用栈"
+)]
+fn prefault_serial_stack() {
+    let mut pages = [0_u8; 128 * 1024];
+    for page in pages.chunks_mut(4096) {
+        // SAFETY: page非空且属于本函数栈对象；volatile保留实际页面写入。
+        unsafe { std::ptr::write_volatile(page.as_mut_ptr(), 0) };
+    }
+    std::hint::black_box(&pages);
 }
 
 /// 保持原相位，丢弃错失周期，选择严格晚于当前时刻的首个周期点。
@@ -306,10 +319,14 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
     metrics: Arc<SerialIoThreadMetrics>,
     boot: Arc<crate::boot_supervisor::BootShared>,
 ) -> crate::hard_rt_ctrl::ExecutorExit {
+    let mut tick = SerialTick::new(authorized, adapter.joint_count(), spawned_at);
+    let mut command = cmd_reader.initial_value();
+    prefault_serial_stack();
+    // 一次性TLS初始化在调度setup之前完成；不豁免首轮停止/连接设备调用。
+    robot_core::rt_entry!({});
     if !apply_serial_rt_setup(&cfg, diag.as_ref(), clock.as_ref()) {
         return crate::hard_rt_ctrl::ExecutorExit::from_pending(None);
     }
-    let mut tick = SerialTick::new(authorized, adapter.joint_count(), spawned_at);
     let context = SerialTickContext {
         ctrl: ctrl.as_ref(),
         probe: probe.as_ref(),
@@ -318,62 +335,66 @@ pub(crate) fn run_serial_hardened_io_loop<A: SerialRtAdapter>(
         metrics: metrics.as_ref(),
     };
     let mut deadline = Deadline(spawned_at);
-    while crate::worker_stop::worker_running(
-        crate::worker_stop::WorkerKind::Executor,
-        clock.as_ref(),
-        &stop,
-    ) {
-        #[cfg(any(test, feature = "test-freeze-hook"))]
-        crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), &stop);
-        let Some(next_deadline) =
-            next_serial_deadline(deadline, clock.now(), DurationNs(cfg.tick_period_ns))
-        else {
-            // 仍走统一 into_exit，保留可能存在的原 Pending execution。
-            break;
-        };
-        deadline = next_deadline;
-        clock.sleep_until(deadline);
-        if !crate::worker_stop::worker_running(
+    robot_core::rt_entry!({
+        while crate::worker_stop::worker_running(
             crate::worker_stop::WorkerKind::Executor,
             clock.as_ref(),
             &stop,
         ) {
-            break;
-        }
-        let command = cmd_reader.load();
-        let snapshot = tick.tick(&mut adapter, &command.as_view(), &context, deadline.0);
-        #[cfg(feature = "test-comm-fault-hook")]
-        if let Some(page) = boot.observation() {
-            use crate::comm_fault_observation::ObservationField as F;
-            if let Some(exit) = ctrl.serial_boot_progress().first_exit {
-                page.store_first(F::FirstExit, exit.0);
+            #[cfg(any(test, feature = "test-freeze-hook"))]
+            crate::freeze_hook::freeze_check(&metrics.freeze_until_ns, clock.as_ref(), &stop);
+            let Some(next_deadline) =
+                next_serial_deadline(deadline, clock.now(), DurationNs(cfg.tick_period_ns))
+            else {
+                // 仍走统一 into_exit，保留可能存在的原 Pending execution。
+                break;
+            };
+            deadline = next_deadline;
+            clock.sleep_until(deadline);
+            if !crate::worker_stop::worker_running(
+                crate::worker_stop::WorkerKind::Executor,
+                clock.as_ref(),
+                &stop,
+            ) {
+                break;
             }
-            if ctrl.policy.load(Ordering::Acquire)
-                == robot_core::executor_ctrl::OutputPolicy::Disabled.to_u8()
-            {
-                page.store_first(F::Disabled, clock.now().0);
+            if let Some(latest) = cmd_reader.try_load() {
+                command = latest;
+            }
+            let snapshot = tick.tick(&mut adapter, &command.as_view(), &context, deadline.0);
+            #[cfg(feature = "test-comm-fault-hook")]
+            if let Some(page) = boot.observation() {
+                use crate::comm_fault_observation::ObservationField as F;
+                if let Some(exit) = ctrl.serial_boot_progress().first_exit {
+                    page.store_first(F::FirstExit, exit.0);
+                }
+                if ctrl.policy.load(Ordering::Acquire)
+                    == robot_core::executor_ctrl::OutputPolicy::Disabled.to_u8()
+                {
+                    page.store_first(F::Disabled, clock.now().0);
+                }
+            }
+            #[cfg(not(feature = "test-comm-fault-hook"))]
+            let _ = &boot;
+            // S48 A3b：发布失败即结束 worker；本 tick 已完成的计数不回滚。
+            #[cfg(feature = "test-comm-fault-hook")]
+            let attempt_started_ns = clock.now().0;
+            let published = snapshot_pub.publish(&snapshot);
+            #[cfg(feature = "test-comm-fault-hook")]
+            if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
+                metrics
+                    .snapshot_publish_failure_attempt_ns
+                    .store(attempt_started_ns, Ordering::Relaxed);
+            }
+            if published.is_err() {
+                metrics
+                    .snapshot_publish_errors
+                    .fetch_add(1, Ordering::Relaxed);
+                break;
             }
         }
-        #[cfg(not(feature = "test-comm-fault-hook"))]
-        let _ = &boot;
-        // S48 A3b：发布失败即结束 worker；本 tick 已完成的计数不回滚。
-        #[cfg(feature = "test-comm-fault-hook")]
-        let attempt_started_ns = clock.now().0;
-        let published = snapshot_pub.publish(&snapshot);
-        #[cfg(feature = "test-comm-fault-hook")]
-        if published == Err(robot_transport::SnapshotPublishError::VersionExhausted) {
-            metrics
-                .snapshot_publish_failure_attempt_ns
-                .store(attempt_started_ns, Ordering::Relaxed);
-        }
-        if published.is_err() {
-            metrics
-                .snapshot_publish_errors
-                .fetch_add(1, Ordering::Relaxed);
-            break;
-        }
-    }
-    tick.into_exit()
+        tick.into_exit()
+    })
 }
 
 // ============================================================================
@@ -431,8 +452,10 @@ mod tests {
         /// 回归锁用；trait 未禁止该行为，调用方必须防住）。
         read_fail: Arc<std::sync::atomic::AtomicBool>,
         read_calls: Arc<AtomicU64>,
-        after_read: Option<Box<dyn FnOnce() + Send>>,
-        after_enable: Option<Box<dyn FnOnce() + Send>>,
+        after_read: Option<Box<dyn FnMut() + Send>>,
+        after_read_fired: bool,
+        after_enable: Option<Box<dyn FnMut() + Send>>,
+        after_enable_fired: bool,
         enable_true_calls: Arc<std::sync::atomic::AtomicU64>,
     }
 
@@ -455,7 +478,9 @@ mod tests {
                 read_fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 read_calls: Arc::new(AtomicU64::new(0)),
                 after_read: None,
+                after_read_fired: false,
                 after_enable: None,
+                after_enable_fired: false,
                 enable_true_calls: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             }
         }
@@ -484,12 +509,15 @@ mod tests {
             }
         }
         fn connect(&mut self) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.inner.connect()
         }
         fn disconnect(&mut self) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.inner.disconnect()
         }
         fn read_state(&mut self, out: &mut JointStateBuf) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.read_calls.fetch_add(1, Ordering::Relaxed);
             if self.read_fail.load(Ordering::Acquire) {
                 // 失败前污染输出：调用方必须整体丢弃这次读。
@@ -498,28 +526,38 @@ mod tests {
                 return Err(RobotError::HardwareFault("simulated serial read failure"));
             }
             self.inner.read_state(out)?;
-            if let Some(hook) = self.after_read.take() {
-                hook();
+            if !self.after_read_fired {
+                self.after_read_fired = true;
+                if let Some(hook) = self.after_read.as_mut() {
+                    hook();
+                }
             }
             Ok(())
         }
         fn write_command(&mut self, cmd: &JointCommandView) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.inner.write_command(cmd)
         }
         fn set_mode(&mut self, mode: ControlMode) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.inner.set_mode(mode)
         }
         fn enable(&mut self, on: bool) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             if on {
                 self.enable_true_calls.fetch_add(1, Ordering::Relaxed);
             }
             self.inner.enable(on)?;
-            if let Some(hook) = self.after_enable.take() {
-                hook();
+            if !self.after_enable_fired {
+                self.after_enable_fired = true;
+                if let Some(hook) = self.after_enable.as_mut() {
+                    hook();
+                }
             }
             Ok(())
         }
         fn safety_stop(&mut self) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             self.inner.safety_stop()
         }
         fn limits(&self) -> &JointLimits {
@@ -529,6 +567,7 @@ mod tests {
 
     impl OutputSafetyProbe for SerialMockWrapper {
         fn read_torque_enable_mask(&mut self, out: &mut [bool]) -> Result<(), RobotError> {
+            assert!(robot_core::rt_guard::in_rt_scope());
             let mode = self.probe_mode.load(Ordering::Acquire);
             if mode == ProbeMode::ForceAllOn as u8 {
                 let n = self.inner.joint_count();
@@ -561,6 +600,35 @@ mod tests {
         fn assert_serial_rt<T: SerialRtAdapter>() {}
         assert_serial_rt::<MockHardRTAdapter>();
         assert_serial_rt::<SerialMockWrapper>();
+    }
+
+    #[test]
+    fn invalid_cpu_setup_rejects_strict_mode_and_preserves_legacy_diagnostics() {
+        let clock = robot_core::time::MockClock::new(MonoRawNs(123));
+        for strict_rt in [true, false] {
+            let diag = crate::diag::SerialDiagRing::new();
+            let cfg = SerialIoThreadConfig {
+                cpu_affinity: Some(usize::MAX),
+                sched_fifo_priority: None,
+                strict_rt,
+                ..SerialIoThreadConfig::default()
+            };
+            // CPU容量校验在syscall前拒绝；此测试不修改亲和性、FIFO或锁页状态。
+            assert_eq!(apply_serial_rt_setup(&cfg, &diag, &clock), !strict_rt);
+            assert_eq!(
+                diag.pop(),
+                Some(robot_core::diag::DiagEvent {
+                    stamp_ns: 123,
+                    site: 4,
+                    kind: 3,
+                    a: 0,
+                    b: 0,
+                    seq_lo: 0,
+                })
+            );
+            assert_eq!(diag.pop(), None);
+            assert_eq!(diag.dropped(), 0);
+        }
     }
 
     #[test]
@@ -630,7 +698,7 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let clock = Arc::new(ScheduleClock {
             inner: robot_core::time::MockClock::new(robot_core::time::MonoRawNs(1_000_000)),
-            deadlines: std::sync::Mutex::new(Vec::new()),
+            deadlines: std::sync::Mutex::new(Vec::with_capacity(6)),
             stop: stop.clone(),
         });
         let mut adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2));
@@ -801,6 +869,7 @@ mod tests {
             let mut adapter = SerialMockWrapper::new(MockHardRTAdapter::with_unlimited_limits(2));
             let (submitted_owner, submitted_seq, submit_ctrl) =
                 (owner.clone(), seq.clone(), ctrl.clone());
+            let submit_client = crate::hard_rt_ctrl::HardRtCtrlClient::new(submit_ctrl.clone());
             // 首次周期读发生在真实启动 Stop/Connect/Confirm 完成之后。
             adapter.after_read = Some(Box::new(move || {
                 use robot_core::executor_ctrl::{
@@ -808,9 +877,8 @@ mod tests {
                 };
                 let (owner, view) = submit_ctrl.authority().reserve_enable().unwrap();
                 submit_ctrl.start_slot().post(view).unwrap();
-                let client = crate::hard_rt_ctrl::HardRtCtrlClient::new(submit_ctrl.clone());
                 let NormalReqStatus::Submitted { seq } =
-                    client.request_normal(AdapterNormalReq::Enable(true))
+                    submit_client.request_normal(AdapterNormalReq::Enable(true))
                 else {
                     panic!("真实 Enable 通道未接纳原 owner");
                 };

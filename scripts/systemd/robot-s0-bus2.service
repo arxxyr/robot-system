@@ -25,6 +25,12 @@ RuntimeDirectory=robot-system/preflight
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
 
+# 这里只提供权限；实际执行线程CPU/FIFO优先级唯一取自总线TOML。
+# 99是允许的优先级上限，不是线程实际优先级。
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+CPUAffinity=0-3
+
 ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-deploy guard \
     --arm right \
     --config /home/loosqk/repo/robot/robot-system/configs/xlerobot-bus2.toml \
@@ -50,7 +56,7 @@ StandardError=journal
 Environment=ROBOT_LOG_FORMAT=json
 Environment=RUST_LOG=info,robot=debug
 
-# 与已验默认S0保持相同调度；本轮不另加RT调度参数。
+# 普通线程留在0-3；串口执行线程按TOML严格设置绑核、FIFO及锁页。
 # iceoryx2需要共享宿主IPC路径，不启用PrivateTmp。
 NoNewPrivileges=yes
 ProtectSystem=full
@@ -61,7 +67,6 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 RestrictNamespaces=yes
 LockPersonality=yes
-RestrictRealtime=yes
 RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 

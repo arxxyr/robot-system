@@ -3,7 +3,7 @@
 target = "aarch64-unknown-linux-gnu"
 cargo_package = "robot-s0"
 default_features = true
-features = ["xlerobot-real"]
+features = ["xlerobot-real", "rt_guard"]
 bins = ["robot-s0", "robot-deploy"]
 files = [
     { source = "configs/xlerobot-bus1.toml", destination = "configs/xlerobot-bus1.toml" },

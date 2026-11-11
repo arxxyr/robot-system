@@ -727,7 +727,8 @@ fn publish_raw_wire_command(fixture: &Fixture, worker: &Worker) {
         Some(&fixture.layout),
         fixture.clock.as_ref(),
         &metrics,
-    );
+    )
+    .unwrap();
     assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
     assert_eq!(metrics.command_parse_errors.load(Ordering::Relaxed), 0);
 }

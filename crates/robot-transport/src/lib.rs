@@ -48,7 +48,9 @@ pub mod mock;
 #[cfg(feature = "iceoryx2")]
 pub mod iceoryx2;
 
-pub use command_slot::{LatestCommandReader, LatestCommandSlot, LatestCommandWriter};
+pub use command_slot::{
+    CommandStoreError, LatestCommandReader, LatestCommandSlot, LatestCommandWriter,
+};
 pub use error::TransportError;
 pub use metrics::ParseMetrics;
 pub use origin::{PublisherNodeId, PublisherOrigin, PublisherPortId};

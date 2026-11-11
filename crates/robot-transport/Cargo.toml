@@ -17,9 +17,6 @@ robot-msg   = { workspace = true }
 flatbuffers = { workspace = true }
 thiserror   = { workspace = true }
 iceoryx2    = { workspace = true, optional = true }
-# Step 6 Part 1：LatestCommandSlot 的同步原语（ipc_thread → rt_thread 方向）。
-# Guard 基于 hazard pointer，不 bump refcount → RT 侧 load() 不触 Arc ops。
-arc-swap    = { workspace = true }
 
 [features]
 # 默认同时启用 mock（保底 / trybuild 负向测试）和 iceoryx2（真后端）。

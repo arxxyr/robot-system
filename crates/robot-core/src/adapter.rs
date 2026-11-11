@@ -9,10 +9,10 @@
 //! - **POD 强制**：`JointStateBuf` / `JointCommandBuf` / `RtSnapshot` / `JointLimits`
 //!   全部 `#[derive(Copy)]`。编译期拒绝 `Vec` / `String` 等带 Drop 的字段进入
 //!   snapshot / command-slot 载荷（§4.9）。**`Copy` 本身不是跨线程搬运的安全依据**：
-//!   `RtSnapshot` 经 `robot-transport` 的显式字段 codec（`SnapshotValue`）编成
-//!   固定 `u64` 字后由原子存储发布（S48 A3b）；`arc_swap` 侧按 `Arc` 交换。
+//!   快照和命令经 `robot-transport` 的显式字段 codec（`SnapshotValue`）编成
+//!   固定 `u64` 字后由原子存储发布。
 //! - **`JointCommandView<'a>`** 是借用视图，不存数据：`rt_thread` 从 `LatestCommandReader`
-//!   拿到 `Guard<Arc<JointCommandBuf>>` 后按需构造 View，交给 adapter `write_command`。
+//!   有界读取完整值后按需构造 View，交给 adapter `write_command`。
 //! - trait 签名完全对照 `docs/00_design.md` §4.4（9 个方法），不简化。mock 实现把
 //!   `connect` / `disconnect` / `enable` / `safety_stop` 做成 `Ok(())` 桩。
 //!

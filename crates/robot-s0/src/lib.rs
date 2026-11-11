@@ -16,6 +16,11 @@
 
 #![forbid(unused_must_use)]
 
+// 只为本crate的lib测试安装真实拦截器；正式binary自行声明同一系统分配器守卫。
+#[cfg(all(test, feature = "rt_guard"))]
+#[global_allocator]
+static LIB_TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 // ── adapter crate 强制 link（Step 7 task 27b）─────────────────────────
 //
 // 每个 adapter crate 通过 `inventory::submit!` 静态注册一个 factory，注册

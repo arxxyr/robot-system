@@ -619,6 +619,7 @@ pub enum IpcExitReason {
     Stopped,
     Initialization(IpcInitError),
     SnapshotPublish(robot_transport::SnapshotPublishError),
+    CommandStore(robot_transport::CommandStoreError),
     ReadyDisconnected,
 }
 /// 正常退出持原 IPC 责任；panic 仅由真实 join Err 表达，不伪造此值。
@@ -808,7 +809,11 @@ where
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "同一循环按原顺序推进控制责任；命令或快照发布失败均原样归还owned，不拆分退出责任"
+)]
 fn run_loop(
     cfg: &IpcThreadConfig,
     clock: &dyn RobotClock,
@@ -884,14 +889,19 @@ fn run_loop(
             },
         );
         // 高优先级收紧与 owned 推进已完成后，才更新普通关节 latest 槽。
-        poll_command(
+        if let Err(error) = poll_command(
             &mut ports.subscribers.command,
             cmd_writer,
             cfg.authoritative_layout,
             cfg.mixed_bus2_layout.as_ref(),
             clock,
             metrics,
-        );
+        ) {
+            return IpcExit {
+                reason: IpcExitReason::CommandStore(error),
+                owned,
+            };
+        }
         #[cfg(feature = "test-comm-fault-hook")]
         let attempt_started_ns = clock.now().0;
         if let Err(error) = state_pub.publish(&snapshot) {
@@ -935,13 +945,13 @@ pub(crate) fn poll_command(
     mixed_bus2_layout: Option<&XleRobotBus2Layout>,
     clock: &dyn RobotClock,
     metrics: &IpcThreadMetrics,
-) {
+) -> Result<(), robot_transport::CommandStoreError> {
     let Ok(Some(lease)) = cmd_sub.latest() else {
-        return;
+        return Ok(());
     };
     let Ok(view) = lease.view() else {
         metrics.command_parse_errors.fetch_add(1, Ordering::Relaxed);
-        return;
+        return Ok(());
     };
     let fb_cmd: FbJointCommand<'_> = view.body.get();
     // v0.5 候选 E 段(3)：command 侧 layout gate（D1，§3.5.1 部分落地）——
@@ -958,15 +968,16 @@ pub(crate) fn poll_command(
                 "JointCommand layout_id mismatch; dropped (not written to slot)"
             );
         }
-        return;
+        return Ok(());
     }
     let stamp_ns = view.header.stamp_ns();
     let Ok(buf) = parse_joint_command(&fb_cmd, stamp_ns, clock.now(), mixed_bus2_layout) else {
         metrics.command_parse_errors.fetch_add(1, Ordering::Relaxed);
-        return;
+        return Ok(());
     };
-    cmd_writer.store(buf);
+    cmd_writer.store(buf)?;
     metrics.commands_applied.fetch_add(1, Ordering::Relaxed);
+    Ok(())
 }
 
 fn poll_heartbeat(
@@ -1463,6 +1474,50 @@ mod tests {
         cases
     }
 
+    #[cfg(feature = "test-comm-fault-hook")]
+    #[test]
+    fn poll_command_publish_failure_preserves_command_and_success_counter() {
+        let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        let topic = format!("/command_exhausted_{}_{id}/cmd", std::process::id());
+        let node = NodeBuilder::new().create::<IxService>().unwrap();
+        let mut receiver =
+            subscriber::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        let mut transmitter =
+            publisher::<markers::JointCommand>(&node, &topic, TopicClass::S0Command).unwrap();
+        assert!(receiver.latest().unwrap().is_none());
+        transmitter.update_connections().unwrap();
+        let initial = JointCommandBuf {
+            seq: 91,
+            ..JointCommandBuf::default()
+        };
+        let (writer, reader) =
+            LatestCommandSlot::new_with_version(initial, robot_transport::MAX_PUBLISHED_VERSION)
+                .unwrap();
+        let layout = XleRobotBus2Layout::from_hardware(&mixed_hardware()).unwrap();
+        let body = mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), 200, StaleAction::Hold);
+        let mut sample = transmitter.loan(1024 + body.len()).unwrap();
+        sample.set_stamp_ns(100);
+        sample.set_body_bytes(&body);
+        sample.publish().unwrap();
+        let metrics = IpcThreadMetrics::default();
+        assert_eq!(
+            poll_command(
+                &mut receiver,
+                &writer,
+                LAYOUT,
+                Some(&layout),
+                &MockClock::new(MonoRawNs(150)),
+                &metrics
+            ),
+            Err(robot_transport::CommandStoreError::Snapshot(
+                robot_transport::SnapshotPublishError::VersionExhausted,
+            )),
+        );
+        assert_eq!(reader.load(), initial);
+        assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.command_parse_errors.load(Ordering::Relaxed), 0);
+    }
+
     #[test]
     fn poll_command_mixed_rejections_preserve_slot_and_applied_counter() {
         let id = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -1491,8 +1546,9 @@ mod tests {
                 Some(&layout),
                 &clock,
                 &metrics,
-            );
-            assert_eq!(**reader.load(), initial);
+            )
+            .unwrap();
+            assert_eq!(reader.load(), initial);
             assert_eq!(
                 metrics.command_parse_errors.load(Ordering::Relaxed),
                 u64::try_from(index).unwrap() + 1
@@ -1512,7 +1568,8 @@ mod tests {
             Some(&layout),
             &clock,
             &metrics,
-        );
+        )
+        .unwrap();
         assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
         assert_eq!(reader.load().joint_count, 9);
     }
@@ -1740,9 +1797,9 @@ mod tests {
             sample.set_stamp_ns(stamp_ns);
             sample.set_body_bytes(&body);
             sample.publish().unwrap();
-            poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics);
+            poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics).unwrap();
             rejected += 1;
-            assert_eq!(**reader.load(), initial);
+            assert_eq!(reader.load(), initial);
             assert_eq!(
                 metrics.command_parse_errors.load(Ordering::Relaxed),
                 rejected
@@ -1760,9 +1817,9 @@ mod tests {
         sample.set_stamp_ns(100);
         sample.set_body_bytes(&body);
         sample.publish().unwrap();
-        poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics);
+        poll_command(&mut receiver, &writer, LAYOUT, None, &clock, &metrics).unwrap();
         let expected = parse_command_body(&body, 100, clock.now()).unwrap();
-        assert_eq!(**reader.load(), expected);
+        assert_eq!(reader.load(), expected);
         assert_eq!(metrics.commands_applied.load(Ordering::Relaxed), 1);
         assert_eq!(
             metrics.command_parse_errors.load(Ordering::Relaxed),
@@ -2351,10 +2408,13 @@ mod tests {
                 );
                 assert_eq!(inputs.cfg.authoritative_layout, LAYOUT);
                 // 返原唯一写端仍驱动原 reader；不以新建替身证明归还。
-                inputs.cmd_writer.store(JointCommandBuf {
-                    seq: 91,
-                    ..JointCommandBuf::default()
-                });
+                inputs
+                    .cmd_writer
+                    .store(JointCommandBuf {
+                        seq: 91,
+                        ..JointCommandBuf::default()
+                    })
+                    .unwrap();
                 assert_eq!(cmd_reader.load().seq, 91);
                 inputs
                     .state_pub

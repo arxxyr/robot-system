@@ -30,11 +30,6 @@ use crate::serial_io_thread::{SerialIoThreadMetrics, SerialTick, SerialTickConte
 use crate::serial_preempt::SerialPreemptProbe;
 use crate::state_machine::FaultCode;
 
-// 本模块仅在 cfg(test) 编入 S0 lib test；生产分配器不变。
-#[cfg(feature = "rt_guard")]
-#[global_allocator]
-static LIB_TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Io {
     Safety,
@@ -2515,9 +2510,23 @@ fn serial_enable_compensation_uses_real_allocator_without_allocating() {
 fn serial_compensation_allocator_negative_control_really_rejects_alloc() {
     use std::os::unix::process::ExitStatusExt;
     const CHILD: &str = "ROBOT_W3_SERIAL_ALLOC_NEGATIVE";
+    const MARKER: &[u8] = b"W3_SERIAL_ALLOC_NEGATIVE_ENTERED\n";
     if std::env::var_os(CHILD).is_some() {
-        eprintln!("W3_SERIAL_ALLOC_NEGATIVE_ENTERED");
-        assert_no_alloc::assert_no_alloc(|| {
+        let limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: 仅限制当前负控子进程，避免预期abort产生core。
+        assert_eq!(
+            unsafe { libc::setrlimit(libc::RLIMIT_CORE, &raw const limit) },
+            0
+        );
+        robot_core::rt_entry!({
+            assert!(robot_core::rt_guard::in_rt_scope());
+            // SAFETY: 静态切片有效；scope标记直接写入，不经格式化或分配。
+            let written =
+                unsafe { libc::write(libc::STDERR_FILENO, MARKER.as_ptr().cast(), MARKER.len()) };
+            assert_eq!(usize::try_from(written).ok(), Some(MARKER.len()));
             let value = std::hint::black_box(Vec::<u8>::with_capacity(std::hint::black_box(1024)));
             std::hint::black_box(value);
         });

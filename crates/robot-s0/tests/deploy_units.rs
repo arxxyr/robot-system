@@ -444,6 +444,15 @@ fn full_bus_units_bind_config_and_existing_protection_to_guard() {
         assert_eq!(directives(name, "ExecStartPre"), Vec::<String>::new());
         assert_eq!(single(name, "Type"), "notify");
         assert_eq!(opt(&argv, "--notify-mode"), "required");
+        assert_eq!(single(name, "LimitRTPRIO"), "99");
+        assert_eq!(single(name, "LimitMEMLOCK"), "infinity");
+        assert_eq!(single(name, "CPUAffinity"), "0-3");
+        assert_eq!(directives(name, "RestrictRealtime"), Vec::<String>::new());
+        assert!(
+            !argv
+                .iter()
+                .any(|arg| arg == "--cpu" || arg == "--serial-fifo")
+        );
 
         let mut cfg = guard_config_from_unit(name, arm, &robot_id);
         // 纯校验只检查二进制存在；本测试绝不exec。

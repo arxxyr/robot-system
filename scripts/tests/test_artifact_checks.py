@@ -221,6 +221,36 @@ class ArtifactTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     a.validate_cargo_build(ref, "production", "s0")
 
+    def test_production_s0_requires_rt_guard_without_measurement_hook(self):
+        # 独立固定生产命令与闭包，避免夹具从待测配方复制后掩盖缺失的守卫。
+        features = ["default", "feetech", "mock", "rt_guard", "xlerobot", "xlerobot-real"]
+        def mutate(records):
+            for record in records:
+                if record["reason"] == "compiler-artifact":
+                    record["features"] = features.copy()
+        row, artifacts = a.validate_cargo_build(self.cargo("production", "s0", mutate), "production", "s0")
+        self.assertEqual(row["argv"], [
+            "cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0",
+            "--bin", "robot-s0", "--bin", "robot-deploy", "--features", "xlerobot-real,rt_guard",
+        ])
+        self.assertEqual(set(artifacts), {"robot-s0", "robot-deploy"})
+        for artifact in artifacts.values():
+            self.assertEqual(artifact["features"], features)
+            self.assertFalse(any(feature.startswith("test-") for feature in artifact["features"]))
+
+    def test_production_s0_rejects_missing_guard_and_measurement_hook(self):
+        for features, message in (
+            (["default", "feetech", "mock", "xlerobot", "xlerobot-real"], "实际 Cargo feature 闭包错误"),
+            (["default", "feetech", "mock", "rt_guard", "test-comm-fault-hook", "xlerobot", "xlerobot-real"],
+             "生产闭包泄漏 test-\\* feature"),
+        ):
+            def mutate(records):
+                for record in records:
+                    if record["reason"] == "compiler-artifact":
+                        record["features"] = features.copy()
+            with self.subTest(features=features), self.assertRaisesRegex(ValueError, message):
+                a.validate_cargo_build(self.cargo("production", "s0", mutate), "production", "s0")
+
     def test_measurement_tool_accepts_transitive_rpc_feature_without_recipe_change(self):
         # 独立固定实际 Cargo 输出闭包，不能从待测 BUILD_SPECS 复制期望值。
         features = ["comm-fault-e2e", "comm-fault-rpc", "real-hw"]

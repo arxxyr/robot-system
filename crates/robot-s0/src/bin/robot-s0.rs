@@ -75,6 +75,11 @@ use robot_s0::worker_stop::{StopFlags, WorkerKind};
 use robot_transport::iceoryx2::{TopicClass, publisher as open_pub, subscriber as open_sub};
 use robot_transport::{LatestCommandSlot, RtSnapshotPublisher};
 
+// 保留系统分配器；rt_guard在debug/release都拦截RT scope内真实分配与释放。
+#[cfg(feature = "rt_guard")]
+#[global_allocator]
+static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 // ============================================================================
 // 全局 shutdown 原子（signal handler 写，main 循环读）
 // ============================================================================
@@ -338,6 +343,10 @@ impl Args {
     /// - `robot_id`：CLI `--robot-id` > TOML `[robot] id` > env `ROBOT_ID` > `"default"`
     /// - `hardware_id`：CLI `--hardware-id` > TOML 第一段 `[[hardware]] id` > `"default_arm"`
     /// - `latch_path`：CLI `--latch-path` > `/var/lib/robot/<robot_id>/estop_latch`
+    #[allow(
+        clippy::too_many_lines,
+        reason = "集中校验所选硬件身份和唯一配置来源，保持错误顺序"
+    )]
     fn resolve(self) -> Result<ResolvedArgs, String> {
         let loaded_config = match &self.config_path {
             Some(path) => Some(load_robot_config(path).map_err(|e| e.to_string())?),
@@ -431,6 +440,18 @@ impl Args {
                 .unwrap_or_else(|| Path::new("."))
                 .to_path_buf()
         });
+        let serial_rt = loaded_config
+            .as_ref()
+            .and_then(|cfg| resolve_hardware_section(&cfg.parsed, &hardware_id))
+            .and_then(|hardware| hardware.serial_rt);
+        if serial_rt.is_some()
+            && (self.cpu_affinity.is_some() || self.serial_fifo_priority.is_some())
+        {
+            return Err("hardware.serial_rt 与 --cpu/--serial-fifo 不可同时指定".into());
+        }
+        if serial_rt.is_some() && !cfg!(feature = "rt_guard") {
+            return Err("hardware.serial_rt 要求使用 rt_guard 特性构建的 S0".into());
+        }
         Ok(ResolvedArgs {
             marker_command: self.marker_command,
             rx_trust_dir,
@@ -443,10 +464,12 @@ impl Args {
             heartbeat_timeout_ns: self.heartbeat_timeout_ns,
             smoke_duration: self.smoke_duration,
             tick_period_ns: self.tick_period_ns,
-            strict_rt: self.strict_rt,
-            serial_fifo_priority: self.serial_fifo_priority,
+            strict_rt: self.strict_rt || serial_rt.is_some(),
+            serial_fifo_priority: serial_rt
+                .map(|rt| rt.fifo_priority)
+                .or(self.serial_fifo_priority),
             joint_count,
-            cpu_affinity: self.cpu_affinity,
+            cpu_affinity: serial_rt.map(|rt| rt.cpu).or(self.cpu_affinity),
             loaded_config,
             identity,
         })
@@ -2449,6 +2472,10 @@ enum BuiltAdapter {
 /// [`BuiltAdapter`] 变体内。
 ///
 /// 错误返回 i32 退出码（与 `run` 顶层一致），调用方据此 `graceful_stop`。
+#[allow(
+    clippy::too_many_lines,
+    reason = "保留既有工厂分派，并在同一入口禁止显式SerialRT回退"
+)]
 fn build_adapter(
     args: &ResolvedArgs,
     services: Option<&AdapterBuildServices>,
@@ -2548,6 +2575,22 @@ fn build_adapter(
         calibration_range_tolerances_raw,
         feetech_bus2_mixed_raw,
     };
+    if hardware.is_some_and(|hw| hw.serial_rt.is_some()) {
+        // 显式配置不得回退到另一种执行器，使配置指纹与实际调度保持一致。
+        return match factory.build_serial_rt(&ctx) {
+            Ok(adapter) if adapter.info().rt_class == RtClass::SerialRT => {
+                Ok(BuiltAdapter::SerialRt(adapter))
+            }
+            Ok(_) => {
+                tracing::error!(adapter = %adapter_kind, "fatal: serial_rt 配置要求 SerialRT adapter");
+                Err(2)
+            }
+            Err(error) => {
+                tracing::error!(adapter = %adapter_kind, ?error, "fatal: 严格串口执行器构造失败");
+                Err(2)
+            }
+        };
+    }
     // **task-30 v9 finding #3 + M7 阶段 4 第二步**：按 RtClass 三路 dispatch。
     // 1) 先 `build_hard_rt`：HardRT factory 必返综合 trait object（编译期 RtSafeCtrl）。
     // 2) HardRT factory `Unsupported` → 试 `build_serial_rt`：SerialRT factory
@@ -2737,6 +2780,83 @@ fn export_r4c_exit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 验证当前正式binary的allocator接线，禁止把空guard当作无分配证据。
+    #[cfg(feature = "rt_guard")]
+    #[test]
+    fn binary_allocator_rejects_real_allocation_in_rt_scope() {
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::{Command, Stdio};
+
+        const CHILD: &str = "ROBOT_S0_ALLOC_GUARD_CHILD";
+        const MARKER: &[u8] = b"robot-s0 entered allocation-guard scope\n";
+        if std::env::var_os(CHILD).is_some() {
+            let limit = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            // SAFETY: 当前子进程的合法rlimit，避免预期abort产生core。
+            assert_eq!(
+                unsafe { libc::setrlimit(libc::RLIMIT_CORE, &raw const limit) },
+                0
+            );
+            let layout = std::alloc::Layout::from_size_align(64, 8).unwrap();
+            let pointer = robot_core::rt_entry!({
+                assert!(robot_core::rt_guard::in_rt_scope());
+                // SAFETY: 静态切片有效；标记不经格式化或堆分配。
+                let written = unsafe {
+                    libc::write(libc::STDERR_FILENO, MARKER.as_ptr().cast(), MARKER.len())
+                };
+                assert_eq!(usize::try_from(written).ok(), Some(MARKER.len()));
+                // SAFETY: 非零合法layout；若守卫失效，在scope外释放。
+                std::hint::black_box(unsafe { std::alloc::alloc(std::hint::black_box(layout)) })
+            });
+            if !pointer.is_null() {
+                // SAFETY: pointer尚未释放，layout与分配相同。
+                unsafe { std::alloc::dealloc(pointer, layout) };
+            }
+            std::process::exit(73);
+        }
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::binary_allocator_rejects_real_allocation_in_rt_scope",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "真实分配负控超时：{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.signal(),
+            Some(libc::SIGABRT),
+            "真实分配必须abort：{output:?}"
+        );
+        assert_eq!(
+            output
+                .stderr
+                .windows(MARKER.len())
+                .filter(|part| *part == MARKER)
+                .count(),
+            1
+        );
+    }
 
     #[cfg(feature = "test-comm-fault-hook")]
     #[test]
@@ -2949,6 +3069,76 @@ mod tests {
         args.config_path = Some(f.path().to_path_buf());
         let resolved = args.resolve().unwrap();
         assert_eq!(resolved.robot_id, "same_id");
+    }
+
+    fn write_serial_rt_cfg() -> tempfile::NamedTempFile {
+        use std::io::Write;
+        let mut f = write_identity_cfg("serial_rt_test");
+        writeln!(f, "serial_rt = {{ cpu = 4, fifo_priority = 70 }}").unwrap();
+        // 选择第二段，验证调度参数不会误取第一段。
+        writeln!(f, "[[hardware]]\nid = 'selected'\nadapter = 'mock_hard_rt'\njoints = ['j1']\nmotor_ids = [1]\nserial_rt = {{ cpu = 5, fifo_priority = 60 }}").unwrap();
+        f
+    }
+
+    #[test]
+    fn serial_rt_configuration_rejects_duplicate_cli_source() {
+        let f = write_serial_rt_cfg();
+        for cpu_override in [true, false] {
+            let mut args = base_args();
+            args.config_path = Some(f.path().to_path_buf());
+            if cpu_override {
+                args.cpu_affinity = Some(4);
+            } else {
+                args.serial_fifo_priority = Some(70);
+            }
+            let Err(error) = args.resolve() else {
+                panic!("重复调度来源必须拒绝")
+            };
+            assert!(error.contains("不可同时指定"), "{error}");
+        }
+    }
+
+    #[test]
+    fn serial_rt_configuration_requires_active_allocation_guard() {
+        let f = write_serial_rt_cfg();
+        let mut args = base_args();
+        args.config_path = Some(f.path().to_path_buf());
+        args.hardware_id_cli = Some("selected".into());
+        let result = args.resolve();
+        if cfg!(feature = "rt_guard") {
+            let resolved = result.unwrap();
+            assert_eq!(resolved.cpu_affinity, Some(5));
+            assert_eq!(resolved.serial_fifo_priority, Some(60));
+            assert!(resolved.strict_rt);
+        } else {
+            let Err(error) = result else {
+                panic!("无分配守卫的产物必须拒绝严格配置")
+            };
+            assert!(error.contains("rt_guard"), "{error}");
+        }
+    }
+
+    #[test]
+    fn legacy_serial_rt_cli_remains_available_without_config_section() {
+        let mut args = base_args();
+        args.cpu_affinity = Some(3);
+        args.serial_fifo_priority = Some(40);
+        args.strict_rt = true;
+        let resolved = args.resolve().unwrap();
+        assert_eq!(resolved.cpu_affinity, Some(3));
+        assert_eq!(resolved.serial_fifo_priority, Some(40));
+        assert!(resolved.strict_rt);
+    }
+
+    #[cfg(all(feature = "rt_guard", feature = "mock"))]
+    #[test]
+    fn serial_rt_configuration_never_falls_back_to_hard_rt_factory() {
+        let f = write_serial_rt_cfg();
+        let mut args = base_args();
+        args.config_path = Some(f.path().to_path_buf());
+        let resolved = args.resolve().unwrap();
+        // mock factory的HardRT构造可用；显式SerialRT必须拒绝该回退路径。
+        assert!(matches!(build_adapter(&resolved, None), Err(2)));
     }
 
     // ---- v0.5 段(2) 回修 P0-2：内容校验前移 resolve()，不受 latch 影响 ----

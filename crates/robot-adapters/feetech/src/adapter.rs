@@ -226,7 +226,7 @@ pub struct FeetechAdapter<T: SerialTransport> {
     /// `new()` 时按 `joint_ids` 一次性填充；`safety_stop_fast` 调用时只读不
     /// 改，**emergency 路径不 alloc**。
     safety_stop_entries: Vec<(u8, i32)>,
-    /// task-30 v9 / M4：`safety_stop_fast` 路径的 wire frame 预分配缓冲。
+    /// 单串口 owner 的广播写复用区；普通写和停止每次分别重建原帧，不缓存命令。
     /// `MAX_JOINTS=32 × length=4` → max frame = 168 byte，预分配 256 留余量。
     /// 公式：`6 (FF FF ID LEN INST CHKSUM) + 2 (addr+length) + N×(1+length_byte)`。
     safety_stop_frame_buf: Vec<u8>,
@@ -482,8 +482,11 @@ impl<T: SerialTransport> FeetechAdapter<T> {
 
         // 2. 写入 + readback + retry
         for attempt in 1..=SYNC_GOAL_MAX_ATTEMPTS {
-            self.bus
-                .sync_write_by_id("Goal_Position", &self.cmd_entries)?;
+            self.bus.sync_write_by_id_into(
+                "Goal_Position",
+                &self.cmd_entries,
+                &mut self.safety_stop_frame_buf,
+            )?;
             self.sleep_or_abort(SYNC_GOAL_READBACK_WAIT)?;
             self.bus
                 .sync_read_by_id_into("Goal_Position", ids, &mut self.goal_raw[..ids.len()])?;
@@ -789,7 +792,11 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             self.cmd_entries.push((self.joint_ids[i], raw));
         }
         self.bus
-            .sync_write_by_id("Goal_Position", &self.cmd_entries)
+            .sync_write_by_id_into(
+                "Goal_Position",
+                &self.cmd_entries,
+                &mut self.safety_stop_frame_buf,
+            )
             .map_err(|e| {
                 self.record_error(5, &e);
                 RobotError::from(e)
@@ -846,7 +853,7 @@ impl<T: SerialTransport + 'static> ManipulatorAdapter for FeetechAdapter<T> {
             if let Some(layout) = self.mixed_bus2 {
                 let zeros = layout.wheel_ids.map(|id| (id, 0));
                 self.bus
-                    .sync_write_by_id("Goal_Velocity", &zeros)
+                    .sync_write_by_id_into("Goal_Velocity", &zeros, &mut self.safety_stop_frame_buf)
                     .map_err(RobotError::from)?;
             }
             self.sleep_or_abort(ENABLE_SYNC_SETTLE)
@@ -952,6 +959,10 @@ impl<T: SerialTransport + 'static> OutputSafetyProbe for FeetechAdapter<T> {
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(test)]
+#[path = "adapter_alloc_tests.rs"]
+mod alloc_tests;
 
 #[cfg(test)]
 mod tests {

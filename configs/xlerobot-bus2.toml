@@ -10,6 +10,8 @@ config_version = "0.2.0-s0-mixed-raw"
 id          = "right_arm_full_with_base"
 adapter     = "feetech_sts3215"
 auto_enable = false
+# 启用即严格校验FIFO、锁页和绑核；只改变执行线程，要求产物启用rt_guard。
+serial_rt = { cpu = 5, fifo_priority = 70 }
 # 仅已测FW3.10/Phase12的raw 0/+500；连接只读核对，不改电机参数。
 feetech_bus2_mixed_raw = true
 address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00"
