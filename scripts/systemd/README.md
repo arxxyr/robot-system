@@ -28,6 +28,22 @@
 
 只生成隔离候选，绑定已验S0二进制、新guard工具、TOML、校准、相机helper与固定解释器的SHA；保持`auto_enable=false`。候选沿现有三个unit生成，`systemd-analyze verify`只解析依赖，不安装、不启动。真实`guard`、`preflight-*`和`provision`都有副作用，不能拿来作离线检查；软件测试使用既有假steps和临时目录。
 
+## 安装与正式运行
+
+[install_s0_units.py](../install_s0_units.py)提供`check / backup / install / rollback`，只处理上述两个full unit及handoff。`check`核冻结文件、服务/Job和设备占用；备份记录旧handoff原件及两个full unit的存在/缺失，安装与回滚使用同目录临时文件、fsync及原子替换。写操作须root，随后仅`daemon-reload`，不改变服务启用状态、handoff完成态或保护文件。部分安装失败可显式回滚；新运行产物损坏不阻止恢复，失败回执保留。当前入口针对已有handoff的主机，不作为空白系统初始化器。
+
+正式S0由原生systemd管理：guard执行检查后`exec`替换为daemon，保留`Type=notify`、watchdog和journal日志。安装、当轮现场检查及必要交接完成后，按左、右顺序使用：
+
+```bash
+sudo systemctl start xlerobot-s0-bus1.service
+# 左侧验收并停止、完成停止检查后，再启动右侧。
+sudo systemctl start xlerobot-s0-bus2.service
+systemctl status xlerobot-s0-bus1.service xlerobot-s0-bus2.service
+journalctl -u xlerobot-s0-bus1.service -u xlerobot-s0-bus2.service -f
+```
+
+停止使用`systemctl stop`对应unit，再沿维护入口确认停止及资源释放；服务退出本身不等于物理停止证明。安装/reload不会重跑已完成的handoff，首次现场验证须核对其实际状态。tmux仅用于临时编译与验证，不承担正式服务启动；本轮不设置开机自启。
+
 ## 历史验证
 
 旧版完整部署、latch 删除试验和 watchdog 验证记录在提交 `39ee87142b79a9b03fc3f5da3515557615dfaa10` 的同路径文件中，可用 `git show <提交>:scripts/systemd/README.md` 查阅。其中旧实机路径和操作命令不作为当前执行指南；fail-closed 等破坏性场景只在现有 smoke 的隔离 mock 环境验证，不删除实际保护文件做试验。

@@ -8,6 +8,7 @@
 | 当前配置与测试夹具 | [配置导航](../configs/README.md) |
 | 当前完成边界、阻塞与近期顺序 | [S0 HAL 状态](s0_hal_status.md) |
 | 架构与不变量 | [00_design.md](00_design.md)：v0.1.2 冻结设计，权威 |
+| 架构概览图 | [通用机器人控制架构](robot_system_architecture.svg)：当前职责、实现与待验边界 |
 | 验证契约、指标与既有结果 | [10_verification.md](10_verification.md)：按具体主题检索 |
 | 规范变更登记 | [CHANGELOG.md](CHANGELOG.md) |
 | 目标平台合同与上游参考 | [targets/README.md](targets/README.md)：仅目标文档 §2 为契约 |

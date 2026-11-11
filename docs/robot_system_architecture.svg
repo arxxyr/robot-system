@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title description">
+  <title id="title">robot-system 通用机器人控制架构</title>
+  <desc id="description">通用机器人控制架构。上层应用与规划中的 S2 为规划方向；已有控制入口和 RPC 网关、S1 动作执行在 S0 硬件抽象层之上。S0 下接执行器和传感器适配，再连接实际硬件。右侧列出配置、构建交付、安装回滚、日志健康和保护支持。当前实机验证后端为 XLeRobot，正式 systemd 启动待验，D15 延期。</desc>
+  <!-- 架构来源：docs/00_design.md、docs/s0_hal_status.md；实际入口为 robot-cli、robot-rpc、robot-s1、robot-s0，以及 Feetech 与 RGB 适配实现。 -->
+  <!-- 验证边界：2026-11-11，XLeRobot 左右分别受监督通过；配置矩阵与安装回滚属于本轮软件工作，不表示已发布或可无人值守。 -->
+  <defs>
+    <style>
+      text { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { fill: #17374f; font-size: 42px; font-weight: 700; }
+      .subtitle { fill: #526d83; font-size: 25px; }
+      .layer { fill: #3568a3; font-size: 29px; font-weight: 700; }
+      .green-title { fill: #218568; font-size: 29px; font-weight: 700; }
+      .box-title { fill: #17374f; font-size: 27px; font-weight: 650; }
+      .body { fill: #526d83; font-size: 24px; }
+      .small { fill: #526d83; font-size: 22px; }
+      .note { fill: #526d83; font-size: 23px; }
+      .blue { fill: #f6f9fe; stroke: #cedcf0; stroke-width: 2; }
+      .blue-box { fill: #eef4ff; stroke: #b8cfee; stroke-width: 2; }
+      .green { fill: #f5faf8; stroke: #cce4d9; stroke-width: 2; }
+      .green-box { fill: #eaf6ef; stroke: #b6dccb; stroke-width: 2; }
+      .support { fill: #f5f8fb; stroke: #d3dfeb; stroke-width: 2; }
+      .support-box { fill: white; stroke: #ceddea; stroke-width: 2; }
+      .down { fill: none; stroke: #3568a3; stroke-width: 3; marker-end: url(#arrow-blue); }
+      .up { fill: none; stroke: #218568; stroke-width: 3; marker-end: url(#arrow-green); }
+    </style>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#3568a3"/></marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#218568"/></marker>
+  </defs>
+  <rect width="1600" height="1200" fill="white"/>
+  <text x="48" y="64" class="title">robot-system 通用机器人控制架构</text>
+  <text x="48" y="104" class="subtitle">当前里程碑：S0 全身硬件抽象层；XLeRobot 是首个已验证后端</text>
+
+  <rect x="48" y="138" width="1152" height="132" rx="16" class="blue"/>
+  <text x="74" y="181" class="layer">上层应用与规划</text>
+  <text x="624" y="222" text-anchor="middle" class="box-title">S2 慎思层与应用编排（规划）</text>
+  <text x="624" y="252" text-anchor="middle" class="small">尚未作为当前运行模块交付</text>
+  <path d="M624 274 V310" class="down" stroke-dasharray="7 6"/>
+
+  <rect x="48" y="322" width="1152" height="186" rx="16" class="blue"/>
+  <text x="74" y="365" class="layer">接口与任务控制</text>
+  <rect x="74" y="386" width="312" height="98" rx="12" class="blue-box"/>
+  <text x="230" y="426" text-anchor="middle" class="box-title">控制入口</text>
+  <text x="230" y="463" text-anchor="middle" class="body">命令行 · 控制客户端</text>
+  <path d="M388 436 H438" class="down"/>
+  <rect x="450" y="386" width="312" height="98" rx="12" class="blue-box"/>
+  <text x="606" y="426" text-anchor="middle" class="box-title">RPC 网关</text>
+  <text x="606" y="463" text-anchor="middle" class="body">鉴权 · 幂等 · 请求转发</text>
+  <path d="M764 436 H814" class="down"/>
+  <rect x="826" y="386" width="348" height="98" rx="12" class="blue-box"/>
+  <text x="1000" y="426" text-anchor="middle" class="box-title">S1 动作执行</text>
+  <text x="1000" y="463" text-anchor="middle" class="body">保持 · 脚本动作 · 逆运动学</text>
+  <path d="M560 512 V564" class="down"/>
+  <path d="M688 564 V514" class="up"/>
+  <text x="537" y="544" text-anchor="end" class="small">命令与安全控制</text>
+  <text x="710" y="544" class="small">状态回传 · 本机通信</text>
+
+  <rect x="48" y="578" width="1152" height="116" rx="16" class="green"/>
+  <text x="624" y="624" text-anchor="middle" class="green-title">S0 全身硬件抽象层（HAL）</text>
+  <text x="624" y="665" text-anchor="middle" class="body">设备组织 · 分组执行 · 统一状态 · 生命周期与停止保护</text>
+  <path d="M560 698 V738" class="down"/>
+  <path d="M688 738 V700" class="up"/>
+
+  <rect x="48" y="752" width="1152" height="148" rx="16" class="green"/>
+  <text x="74" y="791" class="green-title">硬件适配器</text>
+  <rect x="74" y="808" width="700" height="68" rx="12" class="green-box"/>
+  <text x="424" y="838" text-anchor="middle" class="box-title">Feetech 执行器适配</text>
+  <text x="424" y="865" text-anchor="middle" class="small">每条总线一个串口所有者 · 分组命令与状态读回</text>
+  <rect x="798" y="808" width="376" height="68" rx="12" class="green-box"/>
+  <text x="986" y="838" text-anchor="middle" class="box-title">RGB 传感器适配</text>
+  <text x="986" y="865" text-anchor="middle" class="small">独立采集 · 不阻塞执行器</text>
+  <path d="M424 904 V940" class="down"/>
+  <path d="M986 940 V904" class="up"/>
+
+  <rect x="48" y="954" width="1152" height="132" rx="16" class="green"/>
+  <text x="74" y="993" class="green-title">执行器与传感器</text>
+  <text x="424" y="1030" text-anchor="middle" class="box-title">双臂 · 头部 · 三轮底盘</text>
+  <text x="424" y="1066" text-anchor="middle" class="body">左总线：左臂＋头部　右总线：右臂＋底盘</text>
+  <text x="986" y="1030" text-anchor="middle" class="box-title">头部 · 左腕 · 右腕 RGB</text>
+  <text x="986" y="1066" text-anchor="middle" class="body">三路彩色图像</text>
+
+  <rect x="1230" y="138" width="322" height="948" rx="16" class="support"/>
+  <text x="1391" y="184" text-anchor="middle" class="box-title">共同支持</text>
+  <rect x="1252" y="218" width="278" height="138" rx="12" class="support-box"/>
+  <text x="1391" y="263" text-anchor="middle" class="box-title">机器人配置</text>
+  <text x="1391" y="302" text-anchor="middle" class="body">TOML · 设备与布局</text>
+  <text x="1391" y="335" text-anchor="middle" class="body">校准与身份校验</text>
+  <rect x="1252" y="388" width="278" height="138" rx="12" class="support-box"/>
+  <text x="1391" y="433" text-anchor="middle" class="box-title">配置矩阵与版本交付</text>
+  <text x="1391" y="472" text-anchor="middle" class="body">按配置选择构建内容</text>
+  <text x="1391" y="505" text-anchor="middle" class="small">版本与 SHA 清单</text>
+  <rect x="1252" y="558" width="278" height="138" rx="12" class="support-box"/>
+  <text x="1391" y="603" text-anchor="middle" class="box-title">安装与回滚</text>
+  <text x="1391" y="642" text-anchor="middle" class="body">systemd · 备份与恢复</text>
+  <text x="1391" y="675" text-anchor="middle" class="small">正式服务启动待实机验收</text>
+  <rect x="1252" y="728" width="278" height="190" rx="12" class="support-box"/>
+  <text x="1391" y="773" text-anchor="middle" class="box-title">日志、健康与保护</text>
+  <text x="1391" y="813" text-anchor="middle" class="body">日志 · 只读观测</text>
+  <text x="1391" y="850" text-anchor="middle" class="body">健康监测 · 看门狗</text>
+  <text x="1391" y="887" text-anchor="middle" class="body">急停持久化 · 停止保护</text>
+  <text x="1391" y="984" text-anchor="middle" class="body">贯穿开发与交付</text>
+  <text x="1391" y="1022" text-anchor="middle" class="small">软件通过 ≠ 可无人值守</text>
+
+  <text x="48" y="1130" class="note">当前实机验证：XLeRobot（左右分别受监督通过）；systemd 正式启动待验；D15 延期。</text>
+  <text x="48" y="1170" class="note">S1 完整服务链待实机验收；双总线同时联动尚未验收。框表示职责，实线表示主要命令或状态流。</text>
+</svg>
