@@ -120,8 +120,8 @@ impl StateEnv {
         let config_path = forensic_dir.join("robot.toml");
         std::fs::write(&config_path, build_config_toml(&robot_id, declared)).expect("write config");
 
-        // rpc_roles.toml（gateway 必填；复用 workspace configs/rpc_roles.toml）。
-        let roles_path = forensic_dir.join("rpc_roles.toml");
+        // rpc-roles.toml（gateway 必填；复用 workspace configs/rpc-roles.toml）。
+        let roles_path = forensic_dir.join("rpc-roles.toml");
         let roles_text =
             std::fs::read_to_string(workspace_rpc_roles_path()).expect("read workspace rpc_roles");
         std::fs::write(&roles_path, roles_text).expect("write rpc_roles");
@@ -137,7 +137,7 @@ impl StateEnv {
             .collect();
 
         // gateway（带 --config）。
-        let gateway_bin = locate_test_bin("robot_rpc_gateway").expect("locate gateway bin");
+        let gateway_bin = locate_test_bin("robot-gateway").expect("locate gateway bin");
         let mut gateway = SubprocessHandle::spawn(
             "gateway",
             build_gateway_command(
@@ -218,13 +218,13 @@ fn build_config_toml(robot_id: &str, declared: &[&str]) -> String {
 }
 
 fn workspace_rpc_roles_path() -> PathBuf {
-    // CARGO_MANIFEST_DIR = .../crates/robot-rpc → ../../configs/rpc_roles.toml
+    // CARGO_MANIFEST_DIR = .../crates/robot-rpc → ../../configs/rpc-roles.toml
     let manifest = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(manifest)
         .parent()
         .and_then(Path::parent)
         .expect("workspace root")
-        .join("configs/rpc_roles.toml");
+        .join("configs/rpc-roles.toml");
     assert!(path.exists(), "{} 不存在", path.display());
     path
 }

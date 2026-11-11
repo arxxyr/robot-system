@@ -712,10 +712,10 @@ pub(super) fn gateway_command(case: &Case) -> Result<(tokio::process::Command, S
         .local_addr()
         .map_err(|error| error.to_string())?
         .to_string();
-    let roles = case.directory.join("rpc_roles.toml");
-    std::fs::write(&roles, include_str!("../../../../configs/rpc_roles.toml"))
+    let roles = case.directory.join("rpc-roles.toml");
+    std::fs::write(&roles, include_str!("../../../../configs/rpc-roles.toml"))
         .map_err(|error| error.to_string())?;
-    let mut command = isolated_command(&case.bin_dir.join("robot_rpc_gateway"));
+    let mut command = isolated_command(&case.bin_dir.join("robot-gateway"));
     command
         .args([
             "--robot-id",

@@ -21,11 +21,9 @@ SPEC = importlib.util.spec_from_file_location("install_s0_units", SCRIPTS / "ins
 installer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(installer)
 
-UNIT_NAMES = (
-    "xlerobot-handoff.service",
-    "xlerobot-s0-bus1.service",
-    "xlerobot-s0-bus2.service",
-)
+UNIT_NAMES = ("robot-s0-preflight.service", "robot-s0-bus1.service", "robot-s0-bus2.service")
+OLD_UNIT_NAMES = ("xlerobot-handoff.service", "xlerobot-s0-bus1.service", "xlerobot-s0-bus2.service")
+MANAGED_UNIT_NAMES = (*UNIT_NAMES, *OLD_UNIT_NAMES)
 PROTECTION_NAMES = (
     "rx_trust_marker",
     "rx_trust_marker.bak",
@@ -145,12 +143,12 @@ class FakeCommands:
         blocks = []
         for unit in units:
             target = self.unit_directory / unit
-            missing = unit in UNIT_NAMES[1:] and not target.exists()
+            missing = not target.exists()
             values = {
                 "Id": unit,
                 "LoadState": "not-found" if missing else "loaded",
-                "ActiveState": "active" if unit == UNIT_NAMES[0] else "inactive",
-                "SubState": "exited" if unit == UNIT_NAMES[0] else "dead",
+                "ActiveState": "active" if unit == OLD_UNIT_NAMES[0] else "inactive",
+                "SubState": "exited" if unit == OLD_UNIT_NAMES[0] else "dead",
                 "MainPID": "0",
                 "Job": "",
                 "ExecMainPID": "0",
@@ -159,8 +157,8 @@ class FakeCommands:
                 "FragmentPath": "" if missing else str(target) if target.exists() else "/usr/lib/systemd/system/" + unit,
                 "DropInPaths": "",
                 "NeedDaemonReload": "no",
-                "Type": "oneshot" if unit == UNIT_NAMES[0] else "simple",
-                "RemainAfterExit": "yes" if unit == UNIT_NAMES[0] else "no",
+                "Type": "oneshot" if unit == OLD_UNIT_NAMES[0] else "simple",
+                "RemainAfterExit": "yes" if unit == OLD_UNIT_NAMES[0] else "no",
             }
             # systemd 仅在 daemon-reload 后重新发现磁盘上的 unit 文件。
             values = self.cached_values.setdefault(unit, values).copy()
@@ -184,10 +182,13 @@ class DeploymentFixture:
         self.unit_directory.mkdir()
         self.commands = FakeCommands(self.unit_directory)
         self.old_handoff = b"[Service]\nType=oneshot\nExecStart=/fixture/old-handoff\n"
-        self.write(self.unit_directory / UNIT_NAMES[0], self.old_handoff, 0o640)
-        self.old_handoff_identity = reference(self.unit_directory / UNIT_NAMES[0])
-        self.write(self.root / "bin" / "xlerobot_deploy", elf_bytes(), 0o755)
-        self.write(self.root / "bin" / "s0_daemon", elf_bytes(3), 0o755)
+        self.write(self.unit_directory / OLD_UNIT_NAMES[0], self.old_handoff, 0o640)
+        for name in OLD_UNIT_NAMES[1:]:
+            self.write(self.unit_directory / name, ("old " + name + "\n").encode(), 0o640)
+        self.originals = {name: reference(self.unit_directory / name) for name in OLD_UNIT_NAMES}
+        self.old_handoff_identity = reference(self.unit_directory / OLD_UNIT_NAMES[0])
+        self.write(self.root / "bin" / "robot-deploy", elf_bytes(), 0o755)
+        self.write(self.root / "bin" / "robot-s0", elf_bytes(3), 0o755)
         self.python_real = self.root / "python" / "python3"
         self.write(self.python_real, elf_bytes(3), 0o755)
         self.python = self.root / "venv" / "bin" / "python"
@@ -222,10 +223,10 @@ class DeploymentFixture:
             calibrations.append(path)
         self.write(self.candidate / "camera_capture.py", "# 离线相机夹具\n".encode(), 0o444)
         for side, bus in (("left", 1), ("right", 2)):
-            config = self.candidate / "configs" / (f"xlerobot_bus{bus}_full.toml")
+            config = self.candidate / "configs" / (f"xlerobot-bus{bus}.toml")
             self.write(config, ("[robot]\nid = \"" + self.domains[side]["robot_id"] + "\"\n").encode(), 0o444)
-        deploy = self.root / "bin" / "xlerobot_deploy"
-        s0 = self.root / "bin" / "s0_daemon"
+        deploy = self.root / "bin" / "robot-deploy"
+        s0 = self.root / "bin" / "robot-s0"
         handoff = (
             "[Service]\nType=oneshot\nRemainAfterExit=yes\n"
             + f"WorkingDirectory={self.candidate}\n"
@@ -244,7 +245,7 @@ class DeploymentFixture:
             )
             self.write(self.candidate / "systemd" / unit, content.encode(), 0o444)
         candidate_names = ["camera_capture.py"] + [
-            "configs/xlerobot_bus1_full.toml", "configs/xlerobot_bus2_full.toml"
+            "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml"
         ] + ["systemd/" + name for name in UNIT_NAMES]
         python_paths = [path_identity(self.python), path_identity(self.python_real)]
         self.manifest = {
@@ -284,7 +285,7 @@ class DeploymentFixture:
         path.chmod(mode)
 
     def config(self, side):
-        return self.candidate / "configs" / ("xlerobot_bus1_full.toml" if side == "left" else "xlerobot_bus2_full.toml")
+        return self.candidate / "configs" / ("xlerobot-bus1.toml" if side == "left" else "xlerobot-bus2.toml")
 
     def freeze_manifest(self):
         path = self.candidate / "manifest.json"
@@ -312,14 +313,9 @@ class UnitInstallerTests(unittest.TestCase):
         self.subject = self.fixture.make_installer()
 
     def assert_original_targets(self):
-        target = self.fixture.unit_directory / UNIT_NAMES[0]
-        self.assertEqual(target.read_bytes(), self.fixture.old_handoff)
-        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
-        self.assertEqual(
-            (target.stat().st_uid, target.stat().st_gid),
-            (self.fixture.old_handoff_identity["uid"], self.fixture.old_handoff_identity["gid"]),
-        )
-        for name in UNIT_NAMES[1:]:
+        for name, expected in self.fixture.originals.items():
+            self.assertTrue(installer.same_content(reference(self.fixture.unit_directory / name), expected))
+        for name in UNIT_NAMES:
             self.assertFalse((self.fixture.unit_directory / name).exists())
 
     def assert_no_reload(self):
@@ -360,14 +356,16 @@ class UnitInstallerTests(unittest.TestCase):
         self.assertEqual(before, {path: reference(Path(path)) for path in before})
         self.assert_no_reload()
 
-    def test_backup_only_copies_three_target_units(self):
+    def test_backup_records_six_paths_and_copies_only_existing_targets(self):
         unrelated = self.fixture.unit_directory / "unrelated.service"
         unrelated.write_bytes(b"unrelated\n")
         result = self.subject.backup(self.fixture.backup_dir)
         self.assertIsInstance(result, dict)
         units = self.fixture.backup_dir / "units"
-        self.assertEqual(sorted(path.name for path in units.iterdir()), [UNIT_NAMES[0]])
-        self.assertEqual((units / UNIT_NAMES[0]).read_bytes(), self.fixture.old_handoff)
+        self.assertEqual(sorted(path.name for path in units.iterdir()), sorted(OLD_UNIT_NAMES))
+        record = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        self.assertEqual(set(record["originals"]), set(MANAGED_UNIT_NAMES))
+        self.assertEqual((units / OLD_UNIT_NAMES[0]).read_bytes(), self.fixture.old_handoff)
         self.assertTrue((self.fixture.backup_dir / "backup.json").is_file())
         self.assertTrue((self.fixture.backup_dir / "backup.sha256").is_file())
         self.assert_original_targets()
@@ -382,6 +380,10 @@ class UnitInstallerTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), (self.fixture.candidate / "systemd" / name).read_bytes())
             self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
             self.assertEqual((target.stat().st_uid, target.stat().st_gid), (os.geteuid(), os.getegid()))
+        for name in OLD_UNIT_NAMES:
+            self.assertFalse((self.fixture.unit_directory / name).exists())
+        self.assertEqual(self.fixture.commands.cached_values[UNIT_NAMES[0]]["ActiveState"], "inactive")
+        self.assertEqual(self.fixture.commands.cached_values[OLD_UNIT_NAMES[0]]["ActiveState"], "active")
         self.assertEqual(protection, {path: reference(Path(path)) for path in protection})
         self.assertIsInstance(self.subject.rollback(self.fixture.backup_dir), dict)
         self.assert_original_targets()
@@ -389,9 +391,12 @@ class UnitInstallerTests(unittest.TestCase):
 
     def test_rollback_restores_all_original_bytes_and_permissions(self):
         originals = {}
-        for index, name in enumerate(UNIT_NAMES):
+        for index, name in enumerate(MANAGED_UNIT_NAMES):
             path = self.fixture.unit_directory / name
-            self.fixture.write(path, b"old unit " + bytes([index]) + b"\n", 0o600 | (index * 0o20))
+            if name in UNIT_NAMES:
+                self.fixture.write(path, (self.fixture.candidate / "systemd" / name).read_bytes(), 0o644)
+            else:
+                self.fixture.write(path, b"old unit " + bytes([index]) + b"\n", 0o600 | (index * 0o20))
             originals[name] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode), path.stat().st_uid, path.stat().st_gid)
         self.subject.backup(self.fixture.backup_dir)
         self.subject.install(self.fixture.backup_dir)
@@ -404,13 +409,13 @@ class UnitInstallerTests(unittest.TestCase):
         self.assert_runtime_damage_prevents_install(self.fixture.candidate / "camera_capture.py")
 
     def test_damaged_elf_prevents_check_and_install(self):
-        self.assert_runtime_damage_prevents_install(self.fixture.root / "bin" / "s0_daemon")
+        self.assert_runtime_damage_prevents_install(self.fixture.root / "bin" / "robot-s0")
 
     def test_damaged_installed_helper_does_not_block_rollback(self):
         self.assert_runtime_damage_allows_rollback(self.fixture.candidate / "camera_capture.py")
 
     def test_damaged_installed_elf_does_not_block_rollback(self):
-        self.assert_runtime_damage_allows_rollback(self.fixture.root / "bin" / "s0_daemon")
+        self.assert_runtime_damage_allows_rollback(self.fixture.root / "bin" / "robot-s0")
 
     def test_install_receipt_cannot_be_overwritten_by_repeated_install(self):
         self.subject.backup(self.fixture.backup_dir)
@@ -423,7 +428,7 @@ class UnitInstallerTests(unittest.TestCase):
 
     def test_inactive_handoff_is_preserved_without_starting_it(self):
         commands = self.fixture.commands
-        commands.overrides[UNIT_NAMES[0]] = {"ActiveState": "inactive", "SubState": "dead"}
+        commands.overrides[OLD_UNIT_NAMES[0]] = {"ActiveState": "inactive", "SubState": "dead"}
         self.subject.backup(self.fixture.backup_dir)
         self.subject.install(self.fixture.backup_dir)
         self.subject.rollback(self.fixture.backup_dir)
@@ -455,7 +460,7 @@ class UnitInstallerTests(unittest.TestCase):
 
     def test_old_target_drift_after_backup_prevents_install(self):
         self.subject.backup(self.fixture.backup_dir)
-        target = self.fixture.unit_directory / UNIT_NAMES[0]
+        target = self.fixture.unit_directory / OLD_UNIT_NAMES[0]
         changed = b"changed by another administrator\n"
         target.write_bytes(changed)
         with self.assertRaises(REJECTED):
@@ -475,7 +480,7 @@ class UnitInstallerTests(unittest.TestCase):
 
     def test_corrupt_backup_unit_prevents_install(self):
         self.subject.backup(self.fixture.backup_dir)
-        path = self.fixture.backup_dir / "units" / UNIT_NAMES[0]
+        path = self.fixture.backup_dir / "units" / OLD_UNIT_NAMES[0]
         path.chmod(0o644)
         path.write_bytes(b"corrupt backup\n")
         path.chmod(0o444)
@@ -523,7 +528,7 @@ class UnitInstallerTests(unittest.TestCase):
     def test_partial_install_rolls_back_with_not_found_systemd_cache(self):
         self.subject.backup(self.fixture.backup_dir)
         commands = self.fixture.commands
-        handoff_before = commands.cached_values[UNIT_NAMES[0]].copy()
+        handoff_before = commands.cached_values[OLD_UNIT_NAMES[0]].copy()
         self.assertEqual(commands.cached_values[UNIT_NAMES[1]]["LoadState"], "not-found")
         real_replace = os.replace
         replaced = []
@@ -546,7 +551,7 @@ class UnitInstallerTests(unittest.TestCase):
         self.assert_no_reload()
         self.subject.rollback(self.fixture.backup_dir)
         self.assert_original_targets()
-        handoff_after = commands.cached_values[UNIT_NAMES[0]]
+        handoff_after = commands.cached_values[OLD_UNIT_NAMES[0]]
         self.assertEqual(
             {name: handoff_after[name] for name in ("LoadState", "ActiveState", "SubState", "MainPID", "Job")},
             {name: handoff_before[name] for name in ("LoadState", "ActiveState", "SubState", "MainPID", "Job")},
@@ -569,7 +574,7 @@ class UnitInstallerTests(unittest.TestCase):
             with self.assertRaises(REJECTED):
                 self.subject.rollback(self.fixture.backup_dir)
         self.assertEqual(failed, [str(second_target)])
-        self.assertEqual((self.fixture.unit_directory / UNIT_NAMES[0]).read_bytes(), self.fixture.old_handoff)
+        self.assertEqual((self.fixture.unit_directory / OLD_UNIT_NAMES[0]).read_bytes(), self.fixture.old_handoff)
         self.assertTrue(second_target.exists())
         attempts = list(self.fixture.backup_dir.glob("rollback-*-result.json"))
         self.assertEqual(len(attempts), 1)
@@ -615,6 +620,144 @@ class UnitInstallerTests(unittest.TestCase):
             self.subject.check()
         self.assert_original_targets()
 
+    def test_old_unit_deletion_failure_is_explicitly_rollbackable(self):
+        self.subject.backup(self.fixture.backup_dir)
+        real_unlink = os.unlink
+        failed_target = self.fixture.unit_directory / OLD_UNIT_NAMES[1]
+
+        def unlink(path, *args, **kwargs):
+            if Path(path) == failed_target:
+                raise OSError("模拟旧文件删除中断")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(installer.os, "unlink", side_effect=unlink):
+            with self.assertRaises(REJECTED):
+                self.subject.install(self.fixture.backup_dir)
+        self.assertFalse((self.fixture.unit_directory / OLD_UNIT_NAMES[0]).exists())
+        self.assertTrue(failed_target.exists())
+        receipt = self.fixture.backup_dir / "install-result.json"
+        original_failure = receipt.read_bytes()
+        self.assertEqual(json.loads(original_failure)["status"], "FAIL")
+        self.assert_no_reload()
+        self.subject.rollback(self.fixture.backup_dir)
+        self.assert_original_targets()
+        self.assertEqual(receipt.read_bytes(), original_failure)
+
+    def test_install_reload_failure_rolls_back_both_stale_cache_directions(self):
+        self.subject.backup(self.fixture.backup_dir)
+        self.fixture.commands.reload_returncode = 1
+        with self.assertRaises(REJECTED):
+            self.subject.install(self.fixture.backup_dir)
+        for name in UNIT_NAMES:
+            self.assertTrue((self.fixture.unit_directory / name).exists())
+            self.assertEqual(self.fixture.commands.cached_values[name]["LoadState"], "not-found")
+        for name in OLD_UNIT_NAMES:
+            self.assertFalse((self.fixture.unit_directory / name).exists())
+            self.assertEqual(self.fixture.commands.cached_values[name]["LoadState"], "loaded")
+        self.fixture.commands.reload_returncode = 0
+        self.subject.rollback(self.fixture.backup_dir)
+        self.assert_original_targets()
+
+    def test_new_preflight_cannot_acquire_completion_state_during_install(self):
+        self.subject.backup(self.fixture.backup_dir)
+        commands = self.fixture.commands
+
+        def runner(argv):
+            result = commands(argv)
+            if argv == ["systemctl", "daemon-reload"]:
+                commands.overrides[UNIT_NAMES[0]] = {"ActiveState": "active", "SubState": "exited"}
+            return result
+
+        self.subject.runner = runner
+        with self.assertRaisesRegex(ValueError, "preflight 完成态变化"):
+            self.subject.install(self.fixture.backup_dir)
+        self.assertEqual(json.loads((self.fixture.backup_dir / "install-result.json").read_text())["status"], "FAIL")
+
+    def test_existing_new_preflight_completed_state_is_not_reexecuted(self):
+        target = self.fixture.unit_directory / UNIT_NAMES[0]
+        candidate_bytes = (self.fixture.candidate / "systemd" / UNIT_NAMES[0]).read_bytes()
+        self.fixture.write(target, candidate_bytes, 0o644)
+        self.fixture.commands.overrides[UNIT_NAMES[0]] = {"ActiveState": "active", "SubState": "exited"}
+        self.subject.backup(self.fixture.backup_dir)
+        self.subject.install(self.fixture.backup_dir)
+        self.subject.rollback(self.fixture.backup_dir)
+        self.assertEqual(target.read_bytes(), candidate_bytes)
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+        self.assertEqual(self.fixture.commands.cached_values[OLD_UNIT_NAMES[0]]["ActiveState"], "active")
+
+    def test_old_and_new_business_activity_blocks_backup_without_writes(self):
+        for name in installer.BUSINESS_UNITS:
+            with self.subTest(unit=name):
+                self.fixture.commands.overrides = {name: {"ActiveState": "active", "SubState": "running", "MainPID": "42"}}
+                with self.assertRaises(REJECTED):
+                    self.subject.backup(self.fixture.backup_dir)
+                self.assertFalse(self.fixture.backup_dir.exists())
+                self.assert_original_targets()
+        self.assert_no_reload()
+
+    def test_conflicting_new_targets_reject_check_backup_and_install_without_writes(self):
+        self.subject.backup(self.fixture.backup_dir)
+        for name in UNIT_NAMES:
+            for wrong_content in (True, False):
+                with self.subTest(unit=name, wrong_content=wrong_content):
+                    target = self.fixture.unit_directory / name
+                    candidate_bytes = (self.fixture.candidate / "systemd" / name).read_bytes()
+                    self.fixture.write(target, b"unrelated existing unit\n" if wrong_content else candidate_bytes,
+                                       0o644 if wrong_content else 0o640)
+                    # 模拟管理员已 reload 的真实冲突，不能仅靠旧缓存不一致拒绝。
+                    self.fixture.commands.cached_values.clear()
+                    before = {str(path): reference(path) for directory in
+                              (self.fixture.unit_directory, self.fixture.backup_dir, self.fixture.protection_root)
+                              for path in directory.rglob("*") if path.is_file()}
+                    for operation in (self.subject.check,
+                                      lambda: self.subject.backup(self.fixture.root / "conflict-backup"),
+                                      lambda: self.subject.install(self.fixture.backup_dir)):
+                        with self.assertRaisesRegex(ValueError, "新 unit 路径已被非候选文件占用"):
+                            operation()
+                        self.assertEqual(before, {str(path): reference(path) for directory in
+                                         (self.fixture.unit_directory, self.fixture.backup_dir, self.fixture.protection_root)
+                                         for path in directory.rglob("*") if path.is_file()})
+                        self.assertFalse((self.fixture.root / "conflict-backup").exists())
+                    target.unlink()
+                    self.fixture.commands.cached_values.clear()
+        self.assert_original_targets()
+        self.assert_no_reload()
+
+    def test_old_and_new_jobs_block_backup_without_writes(self):
+        for name in (*installer.BUSINESS_UNITS, *installer.PREFLIGHT_UNITS):
+            with self.subTest(unit=name):
+                self.fixture.commands.overrides = {name: {"Job": "7 /org/freedesktop/systemd1/job/7"}}
+                with self.assertRaises(REJECTED):
+                    self.subject.backup(self.fixture.backup_dir)
+                self.assertFalse(self.fixture.backup_dir.exists())
+                self.assert_original_targets()
+        self.assert_no_reload()
+
+    def test_enabled_or_alias_target_is_rejected(self):
+        for name in MANAGED_UNIT_NAMES:
+            for state in ("enabled", "enabled-runtime", "alias"):
+                with self.subTest(unit=name, state=state):
+                    self.fixture.commands.overrides = {name: {"UnitFileState": state}}
+                    with self.assertRaises(REJECTED):
+                        self.subject.check()
+        self.assert_original_targets()
+        self.assert_no_reload()
+
+    def test_old_backup_schema_is_rejected_even_with_valid_digest(self):
+        self.subject.backup(self.fixture.backup_dir)
+        path = self.fixture.backup_dir / "backup.json"
+        document = json.loads(path.read_text())
+        document.pop("schema")
+        raw = json.dumps(document).encode()
+        path.chmod(0o600)
+        self.fixture.write(path, raw, 0o400)
+        (self.fixture.backup_dir / "backup.sha256").chmod(0o600)
+        self.fixture.write(self.fixture.backup_dir / "backup.sha256", (hashlib.sha256(raw).hexdigest() + "\n").encode(), 0o400)
+        with self.assertRaisesRegex(ValueError, "六路径改名格式"):
+            self.subject.install(self.fixture.backup_dir)
+        self.assert_original_targets()
+        self.assert_no_reload()
+
     def test_directory_target_is_rejected(self):
         target = self.fixture.unit_directory / UNIT_NAMES[1]
         target.mkdir()
@@ -633,7 +776,7 @@ class UnitInstallerTests(unittest.TestCase):
         self.assertEqual(destination.read_bytes(), b"untouched\n")
 
     def test_hardlinked_target_is_rejected(self):
-        target = self.fixture.unit_directory / UNIT_NAMES[0]
+        target = self.fixture.unit_directory / OLD_UNIT_NAMES[0]
         os.link(target, self.fixture.root / "other-link")
         with self.assertRaises(REJECTED):
             self.subject.check()

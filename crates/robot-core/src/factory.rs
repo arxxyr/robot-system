@@ -2,9 +2,9 @@
 //!
 //! ## 动机
 //!
-//! `docs/00_design.md` §4.5 "静态注册" + `CLAUDE.md` "`robot-kinematics-<robot>`
+//! `docs/00_design.md` §4.5 "静态注册" + `AGENTS.md` "`robot-kinematics-<robot>`
 //! 按 feature flag 挂到 `robot-s1`" 的延伸：每种机器人配置（XLeRobot / ATOM01
-//! / Piper / 四足 / 人形）需要 link 不同 adapter 子集；`s0_daemon` 启动期按
+//! / Piper / 四足 / 人形）需要 link 不同 adapter 子集；`robot-s0` 启动期按
 //! `configs/<robot>.toml` 里 `[[hardware]] adapter = "feetech_sts3215"` 字符串
 //! 找对应 factory 实例化。
 //!
@@ -26,7 +26,7 @@
 //! ## 零 runtime 开销
 //!
 //! `inventory::iter` 遍历的是**链接器构造的静态数组**，无 alloc / 无 IO。
-//! 启动期一次性查表后，`s0_daemon` 把 `Box<dyn ManipulatorAdapter + Send>` move
+//! 启动期一次性查表后，`robot-s0` 把 `Box<dyn ManipulatorAdapter + Send>` move
 //! 进 `spawn_rt_thread`，热路径不再触及 inventory。
 //!
 //! ## v0.2 范围
@@ -144,7 +144,7 @@ pub trait AdapterFactory: Sync + 'static {
     /// **编译期保证**实现 [`crate::adapter::RtSafeCtrl`]（综合 trait
     /// [`HardRtAdapter`]）。
     ///
-    /// `s0_daemon` 在 `RtClass::HardRT` 路径**必须**调本方法（而不是
+    /// `robot-s0` 在 `RtClass::HardRT` 路径**必须**调本方法（而不是
     /// [`AdapterFactory::build`]）；本方法的返回值才能进 `spawn_rt_thread`。
     ///
     /// **default 实现**：返 `Err(RobotError::Unsupported(...))`。SerialRT /
@@ -168,7 +168,7 @@ pub trait AdapterFactory: Sync + 'static {
     /// adapter **编译期保证**实现 [`crate::executor_ctrl::OutputSafetyProbe`]
     /// （综合 trait [`SerialRtAdapter`]）。
     ///
-    /// `s0_daemon` 在 `RtClass::SerialRT` 路径**必须**调本方法（而不是
+    /// `robot-s0` 在 `RtClass::SerialRT` 路径**必须**调本方法（而不是
     /// [`AdapterFactory::build`]）；本方法的返回值才能进
     /// `spawn_serial_io_thread`。
     ///
@@ -198,7 +198,7 @@ inventory::collect!(&'static dyn AdapterFactory);
 
 /// 全部已注册的 factory 迭代器。
 ///
-/// 启动期 `s0_daemon` 用一次（按 TOML adapter 名查），之后不再调用。
+/// 启动期 `robot-s0` 用一次（按 TOML adapter 名查），之后不再调用。
 ///
 /// `inventory::iter::<T>` 在 inventory 0.3 是 *struct*（lowercase），通过 deref /
 /// `into_iter()` 拿迭代器；这里包装成 `Copied<...>` 把外层 `&` 去掉，让调用方

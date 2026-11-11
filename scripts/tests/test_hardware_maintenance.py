@@ -806,7 +806,7 @@ class ClassificationTests(unittest.TestCase):
     def identity_calls(self):
         names=['rx_trust_marker','rx_trust_marker.bak','estop_latch','estop_latch.bak','rx_trust.lock','estop_latch.lock']
         return (['ref:/first','ref:/next']+[f'protection:{side}/{name}' for side in m.SERIALS for name in names]
-                +[f'service:{unit}' for unit in m.UNITS+m.OLD_UNITS+['xlerobot-handoff.service']]
+                +[f'service:{unit}' for unit in m.UNITS+m.OLD_UNITS+[m.HANDOFF_UNIT]]
                 +['process_snapshot']+[f"holder:{side}:{'sudo' if elevated else 'ordinary'}" for side in m.SERIALS for elevated in (False,True)]
                 +['usb:left','usb:right'])
 
@@ -1165,7 +1165,7 @@ class ClassificationTests(unittest.TestCase):
                 calls=[c for c in executor.calls if c[0]==f'right:{motor}']
                 self.assertEqual(len(calls),12)
                 self.assertTrue(all(c[1]=='read' for c in calls))
-            self.assertEqual(post.count('unit'),11);self.assertEqual(post.count('proc'),1);self.assertEqual(post.count('holder'),4)
+            self.assertEqual(post.count('unit'),20);self.assertEqual(post.count('proc'),1);self.assertEqual(post.count('holder'),4)
             self.assertTrue(Path(str(approval)+'.consumed').is_file())
             self.assertTrue(all(Path(r['path']).read_bytes()==b'unchanged\n' for files in protection.values() for r in files.values()))
 

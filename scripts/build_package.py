@@ -19,7 +19,7 @@ import tomllib
 
 # 固定解释器以 -I -S 启动时，只显式导入随脚本提供的纯验证函数。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from post_e_h2_artifacts import (
+from artifact_checks import (
     INSTALLED_NAMES, canonical, elf_identity, fixed_build_environment,
     parse_rustc_identity, require, sha256, strict_json,
 )
@@ -159,7 +159,7 @@ def _validate_binaries(repository, entry, crate_root, manifest, features):
 
 def load_matrix(repository: Path) -> dict:
     repository = Path(repository).resolve(strict=True)
-    matrix = tomllib.loads(_source_file(repository, "configs/package_matrix.toml").read_text())
+    matrix = tomllib.loads(_source_file(repository, "configs/package-matrix.toml").read_text())
     require(set(matrix) == {"packages"} and isinstance(matrix["packages"], dict)
             and matrix["packages"], "矩阵必须包含非空 packages")
     packages = _workspace_packages(repository)

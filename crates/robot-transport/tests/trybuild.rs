@@ -44,7 +44,7 @@ fn compile_failures() {
             .canonicalize()
             .expect("无法定位仓库内的 re_protos 补丁");
         let unused_re_protos_patch = format!(
-            "patch `re_protos v0.42.0 ({})` was not used in the crate graph",
+            "patch `re_protos v0.43.0 ({})` was not used in the crate graph",
             re_protos_path.display()
         );
         for line in stdout.lines().chain(stderr.lines()) {

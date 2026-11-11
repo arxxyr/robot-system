@@ -6,7 +6,7 @@
 //! - arm S0 unit **无 `ExecStartPre=`**（QA1 / Y1：guard 必须是主进程，
 //!   否则 `RestartPreventExitStatus=86` 捕不到停止态）；
 //! - **R10-1 三处 config 路径一致锁**：handoff 的双 `--config` / arm guard
-//!   的 `--config` / guard **自动追加**给 `s0_daemon` 的 `--config`——用
+//!   的 `--config` / guard **自动追加**给 `robot-s0` 的 `--config`——用
 //!   真的 [`build_s0_args`] 跑一遍，不是字符串比对；
 //! - `--` 之后自带 `--config` 的拒绝 case（退 86）；
 //! - 依赖图（Requires / Wants / After）、`RuntimeDirectory` 三件套、
@@ -23,29 +23,29 @@ use robot_s0::deploy::guard::{GUARD_STOP_EXIT_CODE, GuardConfig, GuardExit, buil
 use robot_s0::deploy::types::DeployArm;
 use robot_s0::latch_lock::LATCH_LOCK_HELD_EXIT_CODE;
 
-const HANDOFF: &str = "xlerobot-handoff.service";
+const HANDOFF: &str = "robot-s0-preflight.service";
 const ARM_UNITS: [(&str, &str); 2] = [
-    ("left", "xlerobot-s0-left-arm.service"),
-    ("right", "xlerobot-s0-right-arm.service"),
+    ("left", "robot-s0-left-arm.service"),
+    ("right", "robot-s0-right-arm.service"),
 ];
 const FULL_UNITS: [(&str, &str); 2] = [
-    ("left", "xlerobot-s0-bus1.service"),
-    ("right", "xlerobot-s0-bus2.service"),
+    ("left", "robot-s0-bus1.service"),
+    ("right", "robot-s0-bus2.service"),
 ];
 const S1_UNITS: [(&str, &str); 2] = [
-    ("left", "xlerobot-s1-left.service"),
-    ("right", "xlerobot-s1-right.service"),
+    ("left", "robot-s1-left.service"),
+    ("right", "robot-s1-right.service"),
 ];
 const GATEWAY_UNITS: [(&str, &str, &str); 2] = [
-    ("left", "xlerobot-gateway-left.service", "127.0.0.1:50051"),
-    ("right", "xlerobot-gateway-right.service", "127.0.0.1:50052"),
+    ("left", "robot-gateway-left.service", "127.0.0.1:50051"),
+    ("right", "robot-gateway-right.service", "127.0.0.1:50052"),
 ];
 /// arm-only与旧控制栈、全总线S0互斥；handoff仅与前两项旧控制栈互斥。
 const LEGACY_UNITS: [&str; 4] = [
     "xlerobot-coordinator.service",
     "xlerobot-web.service",
-    "xlerobot-s0-bus1.service",
-    "xlerobot-s0-bus2.service",
+    "robot-s0-bus1.service",
+    "robot-s0-bus2.service",
 ];
 
 fn systemd_dir() -> PathBuf {
@@ -120,7 +120,7 @@ fn opt(argv: &[String], key: &str) -> String {
         .clone()
 }
 
-/// `--` 之后原样透传给 `s0_daemon` 的部分。
+/// `--` 之后原样透传给 `robot-s0` 的部分。
 fn s0_args_of(argv: &[String]) -> Vec<String> {
     let idx = argv
         .iter()
@@ -144,10 +144,7 @@ fn deployment_units_exist() {
     for name in names {
         assert!(systemd_dir().join(&name).is_file(), "缺 unit {name}");
     }
-    assert!(
-        systemd_dir().join("README_dimos_replace.md").is_file(),
-        "缺 runbook"
-    );
+    assert!(systemd_dir().join("README.md").is_file(), "缺 runbook");
 }
 
 // ============================================================================
@@ -166,18 +163,18 @@ fn handoff_is_oneshot_remain_after_exit_and_conflicts_legacy() {
 #[test]
 fn handoff_exec_start_is_preflight_handoff_with_both_configs() {
     let argv = exec_start_argv(HANDOFF);
-    assert!(argv[0].ends_with("xlerobot_deploy"), "{argv:?}");
+    assert!(argv[0].ends_with("robot-deploy"), "{argv:?}");
     assert_eq!(argv[1], "preflight-handoff");
     assert_eq!(opt(&argv, "--left-config"), left_config_literal());
     assert_eq!(opt(&argv, "--right-config"), right_config_literal());
 }
 
 fn left_config_literal() -> String {
-    "/etc/robot/xlerobot_left_arm.toml".to_string()
+    "/etc/robot/xlerobot-left-arm.toml".to_string()
 }
 
 fn right_config_literal() -> String {
-    "/etc/robot/xlerobot_right_arm.toml".to_string()
+    "/etc/robot/xlerobot-right-arm.toml".to_string()
 }
 
 // ============================================================================
@@ -192,14 +189,14 @@ fn arm_units_have_no_exec_start_pre_and_run_guard() {
             "{name}: 不得有 ExecStartPre（86 只对主进程生效）"
         );
         let argv = exec_start_argv(name);
-        assert!(argv[0].ends_with("xlerobot_deploy"), "{name}: {argv:?}");
+        assert!(argv[0].ends_with("robot-deploy"), "{name}: {argv:?}");
         assert_eq!(argv[1], "guard", "{name}");
         assert_eq!(opt(&argv, "--arm"), side, "{name}");
         assert!(
             Path::new(&opt(&argv, "--s0-bin")).is_absolute(),
             "{name}: --s0-bin 必须绝对路径"
         );
-        assert!(opt(&argv, "--s0-bin").ends_with("s0_daemon"), "{name}");
+        assert!(opt(&argv, "--s0-bin").ends_with("robot-s0"), "{name}");
         assert_eq!(single(name, "Type"), "notify", "{name}");
         assert_eq!(opt(&argv, "--notify-mode"), "required", "{name}");
     }
@@ -297,8 +294,8 @@ fn production_watchdog_values_are_five_seconds() {
     }
     // 反向：测试模板不受影响，仍是秒级 2s。
     for tpl in [
-        "xlerobot-s1-freeze-test.service",
-        "xlerobot-gateway-freeze-test.service",
+        "robot-s1-freeze-test.service",
+        "robot-gateway-freeze-test.service",
     ] {
         assert_eq!(single(tpl, "WatchdogSec"), "2s", "{tpl}: 测试模板不得改");
     }
@@ -359,7 +356,7 @@ fn s0_args_must_not_carry_config_in_the_unit() {
 }
 
 /// handoff 的 `--left/right-config`、arm guard 的 `--config`、guard **自动
-/// 追加**给 `s0_daemon` 的 `--config` —— 三处必须是同一绝对路径。
+/// 追加**给 `robot-s0` 的 `--config` —— 三处必须是同一绝对路径。
 #[test]
 fn three_config_references_share_one_literal() {
     let handoff = exec_start_argv(HANDOFF);
@@ -379,7 +376,7 @@ fn three_config_references_share_one_literal() {
             PathBuf::from(&expected),
             "{name}: guard --config 必须 == handoff 同侧 config"
         );
-        // ③ guard 自动追加给 s0_daemon 的 --config
+        // ③ guard 自动追加给 robot-s0 的 --config
         let args = build_s0_args(&cfg).expect("unit 的 s0 args 不含 --config");
         let appended: Vec<_> = args
             .iter()
@@ -415,7 +412,7 @@ fn duplicate_config_from_unit_args_exits_86() {
     }
 }
 
-/// latch 单源：guard provision 的路径 == unit 里给 `s0_daemon` 的
+/// latch 单源：guard provision 的路径 == unit 里给 `robot-s0` 的
 /// `--latch-path`，且与 D2 身份表逐字一致。
 #[test]
 fn latch_path_follows_the_unit_argv() {
@@ -440,7 +437,7 @@ fn full_bus_units_bind_config_and_existing_protection_to_guard() {
         let arm = DeployArm::parse(side).unwrap();
         let robot_id = format!("xlerobot_bus{bus}_full");
         let argv = exec_start_argv(name);
-        assert!(argv[0].ends_with("xlerobot_deploy"));
+        assert!(argv[0].ends_with("robot-deploy"));
         assert_eq!(argv[1], "guard");
         assert_eq!(opt(&argv, "--arm"), side);
         assert_eq!(opt(&argv, "--robot-id"), robot_id);
@@ -507,12 +504,12 @@ fn s1_units_hard_depend_on_same_arm_s0() {
         assert_eq!(single(name, "Type"), "notify", "{name}");
         assert_eq!(single(name, "WatchdogSec"), "5s", "{name}");
         let argv = exec_start_argv(name);
-        assert!(argv[0].ends_with("s1_daemon"), "{name}: {argv:?}");
+        assert!(argv[0].ends_with("robot-s1"), "{name}: {argv:?}");
         assert_eq!(opt(&argv, "--robot-id"), format!("xlerobot_{side}"));
         assert_eq!(opt(&argv, "--hardware-id"), format!("{side}_arm"));
         assert_eq!(
             opt(&argv, "--config"),
-            format!("/etc/robot/xlerobot_{side}_arm.toml")
+            format!("/etc/robot/xlerobot-{side}-arm.toml")
         );
     }
 }
@@ -534,13 +531,13 @@ fn gateway_units_require_s0_and_want_s1() {
             "{name}: S1 不得是 Requires（会连带停 gateway）"
         );
         let argv = exec_start_argv(name);
-        assert!(argv[0].ends_with("robot_rpc_gateway"), "{name}: {argv:?}");
+        assert!(argv[0].ends_with("robot-gateway"), "{name}: {argv:?}");
         assert_eq!(opt(&argv, "--listen-addr"), listen, "{name}");
         assert_eq!(opt(&argv, "--robot-id"), format!("xlerobot_{side}"));
         assert_eq!(
             opt(&argv, "--config"),
-            format!("/etc/robot/xlerobot_{side}_arm.toml")
+            format!("/etc/robot/xlerobot-{side}-arm.toml")
         );
-        assert_eq!(opt(&argv, "--rpc-roles-toml"), "/etc/robot/rpc_roles.toml");
+        assert_eq!(opt(&argv, "--rpc-roles-toml"), "/etc/robot/rpc-roles.toml");
     }
 }

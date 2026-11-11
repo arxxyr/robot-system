@@ -6,7 +6,7 @@
 //!   （sync_read / sync_write）。
 //! - **挂 `s0_serial_io_thread`，不挂 `s0_rt_thread`**（task-30 pre-1a/1b）：
 //!   串口 RTT ms 量级（13-motor sync_read ≈ 6 ms）→ 违反 §4.9 RT 铁律的
-//!   "< 100 µs / no blocking" 约束。RtClass 标 `RtClass::SerialRT` 让 s0_daemon
+//!   "< 100 µs / no blocking" 约束。RtClass 标 `RtClass::SerialRT` 让 robot-s0
 //!   按 "总线 latency 可证明但单帧 RTT 远超 100 µs" 路由到 SerialIoCtrlClient
 //!   + serial_io_thread（普通优先级 + select! 主循环）。
 //! - **校准 / homing offset**：v0.2 不内置：raw ↔ rad 转换全部走线性 + 全圈
@@ -331,7 +331,7 @@ impl<T: SerialTransport> FeetechAdapter<T> {
                 name: config.adapter_name,
                 kind: AdapterKind::Manipulator,
                 // task-30 pre-1b：feetech rt_class HardRT → SerialRT。串口 RTT
-                // 毫秒量级，绝不能挂 s0_rt_thread。s0_daemon 按 SerialRT 路由到
+                // 毫秒量级，绝不能挂 s0_rt_thread。robot-s0 按 SerialRT 路由到
                 // s0_serial_io_thread（普通优先级 + select! 主循环）。
                 rt_class: RtClass::SerialRT,
                 vendor_sdk: false, // Rust 自实现 wire protocol，无 vendor SDK 链接

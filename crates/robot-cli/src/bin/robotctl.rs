@@ -38,7 +38,7 @@ static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// SIGINT / SIGTERM 处理器 —— **直接 `_exit(0)`**。
 ///
 /// 原设计是只 set `SHUTDOWN` flag + 主循环检测 + `process::exit(0)` 跳过 Drop。
-/// 实测场景（handoff `2026-04-25_1` §7.6.3 待办 #1）：publisher（`s0_daemon`）先
+/// 实测场景（handoff `2026-04-25_1` §7.6.3 待办 #1）：publisher（`robot-s0`）先
 /// 死 + 几秒后 robotctl 被 SIGTERM → SIGSEGV (exit=139)，crash 在**主循环内**
 /// 而不是 Drop 路径 —— 大概率 `iceoryx2 0.8.1` subscriber 内部 critical section
 /// 被 signal interrupt 后状态不一致。
@@ -76,7 +76,7 @@ enum Command {
     Status,
     Watch,
     /// **task-30 v9 / task #15**：发一帧 `EStopEvent` 到
-    /// `/<robot_id>/events/estop`，让 `s0_daemon` `ipc_thread` `poll_estop` 拿到 →
+    /// `/<robot_id>/events/estop`，让 `robot-s0` `ipc_thread` `poll_estop` 拿到 →
     /// `ipc_tick` emergency drain → 真硬件 broadcast `Torque_Enable=0`。
     Estop,
 }
@@ -297,7 +297,7 @@ fn run(args: &Args) -> Result<(), i32> {
                 eprintln!("signal received → exit");
             }
             // task-30 follow-up（handoff 2026-04-25_1 §3.6）：iceoryx2 0.8.1
-            // subscriber Drop 路径在 publisher（如 s0_daemon）已先退出时访问
+            // subscriber Drop 路径在 publisher（如 robot-s0）已先退出时访问
             // 已释放的 shared memory 会 SIGSEGV（exit=139）。这是 iceoryx2 内部
             // race，修框架超 scope —— 短寿命 CLI 工具接受 **跳过 Drop** 直接
             // `process::exit(0)` 的妥协（iceoryx2 shared-memory 资源由 OS 回收，
@@ -313,7 +313,7 @@ fn run(args: &Args) -> Result<(), i32> {
 /// **task-30 v9 / task #15**：发一帧 `EStopEvent` 到
 /// `/<robot_id>/events/estop`。
 ///
-/// `s0_daemon` `ipc_thread` `poll_estop` 收到 → `ipc_tick` emergency drain →
+/// `robot-s0` `ipc_thread` `poll_estop` 收到 → `ipc_tick` emergency drain →
 /// `executor_ctrl.safety_stop()`（client 同步 `policy=StopTorque`,
 /// `safety_latched=true`, `safety_state=StopCommanded`）→ rt/serial 端 swap
 /// `emergency_action` 拿到 `SAFETY_STOP` → adapter `safety_stop_fast`

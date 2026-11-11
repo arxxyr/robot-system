@@ -1,11 +1,11 @@
 //! `FakeHeartbeatPublisher`：测试侧扮演 **s1** 角色 publish `Heartbeat` 给
 //! `/<robot_id>/s1/heartbeat`，驱动 s0 状态机 `Ready → Enabled.Active`
 //! （v0.5 候选 C `SetEnabled(true)` D8 观测依赖；Spec D-P3 拍板：e2e 用
-//! fake heartbeat 源，**不**起 s1_daemon）。
+//! fake heartbeat 源，**不**起 robot-s1）。
 //!
 //! ## 拓扑
 //!
-//! `set_enabled_e2e` 起 **s0_daemon（真）+ 本 fake heartbeat + gateway**。
+//! `set_enabled_e2e` 起 **robot-s0（真）+ 本 fake heartbeat + gateway**。
 //! s0 `ipc_thread` 订阅该 topic：收 heartbeat → `guards.heartbeat_ok=true` +
 //! `Event::Heartbeat` → `Ready + Heartbeat → Enabled.Active`（effectful
 //! `Enable(true)`）。无 heartbeat → 滞留 Ready → SetEnabled pending 走

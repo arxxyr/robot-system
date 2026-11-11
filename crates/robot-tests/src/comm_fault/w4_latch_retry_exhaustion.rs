@@ -68,7 +68,7 @@ async fn run_case(args: &Args) -> Result<Value, String> {
         .env("ROBOT_LOG_FORMAT", "json")
         .env(
             "RUST_LOG",
-            "warn,s0_daemon=info,robot_s0::ipc_runtime=info,robot_s0::rr_server_thread=info",
+            "warn,robot_s0=info,robot_s0::ipc_runtime=info,robot_s0::rr_server_thread=info",
         );
     let launch = json!({"program":command.as_std().get_program().to_string_lossy(),
         "argv":command.as_std().get_args().map(|v|v.to_string_lossy().into_owned()).collect::<Vec<_>>(),

@@ -1,0 +1,56 @@
+# S0 启动前整机停止预检：双总线17个电机。
+# bus1 ID1–8、bus2 ID1–6断扭；bus2 ID7–9先写零速再断扭，随后读回。
+# 单项失败继续处理其他电机，最终聚合结果；一侧连接失败不跳过另一侧。
+# RemainAfterExit使同次开机内另一侧启动复用完成态，避免碰已占用的总线。
+# 完成态不代表当前物理安全；主机重启也不等于电机断电。
+
+[Unit]
+Description=Robot S0 preflight (ensure-safe all 17 motors on both buses)
+Documentation=file:///home/loosqk/repo/robot/robot-system/scripts/systemd/README.md
+
+After=network-online.target dev-ttyACM0.device dev-ttyACM1.device
+Requires=dev-ttyACM0.device dev-ttyACM1.device
+
+# **旧栈停止顺序的第一责任人**：conflict 目标的 stop job 按 After 排序在本
+# unit start 之前完成。升级后的full-bus是本unit的消费者，不列为旧栈。
+Conflicts=xlerobot-coordinator.service xlerobot-web.service
+After=xlerobot-coordinator.service xlerobot-web.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+User=loosqk
+Group=loosqk
+SupplementaryGroups=dialout
+WorkingDirectory=/home/loosqk/repo/robot/robot-system
+
+# R10-1：双 config 显式传入，字面写死；与 arm guard 的 --config 及 guard
+# 自动追加给 robot-s0 的 --config 引用**同一绝对路径**。
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-deploy preflight-handoff \
+    --left-config /etc/robot/xlerobot-left-arm.toml \
+    --right-config /etc/robot/xlerobot-right-arm.toml
+
+# 保留完整聚合预检，不由systemd在部分安全写完成时中断。
+# 单次串口操作有超时；进程终态未知时由监督入口保持独占并请求现场处置。
+TimeoutStartSec=infinity
+
+StandardOutput=journal
+StandardError=journal
+Environment=ROBOT_LOG_FORMAT=json
+Environment=RUST_LOG=info,robot=debug
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

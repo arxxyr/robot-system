@@ -22,8 +22,7 @@ fn arguments(output: &str) -> Vec<String> {
 }
 
 fn fixture_config() -> Config {
-    let source =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus2_full.toml");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus2.toml");
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
     value.as_table_mut().unwrap().remove("sensor");
     let directory = tempfile::tempdir().unwrap();
@@ -42,8 +41,7 @@ fn fixture_config() -> Config {
 }
 
 fn left_fixture_args(directory: &std::path::Path) -> Args {
-    let source =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus1_full.toml");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus1.toml");
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
     value.as_table_mut().unwrap().remove("sensor");
     let hardware = &mut value["hardware"][0];
@@ -107,7 +105,7 @@ fn position_hold_requires_original_left_layout_manual_enable_and_no_sensor() {
                 .swap(6, 7),
             "sensor" => {
                 let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../configs/xlerobot_bus1_full.toml");
+                    .join("../../configs/xlerobot-bus1.toml");
                 let full: toml::Value =
                     toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
                 value
@@ -121,8 +119,7 @@ fn position_hold_requires_original_left_layout_manual_enable_and_no_sensor() {
         assert!(Config::load(&args).is_err(), "必须拒绝{changed}");
     }
     let right = Args {
-        config: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../configs/xlerobot_bus2_full.toml"),
+        config: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus2.toml"),
         hardware_id: "right_arm_full_with_base".into(),
         ..args
     };
@@ -363,8 +360,7 @@ fn configuration_selects_only_the_front_wheel_from_the_original_toml() {
         config.wheel_slots.map(|slot| config.layout.motor_ids[slot])
     );
     let directory = tempfile::tempdir().unwrap();
-    let source =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot_bus2_full.toml");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus2.toml");
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(source).unwrap()).unwrap();
     value.as_table_mut().unwrap().remove("sensor");
     let hardware = &mut value["hardware"][0];

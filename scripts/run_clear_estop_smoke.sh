@@ -37,12 +37,12 @@ echo "==> hostname       : $(hostname)"
 echo "==> uname          : $(uname -a)"
 echo
 
-echo "==> cargo build --release（s0_daemon / robot_rpc_gateway / clear_estop_e2e）..."
+echo "==> cargo build --release（robot-s0 / robot-gateway / clear_estop_e2e）..."
 cargo build --locked --release \
     --target-dir "$SMOKE_TARGET_DIR" \
     --target "$HOST_TARGET" \
-    --bin s0_daemon \
-    --bin robot_rpc_gateway \
+    --bin robot-s0 \
+    --bin robot-gateway \
     --bin clear_estop_e2e \
     --features "robot-tests/clear-estop-e2e"
 

@@ -4,10 +4,10 @@
 
 | 用途 | 文件 | 边界 |
 |---|---|---|
-| 当前全身 S0 候选 | [bus1](xlerobot_bus1_full.toml)、[bus2](xlerobot_bus2_full.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
-| 包配置矩阵 | [package_matrix.toml](package_matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
-| 现有 arm-only 部署 | [左臂](xlerobot_left_arm.toml)、[右臂](xlerobot_right_arm.toml)、[RPC 角色](rpc_roles.toml) | 仍被服务、部署工具和受监督 demo 使用，保留路径 |
-| 模拟与集成测试 | `xlerobot.toml`、`*_smoke.toml`、`clear_estop_e2e.toml` | 由对应测试明确选择；`xlerobot.toml` 是旧 schema/mock 示例，不是实机入口 |
+| 当前全身 S0 候选 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
+| 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
+| 现有 arm-only 部署 | [左臂](xlerobot-left-arm.toml)、[右臂](xlerobot-right-arm.toml)、[RPC 角色](rpc-roles.toml) | 仍被服务、部署工具和受监督 demo 使用，保留路径 |
+| 模拟与集成测试 | `xlerobot.toml`、`*-smoke.toml`、`clear-estop-e2e.toml` | 由对应测试明确选择；`xlerobot.toml` 是旧 schema/mock 示例，不是实机入口 |
 
 只按明确文件安装或测试，不使用 `configs/**/*.toml` 批量加载。仍在执行的测试夹具保留稳定路径；退出使用的配置核对引用后直接删除，不另建归档或备份目录。新增配置先注明用途，不按轮次复制现有配置。
 

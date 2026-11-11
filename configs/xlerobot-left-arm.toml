@@ -1,0 +1,55 @@
+# XLeRobot 左臂 arm-only 权威配置（v0.5 候选 E；Spec D2 身份表逐行对应）。
+#
+# 身份：robot_id = xlerobot_left / hardware_id = left_arm / bus1
+# （…5A7C121427）。latch 路径由 robot-s0 按 robot_id 派生 =
+# /var/lib/robot/xlerobot_left/estop_latch；gateway listen = 127.0.0.1:50051
+# （unit 侧字面，非本文件字段）。
+#
+# ## 受监督 demo 安全边界（D15-R (c1+)，CHANGELOG 2026-07-15 条）
+#
+# - `auto_enable = false`：**不自动上扭**——每次上扭必须 operator 显式
+#   `SetEnabled(true)`（含 kill 后 systemd 重启路径；R8-2 per-arm guard
+#   会先对本 bus 全量 ensure-safe）。
+# - `[monitor]`：demo 资源基线采样面（R5-6）——三进程名精确 comm 匹配，
+#   `robot_rpc_gatew` 为 15 字符截断名（bin 名 17 字符超 comm 上限）。
+#
+# 安装（R10-1）：install -D -m 0644 本文件 → /etc/robot/xlerobot-left-arm.toml
+# （handoff / arm guard / robot-s0 三处引用同一绝对路径）。
+
+[robot]
+id             = "xlerobot_left"
+config_version = "0.5.0-e-demo"
+
+[[hardware]]
+id          = "left_arm"
+adapter     = "feetech_sts3215"
+address     = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C121427-if00"
+joints      = [
+    "left_arm_shoulder_pan",
+    "left_arm_shoulder_lift",
+    "left_arm_elbow_flex",
+    "left_arm_wrist_flex",
+    "left_arm_wrist_roll",
+    "left_arm_gripper",
+]
+motor_ids   = [1, 2, 3, 4, 5, 6]
+# 校准上下边界容差（raw），与 joints/motor_ids 同序；不改变到位精度。
+calibration_range_tolerances_raw = [20, 20, 20, 20, 20, 20]
+# arm-only：只给 left_arm.json（D2——不含 head joint，无需 head.json 冗余；
+# 拣取语义沿 factory load_and_merge 先例）。路径 = Orin 实机标定目录实测。
+calibration_paths = [
+    "/home/loosqk/repo/dimensional-applications/calibration/left_arm.json",
+]
+auto_enable = false
+
+# S1 action profile（P0 回修：候选 E 真机工作流走 Scripted backend——
+# 缺省 profile 只启用 mock_dwell〔coordinator.rs default_b2〕，Scripted 请求
+# 会落 NoBackendForKind）。gripper 复用 Scripted（D6）。
+[s1.profile]
+backends     = ["scripted"]
+command_mode = "joint_position"
+
+[monitor]
+interval_secs        = 1
+# 保留旧 comm，兼容尚未更新的安装产物。
+interested_processes = ["robot-s0", "robot-s1", "robot-gateway", "robot-s0", "robot-s1", "robot_rpc_gatew"]

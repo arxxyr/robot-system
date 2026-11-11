@@ -1,7 +1,7 @@
 //! `FeetechFactory` —— `inventory` 自注册的真硬件 factory。
 //!
 //! **仅 `--features real-hw` 编译**。task 27b 已落 inventory 机制（`MockFactory`
-//! 自注册）；本文件给 feetech 加同模式注册，task 28 真机阶段 s0_daemon 按
+//! 自注册）；本文件给 feetech 加同模式注册，task 28 真机阶段 robot-s0 按
 //! `[[hardware]] adapter = "feetech_sts3215"` 字面查到本 factory 并实例化。
 //!
 //! ## context 字段消费

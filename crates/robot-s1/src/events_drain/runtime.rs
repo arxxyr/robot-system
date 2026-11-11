@@ -112,8 +112,7 @@ pub struct EventsDrainThreadConfig {
 impl EventsDrainThreadConfig {
     /// 用 `(robot_id, action_id)` 构造默认 config。
     ///
-    /// `topic` = `/<robot_id>/s1/action_events/<action_id_hex>`，跟
-    /// docs/handoffs/v0.3_b4_outline.md §5.2 拍板一致。
+    /// `topic` = `/<robot_id>/s1/action_events/<action_id_hex>`。
     #[must_use]
     pub fn for_action(robot_id: &str, action_id: ActionId) -> Self {
         Self {
@@ -198,7 +197,7 @@ impl EventsDrainThreadHandle {
     }
 }
 
-/// 管理 s1_daemon 内所有活跃 [`EventsDrainThreadHandle`] 的注册表。
+/// 管理 robot-s1 内所有活跃 [`EventsDrainThreadHandle`] 的注册表。
 ///
 /// `Coordinator::submit` 成功后 `InvokeTask` handler 调
 /// [`spawn_events_drain_thread`] 起一条 drain thread，handle 通过
@@ -208,7 +207,7 @@ impl EventsDrainThreadHandle {
 /// **方法签名 by ref**（B4 (2/3-a) reviewer round 6 阻断锁定）：
 /// `request_stop_all` / `join_all` / `stop_and_join_all` 都接 `&self` —— 内
 /// 部 `Mutex<Vec<Handle>>` 通过 `mem::take` 拿 owned `Vec<Handle>` 后释放
-/// 锁、再逐个 join。`s1_daemon` 把 registry 包 `Arc<EventsDrainRegistry>`
+/// 锁、再逐个 join。`robot-s1` 把 registry 包 `Arc<EventsDrainRegistry>`
 /// 跟 [`crate::rr_server::handler::RealHandlerCtx`] 共享，shutdown 路径**不**
 /// 依赖 `Arc::try_unwrap`（避免 RR thread 残留 closure ref-leak 时打破 join
 /// 确定性）。
@@ -224,13 +223,13 @@ impl EventsDrainThreadHandle {
 /// events_registry.stop_and_join_all`。重复调 `stop_and_join_all` 是 no-op
 /// （`mem::take` 返空 `Vec`）。
 ///
-/// **v0.4 候选 3 AC-C1 daemon path 扩展**：`s1_daemon` 在 `rr.join_all`
+/// **v0.4 候选 3 AC-C1 daemon path 扩展**：`robot-s1` 在 `rr.join_all`
 /// 和 `events_registry.stop_and_join_all` 之间额外停 + join 1s 周期的
 /// reaper thread（reaper 调 [`Self::reap_finished`] 回收已自然退出的
 /// drain handle）。registry **API 语义不变** —— `reap_finished` 跟
 /// `stop_and_join_all` 互斥靠同一把 `Mutex`；daemon shutdown 顺序加
 /// reaper.stop 步骤仅是为了让 reaper 在 `stop_and_join_all` 之前彻底
-/// 停下，让 shutdown 路径串行化（详 `crates/robot-s1/src/bin/s1_daemon.rs`
+/// 停下，让 shutdown 路径串行化（详 `crates/robot-s1/src/bin/robot-s1.rs`
 /// shutdown 段）。
 #[derive(Default)]
 pub struct EventsDrainRegistry {
@@ -330,7 +329,7 @@ impl EventsDrainRegistry {
     /// 返回值：本次从 registry 移除并 join 尝试的 handle 数。**含
     /// drain thread panic 路径**（沿 `join_all` 同款，panic 也 counted
     /// as reaped；详下方 "panic 处理" 段）；不区分 join Ok / Err。caller
-    /// (如 `s1_daemon` reaper thread) 可用此值打 info log 让 smoke
+    /// (如 `robot-s1` reaper thread) 可用此值打 info log 让 smoke
     /// binary 通过 stderr scrape 看 `events_registry_len` 收敛曲线
     /// （AC-C1 outline §3 reaped > 0 必须 log）。
     ///
@@ -426,7 +425,7 @@ impl EventsDrainRegistry {
 /// `clock` 用于设置 `FrameHeader.stamp_ns`（wire publish 时刻；跟事件**语
 /// 义**时刻 `at_ns` 区分；详模块文档"时间戳来源"段）。
 ///
-/// `source_id` 写到 `FrameHeader.source_id`。s1_daemon 一律传 `2`（与
+/// `source_id` 写到 `FrameHeader.source_id`。robot-s1 一律传 `2`（与
 /// v0.2 `JointCommand` / `Heartbeat` 约定一致）。
 ///
 /// # Errors
@@ -654,7 +653,7 @@ mod tests {
     //! / disconnect 三条退出路径) + registry stop_and_join_all 行为。
     //!
     //! 跨进程 integration test 留 B4 (3/3) commit（
-    //! `crates/robot-rpc/tests/...`，沿 A1-3 (3/3) 跨进程 spawn s1_daemon
+    //! `crates/robot-rpc/tests/...`，沿 A1-3 (3/3) 跨进程 spawn robot-s1
     //! binary 同款模式）。
 
     use super::*;

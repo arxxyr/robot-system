@@ -4,14 +4,14 @@
 //!
 //! `RestartPreventExitStatus=86` **只作用于主进程**。若 pre 步放
 //! `ExecStartPre=`，退 86 不会被捕获 → 连败停止态失效。故 unit 写
-//! `ExecStart=xlerobot_deploy guard …`，guard 末尾 `exec s0_daemon`
+//! `ExecStart=robot-deploy guard …`，guard 末尾 `exec robot-s0`
 //! 保住 `MainPID`（`Type=notify` / watchdog 语义照旧）。
 //!
 //! ## 六步（pre-increment，r11 AB1）
 //!
 //! 1. 持稳定 `.lock`，读 `n`；`n == 5` → 立即退 86；
 //! 2. **执行任何 preflight / provision 之前**原子写入 `n+1`（写失败 → 86）；
-//! 3. 两步全部成功 → **清零计数**（清零失败退 86）→ `exec s0_daemon`；
+//! 3. 两步全部成功 → **清零计数**（清零失败退 86）→ `exec robot-s0`；
 //! 4. 正常失败：当前值 `== 5` → 退 86；不足 5 → 普通非零码（走 unit
 //!    `Restart=on-failure` + `RestartSec=2s` 重试）；
 //! 5. 同一 boot 内的进程终止（panic / SIGKILL）**保留已递增值**，下一次
@@ -43,7 +43,7 @@
 //! ## latch 稳定锁的类型化分流（S48 A3d / W1）
 //!
 //! provision 内部持目标稳定锁 `<latch>.lock` 覆盖整个 read / repair / fsync，
-//! 返回即释放（RAII），因此 exec 前 guard 不持有它，`s0_daemon` 自行重取。
+//! 返回即释放（RAII），因此 exec 前 guard 不持有它，`robot-s0` 自行重取。
 //! 锁被另一进程持有 → [`GuardExit::LatchHeld`] 退 **89**（unit 禁止重启，与
 //! daemon 的 89 同义）；latch 名字 / 锁 IO / 对象身份错误 →
 //! [`GuardExit::LatchConfig`] 退 **1**（`Restart=on-failure` 仍会重试，连败预算
@@ -59,7 +59,7 @@
 //! 完整总线必须显式给出 `--latch-path` 与同父目录的 `--rx-trust-dir`，
 //! 不按新 robot ID 隐式新建保护目录。
 //!
-//! **解析规则必须与 `s0_daemon::Args::parse` 同规则**（round 1 P0-3）：
+//! **解析规则必须与 `robot-s0::Args::parse` 同规则**（round 1 P0-3）：
 //! daemon 只认 `--opt <value>` 空格形式、**不认 `--opt=value`**，且对重复
 //! 取**最后一个**。首版 guard 取第一个且接受等号形式——重复或等号写法下
 //! guard provision A、daemon 读 B。修法 = **guard 拒绝重复 / 缺值 / 等号
@@ -79,7 +79,7 @@ use crate::latch_lock::{
     LATCH_LOCK_FAILURE_EXIT_CODE, LATCH_LOCK_HELD_EXIT_CODE, validate_latch_path,
 };
 
-/// 停止态退出码——**永久保留**（`s0_daemon` 任何路径不得以 86 退出，
+/// 停止态退出码——**永久保留**（`robot-s0` 任何路径不得以 86 退出，
 /// 否则 `RestartPreventExitStatus=86` 会误吞 watchdog 重启；回归锁见 AC-E3）。
 pub const GUARD_STOP_EXIT_CODE: u8 = 86;
 /// preflight 普通失败码（走 `RestartSec=2s` 重试）。
@@ -108,13 +108,13 @@ pub struct GuardConfig {
     pub arm: DeployArm,
     /// 本臂 config 绝对路径（三处引用同一份，R10-1）。
     pub config_path: PathBuf,
-    /// `s0_daemon` 可执行文件——必须 `is_absolute()` + `exists()`，违者退 86。
+    /// `robot-s0` 可执行文件——必须 `is_absolute()` + `exists()`，违者退 86。
     pub s0_bin: PathBuf,
     /// systemd `RuntimeDirectory` 注入的计数目录。
     pub runtime_dir: PathBuf,
     /// 运行身份（计数 / 实例锁按它派生；完整总线显式绑定保护路径）。
     pub robot_id: String,
-    /// `--` 之后透传给 `s0_daemon` 的参数。
+    /// `--` 之后透传给 `robot-s0` 的参数。
     pub s0_args: Vec<OsString>,
 }
 
@@ -136,7 +136,7 @@ impl GuardConfig {
     /// # Errors
     ///
     /// `--latch-path` 重复 / 缺值 / 写成 `--latch-path=<p>` → 与
-    /// `s0_daemon` 的取值可能不同，一律拒绝（配置级错误 → 86）。
+    /// `robot-s0` 的取值可能不同，一律拒绝（配置级错误 → 86）。
     pub fn resolve_latch_path(&self) -> Result<PathBuf, String> {
         match scan_opt(&self.s0_args, LATCH_PATH_OPT)? {
             Some(p) => Ok(PathBuf::from(p)),
@@ -153,7 +153,7 @@ impl GuardConfig {
     }
 }
 
-/// 按 **`s0_daemon::Args::parse` 的同一套 tokenize 规则**取某选项的唯一取值。
+/// 按 **`robot-s0::Args::parse` 的同一套 tokenize 规则**取某选项的唯一取值。
 ///
 /// - 只认 `--opt <value>`：命中即把**下一个 token 无条件当取值**（与 daemon
 ///   逐字一致，避免 `--latch-path --robot-id x` 这类错位两侧解释不同）；
@@ -172,7 +172,7 @@ fn scan_opt(args: &[OsString], opt: &str) -> Result<Option<OsString>, String> {
             .is_some_and(|t| t.starts_with(eq_prefix.as_str()))
         {
             return Err(format!(
-                "{opt}=<value> is not accepted by s0_daemon; use `{opt} <value>`"
+                "{opt}=<value> is not accepted by robot-s0; use `{opt} <value>`"
             ));
         }
         if arg == OsStr::new(opt) {
@@ -181,7 +181,7 @@ fn scan_opt(args: &[OsString], opt: &str) -> Result<Option<OsString>, String> {
                 .ok_or_else(|| format!("{opt} requires a value"))?;
             if found.is_some() {
                 return Err(format!(
-                    "{opt} appears more than once (s0_daemon takes the last, guard the first — ambiguous)"
+                    "{opt} appears more than once (robot-s0 takes the last, guard the first — ambiguous)"
                 ));
             }
             found = Some(value.clone());
@@ -307,11 +307,11 @@ pub trait GuardSteps {
     /// 见 [`ProvisionStepError`]：锁被占用 / 配置错误 / 业务失败三类分流。
     fn provision(&mut self, cfg: &GuardConfig) -> Result<(), ProvisionStepError>;
 
-    /// `exec s0_daemon`（成功不返回）。
+    /// `exec robot-s0`（成功不返回）。
     fn exec_s0(&mut self, cfg: &GuardConfig, args: &[OsString]) -> ExecOutcome;
 }
 
-/// 拼 `s0_daemon` 的完整 argv：透传 `s0_args` 后**自动追加**
+/// 拼 `robot-s0` 的完整 argv：透传 `s0_args` 后**自动追加**
 /// `--config <config_path>`。
 ///
 /// # Errors
@@ -375,7 +375,7 @@ pub fn validate_invocation(cfg: &GuardConfig) -> Result<(), GuardExit> {
         )
     })?;
 
-    // 转发给 s0_daemon 的身份必须存在且一致——否则 daemon 会以别的身份
+    // 转发给 robot-s0 的身份必须存在且一致——否则 daemon 会以别的身份
     // （或 ROBOT_ID env / "default"）跑起来，topic / latch / 计数全错位。
     for (opt, expected_value) in [
         (ROBOT_ID_OPT, cfg.robot_id.as_str()),
@@ -451,7 +451,7 @@ fn verify_config_identity(cfg: &GuardConfig) -> Result<(), String> {
 ///
 /// # Errors
 ///
-/// 见 [`GuardExit`]——每个变体都**绝不** exec `s0_daemon`。
+/// 见 [`GuardExit`]——每个变体都**绝不** exec `robot-s0`。
 pub fn evaluate_guard<S: GuardSteps + ?Sized>(
     cfg: &GuardConfig,
     steps: &mut S,
@@ -583,7 +583,7 @@ pub mod real {
             tracing::info!(
                 s0_bin = %cfg.s0_bin.display(),
                 arm = %cfg.arm,
-                "guard: pre steps ok, exec s0_daemon"
+                "guard: pre steps ok, exec robot-s0"
             );
             // exec 成功不返回；返回即失败。
             let err = Command::new(&cfg.s0_bin).args(args).exec();
@@ -681,13 +681,13 @@ mod tests {
 
     fn fixture() -> Fixture {
         let dir = TempDir::new().unwrap();
-        let s0_bin = dir.path().join("s0_daemon");
+        let s0_bin = dir.path().join("robot-s0");
         std::fs::write(&s0_bin, b"#!/bin/true\n").unwrap();
         let runtime_dir = dir.path().join("run");
         std::fs::create_dir(&runtime_dir).unwrap();
         let cfg = GuardConfig {
             arm: DeployArm::Left,
-            config_path: dir.path().join("xlerobot_left_arm.toml"),
+            config_path: dir.path().join("xlerobot-left-arm.toml"),
             s0_bin,
             runtime_dir,
             robot_id: "xlerobot_left".to_string(),
@@ -719,12 +719,12 @@ mod tests {
             DeployArm::Left => (
                 "xlerobot_bus1_full",
                 "left_arm_full_with_head",
-                "xlerobot_bus1_full.toml",
+                "xlerobot-bus1.toml",
             ),
             DeployArm::Right => (
                 "xlerobot_bus2_full",
                 "right_arm_full_with_base",
-                "xlerobot_bus2_full.toml",
+                "xlerobot-bus2.toml",
             ),
         };
         let trust = f.dir.path().join("protection");
@@ -857,7 +857,7 @@ mod tests {
             let mut f = full_fixture(arm);
             f.cfg.config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../configs")
-                .join(format!("xlerobot_{}_arm.toml", arm.label()));
+                .join(format!("xlerobot-{}-arm.toml", arm.label()));
             let mut steps = ScriptedSteps::ok();
             steps.verify_config = true;
             assert_eq!(
@@ -1001,7 +1001,7 @@ mod tests {
     #[test]
     fn invalid_s0_bin_exits_86_without_touching_count() {
         let f = fixture();
-        for bad in [PathBuf::from("s0_daemon"), f.cfg.runtime_dir.join("nope")] {
+        for bad in [PathBuf::from("robot-s0"), f.cfg.runtime_dir.join("nope")] {
             let mut cfg = f.cfg.clone();
             cfg.s0_bin = bad.clone();
             let mut steps = ScriptedSteps::ok();
@@ -1043,7 +1043,7 @@ mod tests {
     }
 
     /// latch 路径单源：唯一的空格形式 `--latch-path <p>` 跟随，缺省按
-    /// `robot_id` 回填（与 `s0_daemon` 默认规则逐字一致）。
+    /// `robot_id` 回填（与 `robot-s0` 默认规则逐字一致）。
     #[test]
     fn latch_path_follows_s0_args_then_robot_id() {
         let f = fixture();
@@ -1058,7 +1058,7 @@ mod tests {
         );
     }
 
-    /// **round 1 P0-3**：`s0_daemon` 对重复取最后一个、不认等号写法；guard
+    /// **round 1 P0-3**：`robot-s0` 对重复取最后一个、不认等号写法；guard
     /// 取第一个且曾接受等号写法 → 两侧可能 provision A、读 B。修法 = 三种
     /// 歧义写法**一律拒绝**，且必须在**取锁之前**（不消耗连败预算）。
     #[test]
@@ -1094,7 +1094,7 @@ mod tests {
         }
     }
 
-    /// **round 1 P0-1（argv 侧）**：转发给 `s0_daemon` 的身份必须存在且
+    /// **round 1 P0-1（argv 侧）**：转发给 `robot-s0` 的身份必须存在且
     /// 与 D2 一致——缺失会让 daemon 落到 `ROBOT_ID` env / `"default"`。
     #[test]
     fn forwarded_identity_must_match_d2() {
@@ -1216,13 +1216,13 @@ mod tests {
         assert!(!steps.calls().contains(&"exec"), "{:?}", steps.calls());
     }
 
-    /// AC-E3 回归锁：**86 是 guard 永久保留码**——`s0_daemon` 任何路径都
+    /// AC-E3 回归锁：**86 是 guard 永久保留码**——`robot-s0` 任何路径都
     /// 不得以它退出，否则 unit 的 `RestartPreventExitStatus=86` 会连
     /// watchdog 重启一起吞掉（违反 §6.7 #2）。源级扫描 bin 里的
     /// `exit(<字面量>)` / `Err(<字面量>)`；post-E 只扩允许集，86 永久保留。
     #[test]
     fn s0_daemon_never_exits_with_the_reserved_code() {
-        const SRC: &str = include_str!("../bin/s0_daemon.rs");
+        const SRC: &str = include_str!("../bin/robot-s0.rs");
 
         fn literal_codes(src: &str, marker: &str) -> Vec<u8> {
             src.match_indices(marker)
@@ -1242,7 +1242,7 @@ mod tests {
         codes.extend(literal_codes(production, "Err("));
         assert!(!codes.is_empty(), "扫描失效（marker 漂移）");
         for code in codes {
-            assert_ne!(code, GUARD_STOP_EXIT_CODE, "s0_daemon 不得以 86 退出");
+            assert_ne!(code, GUARD_STOP_EXIT_CODE, "robot-s0 不得以 86 退出");
             assert!(
                 matches!(code, 0..=4 | 87 | 88),
                 "S0 出现未批准的退出码 {code}"
@@ -1260,7 +1260,7 @@ mod tests {
         assert_eq!(GuardExit::PreStepFailed(70).code(), 70);
         assert!(GuardExit::LockConflict.is_stop_state());
         assert!(!GuardExit::PreStepFailed(70).is_stop_state());
-        // 86 不得与 s0_daemon(0/1/2) / S1(3/4/5) 既有码重叠。
+        // 86 不得与 robot-s0(0/1/2) / S1(3/4/5) 既有码重叠。
         assert!(!(0..=5).contains(&GUARD_STOP_EXIT_CODE));
         assert_ne!(PREFLIGHT_FAIL_EXIT_CODE, GUARD_STOP_EXIT_CODE);
         assert_ne!(PROVISION_FAIL_EXIT_CODE, GUARD_STOP_EXIT_CODE);

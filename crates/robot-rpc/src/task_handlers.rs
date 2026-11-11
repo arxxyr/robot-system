@@ -798,7 +798,7 @@ async fn handle_clear_error_inner(
         tonic::Status::new(e.to_tonic_code(), e.to_string())
     })?;
     let role = lookup_role(&state.role_table, &v.meta.auth_token)?;
-    // ClearError = maintainer+（outline §8.1 #7c 收紧；rpc_roles.toml
+    // ClearError = maintainer+（outline §8.1 #7c 收紧；rpc-roles.toml
     // [operator] 删 clear_error）
     check_capability(
         &state.role_table,
@@ -1568,7 +1568,7 @@ capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error"]
         use tokio::sync::watch;
 
         // 用 in-mem TOML 构造 role table（含 maintainer-fake-token-001 → maintainer
-        // → clear_error capability）；不读 configs/rpc_roles.toml（lib unit
+        // → clear_error capability）；不读 configs/rpc-roles.toml（lib unit
         // 不依赖 workspace 外部文件）。
         const TEST_TOML: &str = r#"
 [tokens]

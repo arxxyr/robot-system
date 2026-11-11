@@ -11,7 +11,7 @@
 //! - `dump_stderr_to(path)`（forensic 写到 `/tmp/b4_e2e/<robot_id>/`）
 //! - `snapshot_stderr_head_tail(n)`（panic 路径 `eprintln!` 头尾 N 行）
 //! - `locate_test_bin(name)`（cargo test 派生 target dir，找
-//!   `s1_daemon` / `robot_rpc_gateway` 二进制）
+//!   `robot-s1` / `robot-gateway` 二进制）
 //!
 //! ## 子进程 stream drain 策略
 //!
@@ -343,7 +343,7 @@ fn spawn_stream_drain(
 // Command builders
 // ============================================================================
 
-/// `s0_daemon` Command（v0.5 候选 E 段(7) 六进程拓扑）：`--config` /
+/// `robot-s0` Command（v0.5 候选 E 段(7) 六进程拓扑）：`--config` /
 /// `--robot-id` / `--hardware-id` / `--latch-path`；latch 必须已 provision
 /// 为 `0\n`（strict fail-closed，见 `DualCtx` bring-up 顺序）。
 #[must_use]
@@ -374,7 +374,7 @@ pub fn build_s0_daemon_command(
     cmd
 }
 
-/// `s1_daemon` Command：5 args + `RUST_LOG=info` 让 ready marker 必出现。
+/// `robot-s1` Command：5 args + `RUST_LOG=info` 让 ready marker 必出现。
 #[must_use]
 pub fn build_s1_daemon_command(
     bin_path: &Path,
@@ -395,7 +395,7 @@ pub fn build_s1_daemon_command(
     cmd
 }
 
-/// `robot_rpc_gateway` Command：base 3 args + `RUST_LOG=info`；可选 `--config`
+/// `robot-gateway` Command：base 3 args + `RUST_LOG=info`；可选 `--config`
 /// （v0.5 候选 B (2/4) state 订阅池来源，D10）。`config_path = None` → 不传
 /// `--config`（B4 既有 task_rpc_e2e 行为不变）。
 #[must_use]
@@ -422,18 +422,18 @@ pub fn build_gateway_command(
 
 /// 找 cargo workspace target 目录下的二进制（release 优先 → debug fallback）。
 ///
-/// `CARGO_BIN_EXE_robot_rpc_gateway` 由 cargo test runner 设置（仅 robot-rpc
-/// 自身的 [[bin]]）；其它 crate（如 robot-s1）的 `s1_daemon` 不在该 env
+/// `CARGO_BIN_EXE_robot-gateway` 由 cargo test runner 设置（仅 robot-rpc
+/// 自身的 [[bin]]）；其它 crate（如 robot-s1）的 `robot-s1` 不在该 env
 /// 下，需要从 target dir 派生。本 fn 用 gateway path 的祖父目录 = workspace
 /// `target/`，再尝试 `release/<name>` / `debug/<name>`。
 ///
 /// # Errors
 ///
-/// - `CARGO_BIN_EXE_robot_rpc_gateway` 未设置（cargo test 之外的环境）
+/// - `CARGO_BIN_EXE_robot-gateway` 未设置（cargo test 之外的环境）
 /// - 二进制不存在（dev 没跑 `cargo build --release --workspace`）
 pub fn locate_test_bin(name: &str) -> Result<PathBuf, String> {
     // 允许显式 env override（CI / 自定义 target dir 用）。
-    let env_key = format!("B4_E2E_BIN_{}", name.to_uppercase());
+    let env_key = format!("B4_E2E_BIN_{}", name.replace('-', "_").to_ascii_uppercase());
     if let Ok(p) = std::env::var(&env_key) {
         let path = PathBuf::from(p);
         if path.exists() {
@@ -445,16 +445,15 @@ pub fn locate_test_bin(name: &str) -> Result<PathBuf, String> {
         ));
     }
 
-    // CARGO_BIN_EXE_robot_rpc_gateway 由 cargo test runner 注入（compile time
+    // CARGO_BIN_EXE_robot-gateway 由 cargo test runner 注入（compile time
     // env）；这里 std::env::var 拿 runtime 同名 env（cargo test 也会同名注入
     // 给 test binary）。两路一致；用 std::env::var 让 fn 可被非 build-script
     // / 非 macro 路径调用。
-    let gateway = std::env::var("CARGO_BIN_EXE_robot_rpc_gateway").map_err(|_| {
-        "CARGO_BIN_EXE_robot_rpc_gateway 未设置（仅 cargo test 环境可用）".to_string()
-    })?;
+    let gateway = std::env::var("CARGO_BIN_EXE_robot-gateway")
+        .map_err(|_| "CARGO_BIN_EXE_robot-gateway 未设置（仅 cargo test 环境可用）".to_string())?;
     let bin_dir = Path::new(&gateway)
         .parent()
-        .ok_or("无法从 CARGO_BIN_EXE_robot_rpc_gateway 派生 bin_dir")?;
+        .ok_or("无法从 CARGO_BIN_EXE_robot-gateway 派生 bin_dir")?;
     let target_dir = bin_dir.parent().ok_or("无法从 bin_dir 派生 target_dir")?;
 
     for profile in ["release", "debug"] {

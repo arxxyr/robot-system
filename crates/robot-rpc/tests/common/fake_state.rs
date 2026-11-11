@@ -1,10 +1,10 @@
 //! `FakeStatePublisher`：测试侧扮演 s0 角色 publish `JointState` 给
-//! `/<robot_id>/s0/<hardware_id>/state`，让 s1_daemon `anchor_or_fail` 能
+//! `/<robot_id>/s0/<hardware_id>/state`，让 robot-s1 `anchor_or_fail` 能
 //! 在 5s timeout 内拿到 stable bias 完成 anchor。
 //!
 //! ## 拓扑选择（详 Spec § Q3 Research Findings）
 //!
-//! B4 (3/3) test 拓扑下**不**真起 s0_daemon —— 测试侧 publish state 即可
+//! B4 (3/3) test 拓扑下**不**真起 robot-s0 —— 测试侧 publish state 即可
 //! 满足 s1 anchor 需求；同时不冲突 `S0Command` topic（max_sub=1）：测试
 //! 侧扮演 sub command 端，无第二 sub 撞配额。
 //!
@@ -12,7 +12,7 @@
 //!
 //! `TopicClass::S0State`：`max_publishers=1` / `max_subscribers=8` /
 //! `safe_overflow=true`（详 `crates/robot-transport/src/iceoryx2/qos.rs:95-102`）。
-//! 测试侧是唯一 publisher，s1_daemon 是唯一 subscriber，配额安全。
+//! 测试侧是唯一 publisher，robot-s1 是唯一 subscriber，配额安全。
 //!
 //! ## 线程模型
 //!
@@ -96,7 +96,7 @@ impl FakeStatePublisher {
                 let _ = ready_tx.send(());
                 drop(ready_tx);
 
-                // 用 SystemClock 拿真 monotonic_raw ns —— 跟 s1_daemon
+                // 用 SystemClock 拿真 monotonic_raw ns —— 跟 robot-s1
                 // `read_anchor_from_s0_state` 用同款 clock domain 比较
                 // `stamp_ns` 跟 `clock.now()`，否则 stamp_ns=0/fake 会被
                 // max_stale_ms=200ms 判 stale → s1 anchor 失败 exit 4。

@@ -1,6 +1,6 @@
 //! S1 协调逻辑：配置、启动锚定、保持命令、动作状态机与 tick 循环。
 //!
-//! `s1_daemon` 负责端口、工作线程与 OS 信号，向本模块注入 [`RobotClock`]、
+//! `robot-s1` 负责端口、工作线程与 OS 信号，向本模块注入 [`RobotClock`]、
 //! [`Publisher`] 与 [`LatestSubscriber`]。生产循环使用 [`run_action_tick_loop`]；
 //! [`tick_once`] / [`run_tick_loop`] 保留基础保持接口，便于独立验证。
 //!
@@ -185,7 +185,7 @@ pub enum ConfigError {
 
 impl ConfigError {
     /// error → 退出码映射（AC-E3）：S1 config 加载/内容错误族 = **3**
-    /// （`s1_daemon` exit 码表；身份锁 flag/config 冲突走 2，不经本类型）。
+    /// （`robot-s1` exit 码表；身份锁 flag/config 冲突走 2，不经本类型）。
     #[must_use]
     pub const fn exit_code(&self) -> i32 {
         3
@@ -922,7 +922,7 @@ fn duration_to_ns_saturating(d: Duration) -> u64 {
 }
 
 /// 基础 Position 保持循环：调用 [`tick_once`]，通过注入的时钟按 `poll_interval` 等待。
-/// 不调度 action backend；生产 `s1_daemon` 使用 [`run_action_tick_loop`]。
+/// 不调度 action backend；生产 `robot-s1` 使用 [`run_action_tick_loop`]。
 ///
 /// **退出条件**（按检查顺序）：
 /// 1. `shutdown.load(Acquire) == true`（信号处理器置位）。
@@ -976,7 +976,7 @@ where
     Ok(state)
 }
 
-/// `s1_daemon` 使用的状态感知循环；直接按 [`CoordinatorState`] 发布保持命令
+/// `robot-s1` 使用的状态感知循环；直接按 [`CoordinatorState`] 发布保持命令
 /// 或推进 action backend，不调用 [`run_tick_loop`]。
 ///
 /// 心跳与命令分别按配置周期门控，发布失败向调用方返回错误：
@@ -1248,7 +1248,7 @@ pub enum ProfileError {
     /// L2（v0.4 候选 2 round 2 (3/4) Q-IK10b (i) ACK）：`profile.backends`
     /// 启用 `backend` 但 `Coordinator::new(solver = None)` —— 即编译进
     /// `backend-ik` feature + profile 写 `ik`，但 binary 漏注入 solver。
-    /// 典型成因：feature 拼写错 / s1_daemon 漏 feature-gated 构造路径 /
+    /// 典型成因：feature 拼写错 / robot-s1 漏 feature-gated 构造路径 /
     /// 多臂场景 hardware id 不匹配。必须 startup 期 fail-fast，不能漏到
     /// runtime `submit()` 才报 `BackendStartFailed`。
     ///
@@ -1257,7 +1257,7 @@ pub enum ProfileError {
     #[error(
         "[s1.profile.backends] includes {backend:?} but Coordinator was constructed without \
          solver injection; check that the corresponding feature flag is enabled and \
-         s1_daemon constructs the solver (Q-IK10b (i))"
+         robot-s1 constructs the solver (Q-IK10b (i))"
     )]
     MissingSolver { backend: String },
     /// 混合总线尚未适配的 backend 在启动期拒绝，不能发回旧 Position wire。
@@ -1357,7 +1357,7 @@ pub fn parse_profile_section_from_toml(toml_text: &str) -> Result<ProfileSection
 /// 修一个再跑就能看到下一个。
 ///
 /// **可见性**（B2 (3/3) 升级）：原 `pub(crate)` 改 `pub` —— `BackendRegistry`
-/// 在 B2 (3/3) 同步升级为 `pub`，`s1_daemon` binary 调用本函数；
+/// 在 B2 (3/3) 同步升级为 `pub`，`robot-s1` binary 调用本函数；
 /// `crates/robot-s1/tests/action_dispatch.rs` integration test 也跨 test
 /// crate 用本函数验 profile 错配 fail-fast 路径。
 pub fn validate_profile_section(
@@ -1402,7 +1402,7 @@ pub fn validate_profile_section(
 /// v0.4 候选 2 round 2 (3/4) Q-IK10b (i) startup 期校验：profile 启用的
 /// 每个 backend 都必须有对应资源（目前仅 `"ik"` 需要 solver 注入）。
 ///
-/// **何时调用**：s1_daemon binary 在 `Coordinator::new` 之前调（接着
+/// **何时调用**：robot-s1 binary 在 `Coordinator::new` 之前调（接着
 /// [`validate_profile_section`]）；任一错都 exit 3 fail-fast。
 ///
 /// **检查项**：
@@ -1438,7 +1438,7 @@ pub fn validate_solver_for_profile(
 // ============================================================================
 //
 // B2 (2/3) 引入的 CoordinatorState / Coordinator / FINISHED_RING_CAPACITY
-// / InnerState / CurrentAction 等由 B2 (3/3) `s1_daemon` binary wiring
+// / InnerState / CurrentAction 等由 B2 (3/3) `robot-s1` binary wiring
 // 接入。B2 (3/3) land 后所有 `#[allow(dead_code)]` 已批量移除（原 wiring
 // 接入条件已成立）。
 
@@ -1635,7 +1635,7 @@ impl InnerState {
 /// [`Coordinator::tick_action`]。本设计跟 B1 [`tick_once`] 一致，让
 /// binary 决定 system vs mock clock。
 ///
-/// **可见性**（B2 (3/3) 升级）：原 `pub(crate)` 改 `pub` —— `s1_daemon`
+/// **可见性**（B2 (3/3) 升级）：原 `pub(crate)` 改 `pub` —— `robot-s1`
 /// binary 接 wiring + integration test 在
 /// `crates/robot-s1/tests/action_dispatch.rs` 跨 test crate 用；
 /// `BackendRegistry` 在 B2 (3/3) 同步 pub，private-in-public 限制解除。
@@ -1656,7 +1656,7 @@ pub struct Coordinator {
     /// IK solver instance（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
     /// `Option<Box<dyn ArmIkSolver>>` 持有所有权，**不** `Arc`）。
     ///
-    /// **构造期注入** ：由 [`Self::new`] 接 `solver` 参数。s1_daemon
+    /// **构造期注入** ：由 [`Self::new`] 接 `solver` 参数。robot-s1
     /// binary 按 `backend-ik` feature 决定是否构造 `XLeRobotArmIkSolver`：
     ///
     /// - feature off → solver 类型不在 binary，传 `None`。
@@ -1678,7 +1678,7 @@ pub struct Coordinator {
     /// → `ActionStartError::Rejected` → wire `FailedPrecondition`，**不**
     /// fallback）。
     ///
-    /// **注入**：[`Self::with_state_cache`]（s1_daemon 在 cache spawn 成功
+    /// **注入**：[`Self::with_state_cache`]（robot-s1 在 cache spawn 成功
     /// 后注入；缺省 `None` = 未接 cache，一切 Scripted submit 被拒——测试 /
     /// 无 cache 场景显式可见，非静默降级）。
     ///
@@ -1690,7 +1690,7 @@ pub struct Coordinator {
     /// `probe` 只取 `state_cache`，无 ABBA。
     state_cache: Mutex<Option<StateCacheHandle>>,
     /// tick loop 进度计数（v0.5 候选 E 段(8)）：[`run_action_tick_loop`] 每次
-    /// 迭代 / 每帧 hb 推进；s1_daemon 把它挂 systemd watchdog observer，
+    /// 迭代 / 每帧 hb 推进；robot-s1 把它挂 systemd watchdog observer，
     /// test-only freeze control 写其 `freeze_until_ns_*`。
     loop_metrics: Arc<TickLoopMetrics>,
 }
@@ -1743,7 +1743,7 @@ impl Coordinator {
     }
 
     /// 注入 S1 常驻 state cache handle（v0.5 候选 E 段(5)；builder 形态，
-    /// 保持 [`Self::new`] 7 参签名 0 改）。s1_daemon 在
+    /// 保持 [`Self::new`] 7 参签名 0 改）。robot-s1 在
     /// `spawn_state_cache_thread` 成功后调；注入后 `submit` 的 Scripted
     /// 路径才可能通过（详 [`Self::submit`]）。
     #[must_use]
@@ -1759,7 +1759,7 @@ impl Coordinator {
     }
 
     /// 取走 state cache handle（一次性；之后 `has_state_cache() == false`，
-    /// Scripted submit 全拒）。s1_daemon shutdown 序列用：tick loop 退出 +
+    /// Scripted submit 全拒）。robot-s1 shutdown 序列用：tick loop 退出 +
     /// RR / drain 线程全 join 后 `take` → `stop()` → `join()` 显式收线程，
     /// 不依赖 `Coordinator` Drop 时机（AC-E20 线程卫生）。
     pub fn take_state_cache(&self) -> Option<StateCacheHandle> {
@@ -2405,7 +2405,7 @@ hold_strategy      = "anchor"
     // ----- build_hold_command -----
 
     fn mixed_test_hardware() -> HardwareSection {
-        let text = include_str!("../../../configs/xlerobot_bus2_full.toml")
+        let text = include_str!("../../../configs/xlerobot-bus2.toml")
             .lines()
             .filter(|line| !line.trim_start().starts_with("feetech_bus2_mixed_raw"))
             .collect::<Vec<_>>()
@@ -2639,7 +2639,7 @@ hold_strategy      = "anchor"
     fn read_anchor_success_from_mock_subscriber() {
         let channel = MockChannel::<markers::JointState>::new();
         // S0 在 anchor 调用前已 publish 过一帧 state（典型 deploy 序：
-        // s0_daemon 先 ready，s1_daemon `After=s0_daemon`）。
+        // robot-s0 先 ready，robot-s1 `After=robot-s0`）。
         let now_ns: u64 = 1_000_000;
         let body = fresh_state_bytes(&[0.5, -0.5], now_ns - 50_000);
         publish_state(&channel, &body, now_ns - 50_000);
@@ -2904,8 +2904,8 @@ joints  = ["j0"]
     fn authoritative_arm_configs_enable_scripted() {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../configs");
         for (file, robot_id, hardware_id) in [
-            ("xlerobot_left_arm.toml", "xlerobot_left", "left_arm"),
-            ("xlerobot_right_arm.toml", "xlerobot_right", "right_arm"),
+            ("xlerobot-left-arm.toml", "xlerobot_left", "left_arm"),
+            ("xlerobot-right-arm.toml", "xlerobot_right", "right_arm"),
         ] {
             let text = std::fs::read_to_string(format!("{root}/{file}")).unwrap();
             let profile = parse_profile_section_from_toml(&text).unwrap();
@@ -3353,7 +3353,7 @@ backends = 42
     #[test]
     fn validate_solver_for_profile_rejects_missing_solver_when_ik_enabled() {
         // **Q-IK10b (i) 测试形态**：profile 启用 `"ik"` 但 solver_present
-        // = false（典型 wiring bug：feature on + s1_daemon 漏构造 solver）
+        // = false（典型 wiring bug：feature on + robot-s1 漏构造 solver）
         // → `MissingSolver { backend: "ik" }`。
         let p = ProfileSection {
             backends: vec!["ik".into()],

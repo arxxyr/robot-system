@@ -5,7 +5,7 @@
 //! ## 跨进程拓扑回顾（outline §5.2 reviewer round 2 拍板）
 //!
 //! ```text
-//! s1_daemon process                       gateway process (本模块)
+//! robot-s1 process                       gateway process (本模块)
 //! ─────────────────                       ───────────────────────────
 //!
 //! Coordinator::CurrentAction.events_tx

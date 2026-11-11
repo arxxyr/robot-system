@@ -30,11 +30,8 @@ pub enum TopicClass {
     ///
     /// 行为：drop-old（最新心跳即真实存活信号），多订阅 + 大缓冲。
     ///
-    /// **回归源（2026-04-26）**：原本所有 heartbeat 站点借用
-    /// `S1CmdVel`（`max_subscribers=1`），导致 `robotctl watch` 跟其它
-    /// observer 同跑时第二个 subscriber 拿不到 sample，runbook §4-§7 wire
-    /// 三方合验路径打折扣（详 `docs/handoffs/2026-04-26.md` §5.1 known-issue
-    /// 在本 commit 被否决：不是 iceoryx2 框架 bug，是我们的 `QoS` 分类错误）。
+    /// 心跳使用独立的多订阅配置，不能复用单订阅的 S1CmdVel；否则后加入的
+    /// observer 无法同时接收心跳。
     Heartbeat,
     /// `/<r>/sensors/**`：drop old OK。
     Sensor,

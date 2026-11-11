@@ -35,7 +35,7 @@
 //!   best-effort。subscriber 与 node 在线程内按 RAII 顺序正常 Drop
 //!   （subscriber 先于 node；iceoryx2 0.9.3 上游 #1629 已修 publisher 先退
 //!   SIGSEGV，无需 `mem::forget`）。
-//! - `s1_daemon` 在 cache spawn **成功之后**才打 `rr_server_threads ready`
+//! - `robot-s1` 在 cache spawn **成功之后**才打 `rr_server_threads ready`
 //!   marker；spawn 失败 = 启动失败 fail-fast，不降级。
 //!
 //! ## 可测试性
@@ -92,7 +92,7 @@ const ERROR_LOG_EVERY: u64 = 256;
 /// - `expected_joints`：`hardware.joints.len()`。
 /// - `expected_layout`：S1 config 派生 `layout_id`（段(4) 唯一权威）。
 /// - `max_stale_ms`：沿既有 `[s1].max_stale_ms`（D3 子拍板：不新增配置面）。
-/// - `poll_interval`：subscriber 线程**标称** polling cadence（s1_daemon 用
+/// - `poll_interval`：subscriber 线程**标称** polling cadence（robot-s1 用
 ///   2 ms，沿 `robot-rpc::state_pool` 口径）；普通线程调度无硬上界，**不**
 ///   构成新鲜度保证——数据安全由帧 `stamp_ns` + `max_stale_ms` 在读路径
 ///   （[`StateCacheHandle::latest_fresh`]）守门。
@@ -269,7 +269,7 @@ pub struct StateCacheStats {
 // ============================================================================
 
 /// 常驻 state cache 线程 handle（owner = [`crate::coordinator::Coordinator`]
-/// 经 `with_state_cache` 持有；s1_daemon shutdown 时 `take_state_cache` →
+/// 经 `with_state_cache` 持有；robot-s1 shutdown 时 `take_state_cache` →
 /// `stop` → `join`）。
 ///
 /// **Drop** = `stop` + best-effort `join`（AC-E20：任何路径都不留孤儿线程、
@@ -576,7 +576,7 @@ pub fn spawn_state_cache_thread<C: RobotClock + 'static>(
 }
 
 // ============================================================================
-// Tests（mock transport 跑真线程；iceoryx2 路径由 s1_daemon + smoke 覆盖）
+// Tests（mock transport 跑真线程；iceoryx2 路径由 robot-s1 + smoke 覆盖）
 // ============================================================================
 
 #[cfg(test)]

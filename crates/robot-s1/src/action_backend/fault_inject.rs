@@ -44,14 +44,14 @@
 //! ## feature 守门
 //!
 //! 整文件 `#[cfg(feature = "test-fault-backend")]` gate（`mod.rs`），
-//! **永不进 `default` features**；生产 `s1_daemon` 不 link 本文件 →
+//! **永不进 `default` features**；生产 `robot-s1` 不 link 本文件 →
 //! `BackendRegistry::from_inventory` 收集不到 `fault_inject` →
 //! `[s1.profile.backends = ["fault_inject"]]` 在
 //! `validate_profile_section` 启动期 `UnknownBackend` fail-fast（与
 //! `backend-*` feature 同款语义）。e2e 前显式：
 //!
 //! ```bash
-//! cargo build --release -p robot-s1 --bin s1_daemon --features test-fault-backend
+//! cargo build --release -p robot-s1 --bin robot-s1 --features test-fault-backend
 //! ```
 //!
 //! （P.0 活清单条目；漏编 = e2e bring-up 时 s1 exit 3。）

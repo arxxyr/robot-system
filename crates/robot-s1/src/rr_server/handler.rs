@@ -27,7 +27,7 @@
 //! → `submit` 返 [`SubmitError::ShuttingDown`] →
 //! [`super::wire::submit_err_to_rpc_status`] 映射 `ActionRpcStatus::Unavailable`
 //! → handler 编 error response 并直接返，**不**调 `EventsDrainRegistry::register`。
-//! `s1_daemon` shutdown 顺序锁住：`mark_shutting_down → rr.request_stop_all
+//! `robot-s1` shutdown 顺序锁住：`mark_shutting_down → rr.request_stop_all
 //! → rr.join_all → events_registry.stop_and_join_all`，保证 RR thread join
 //! 完成后才停 events_registry，避免 in-flight invoke 跟 registry stop 撞上
 //! late register 路径。详 [`crate::rr_server`] 顶部 module doc。
@@ -99,7 +99,7 @@ pub struct RealHandlerCtx {
     /// invoke 路径的 `accepted_at_ns` / cancel 路径的 `cancel_at_ns` /
     /// clear_error 路径的 `cleared_at_ns` 也都用本 clock 取。
     pub clock: Arc<dyn RobotClock>,
-    /// `events_drain_thread` 写入 envelope `FrameHeader.source_id`。s1_daemon
+    /// `events_drain_thread` 写入 envelope `FrameHeader.source_id`。robot-s1
     /// 一律传 `2`（与 v0.2 `JointCommand` / `Heartbeat` 约定一致）。
     pub source_id: u32,
     /// 用于构造 events drain pubsub topic
@@ -311,13 +311,13 @@ where
                     // v0.4 候选 3 Plan §P.2.1.d: register 即时 log。
                     // smoke binary 端 stderr scrape 这行抓
                     // `events_registry_len=N` 增长曲线；shutdown 期 final
-                    // log 在 s1_daemon::main 内对称打。注销路径 log 留
+                    // log 在 robot-s1::main 内对称打。注销路径 log 留
                     // AC-C1 触发（reap_finished outline）。
                     tracing::info!(
                         events_registry_len = ctx.events_registry.len(),
                         action_id = %action_id,
                         op = "register",
-                        "s1_daemon events_drain registered"
+                        "robot-s1 events_drain registered"
                     );
                     let action_id_hex = action_id.to_string();
                     encode_invoke_response_ok(&decoded.request_id, &action_id_hex, accepted_at_ns)
@@ -874,7 +874,7 @@ mod tests {
     //! 表）。
     //!
     //! 跨进程 RR I/O 路径在 [`super::runtime::tests`] 用 stub handler 锁住；
-    //! 真 e2e 端到端 (gateway → s1_daemon → coordinator) 在 B4 (3/3) 跨进程
+    //! 真 e2e 端到端 (gateway → robot-s1 → coordinator) 在 B4 (3/3) 跨进程
     //! integration test 覆盖（`crates/robot-rpc/tests/...`）。
 
     use super::*;

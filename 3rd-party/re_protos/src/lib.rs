@@ -16,6 +16,7 @@ pub mod headers;
 pub mod json;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod reflection;
+mod storage_location;
 pub mod trace_id_layer;
 
 pub use re_log_types::{EntryName, InvalidEntryNameError};
@@ -247,6 +248,16 @@ impl TypeConversionError {
         }
     }
 
+    /// Failing to convert the caller's data is the caller's fault, unless we ran out of memory.
+    pub fn grpc_code(&self) -> tonic::Code {
+        match self {
+            Self::ArrowError(arrow::error::ArrowError::MemoryError(_)) => {
+                tonic::Code::ResourceExhausted
+            }
+            _ => tonic::Code::InvalidArgument,
+        }
+    }
+
     #[inline]
     pub fn missing_column<T: prost::Name>(column_name: &'static str) -> Self {
         Self::MissingColumn {
@@ -260,7 +271,7 @@ impl TypeConversionError {
 impl From<TypeConversionError> for tonic::Status {
     #[inline]
     fn from(value: TypeConversionError) -> Self {
-        Self::invalid_argument(value.to_string())
+        Self::new(value.grpc_code(), value.to_string())
     }
 }
 

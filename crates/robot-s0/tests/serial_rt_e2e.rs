@@ -146,7 +146,7 @@ fn fresh_topics() -> Topics {
 }
 
 // ============================================================================
-// Harness：模拟 s0_daemon 的"build_adapter → spawn_*_thread"链路（SerialRT 路径）
+// Harness：模拟 robot-s0 的"build_adapter → spawn_*_thread"链路（SerialRT 路径）
 // ============================================================================
 
 fn healthy_guards() -> Guards {
@@ -663,7 +663,7 @@ fn test_serial_rt_dispatch_chooses_serial_factory() {
         return;
     }
     // mock_serial_rt factory 必须 build_hard_rt = Unsupported（HardRT 路径拒），
-    // build_serial_rt = Ok（SerialRT 路径通），保证 s0_daemon 三段 dispatch
+    // build_serial_rt = Ok（SerialRT 路径通），保证 robot-s0 三段 dispatch
     // 落到 SerialRT。
     let factory = find_factory("mock_serial_rt").expect("mock_serial_rt factory not registered");
     let joint_names = ["j0".into()];

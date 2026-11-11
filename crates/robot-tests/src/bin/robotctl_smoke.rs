@@ -1,6 +1,6 @@
 //! `robotctl` operator CLI cross-process e2e smoke（v0.5 候选 A 5/5）。
 //!
-//! 起 `robot_rpc_gateway` + `s1_daemon` + `FakeStatePublisher`（fake s0，给
+//! 起 `robot-gateway` + `robot-s1` + `FakeStatePublisher`（fake s0，给
 //! s1 anchor + status/watch 订阅），**唯一被测路径 = spawn `robotctl` 真子
 //! 进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic client）。本 binary
 //! **不显式启用 `robot-rpc/client`、也不直接启用 `dep:tonic`**——单 feature
@@ -11,7 +11,7 @@
 //! marker + `robotctl get-task-status` NotFound 探针；action_id 由解析
 //! `robotctl invoke` stdout 得到。
 //!
-//! ## 12 phase（reviewer ACK；详 docs/handoffs/v0.5_operator_cli_5of5_entry.md）
+//! ## 12 个验证阶段
 //!
 //! 1. selftest 2. clear_estop_auth_denied 3. clear_estop_safety_contract_violations
 //! 4. get_task_status_happy 5. cancel_task_happy 6. stream_events_terminal_completed
@@ -211,7 +211,7 @@ fn print_help() {
         "robotctl_smoke —— v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e\n\
 \n\
 options:\n  \
---bin-dir <DIR>                  默认 target/debug（须含 robotctl / robot_rpc_gateway / s1_daemon）\n  \
+--bin-dir <DIR>                  默认 target/debug（须含 robotctl / robot-gateway / robot-s1）\n  \
 --robot-id-prefix <STR>          默认 robotctl_smoke\n  \
 --hardware-id <ID>               必填\n  \
 --config <TOML>                  必填\n  \
@@ -312,7 +312,7 @@ async fn main() -> ExitCode {
 }
 
 fn preflight(args: &Args) -> Result<(), String> {
-    for bin in ["robotctl", "robot_rpc_gateway", "s1_daemon"] {
+    for bin in ["robotctl", "robot-gateway", "robot-s1"] {
         let p = args.bin_dir.join(bin);
         if !p.exists() {
             return Err(format!("{bin} not found at {}", p.display()));
@@ -355,7 +355,7 @@ impl CaseCtx {
         let case_dir = args.workdir.join(&robot_id);
         std::fs::create_dir_all(&case_dir)
             .map_err(|e| format!("mkdir case_dir {}: {e}", case_dir.display()))?;
-        let role_table_path = case_dir.join("rpc_roles.toml");
+        let role_table_path = case_dir.join("rpc-roles.toml");
         write_role_table(&role_table_path)?;
         // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
         // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
@@ -397,7 +397,7 @@ impl CaseCtx {
 }
 
 fn write_role_table(path: &Path) -> Result<(), String> {
-    let toml_text = r#"# robotctl_smoke 临时 rpc_roles.toml（每 case 独立）。
+    let toml_text = r#"# robotctl_smoke 临时 rpc-roles.toml（每 case 独立）。
 [tokens]
 "viewer-fake-token-001"     = "viewer"
 "operator-fake-token-001"   = "operator"
@@ -421,7 +421,7 @@ description  = "smoke admin"
 capabilities = ["read_state", "invoke_task", "clear_estop", "set_enabled", "clear_error", "estop", "reload_calibration", "set_policy", "shutdown"]
 "#;
     std::fs::write(path, toml_text)
-        .map_err(|e| format!("write rpc_roles.toml {}: {e}", path.display()))
+        .map_err(|e| format!("write rpc-roles.toml {}: {e}", path.display()))
 }
 
 fn allocate_loopback_port() -> Result<u16, String> {
@@ -725,7 +725,7 @@ fn spawn_stream_drain(
 }
 
 fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let mut cmd = Command::new(ctx.bin_dir.join("s1_daemon"));
+    let mut cmd = Command::new(ctx.bin_dir.join("robot-s1"));
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
         .arg("--hardware-id")
@@ -734,11 +734,11 @@ fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
         .arg(&ctx.config)
         .arg("--poll-interval-ms")
         .arg("1");
-    SubprocessHandle::spawn("s1_daemon", cmd)
+    SubprocessHandle::spawn("robot-s1", cmd)
 }
 
 fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let mut cmd = Command::new(ctx.bin_dir.join("robot_rpc_gateway"));
+    let mut cmd = Command::new(ctx.bin_dir.join("robot-gateway"));
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
         .arg("--listen-addr")
@@ -941,7 +941,7 @@ async fn bring_up(ctx: &CaseCtx) -> Result<BringUp, String> {
         Ok(h) => h,
         Err(e) => {
             fake_s0.shutdown();
-            return Err(format!("spawn s1_daemon: {e}"));
+            return Err(format!("spawn robot-s1: {e}"));
         }
     };
     if let Err(e) = s1
@@ -953,7 +953,7 @@ async fn bring_up(ctx: &CaseCtx) -> Result<BringUp, String> {
         let _ = s1.shutdown(Duration::from_secs(3)).await;
         return Err(format!("s1 marker: {e}"));
     }
-    eprintln!("[bring_up] s1_daemon ready");
+    eprintln!("[bring_up] robot-s1 ready");
 
     let gw = match spawn_gateway(ctx) {
         Ok(h) => h,

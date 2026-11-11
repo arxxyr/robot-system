@@ -1,51 +1,47 @@
-# 服务模板与部署入口
+# systemd 部署
 
-仓库中的 unit 是模板，不证明 Orin 已安装或已启动。当前软件与实机边界只看 [S0 HAL 状态](../../docs/s0_hal_status.md)；`D15 OPEN/DEFERRED`、`deployable=false` 保持。
+S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RPC 网关属于上层接口并调用 S1，**不是 S0 的启动依赖或安装内容**。
 
-| 用途 | 文件 | 配置与入口 |
-|---|---|---|
-| 现有 arm-only S0 | `xlerobot-s0-left-arm.service`、`xlerobot-s0-right-arm.service` | 经 `xlerobot_deploy guard` 启动；使用 `/etc/robot/xlerobot_{left,right}_arm.toml` |
-| 现有 S1、gateway 与交接 | `xlerobot-s1-*.service`、`xlerobot-gateway-*.service`、`xlerobot-handoff.service` | 安装、备份及回滚按[交接操作单](README_dimos_replace.md) |
-| 全身 S0 候选 | `xlerobot-s0-bus1.service`、`xlerobot-s0-bus2.service` | 原handoff→guard→S0链，按两份full TOML校验；默认S0实机结论见[当前状态](../../docs/s0_hal_status.md)，服务安装与启动仍待验证 |
-| systemd 故障测试 | `xlerobot-*-freeze-test.service` | 仅由对应 smoke 渲染占位符后使用，不直接安装或启动模板 |
+## 当前入口
 
-## 配置与产物边界
+| 文件 | 职责 |
+|---|---|
+| `robot-s0-bus1.service` | 左臂、头部及头/左腕 RGB；guard 检查后 exec S0 |
+| `robot-s0-bus2.service` | 右臂、底盘及右腕 RGB；guard 检查后 exec S0 |
+| `robot-s0-preflight.service` | 启动前一次性整机停止交接：双总线17电机，轮子先零速、全部断扭并读回；不是常驻进程 |
 
-- 全总线 unit 引用随开发变化的配置，**不是冻结的回滚版本**。回滚使用事先备份并验证过的二进制、配置和 unit；不能仅切换 unit 名称。
-- arm-only与full-bus的运行ID、控制范围不同；full候选显式复用已验物理总线保护域：bus1→`/var/lib/robot/xlerobot_left`，bus2→`/var/lib/robot/xlerobot_right`。latch和rx-trust目录必须一致，不复制、重置或迁移保护状态。`Conflicts=`不能替代手工进程及串口独占检查。
-- 先按[当前配置](../../configs/README.md)选择明确文件，不使用已退出当前流程的试验配置。
-- 测试构建使用隔离目录。`run_clear_estop_smoke.sh` 构建与运行同一份隔离产物，不改服务引用的 `target/release`；安装仍走既有部署步骤。
+依赖为 `preflight → guard → S0`。preflight 成功后保留 `active/exited`，同次开机内另一侧启动不重复执行；该完成态只证明上次检查结束，不证明此刻物理安全。重启主机不等于电机断电。
 
-## 启停与保护状态
+本机保留的 arm-only、S1 和 gateway 模板仍被兼容部署及测试调用，不能与 full S0 同时占用总线。三个 `*-freeze-test.service` 仅供隔离 smoke 渲染使用，不直接安装到实机。旧服务的停稳检查用于排除占用，不要求将其程序纳入 S0 产物清单。
 
-- 复用[交接操作单](README_dimos_replace.md)的原工具和安装/回滚步骤。guard按显式robot ID严格选择arm-only或full布局；全总线不会绕过原17电机交接和本侧预检。默认S0维护入口通过不代替服务安装与启动验证。
-- handoff源模板保留arm-only配置以兼容旧安装；full候选须将handoff两侧参数和两个guard绑定到同批冻结full TOML。handoff只与旧coordinator/web冲突，不能与依赖它的full服务冲突。实际切换前确认旧进程已退出；daemon-reload不会补做已运行进程的启动依赖。
-- EStop latch、RX marker、锁文件不是可回滚的普通配置。**不得删除、覆盖为0或复制旧保护文件来解除急停**；解除沿原 `ClearEStop` 权限和验证流程。
-- `auto_enable=false` 只禁止自动启用，不代表启动无硬件写入；默认 S0 启动会执行停止收敛。实机启动仍须当次现场条件和动作通知。
-- `Type=notify`、worker 存活检查和 systemd watchdog 保留；这些软件机制不替代未完成的 D15 硬件 fail-safe。
+## 安装与回滚
 
-## 离线准备
+使用 [install_s0_units.py](../install_s0_units.py) 的 `check / backup / install / rollback`。先冻结已验 S0、guard、两份 full TOML、三个 unit、标定、相机 helper 和固定解释器，并核对 manifest SHA。按明确文件处理，不通配安装目录。
 
-只生成隔离候选，绑定已验S0二进制、新guard工具、TOML、校准、相机helper与固定解释器的SHA；保持`auto_enable=false`。候选沿现有三个unit生成，`systemd-analyze verify`只解析依赖，不安装、不启动。真实`guard`、`preflight-*`和`provision`都有副作用，不能拿来作离线检查；软件测试使用既有假steps和临时目录。
+- `check`：核候选与外部文件、保护目录、当前服务和设备占用，不打开串口。
+- `backup`：保存三旧、三新共六个路径的内容或缺失状态、权限及 SHA。
+- `install`：同目录临时文件、fsync、原子写新三份，再删除已备份且未漂移的旧三份，随后仅 `daemon-reload`；不启动服务或设置自启。
+- `rollback`：按同一备份恢复六个路径的原状；保留失败回执。仍被旧 unit 引用的程序、配置和标定必须保留。
 
-## 安装与正式运行
+四个操作都显式指定 `--candidate` 与 `--manifest-sha256`；写操作还须 root 和 `--backup-dir`。已有安装记录和当前备份位置只维护在当前状态中。改名前备份仍用其冻结旧安装器恢复；新安装器明确识别六路径备份格式。新 preflight 不继承旧 handoff 的完成态，首次运行须另确认现场条件。回滚保护范围不包括 latch、RX marker、锁或 guard 计数，不用旧快照解除保护。
 
-[install_s0_units.py](../install_s0_units.py)提供`check / backup / install / rollback`，只处理上述两个full unit及handoff。`check`核冻结文件、服务/Job和设备占用；备份记录旧handoff原件及两个full unit的存在/缺失，安装与回滚使用同目录临时文件、fsync及原子替换。写操作须root，随后仅`daemon-reload`，不改变服务启用状态、handoff完成态或保护文件。部分安装失败可显式回滚；新运行产物损坏不阻止恢复，失败回执保留。当前入口针对已有handoff的主机，不作为空白系统初始化器。
+## 正式启动验收
 
-正式S0由原生systemd管理：guard执行检查后`exec`替换为daemon，保留`Type=notify`、watchdog和journal日志。安装、当轮现场检查及必要交接完成后，按左、右顺序使用：
+固定解释器、脚本、产物及 PLAN_ONLY 预检完成后，再确认本轮现场支撑和持续看护。按左、右顺序，上一侧停止与清场通过才启动下一侧；本轮保持 `auto_enable=false` 和 EStop 锁存，不发送 ClearEStop 或 SetEnabled。启动仍会访问 UART 并执行停止收敛。
 
-```bash
-sudo systemctl start xlerobot-s0-bus1.service
-# 左侧验收并停止、完成停止检查后，再启动右侧。
-sudo systemctl start xlerobot-s0-bus2.service
-systemctl status xlerobot-s0-bus1.service xlerobot-s0-bus2.service
-journalctl -u xlerobot-s0-bus1.service -u xlerobot-s0-bus2.service -f
-```
+正式运行由 systemd 管理，保留 `Type=notify`、watchdog、原重启策略及 journal。当前验收使用具名 `systemctl start/stop`，按 InvocationID 核对授权消费、正常 boot_ready、MainPID 与 cgroup；仅看到 READY 不够。观察各路状态与实际 RGB 数据的时间推进，退出后沿原维护入口做 STOP51、三轮稳定性复核及资源清场。
 
-停止使用`systemctl stop`对应unit，再沿维护入口确认停止及资源释放；服务退出本身不等于物理停止证明。安装/reload不会重跑已完成的handoff，首次现场验证须核对其实际状态。tmux仅用于临时编译与验证，不承担正式服务启动；本轮不设置开机自启。
+失败保留原件；不能自动重发一次性授权或重跑未知结果。停止读回未确认时，按既有维护入口要求进行现场处置。tmux 只承载临时编译和验证，不替代正式服务；本轮不设置开机自启。D15 硬件 fail-safe 仍未闭环，`deployable=false`。
 
-## 历史验证
+## 保护与恢复边界
 
-旧版完整部署、latch 删除试验和 watchdog 验证记录在提交 `39ee87142b79a9b03fc3f5da3515557615dfaa10` 的同路径文件中，可用 `git show <提交>:scripts/systemd/README.md` 查阅。其中旧实机路径和操作命令不作为当前执行指南；fail-closed 等破坏性场景只在现有 smoke 的隔离 mock 环境验证，不删除实际保护文件做试验。
+| 对象 | 规则 |
+|---|---|
+| 总线与身份 | 同侧配置、robot/hardware ID、USB 和校准必须对应；full 候选 preflight 与两个 guard 使用同批配置 |
+| 保护目录 | bus1 使用 `/var/lib/robot/xlerobot_left`，bus2 使用 `/var/lib/robot/xlerobot_right`；不得按新运行 ID 新建或迁移保护状态 |
+| RX 信任 | 一次性授权只供本轮启动消费；消费后 Dirty 是正常结果。status/authorize/revoke 也持 RX 锁，不与同目录 daemon 并发，不自动续授 |
+| EStop | latch 双份持久化；只通过 maintainer+ 的 ClearEStop 事务解除，成功后仍 Safe，上扭是另一个动作 |
+| 实例锁 | 核真实持有者，待进程退出由 OS 释放；不删文件、换 inode 或凭锁内 PID 文字判断活进程 |
+| 失败退出 | 86 为 guard 停止态，87 为 RX 锁竞争，89 为 latch 锁竞争；保留真实错误并修明根因，不清计数或 reset-failed 掩盖故障 |
 
-历史测试通过不证明当前模板、配置或安装产物通过；软件与实机验收分别记录。
+`guard`、`preflight-*`、`provision` 有硬件或文件副作用，不能用于离线试运行。离线测试使用现有假步骤和临时目录；正式候选与服务产物目录不用于构建测试。

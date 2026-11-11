@@ -409,7 +409,7 @@ pub struct SystemSnapshot {
 pub struct MonitorConfig {
     pub interval: Duration,
     /// 用户关心的进程名列表（精确匹配 `/proc/<pid>/stat` 的 `comm` 字段）。
-    /// 典型：`["s0_daemon", "mock_s1", "robotctl", "robot-rpc", "robot-viz"]`。
+    /// 典型：`["robot-s0", "mock_s1", "robotctl", "robot-rpc", "robot-viz"]`。
     /// 空 = 不采 interested。
     pub interested_processes: Vec<String>,
     /// 全系统 CPU top N 保留多少（默认 5；0 = 不采 top）。扫全 `/proc/<pid>/stat`
@@ -893,12 +893,12 @@ mod tests {
     fn summarize_one() {
         let s = summarize(&[ProcessSnapshot {
             pid: 123,
-            comm: "s0_daemon".into(),
+            comm: "robot-s0".into(),
             state: 'R',
             cpu_pct: 15.5,
             rss_kib: 51200, // 50 MiB
         }]);
-        assert_eq!(s, "123:s0_daemon@15.5%[50M]");
+        assert_eq!(s, "123:robot-s0@15.5%[50M]");
     }
 
     #[test]

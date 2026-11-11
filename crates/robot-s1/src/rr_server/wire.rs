@@ -11,8 +11,7 @@
 //!   （`InvokeTaskRequest` / `CancelTaskRequest` / `GetTaskStatusRequest` /
 //!   `ClearErrorRequest`）。
 //! - 错误映射 fn `submit_err_to_rpc_status` / `cancel_err_to_rpc_status` /
-//!   `clear_err_to_rpc_status` 对齐 `docs/handoffs/v0.3_b4_outline.md` §7.1
-//!   round 4 终版表（`BusyExecuting → AlreadyExists` /
+//!   `clear_err_to_rpc_status` 保持显式映射（`BusyExecuting → AlreadyExists` /
 //!   `BackendStartFailed::* → FailedPrecondition` 已锁定）。
 
 #![allow(clippy::doc_markdown)]

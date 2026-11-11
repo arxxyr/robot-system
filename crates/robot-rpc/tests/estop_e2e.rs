@@ -2,7 +2,7 @@
 //!
 //! ## 拓扑
 //!
-//! 每 case 起 **s0_daemon（真）+ gateway + EStopTopicCounter（harness 订阅
+//! 每 case 起 **robot-s0（真）+ gateway + EStopTopicCounter（harness 订阅
 //! 计数线程）+ FakeHeartbeatPublisher（按需）**：
 //!
 //! - `EStop` 走 gateway publish `/<robot_id>/events/estop`（D1 路由 (a)，
@@ -216,7 +216,7 @@ impl EStopEnv {
         std::fs::write(&config_path, build_config_toml(&robot_id, cfg.auto_enable))
             .expect("write config");
 
-        let roles_path = forensic_dir.join("rpc_roles.toml");
+        let roles_path = forensic_dir.join("rpc-roles.toml");
         let roles_text =
             std::fs::read_to_string(workspace_rpc_roles_path()).expect("read workspace rpc_roles");
         std::fs::write(&roles_path, roles_text).expect("write rpc_roles");
@@ -224,13 +224,13 @@ impl EStopEnv {
         // ── 0) **PD1：counter 订阅者最先建**（先于 s0/gateway/第一次 RPC）──
         let counter = EStopTopicCounter::spawn(&robot_id);
 
-        // ── 1) s0_daemon ──
-        let s0_bin = locate_test_bin("s0_daemon").expect("locate s0_daemon bin");
+        // ── 1) robot-s0 ──
+        let s0_bin = locate_test_bin("robot-s0").expect("locate robot-s0 bin");
         let mut s0 = SubprocessHandle::spawn(
             "s0",
             build_s0_command(&s0_bin, &robot_id, &config_path, &latch_path),
         )
-        .expect("spawn s0_daemon");
+        .expect("spawn robot-s0");
         if let Err(e) = s0.wait_for_marker(S0_READY_MARKER, MARKER_TIMEOUT).await {
             for line in s0.snapshot_head_tail(30).await {
                 eprintln!("[estop_e2e s0] {line}");
@@ -246,7 +246,7 @@ impl EStopEnv {
         };
 
         // ── 3) gateway（PB1：marker 蕴含 estop publisher 已 attach）──
-        let gateway_bin = locate_test_bin("robot_rpc_gateway").expect("locate gateway bin");
+        let gateway_bin = locate_test_bin("robot-gateway").expect("locate gateway bin");
         let mut gateway = SubprocessHandle::spawn(
             "gateway",
             build_gateway_command(
@@ -409,7 +409,7 @@ fn workspace_rpc_roles_path() -> PathBuf {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root")
-        .join("configs/rpc_roles.toml");
+        .join("configs/rpc-roles.toml");
     assert!(path.exists(), "{} 不存在", path.display());
     path
 }

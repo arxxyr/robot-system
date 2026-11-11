@@ -125,7 +125,7 @@ pub(super) fn s0_command(
     hardware_id: &str,
     physical: bool,
 ) -> Result<tokio::process::Command, String> {
-    let mut command = isolated_command(&case.bin_dir.join("s0_daemon"));
+    let mut command = isolated_command(&case.bin_dir.join("robot-s0"));
     command
         .arg("--config")
         .arg(&case.config)
@@ -728,8 +728,8 @@ fn physical_case(args: &Args) -> Result<(Case, String, Value), String> {
     }
     let artifacts = json!({
         "tool": verify_artifact(&args.bin_dir, "comm_fault_e2e", &["comm-fault-e2e", "real-hw"] )?,
-        "s0": verify_artifact(&args.bin_dir, "s0_daemon", &["test-comm-fault-hook", "xlerobot-real"] )?,
-        "gateway": verify_artifact(&args.bin_dir, "robot_rpc_gateway", &[])?,
+        "s0": verify_artifact(&args.bin_dir, "robot-s0", &["test-comm-fault-hook", "xlerobot-real"] )?,
+        "gateway": verify_artifact(&args.bin_dir, "robot-gateway", &[])?,
     });
     let model = std::fs::read("/proc/device-tree/model").map_err(|e| e.to_string())?;
     let model = String::from_utf8_lossy(&model)

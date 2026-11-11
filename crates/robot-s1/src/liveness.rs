@@ -3,7 +3,7 @@
 //!
 //! ## 生产面（永远编译）
 //!
-//! [`TickLoopMetrics`]：`s1_daemon` 主线程 `run_action_tick_loop` 的进度计数
+//! [`TickLoopMetrics`]：`robot-s1` 主线程 `run_action_tick_loop` 的进度计数
 //! ——`loop_tick_count`（**每次 poll 迭代**推进，空闲亦推进；D12 r3 T4 第 1
 //! 条 "request-driven worker 观测独立 loop_tick_count"）+ `heartbeat_published`
 //! / `command_published`。watchdog observer 读前两者：tick loop 与 heartbeat

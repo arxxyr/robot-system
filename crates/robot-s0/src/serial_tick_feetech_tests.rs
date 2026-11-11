@@ -168,7 +168,7 @@ impl Fixture {
 
     fn with_observation(observe: bool) -> Self {
         let mut config: RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         // 此模块的黄金帧使用显式固定夹具；实际配置换位由分组/adapter映射测试覆盖。
         let mut hardware = config.hardware.remove(0);
         hardware.joints = [

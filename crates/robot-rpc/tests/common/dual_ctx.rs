@@ -6,7 +6,7 @@
 //! | 项 | `CaseCtx` | `DualCtx` |
 //! |---|---|---|
 //! | 拓扑 | FakeState + s1 + gateway（3 子进程/线程） | **真 s0** + s1 + gateway **×2 臂** |
-//! | state 源 | `FakeStatePublisher`（测试线程） | **真 s0_daemon**（mock_hard_rt adapter） |
+//! | state 源 | `FakeStatePublisher`（测试线程） | **真 robot-s0**（mock_hard_rt adapter） |
 //! | robot_id | `task_rpc_e2e_<pid>_<seq>_<test>` | `dimos_e2e_<pid>_<seq>_{left,right}` |
 //! | hardware | `test_arm` | 固定 `left_arm` / `right_arm`（PD-E3） |
 //! | 端口 | 1 个 | **2 个**，均由 `127.0.0.1:0` 分配并**断言不同** |
@@ -17,10 +17,10 @@
 //! 1. provision latch primary + bak = `0\n`（s0 strict fail-closed，
 //!    `scripts/systemd/README.md` "首次部署" 同款语义）；
 //! 2. 写 per-case config（`[robot].id == --robot-id` 身份锁，段(2)）；
-//! 3. spawn **s0_daemon** → 等 marker `set_enabled_rr_server started`
+//! 3. spawn **robot-s0** → 等 marker `set_enabled_rr_server started`
 //!    （s0 全部线程 + 两个 RR server 就绪；早于它 spawn s1 会让 s1 锚定
 //!    读不到 state → exit 4）；
-//! 4. spawn **s1_daemon**（启动锚定 + 段(5) state cache 订阅 s0 state）；
+//! 4. spawn **robot-s1**（启动锚定 + 段(5) state cache 订阅 s0 state）；
 //! 5. spawn **gateway**（带 `--config`，state 池订阅 s0 state 供 `GetState`）；
 //! 6. `wait_ready` 三段式（s1 marker → gateway marker → TCP → RPC probe）。
 //! 7. 独立等待 gateway 的首个合法 `GetState`：任务 RPC 已通不代表 state
@@ -42,8 +42,8 @@
 //!
 //! **IK 分支的宣称边界（round 1 issue 5，务必照此读结果）**：
 //!
-//! 1. `s1_daemon` 目前**固定**构造 `XLeRobotArmIkSolver::new(Side::Right)`
-//!    （`s1_daemon.rs`，无左右开关）——因此 IK 分支**只在右臂执行**，左臂
+//! 1. `robot-s1` 目前**固定**构造 `XLeRobotArmIkSolver::new(Side::Right)`
+//!    （`robot-s1.rs`，无左右开关）——因此 IK 分支**只在右臂执行**，左臂
 //!    即便配 5 维也是拿右臂运动学在算；
 //! 2. 该分支**只验证 D3 的 reset 规则**（IK 终态后 Idle hold target 回启动
 //!    anchor），**不**代表权威 6 维配置支持 IK，**不**证明左臂 IK 正确，
@@ -81,7 +81,7 @@ use crate::common::subprocess::{
 pub const LEFT_HARDWARE_ID: &str = "left_arm";
 pub const RIGHT_HARDWARE_ID: &str = "right_arm";
 
-/// s0 就绪 marker：全部 worker + 两个 RR server 已 spawn（`s0_daemon.rs`
+/// s0 就绪 marker：全部 worker + 两个 RR server 已 spawn（`robot-s0.rs`
 /// `set_enabled_rr_server started`），此后才有 state 发布可供 s1 锚定。
 const S0_READY_MARKER: &str = "set_enabled_rr_server started";
 const S0_MARKER_TIMEOUT: Duration = Duration::from_secs(8);
@@ -417,8 +417,8 @@ impl DualCtx {
             };
             for (label, handle) in [
                 ("gateway", arm.gateway.take()),
-                ("s1_daemon", arm.s1.take()),
-                ("s0_daemon", arm.s0.take()),
+                ("robot-s1", arm.s1.take()),
+                ("robot-s0", arm.s0.take()),
             ] {
                 let Some(h) = handle else { continue };
                 // forensic：dump 到 <forensic_dir>/<side>_<label>.log（含停机
@@ -485,13 +485,13 @@ async fn bring_up_arm(
             reason: e.to_string(),
         })?;
 
-    let s0_bin = locate_test_bin("s0_daemon").map_err(DualBringUpError::LocateBin)?;
-    let s1_bin = locate_test_bin("s1_daemon").map_err(DualBringUpError::LocateBin)?;
-    let gw_bin = locate_test_bin("robot_rpc_gateway").map_err(DualBringUpError::LocateBin)?;
+    let s0_bin = locate_test_bin("robot-s0").map_err(DualBringUpError::LocateBin)?;
+    let s1_bin = locate_test_bin("robot-s1").map_err(DualBringUpError::LocateBin)?;
+    let gw_bin = locate_test_bin("robot-gateway").map_err(DualBringUpError::LocateBin)?;
 
     // ---- s0（先起：s1 锚定要读它的 state）----
     let mut s0 = SubprocessHandle::spawn(
-        "s0_daemon",
+        "robot-s0",
         build_s0_daemon_command(&s0_bin, &robot_id, hardware_id, &config_path, &latch_path),
     )?;
     s0.wait_for_marker(S0_READY_MARKER, S0_MARKER_TIMEOUT)
@@ -500,7 +500,7 @@ async fn bring_up_arm(
 
     // ---- s1 ----
     let mut s1 = SubprocessHandle::spawn(
-        "s1_daemon",
+        "robot-s1",
         build_s1_daemon_command(&s1_bin, &robot_id, hardware_id, &config_path),
     )?;
 
@@ -703,10 +703,10 @@ fn render_config(
     )
 }
 
-/// 复制仓库 `configs/rpc_roles.toml` 到 forensic dir（gateway `--rpc-roles-toml`）。
+/// 复制仓库 `configs/rpc-roles.toml` 到 forensic dir（gateway `--rpc-roles-toml`）。
 async fn write_roles_toml(dir: &Path) -> Result<PathBuf, DualBringUpError> {
-    let out = dir.join("rpc_roles.toml");
-    let src = repo_root().join("configs/rpc_roles.toml");
+    let out = dir.join("rpc-roles.toml");
+    let src = repo_root().join("configs/rpc-roles.toml");
     let content = tokio::fs::read(&src)
         .await
         .map_err(|e| DualBringUpError::Config(format!("read roles toml {}: {e}", src.display())))?;

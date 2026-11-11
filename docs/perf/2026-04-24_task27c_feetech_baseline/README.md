@@ -163,7 +163,7 @@ cargo bench -p robot-adapter-feetech --bench feetech_bench -- bus_sync \
 
 ### 6.2 跑 flamegraph
 
-`scripts/feetech_flamegraph.sh` 是 `cargo flamegraph` 的薄包装，但 cargo
+历史 `cargo flamegraph` 包装已删除（原件可从 Git 查阅）；当时 cargo
 flamegraph 0.6.12 实测会把 perf 挂在 cargo 调度进程而非 bench harness（**几乎
 全部样本都是 cargo TOML / semver 解析**）。本 baseline 用更直接的 perf record
 + inferno pipeline：
@@ -211,8 +211,7 @@ cargo test -p robot-adapter-feetech --test integration_smoke
 
 - **cargo flamegraph 0.6.12 漏样本**：如 §6.2 所述，cargo flamegraph 把 perf
   挂在 cargo 调度而非 bench harness，本目录采用直接 perf record 流程绕开。
-  `scripts/feetech_flamegraph.sh` v1 保留作为快路径（适用于 *自己写的 bin*，
-  不适用于 cargo bench harness）。后续可重写脚本走 §6.2 的直 perf record 流程。
+  旧包装不再保留，复现时直接使用 §6.2 的 perf record 流程。
 - **本机 vs Orin 差距未量化**：本机 Ryzen 9950X3D performance governor，
   Orin Nano A78AE schedutil。task 28 真机阶段需要在 Orin 重跑 §6.2 流程
   得到对照数据。

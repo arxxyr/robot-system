@@ -198,7 +198,7 @@ pub fn write_count_atomic(path: &Path, n: u8) -> Result<(), CountError> {
 }
 
 /// 持有中的单实例锁。**exec 前必须显式 [`InstanceLock::close`]**（否则
-/// `exec` 后的 `s0_daemon` 继承 fd，锁在其整个生命周期内不释放）。
+/// `exec` 后的 `robot-s0` 继承 fd，锁在其整个生命周期内不释放）。
 #[derive(Debug)]
 pub struct InstanceLock {
     file: Option<File>,
@@ -223,7 +223,7 @@ impl InstanceLock {
 /// 锁文件**稳定**：只 create/open，**永不 rename / 删除**（r10 AA2——若把锁
 /// 打在 count 上，`rename` 换 inode 后两个进程会同时"持锁"）。fd 置
 /// `FD_CLOEXEC`，即便调用方忘了 [`InstanceLock::close`]，`exec` 后也不会
-/// 把锁带进 `s0_daemon`。
+/// 把锁带进 `robot-s0`。
 ///
 /// # Errors
 ///
@@ -244,7 +244,7 @@ pub fn acquire_instance_lock(lock_path: &Path) -> Result<InstanceLock, LockError
     // SAFETY: `fd` 来自上面刚打开且仍存活的 `File`；两个 fcntl/flock 调用都
     // 只作用于该 fd，不转移所有权。
     unsafe {
-        // CLOEXEC 兜底：exec 后不把锁带进 s0_daemon。
+        // CLOEXEC 兜底：exec 后不把锁带进 robot-s0。
         let flags = libc::fcntl(fd, libc::F_GETFD);
         if flags >= 0 {
             libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);

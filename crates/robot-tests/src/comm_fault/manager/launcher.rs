@@ -115,7 +115,7 @@ impl Plan {
         }
         let daemon = PathBuf::from(text(&value["s0"], "path")?);
         let launcher = PathBuf::from(text(&value["launcher"], "path")?);
-        if daemon.file_name().is_none_or(|name| name != "s0_daemon")
+        if daemon.file_name().is_none_or(|name| name != "robot-s0")
             || launcher
                 .file_name()
                 .is_none_or(|name| name != "comm_fault_e2e")
@@ -307,7 +307,7 @@ fn launch(path: &Path) -> Result<(), String> {
         .stdout(stdout)
         .stderr(Stdio::inherit())
         .env("ROBOT_LOG_FORMAT", "json")
-        .env("RUST_LOG", "warn,s0_daemon=info")
+        .env("RUST_LOG", "warn,robot_s0=info")
         .env("NO_COLOR", "1");
     for key in &inherited_test {
         command.env_remove(key);

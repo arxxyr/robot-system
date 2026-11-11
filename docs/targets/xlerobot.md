@@ -94,8 +94,12 @@
   - 位置读 / 写的帧格式与期待响应
   - 异常帧（超时、overload、过热）的解析与分级
   - 硬件 fail-safe：STS3215 无已文档化、可配置的 command watchdog，历史真机失联仍持续带扭；主机串口 IO 超时不等于电机侧保护
-- 安全边界沿已批[候选 E D15 / D15-R](../../team-swe/specs/v0_5_dimos_replace.md)：D15 保持 OPEN，AC-E25 的 S0 死亡后 <500 ms 安全态仍是正式退役硬门；D15-R 仅为受监督 demo 例外，不能宣称硬件闭环。独立保护方案尚未选定
-- **v0.2 Step 10 已引用此 spec**（见 `docs/01_implementation_steps.md` Step 10），XLeRobot v0.4 继续沿用
+- 安全边界沿已批 D15 / D15-R，原完整条款见[固定提交的候选 E Spec](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/v0_5_dimos_replace.md)及 [CHANGELOG](../CHANGELOG.md)；下列为现行边界摘要，不替代原全文：
+  - **D15 OPEN/DEFERRED，`deployable=false`**。AC-E25：Enabled 真机 `kill -9 robot-s0` 后实际 torque disable / zero / brake **<500 ms**，仍是生产替换、正式退役与无人值守前的硬门。通信 H2、systemd 重启、同进程 watchdog、启动 preflight 或软件停止不能替代这一证明。
+  - **D15-R 仅为受监督 demo 例外**：机械隔离、工作区无人、无负载、操作者持续在场且可立即切总电源；`auto_enable=false`，每次上扭显式授权；先单臂低速/小幅，再双臂，任一侧异常立即取消双侧并双发 EStop。原单臂探针边界为 `|target-anchor|≤0.087 rad`、轨迹最大斜率 `≤0.14 rad/s`；当前 raw 维护动作必须另满足当前状态页的已批合同，不能互相外推授权。
+  - 旧栈 unit 保留恢复路径，不得删除、mask 或破坏回滚；已批准关闭旧栈自启仅为 disable，不是正式退役。失联持续带扭或 `kill -9` 后仍带扭只能记为残余风险，不能记为 PASS，不宣称生产替换或硬件 fail-safe 已完成。
+  - 独立保护硬件、供电分域与接线方案尚未选定，本项暂缓。后续仅保留文档级集成要求：`arm / heartbeat(kick) / request_safe(disarm) / status+readback`；接入 handoff/guard 与允许 Enable 之间，缺失、失联或 readback 失败必须拒绝 Enabled。不得用 no-op 实现或恒真 `power_ok` 冒充外部保护。
+  - 恢复 D15 时先确认型号/固件、电源覆盖、默认态、机械后果和独立测量方案，再按已批方案实施及验收；原始故障起点、真实安全终点、时基与精度必须足以判断 <500 ms。未观测值记 UNKNOWN；本摘要不授权采购、接线、寄存器写入或现场测量。
 - `robot-adapters/feetech` 是 Rust 侧实现，**逐寄存器复刻**原 spec
 - TBD：是否存在 XLeRobot 特有的 STS3215 自定义参数（扭矩上限 / PID / deadband）
 
@@ -255,7 +259,7 @@ RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 
 
 **参考**：
 - 寄存器序列：dimos `~/repo/robot/dimos/docs/06_lerobot_replace_spec.md`
-- 硬件 fail-safe：[候选 E D15 / D15-R](../../team-swe/specs/v0_5_dimos_replace.md) 已确认无已文档化、可配置的 command watchdog；不得把未核实的 watchdog 寄存器作为 adapter 初始化要求，独立保护与 AC-E25 仍待闭环
+- 硬件 fail-safe：沿 §2.4 的 D15 / D15-R；不得把未核实的 watchdog 寄存器作为 adapter 初始化要求，独立保护与 AC-E25 仍待闭环
 
 ### 5.2 `robot-adapters/realsense`（**新 crate**，v0.4）
 

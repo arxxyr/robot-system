@@ -18,7 +18,7 @@
 // **v0.5 候选 B GetState/StreamState 设计-freeze diff**：design §5.3 写
 // `rpc GetState (Empty)`，实现期按多 hardware 语义改 `GetState(GetStateRequest
 // { hardware_id })`（显式 hardware selector）；design.md §5.3 文字**不**改，以
-// docs/CHANGELOG.md + team-swe Spec v0_5_get_stream_state 为准。
+// docs/CHANGELOG.md 与下方 GetStateRequest 为准。
 //
 // 其它 §5.3 RPC（ListHardware / ListJoints / ListTasks / StreamLogs /
 // ReloadCalibration / SetPolicy）留 v0.5+ 后续拍板，**不**在本 proto 出现。
@@ -27,8 +27,7 @@
 // gateway, HTTP/2）；gateway 内部转换为 `robot-msg` 平行 fbs 表
 // （`clear_estop.fbs` / `action_request.fbs` / `action_status.fbs` /
 // `action_event.fbs`）发到 daemon（iceoryx2 zero-copy）。两份 schema
-// 平行存在；**不**等价 / **不**自动转换。详
-// docs/handoffs/v0.3_b4_outline.md §6.1 双层 schema 分工。
+// 平行存在；**不**等价 / **不**自动转换。
 
 syntax = "proto3";
 
@@ -39,7 +38,7 @@ package robot.control.v1;
 // v0.3 A1 接受 fake token（gateway 端用查表把 token → role）；mTLS / OIDC
 // 留 v0.5+。
 message AuthContext {
-    string token            = 1;  // fake token，对照 configs/rpc_roles.toml
+    string token            = 1;  // fake token，对照 configs/rpc-roles.toml
     string mtls_fingerprint = 2;  // v0.5+ 用；A1-1 仅占位
 }
 
@@ -94,8 +93,8 @@ message Ack {
 
 // v0.5 候选 C `SetEnabled` —— client → gateway 改单 S0 daemon 的 enable 态。
 // design §5.3 frozen（Q1 保留 `bool enabled`，**不**加 hardware_id：范围 = 单
-// S0 daemon 的 selected hardware instance，**不**宣称 whole-robot；详 team-swe
-// Spec v0_5_set_enabled D1）。**operator+**（`Capability::SetEnabled`，viewer 拒）。
+// S0 daemon 的 selected hardware instance，**不**宣称 whole-robot）。
+// **operator+**（`Capability::SetEnabled`，viewer 拒）。
 //
 // 字段语义：
 // - `meta`：CommandMeta envelope；`meta.dry_run` 进 S0 action layer **真**评估
@@ -148,8 +147,7 @@ message EStopCommand {
 // `StreamTaskEvents` 走 per-ActionId pubsub topic
 // `/<robot_id>/s1/action_events/<action_id_hex>`；v0.5 候选 B `GetState` /
 // `StreamState` **既不走 RR 也不走 s1**，gateway 直接读常驻 S0 state 订阅池
-// （topic `/<robot_id>/s0/<hardware_id>/state`），详 team-swe Spec
-// v0_5_get_stream_state §D4）。
+// （topic `/<robot_id>/s0/<hardware_id>/state`）。
 service RobotControl {
     // v0.3 A1 land。safety-critical maintainer-only；详 clear_estop.fbs。
     rpc ClearEStop       (ClearEStopCommand)  returns (Ack);
@@ -184,7 +182,7 @@ service RobotControl {
 // `ActionKind` / `ActionStatus` / `ActionEvent` / `ActionOutcome` /
 // `ActionFailure` 一一对应；gateway 端做 proto ↔ lib 转换 + lib ↔ fbs
 // （RR / pubsub）转换。三层 variant 集**严格同步**：lib 改 enum 必须
-// 同步改 proto + fbs（详 docs/handoffs/v0.3_b4_outline.md §6.3 拍板）。
+// 同步改 proto + fbs。
 
 // `ActionKind` 的 typed enum 形态（reviewer round 4 拍板 #5a：typed
 // 而**非** string，避免客户端拼错）。每加新 ActionKind 必须同步改
@@ -303,7 +301,7 @@ message CancelTaskCommand {
 
 // `ClearErrorCommand` —— client → gateway 清 coordinator `Degraded`
 // 状态（B2 outline §10 决策 #5）。**maintainer+** 权限（reviewer round
-// 2 阻断 4 + outline §8.1 #7c：rpc_roles.toml `[roles.operator]` 删
+// 2 阻断 4 + outline §8.1 #7c：rpc-roles.toml `[roles.operator]` 删
 // `clear_error`，`[roles.maintainer]` / `[roles.admin]` 保留）。
 //
 // **跟 ClearEStop 不同**：`ClearError` 仅清内存状态，**不**碰磁盘
@@ -369,7 +367,7 @@ message TaskEvent {
 // `joint.fbs` 同名 enum 严格 1:1（`S0Mode` / `S0ControlLink` / `S0OutputMode`
 // / `S0SafetyState`）；proto3 零值约定 `*_UNSPECIFIED = 0` 对齐 fbs
 // `Unknown = 0` / `TorqueUnknown = 0`。fbs↔proto 转换在 `state_convert.rs`
-// 逐 variant + variant-count 锁测防漂移（team-swe Spec §P.2.1）。
+// 逐 variant + variant-count 锁测防漂移。
 
 // 镜像 fbs `S0Mode`（joint.fbs）。S0 主状态机 5 主态。
 enum S0Mode {
@@ -410,14 +408,14 @@ enum S0SafetyState {
 
 // `GetState` request —— 显式 hardware selector。`hardware_id` 必填非空：
 // 缺/空 → InvalidArgument；未知（不在 gateway `--config` 声明的 hardware 池）
-// → NotFound；已知但常驻池无首帧 → Unavailable（详 team-swe Spec §D9）。
+// → NotFound；已知但常驻池无首帧 → Unavailable。
 message GetStateRequest {
     string hardware_id = 1;
 }
 
 // `StreamState` request —— hardware selector + 节流下限。
 // `min_interval_ms`：0 = gateway 默认下限（50ms）；0 < x < 20 → clamp 20ms；
-// >= 20 → 原值（详 team-swe Spec §D5）。
+// >= 20 → 原值。
 message StreamRequest {
     string hardware_id     = 1;
     uint32 min_interval_ms = 2;

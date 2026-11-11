@@ -157,7 +157,7 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
     }
 
     /// 设置 `FrameHeader.stamp_ns` —— 调用方自己用 [`robot_core::time::RobotClock`]
-    /// 生成，禁止直接 `Instant::now()`（业务代码禁令，见 `CLAUDE.md`）。
+    /// 生成，禁止直接 `Instant::now()`（业务代码禁令，见 `AGENTS.md`）。
     pub fn set_stamp_ns(&mut self, stamp_ns: u64) {
         #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
         let _ = stamp_ns;

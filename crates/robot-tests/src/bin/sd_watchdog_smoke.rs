@@ -1,9 +1,7 @@
-//! `sd_watchdog_smoke` —— v0.5 候选 E 段(8) S1 / gateway systemd watchdog
-//! **双向** e2e smoke（Spec `team-swe/specs/v0_5_dimos_replace.md` P.2.7 +
-//! AC-E19 + R5-5 / R6-5）。
+//! `sd_watchdog_smoke` —— S1 / gateway systemd watchdog 双向端到端验证。
 //!
 //! 验证 `docs/00_design.md` §6.7 不变量 #2 "systemd 是最外层看门狗" 在 S1
-//! coordinator 与 robot_rpc_gateway 两个 daemon 上端到端成立，且**不误判
+//! coordinator 与 robot-gateway 两个 daemon 上端到端成立，且**不误判
 //! 合法空闲**：
 //!
 //! ```text
@@ -50,13 +48,13 @@
 //!
 //! ```bash
 //! # 1) 编两个 daemon（必须带 test-freeze-hook feature；release 与 gate 同款）
-//! cargo build --release -p robot-s1  --bin s1_daemon         --features test-freeze-hook
-//! cargo build --release -p robot-rpc --bin robot_rpc_gateway --features test-freeze-hook
+//! cargo build --release -p robot-s1  --bin robot-s1         --features test-freeze-hook
+//! cargo build --release -p robot-rpc --bin robot-gateway --features test-freeze-hook
 //!
 //! # 2) 编 + 跑 smoke（默认 8 case：S1 ×4 + gateway ×4）
 //! cargo run -p robot-tests --bin sd_watchdog_smoke --features sd-watchdog-smoke -- \
-//!     --s1-bin target/release/s1_daemon \
-//!     --gateway-bin target/release/robot_rpc_gateway \
+//!     --s1-bin target/release/robot-s1 \
+//!     --gateway-bin target/release/robot-gateway \
 //!     --phase all
 //! ```
 //!
@@ -71,7 +69,7 @@
 //!
 //! - 真 S0 / 真硬件：S1 的 state 源 = 进程内 FakeStatePublisher；gateway 不
 //!   需要 S0 / S1（探针不依赖首帧，QA4）。
-//! - 生产 unit（`xlerobot-s1-*.service` / gateway unit）：段(9) 部署件。
+//! - 生产 unit（`robot-s1-*.service` / gateway unit）：部署件。
 //! - Orin 真机回归：段(10) 受监督 demo 前置清单另行安排。
 
 // 中文 doc 大量 identifier-like / config-like 字串（WatchdogSec=2s /
@@ -180,13 +178,13 @@ impl Target {
     fn markers(self) -> JournalMarkers {
         match self {
             Self::S1(_) => JournalMarkers {
-                banner: "s1_daemon starting",
-                ready_sent: "s1_daemon systemd READY=1 sent",
+                banner: "robot-s1 starting",
+                ready_sent: "robot-s1 systemd READY=1 sent",
                 freeze_ready: "s1 freeze_control thread ready",
             },
             Self::Gateway(_) => JournalMarkers {
-                banner: "robot_rpc_gateway: starting tonic gRPC server",
-                ready_sent: "robot_rpc_gateway systemd READY=1 sent",
+                banner: "robot-gateway: starting tonic gRPC server",
+                ready_sent: "robot-gateway systemd READY=1 sent",
                 freeze_ready: "gw freeze_control thread ready",
             },
         }
@@ -277,7 +275,7 @@ struct Args {
     gateway_bin: PathBuf,
     s1_unit_template: PathBuf,
     gateway_unit_template: PathBuf,
-    /// gateway `--rpc-roles-toml`（默认仓库 `configs/rpc_roles.toml`）。
+    /// gateway `--rpc-roles-toml`（默认仓库 `configs/rpc-roles.toml`）。
     roles_toml: PathBuf,
     workdir_base: PathBuf,
     robot_id_prefix: String,
@@ -307,11 +305,11 @@ impl Args {
         let mut args = Self {
             s1_bin: PathBuf::new(),
             gateway_bin: PathBuf::new(),
-            s1_unit_template: PathBuf::from("scripts/systemd/xlerobot-s1-freeze-test.service"),
+            s1_unit_template: PathBuf::from("scripts/systemd/robot-s1-freeze-test.service"),
             gateway_unit_template: PathBuf::from(
-                "scripts/systemd/xlerobot-gateway-freeze-test.service",
+                "scripts/systemd/robot-gateway-freeze-test.service",
             ),
-            roles_toml: PathBuf::from("configs/rpc_roles.toml"),
+            roles_toml: PathBuf::from("configs/rpc-roles.toml"),
             workdir_base: PathBuf::from("logs/sd_watchdog_smoke"),
             robot_id_prefix: "sdwd".into(),
             unit_name_prefix: "sdwd".into(),
@@ -388,8 +386,8 @@ USAGE:
   sd_watchdog_smoke --s1-bin <PATH> --gateway-bin <PATH> [OPTIONS]
 
 REQUIRED（按 --phase）:
-  --s1-bin <PATH>              s1_daemon binary（必须带 --features test-freeze-hook 编译）
-  --gateway-bin <PATH>         robot_rpc_gateway binary（同上）
+  --s1-bin <PATH>              robot-s1 binary（必须带 --features test-freeze-hook 编译）
+  --gateway-bin <PATH>         robot-gateway binary（同上）
 
 OPTIONS:
   --phase <all|s1|gateway>     默认 all
@@ -397,9 +395,9 @@ OPTIONS:
                                （默认 tick,heartbeat_pub,rr_server:0,state_cache）
   --gateway-workers <LIST>     逗号分隔：rr_io:<0-5>|estop_pub|state_pool:<0-1>|tonic_probe
                                （默认 rr_io:0,estop_pub,state_pool:1,tonic_probe）
-  --s1-unit-template <PATH>    默认 scripts/systemd/xlerobot-s1-freeze-test.service
-  --gateway-unit-template <P>  默认 scripts/systemd/xlerobot-gateway-freeze-test.service
-  --roles-toml <PATH>          gateway rpc roles（默认 configs/rpc_roles.toml）
+  --s1-unit-template <PATH>    默认 scripts/systemd/robot-s1-freeze-test.service
+  --gateway-unit-template <P>  默认 scripts/systemd/robot-gateway-freeze-test.service
+  --roles-toml <PATH>          gateway rpc roles（默认 configs/rpc-roles.toml）
   --workdir-base <DIR>         每 case workdir 根（默认 logs/sd_watchdog_smoke/）
   --robot-id-prefix <STR>      默认 sdwd（每 case 加 _<pid>_<seq>）
   --unit-name-prefix <STR>     默认 sdwd（每 case 加 -<s1|gw>-<pid>-<seq>.service）
@@ -542,7 +540,7 @@ fn preflight(args: &Args) -> Result<EnvCtx, String> {
     if args.phase.includes_s1() {
         if !args.s1_bin.exists() {
             return Err(format!(
-                "--s1-bin not found: {}（先 `cargo build --release -p robot-s1 --bin s1_daemon \
+                "--s1-bin not found: {}（先 `cargo build --release -p robot-s1 --bin robot-s1 \
                  --features test-freeze-hook`）",
                 args.s1_bin.display()
             ));
@@ -553,7 +551,7 @@ fn preflight(args: &Args) -> Result<EnvCtx, String> {
         if !args.gateway_bin.exists() {
             return Err(format!(
                 "--gateway-bin not found: {}（先 `cargo build --release -p robot-rpc --bin \
-                 robot_rpc_gateway --features test-freeze-hook`）",
+                 robot-gateway --features test-freeze-hook`）",
                 args.gateway_bin.display()
             ));
         }

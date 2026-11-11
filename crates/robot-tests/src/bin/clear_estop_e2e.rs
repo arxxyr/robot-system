@@ -2,7 +2,7 @@
 //!
 //! ## 角色
 //!
-//! 起两进程（`s0_daemon` + `robot_rpc_gateway`）+ 用 tonic gRPC client 真跑
+//! 起两进程（`robot-s0` + `robot-gateway`）+ 用 tonic gRPC client 真跑
 //! `RobotControl::ClearEStop` RPC → iceoryx2 RR shm → daemon ipc_thread →
 //! clear_estop_action → latch fsync 双写。
 //!
@@ -44,7 +44,7 @@
 //!
 //! 1. 每 case 独立 latch 文件预置 `1\n`（primary + .bak），daemon 启动后
 //!    state 留 Safe。
-//! 2. daemon `--config configs/clear_estop_e2e.toml` 走 mock_hard_rt
+//! 2. daemon `--config configs/clear-estop-e2e.toml` 走 mock_hard_rt
 //!    adapter；rt_thread connect 后把 safety_state 置 TorqueOffConfirmed。
 //! 3. harness 用 maintainer fake token + dry_run=true ClearEStop 轮询到 Ok
 //!    作为 readiness gate（最贴近真实链路的 ready 信号）。
@@ -92,10 +92,10 @@ use tonic::transport::Endpoint;
 
 #[derive(Debug, Clone)]
 struct Args {
-    /// 找 `s0_daemon` / `robot_rpc_gateway` 二进制的目录。CI / 人工自定义；
+    /// 找 `robot-s0` / `robot-gateway` 二进制的目录。CI / 人工自定义；
     /// 默认 `target/release`。
     bin_dir: PathBuf,
-    /// daemon `--config` TOML。默认 `configs/clear_estop_e2e.toml`。
+    /// daemon `--config` TOML。默认 `configs/clear-estop-e2e.toml`。
     config: PathBuf,
     /// 临时工作目录根。默认 `/tmp/clear_estop_e2e_<pid>/`；harness 在内
     /// 部按 case 序号建子目录（`case_<seq>/`）。
@@ -108,7 +108,7 @@ struct Args {
 impl Args {
     fn parse() -> Result<Self, String> {
         let mut bin_dir = PathBuf::from("target/release");
-        let mut config = PathBuf::from("configs/clear_estop_e2e.toml");
+        let mut config = PathBuf::from("configs/clear-estop-e2e.toml");
         let mut workdir = PathBuf::from(format!("/tmp/clear_estop_e2e_{}", std::process::id()));
         let mut case = "selftest".to_string();
 
@@ -154,8 +154,8 @@ USAGE:
   clear_estop_e2e [OPTIONS]
 
 OPTIONS:
-  --bin-dir <DIR>     找 s0_daemon / robot_rpc_gateway（默认 target/release）
-  --config <PATH>     daemon TOML 配置（默认 configs/clear_estop_e2e.toml）
+  --bin-dir <DIR>     找 robot-s0 / robot-gateway（默认 target/release）
+  --config <PATH>     daemon TOML 配置（默认 configs/clear-estop-e2e.toml）
   --workdir <DIR>     临时工作根目录（默认 /tmp/clear_estop_e2e_<pid>）
   --case <NAME>       跑哪个 case（默认 selftest；见下）
   -h, --help          显示帮助
@@ -247,7 +247,7 @@ fn main() -> std::process::ExitCode {
 // ============================================================================
 
 fn preflight(args: &Args) -> Result<(), String> {
-    let need = ["s0_daemon", "robot_rpc_gateway"];
+    let need = ["robot-s0", "robot-gateway"];
     for name in need {
         let p = args.bin_dir.join(name);
         if !p.exists() {
@@ -284,8 +284,8 @@ struct CaseCtx {
     latch_primary: PathBuf,
     /// `<case_dir>/var/lib/robot/<robot_id>/estop_latch.bak`。
     latch_bak: PathBuf,
-    /// `<case_dir>/rpc_roles.toml`：harness 写一份最小 role 表（含
-    /// maintainer + viewer + admin，跟 configs/rpc_roles.toml 同步）。
+    /// `<case_dir>/rpc-roles.toml`：harness 写一份最小 role 表（含
+    /// maintainer + viewer + admin，跟 configs/rpc-roles.toml 同步）。
     role_table_path: PathBuf,
     /// gateway loopback 端口。allocate_loopback_port() 取 OS 自动分配；race
     /// 窗口 < 100ms 通常够（dev box / CI）。
@@ -310,7 +310,7 @@ impl CaseCtx {
             .map_err(|e| format!("mkdir latch_dir {}: {e}", latch_dir.display()))?;
         let latch_primary = latch_dir.join("estop_latch");
         let latch_bak = latch_dir.join("estop_latch.bak");
-        let role_table_path = case_dir.join("rpc_roles.toml");
+        let role_table_path = case_dir.join("rpc-roles.toml");
         write_role_table(&role_table_path)?;
         // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
         // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
@@ -365,12 +365,12 @@ impl CaseCtx {
     }
 }
 
-/// 写最小 rpc_roles.toml：含 maintainer / viewer / admin / operator 4 角
-/// 色 + 4 fake token，跟 `configs/rpc_roles.toml` 兼容（**仅** maintainer /
+/// 写最小 rpc-roles.toml：含 maintainer / viewer / admin / operator 4 角
+/// 色 + 4 fake token，跟 `configs/rpc-roles.toml` 兼容（**仅** maintainer /
 /// admin 拥有 `clear_estop`）。
 fn write_role_table(path: &Path) -> Result<(), String> {
-    let toml_text = r#"# clear_estop_e2e 临时 rpc_roles.toml（每 case 独立）。
-# 跟 configs/rpc_roles.toml 同款 capability 集，**仅** maintainer / admin
+    let toml_text = r#"# clear_estop_e2e 临时 rpc-roles.toml（每 case 独立）。
+# 跟 configs/rpc-roles.toml 同款 capability 集，**仅** maintainer / admin
 # 拥有 `clear_estop`。
 
 [tokens]
@@ -396,7 +396,7 @@ description  = "smoke admin (clear_estop + shutdown)"
 capabilities = ["read_state", "clear_estop", "set_enabled", "clear_error", "estop", "reload_calibration", "set_policy", "shutdown"]
 "#;
     std::fs::write(path, toml_text)
-        .map_err(|e| format!("write rpc_roles.toml {}: {e}", path.display()))
+        .map_err(|e| format!("write rpc-roles.toml {}: {e}", path.display()))
 }
 
 /// 用 `TcpListener::bind("127.0.0.1:0")` 让 OS 自动分配一个 loopback 端口
@@ -544,11 +544,11 @@ fn spawn_stream_drain(
     });
 }
 
-/// spawn s0_daemon。latch 文件**必须**已经预置（harness 调
+/// spawn robot-s0。latch 文件**必须**已经预置（harness 调
 /// `CaseCtx::preset_latch_latched`）；daemon 启动期 strict mode 拒绝缺
 /// latch。
 fn spawn_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("s0_daemon");
+    let bin = ctx.bin_dir.join("robot-s0");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -565,9 +565,9 @@ fn spawn_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
     SubprocessHandle::spawn("daemon", cmd)
 }
 
-/// spawn robot_rpc_gateway。
+/// spawn robot-gateway。
 fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("robot_rpc_gateway");
+    let bin = ctx.bin_dir.join("robot-gateway");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)

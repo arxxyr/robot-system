@@ -264,8 +264,8 @@ impl Args {
             side: Side::Left,
             left_gateway: "http://127.0.0.1:50051".into(),
             right_gateway: "http://127.0.0.1:50052".into(),
-            left_config: PathBuf::from("/etc/robot/xlerobot_left_arm.toml"),
-            right_config: PathBuf::from("/etc/robot/xlerobot_right_arm.toml"),
+            left_config: PathBuf::from("/etc/robot/xlerobot-left-arm.toml"),
+            right_config: PathBuf::from("/etc/robot/xlerobot-right-arm.toml"),
             left_hardware_id: "left_arm".into(),
             right_hardware_id: "right_arm".into(),
             token: std::env::var("ROBOT_TOKEN").unwrap_or_default(),
@@ -367,8 +367,8 @@ OPTIONS:
   --side <left|right>            single-arm 的目标臂（默认 left）
   --left-gateway <ADDR>          默认 127.0.0.1:50051
   --right-gateway <ADDR>         默认 127.0.0.1:50052
-  --left-config <PATH>           默认 /etc/robot/xlerobot_left_arm.toml
-  --right-config <PATH>          默认 /etc/robot/xlerobot_right_arm.toml
+  --left-config <PATH>           默认 /etc/robot/xlerobot-left-arm.toml
+  --right-config <PATH>          默认 /etc/robot/xlerobot-right-arm.toml
   --left-hardware-id <ID>        默认 left_arm
   --right-hardware-id <ID>       默认 right_arm
   --token <TOKEN>                operator+ token（或 env ROBOT_TOKEN）

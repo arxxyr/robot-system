@@ -1,5 +1,5 @@
 // Step 5 · 真 iceoryx2 后端集成测试（macOS 烟测已前置验证可行性）。
-// 覆盖 docs/01_implementation_steps.md Step 5 退出标准中的：
+// 覆盖真实 iceoryx2 后端的以下行为：
 // - "同进程 pub → sub 收到 JointState"
 // - "schema_id attr 不匹配 open → 拒绝"（attribute 硬约束，§5 决策 ⑤ C）
 // - "sample size 超档 → loan_slice_uninit 失败"（size tier 硬限）

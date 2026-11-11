@@ -19,8 +19,8 @@
 //! ## 跟 reviewer A2-3 拍板的 8 条硬边界对应
 //!
 //! 1. **不依赖 Feetech 真硬件**：smoke 自己生成 workdir 内最小 mock config
-//!    （`mock_hard_rt` + 1 joint），**不**走 `xlerobot_bus2_full.toml`。
-//! 2. **user service 兼容模板**：`scripts/systemd/xlerobot-s0-freeze-test.service`
+//!    （`mock_hard_rt` + 1 joint），**不**走 `xlerobot-bus2.toml`。
+//! 2. **user service 兼容模板**：`scripts/systemd/robot-s0-freeze-test.service`
 //!    无 `User=` / `Requires=dev-tty*` / `ReadWritePaths=/var/lib/...`，
 //!    保留 `Type=notify` / `WatchdogSec=2s` / `Restart=on-failure`。
 //! 3. **install 走 `$XDG_RUNTIME_DIR/systemd/user/`**：user manager 默认扫
@@ -42,12 +42,12 @@
 //!
 //! ```bash
 //! # 1) 编 daemon binary（必须带 test-freeze-hook feature）
-//! cargo build -p robot-s0 --bin s0_daemon --features test-freeze-hook
+//! cargo build -p robot-s0 --bin robot-s0 --features test-freeze-hook
 //!
 //! # 2) 编 + 跑 smoke
 //! cargo run -p robot-tests --bin freeze_systemd_smoke \
 //!     --features freeze-systemd-smoke -- \
-//!     --daemon-bin target/debug/s0_daemon \
+//!     --daemon-bin target/debug/robot-s0 \
 //!     --iterations 5
 //! ```
 //!
@@ -107,7 +107,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut args = Self {
             daemon_bin: PathBuf::new(),
-            unit_template: PathBuf::from("scripts/systemd/xlerobot-s0-freeze-test.service"),
+            unit_template: PathBuf::from("scripts/systemd/robot-s0-freeze-test.service"),
             workdir_base: PathBuf::from("logs/freeze_smoke"),
             robot_id_prefix: "freeze_smoke".into(),
             unit_name_prefix: "freeze-smoke".into(),
@@ -226,10 +226,10 @@ USAGE:
   freeze_systemd_smoke --daemon-bin <PATH> [OPTIONS]
 
 REQUIRED:
-  --daemon-bin <PATH>         s0_daemon binary path（必须带 --features test-freeze-hook 编译）
+  --daemon-bin <PATH>         robot-s0 binary path（必须带 --features test-freeze-hook 编译）
 
 OPTIONS:
-  --unit-template <PATH>      systemd unit 模板（默认 scripts/systemd/xlerobot-s0-freeze-test.service）
+  --unit-template <PATH>      systemd unit 模板（默认 scripts/systemd/robot-s0-freeze-test.service）
   --workdir-base <DIR>        每 iter workdir 根（默认 logs/freeze_smoke/）
   --robot-id-prefix <STR>     robot_id 前缀（默认 freeze_smoke；每 iter 加 _<pid>_<iter>）
   --unit-name-prefix <STR>    unit name 前缀（默认 freeze-smoke；每 iter 加 -<pid>-<iter>.service）
@@ -348,7 +348,7 @@ fn preflight(args: &Args) -> Result<EnvCtx, String> {
     // (1) daemon_bin
     if !args.daemon_bin.exists() {
         return Err(format!(
-            "--daemon-bin not found: {}（先 `cargo build -p robot-s0 --bin s0_daemon \
+            "--daemon-bin not found: {}（先 `cargo build -p robot-s0 --bin robot-s0 \
              --features test-freeze-hook`）",
             args.daemon_bin.display()
         ));
@@ -556,12 +556,12 @@ fn run_iteration(
     //
     // 收紧后断言（**全 journal 视角**，不切窗口；ready/start 至少第二轮覆盖）：
     // - `withholding sd_notify` ≥ 1：LivenessObserver 真停过 ping。
-    // - `s0_daemon starting` ≥ 2：daemon 启动 banner（`crates/robot-s0/src/bin/s0_daemon.rs:422`）
+    // - `robot-s0 starting` ≥ 2：daemon 启动 banner（`crates/robot-s0/src/bin/robot-s0.rs:422`）
     //   各跑一次 = 第一次启动 + 重启后再启动。
     // - `freeze_control thread ready` ≥ 2：control thread 在 daemon 启动期 spawn
     //   并进 receive loop，重启后也跑一次。
     // - state=Ready / `"state":"Ready"` ≥ 1（JSON or human 兼容）：daemon
-    //   主 loop 的 heartbeat 周期 log（`crates/robot-s0/src/bin/s0_daemon.rs:878`）
+    //   主 loop 的 heartbeat 周期 log（`crates/robot-s0/src/bin/robot-s0.rs:878`）
     //   至少出现一次（足够证明 daemon 进入了主循环 / 状态机推进；不强制 ≥ 2
     //   是因为 freeze 期间第一个 daemon 已停止 heartbeat）。
     let journal = match journalctl_user(unit_name) {
@@ -569,7 +569,7 @@ fn run_iteration(
         Err(e) => return fail(format!("journalctl: {e}")),
     };
     let withholding_count = count_substring(&journal, "withholding sd_notify");
-    let starting_count = count_substring(&journal, "s0_daemon starting");
+    let starting_count = count_substring(&journal, "robot-s0 starting");
     let freeze_ready_count = count_substring(&journal, "freeze_control thread ready");
     let state_ready_count =
         count_substring(&journal, "\"state\":\"Ready\"") + count_substring(&journal, "state=Ready");
@@ -584,7 +584,7 @@ fn run_iteration(
     }
     if starting_count < 2 {
         hard_asserts.push(format!(
-            "'s0_daemon starting' count={starting_count} (期望 ≥ 2：first + restart)"
+            "'robot-s0 starting' count={starting_count} (期望 ≥ 2：first + restart)"
         ));
     }
     if freeze_ready_count < 2 {

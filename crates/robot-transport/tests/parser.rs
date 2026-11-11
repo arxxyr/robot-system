@@ -5,7 +5,7 @@
 
 //! `robot-transport::parser` 的黑盒测试。
 //!
-//! 覆盖 `docs/01_implementation_steps.md` Step 3 测试清单：
+//! 覆盖 parser 的以下行为：
 //!
 //! - 正常 sample（带 blob / 不带 blob）解析
 //! - 每种 [`ParseError`] 变体都能被构造出可复现的输入

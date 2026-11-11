@@ -1,6 +1,6 @@
 // iceoryx2 0.9.3 升级复核 · 最小复现：**subscriber 侧首建 service**。
 //
-// 现象（升级实验观测）：4 个需要 s1_daemon 的 smoke 全挂在
+// 现象（升级实验观测）：4 个需要 robot-s1 的 smoke 全挂在
 // `PublishSubscribeOpenError(ServiceInCorruptedState)`，死点 = s1 启动锚定
 // 打开 s0 state subscriber（此时 s0 publisher 尚不存在 → subscriber 是该
 // service 的**创建方**）；所有 publisher 先建 service 的路径（crash_restart /
@@ -95,7 +95,7 @@ fn wait_repro_child(
                 if clock.now().0 >= deadline_ns {
                     break Err(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        "s1_daemon exceeded the ten-second diagnostic deadline",
+                        "robot-s1 exceeded the ten-second diagnostic deadline",
                     ));
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -202,15 +202,15 @@ fn concurrent_pub_sub_create_race() {
 }
 
 /// 变体 5：**父进程建 service → spawn 子进程 open**（4 个失败 smoke 的共同
-/// 拓扑：harness 线程 fake_s0 publisher 先建 + ready 后 spawn s1_daemon，
+/// 拓扑：harness 线程 fake_s0 publisher 先建 + ready 后 spawn robot-s1，
 /// s1 anchor open 持久报 `ServiceInCorruptedState (attempts=51)`；对照：
 /// child→child / child→parent / 同进程全过）。子进程直接用真
-/// `target/release/s1_daemon`。若 s1 落 corrupted fatal（exit 1）即钉死
+/// `target/release/robot-s1`。若 s1 落 corrupted fatal（exit 1）即钉死
 /// "parent-publisher → child-subscriber" 为特异成分。
 #[test]
-#[ignore = "需要预先 cargo build --release -p robot-s1（spawn 真 s1_daemon）；诊断/升级复核手跑"]
+#[ignore = "需要预先 cargo build --release -p robot-s1（spawn 真 robot-s1）；诊断/升级复核手跑"]
 fn parent_pub_then_child_s1_open() {
-    // s1_daemon 的 state topic 形状固定 /<robot>/s0/<hw>/state。
+    // robot-s1 的 state topic 形状固定 /<robot>/s0/<hw>/state。
     let now_ns = robot_core::time::RobotClock::now(&robot_core::time::SystemClock).0;
     let robot_id = format!("repro_pc_{}_{now_ns}", std::process::id());
     let topic = format!("/{robot_id}/s0/smoke_arm/state");
@@ -221,7 +221,7 @@ fn parent_pub_then_child_s1_open() {
     // CARGO_MANIFEST_DIR = crates/robot-transport → workspace 根向上两级。
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let temporary = ReproTempDir::create(&robot_id);
-    let template = std::fs::read_to_string(root.join("configs/scripted_backend_smoke.toml"))
+    let template = std::fs::read_to_string(root.join("configs/scripted-backend-smoke.toml"))
         .expect("read the real scripted backend configuration");
     // 本 crate 没有 TOML 测试依赖；只替换受精确断言保护的已知 robot 字段，
     // 模板结构漂移时明确失败，不扩大替换范围或绕开 S1 的配置一致性检查。
@@ -241,7 +241,7 @@ fn parent_pub_then_child_s1_open() {
     let log_path = temporary.0.join("s1.log");
     let log = std::fs::File::create(&log_path).expect("create s1 diagnostic log");
     let stdout = log.try_clone().expect("clone s1 diagnostic log handle");
-    let mut command = std::process::Command::new(root.join("target/release/s1_daemon"));
+    let mut command = std::process::Command::new(root.join("target/release/robot-s1"));
     command
         .arg("--robot-id")
         .arg(&robot_id)
@@ -272,7 +272,7 @@ fn parent_pub_then_child_s1_open() {
         let clock = robot_core::time::SystemClock;
         while !stop_pub.load(std::sync::atomic::Ordering::Acquire) {
             let stamp = robot_core::time::RobotClock::now(&clock).0;
-            // smoke_arm = 1 关节（configs/scripted_backend_smoke.toml）。
+            // smoke_arm = 1 关节（configs/scripted-backend-smoke.toml）。
             let body = build_joint_state_body_for_layout(stamp, &[0.0], layout_id);
             if let Ok(mut w) = pub_.loan(1024 + body.len()) {
                 w.set_stamp_ns(stamp);

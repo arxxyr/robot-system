@@ -11,7 +11,7 @@
 //! - [`boot_supervisor`]、[`watchdog`]、[`latch_writer`] 与 [`shutdown_mechanism`]：
 //!   启动监督、心跳监视、持久化安全状态及有界关闭与回收。
 //!
-//! `s0_daemon` 负责这些组件的生产接线；当前实现及实机验收边界见
+//! `robot-s0` 负责这些组件的生产接线；当前实现及实机验收边界见
 //! `docs/s0_hal_status.md`。
 
 #![forbid(unused_must_use)]
@@ -52,7 +52,7 @@ pub mod config_loader;
 pub use robot_core::control_authority;
 // v0.5 候选 E 段(9)：真机部署件（guard / preflight / provision）。纯逻辑不加
 // feature 门——AC-E16/E21/E22 的 unit 判据必须在默认 gate 内跑到；真串口实现
-// 与 `xlerobot_deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。
+// 与 `robot-deploy` bin 才由 `xlerobot-real` 守门（详 deploy/mod.rs doc）。
 pub mod deploy;
 pub mod diag;
 pub mod estop_latch;
@@ -89,7 +89,7 @@ pub mod state_machine;
 // S48 A3b：`S0StateSnapshot` 的显式字段 codec（快照编码与 state_machine 分文件）。
 mod state_snapshot_codec;
 // v0.5 候选 E 段(8)：`systemd_notify` 迁入 `robot_health::systemd`（单一实现），
-// 本 crate 不再持副本；s0_daemon 直接调 robot_health。
+// 本 crate 不再持副本；robot-s0 直接调 robot_health。
 pub mod watchdog;
 pub mod worker_stop;
 

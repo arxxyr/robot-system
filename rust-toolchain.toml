@@ -10,7 +10,7 @@
 # pin nightly-2026-06-08；2026-07-12 升 iceoryx2 0.9.3 后解除
 # （CHANGELOG 2026-07-12 条"解除 1"）。
 # 处方：nightly 滚动带来的新 clippy lint 就地 fix-forward（如 f54e19e）；
-# pin 具体日期仅留给真编译破坏（CLAUDE.md §Rust 规范逃生舱，用后必须
+# pin 具体日期仅留给真编译破坏（AGENTS.md §Rust 规范逃生舱，用后必须
 # 登记解除条件）。
 channel    = "nightly"
 components = ["rustfmt", "clippy"]

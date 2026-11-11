@@ -43,7 +43,7 @@ impl Role {
         }
     }
 
-    /// 反向解析（configs/rpc_roles.toml 加载用）。
+    /// 反向解析（configs/rpc-roles.toml 加载用）。
     fn from_str(s: &str) -> Option<Self> {
         match s {
             "viewer" => Some(Self::Viewer),
@@ -61,7 +61,7 @@ impl Role {
 /// 其它 capability 占位枚举（让 v0.5+ Phase B B3 完整 gateway 落地时不
 /// 用改 enum）。
 ///
-/// `as_str` 跟 configs/rpc_roles.toml capability 字串严格对齐。
+/// `as_str` 跟 configs/rpc-roles.toml capability 字串严格对齐。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Capability {
     ReadState,
@@ -153,22 +153,22 @@ impl RoleTable {
 
 #[derive(Debug, Error)]
 pub enum AuthError {
-    #[error("rpc_roles.toml 解析失败：{0}")]
+    #[error("rpc-roles.toml 解析失败：{0}")]
     Toml(#[from] toml::de::Error),
-    #[error("rpc_roles.toml 含未知 role 名：{0:?}")]
+    #[error("rpc-roles.toml 含未知 role 名：{0:?}")]
     UnknownRole(String),
-    #[error("rpc_roles.toml 含未知 capability：{role:?} -> {capability:?}")]
+    #[error("rpc-roles.toml 含未知 capability：{role:?} -> {capability:?}")]
     UnknownCapability { role: String, capability: String },
     #[error(
         "role 表违反硬不变量：{0:?} 不应拥有 `clear_estop` capability \
          （reviewer A1-1 拍板：仅 maintainer / admin 可调 ClearEStop）"
     )]
     ClearEstopGrantedToLowRole(Role),
-    #[error("rpc_roles.toml 没有任何 role 定义")]
+    #[error("rpc-roles.toml 没有任何 role 定义")]
     EmptyRoleTable,
 }
 
-/// configs/rpc_roles.toml 的 serde 反序列化中间表示。
+/// configs/rpc-roles.toml 的 serde 反序列化中间表示。
 #[derive(Debug, Deserialize)]
 struct RoleTableToml {
     #[serde(default)]
@@ -282,7 +282,7 @@ capabilities = ["read_state", "invoke_task", "set_enabled", "estop"]
 
 [roles.maintainer]
 # B4 (2/3-b)：maintainer / admin 保留 clear_error（错误恢复 = maintainer+）；
-# invoke_task 跟 production rpc_roles.toml 对齐（maintainer 也能提交任务）。
+# invoke_task 跟 production rpc-roles.toml 对齐（maintainer 也能提交任务）。
 capabilities = ["read_state", "invoke_task", "clear_estop", "clear_error", "reload_calibration"]
 
 [roles.admin]
@@ -483,17 +483,17 @@ capabilities = ["delete_universe"]
         assert!(matches!(err, AuthError::EmptyRoleTable));
     }
 
-    /// **回归锁**：仓库的 `configs/rpc_roles.toml` 必须 load 成功 +
+    /// **回归锁**：仓库的 `configs/rpc-roles.toml` 必须 load 成功 +
     /// 通过 ClearEStop 硬不变量校验。任何 PR 改这个 toml 让 viewer /
     /// operator 拿到 clear_estop 都会让本测试失败。
     #[test]
     fn repo_rpc_roles_toml_passes_invariants() {
         let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/rpc_roles.toml");
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/rpc-roles.toml");
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let table = load_role_table(&text).unwrap_or_else(|e| {
-            panic!("configs/rpc_roles.toml load failed: {e}");
+            panic!("configs/rpc-roles.toml load failed: {e}");
         });
         assert!(table.role_has_capability(Role::Maintainer, Capability::ClearEStop));
         assert!(table.role_has_capability(Role::Admin, Capability::ClearEStop));
@@ -501,7 +501,7 @@ capabilities = ["delete_universe"]
         assert!(!table.role_has_capability(Role::Operator, Capability::ClearEStop));
     }
 
-    /// **回归锁**：仓库的 `configs/rpc_roles.toml` 里 `set_enabled` /
+    /// **回归锁**：仓库的 `configs/rpc-roles.toml` 里 `set_enabled` /
     /// `estop` 必须是 operator+（候选 C SetEnabled / 候选 D EStop 的授权
     /// 语义）。授权是显式 capability 列表**非层级继承**
     /// （`role_has_capability` = `caps.contains`）——"operator+" 成立的前
@@ -512,11 +512,11 @@ capabilities = ["delete_universe"]
     #[test]
     fn repo_rpc_roles_toml_set_enabled_estop_are_operator_plus() {
         let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/rpc_roles.toml");
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/rpc-roles.toml");
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let table = load_role_table(&text).unwrap_or_else(|e| {
-            panic!("configs/rpc_roles.toml load failed: {e}");
+            panic!("configs/rpc-roles.toml load failed: {e}");
         });
         for cap in [Capability::SetEnabled, Capability::EStop] {
             for role in [Role::Operator, Role::Maintainer, Role::Admin] {

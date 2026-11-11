@@ -462,7 +462,7 @@ async fn wire_contract_source_task_id_monotonic() {
     let _guard = GLOBAL_LOCK.lock().await;
     let ctx = CaseCtx::bring_up("wire").await.expect("bring_up");
 
-    // 测试侧 sub command topic（max_sub=1，本 test 是唯一 sub；s0_daemon 不
+    // 测试侧 sub command topic（max_sub=1，本 test 是唯一 sub；robot-s0 不
     // 在拓扑里所以无第二 sub 撞配额）。
     let cmd_topic = format!("/{}/s1/{}/command", ctx.robot_id, ctx.hardware_id);
     let test_node: &'static _ = Box::leak(Box::new(

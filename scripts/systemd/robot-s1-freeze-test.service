@@ -1,0 +1,92 @@
+# XLeRobot S1 coordinator freeze hook systemd e2e 测试 unit 模板
+# （v0.5 候选 E 段(8)，Spec P.2.7 + AC-E19）。
+#
+# **本文件不要直接 `systemctl --user start`**：它是
+# `crates/robot-tests/src/bin/sd_watchdog_smoke.rs` 渲染时用的占位符模板，
+# smoke 每 case 把占位符替换成真实路径后写到
+# `$XDG_RUNTIME_DIR/systemd/user/<unit_name>.service`，再 `systemctl --user
+# daemon-reload + start <unit_name>`。占位符表见本文件末尾"占位符"注释。
+#
+# ## 跟 S0 模板（`robot-s0-freeze-test.service`）的关系
+#
+# 同款 user-service 兼容边界（reviewer A2-3 拍板）：无 `User=` /
+# `Requires=dev-tty*` / `ReadWritePaths=/var/lib/...` / `Conflicts=`；保留
+# `Type=notify` + `NotifyAccess=main` + `WatchdogSec=2s` + `Restart=on-failure`
+# + `StartLimit*`。
+#
+# S1 特有：
+# - **不需要 latch**（S1 无 EStop latch 文件）。
+# - **需要 S0 state 帧**：S1 启动锚定 + 段(5) 常驻 state cache 订阅
+#   `/<robot_id>/s0/<hardware_id>/state`；smoke 进程内起 FakeStatePublisher
+#   （派生 layout_id，50 Hz）贯穿整个 case（含 watchdog 重启后 PID1 再锚定）。
+# - **观测面**（`crates/robot-s1/src/bin/robot-s1.rs` 段(8)）：tick loop /
+#   heartbeat pub / 4 rr server / state cache 共 7 observer；任一
+#   `loop_tick_count` 停滞 → `withholding sd_notify(WATCHDOG=1)` →
+#   `WatchdogSec=2s` 超时 → SIGABRT → `Restart=on-failure`。
+# - **freeze 注入**：test-only topic `/<robot_id>/s1/test/freeze`
+#   （`robot_s1::freeze_control::TestFreezeCommandV2`，`target_pid` 精确匹配，
+#   R5-5）；daemon 必须带 `--features test-freeze-hook` 编译。
+#
+# ## 占位符（smoke binary 在渲染时替换）
+#
+# - `@ROBOT_ID@`      smoke 每 case 唯一（`<prefix>_<pid>_<seq>`）
+# - `@WORKDIR@`       smoke 每 case 工作目录
+# - `@DAEMON_BIN@`    预编译的 `target/.../robot-s1`（必须带
+#                     `--features test-freeze-hook`，否则 freeze_control
+#                     线程不存在，smoke 的 `s1 freeze_control thread ready`
+#                     断言直接 FAIL）
+# - `@CONFIG_PATH@`   smoke 每 case 在 workdir 内生成的最小 mock config
+#                     （`mock_hard_rt` + 3 joint + `[s1.profile]`
+#                     mock_dwell/hold_pose；`[robot].id == @ROBOT_ID@` 身份锁）
+# - `@HARDWARE_ID@`   config 内 `[[hardware]]` 段的 id（默认 `sdwd_arm`）
+#
+# ## 不在本 unit 范围内的事
+#
+# - 真 S0 / 真硬件：state 源 = smoke 进程内 FakeStatePublisher。
+# - gateway：独立模板 `robot-gateway-freeze-test.service`。
+# - 生产 S1 unit（`xlerobot-s1-*.service`）：段(9) 部署件另立，本模板仅测试。
+
+[Unit]
+Description=XLeRobot S1 freeze hook systemd e2e test (@ROBOT_ID@)
+Documentation=file://@WORKDIR@/../../../docs/10_verification.md
+
+# 防失控重启：60s 内挂 ≥ 5 次就停止 retry。smoke 单 case 周期内 1 次 restart
+# （freeze → watchdog 超时 → 新 daemon 稳态 + 反向步 + 空闲保持）。
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+# `Type=notify`：systemd 等 daemon 调 sd_notify(READY=1)（全部 worker 就绪
+# 后）才认为 active；详 crates/robot-health/src/systemd.rs。
+Type=notify
+NotifyAccess=main
+
+WorkingDirectory=@WORKDIR@
+
+ExecStart=@DAEMON_BIN@ \
+    --robot-id @ROBOT_ID@ \
+    --hardware-id @HARDWARE_ID@ \
+    --config @CONFIG_PATH@
+
+# Watchdog 2s：daemon 内按 WATCHDOG_USEC/2 = 1s 周期 ping；READY 即刻 grace 喂
+# 一次 + 取 snapshot，1s 后起每周期比较，任一 observer 停滞即不喂 → 自上次
+# ping 起 2s 无 ping → systemd 发 SIGABRT。
+WatchdogSec=2s
+
+# Restart=on-failure：watchdog timeout / SIGABRT 触发；clean exit (0) 不触发
+# （smoke 主动 stop 时不会被无限重启）。
+Restart=on-failure
+RestartSec=2s
+
+StandardOutput=journal
+StandardError=journal
+
+Environment=ROBOT_LOG_FORMAT=json
+Environment=NO_COLOR=1
+Environment=RUST_LOG=info
+
+# user services 不能 drop capabilities（详 S0 模板同位置注释）；只保留
+# user-mode 安全的 NoNewPrivileges。
+NoNewPrivileges=yes
+
+# **不**加 [Install] 节：smoke 不 enable / 不 boot start，只 start。

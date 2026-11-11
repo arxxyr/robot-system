@@ -58,7 +58,7 @@
 //! ### 与 CLI / env 的粘接
 //!
 //! 默认路径：`/var/lib/robot/<robot_id>/estop_latch`。
-//! `s0_daemon --latch-path <abs_path>` 可直接覆盖完整路径，方便测试（给 tmpdir 下的 path）。
+//! `robot-s0 --latch-path <abs_path>` 可直接覆盖完整路径，方便测试（给 tmpdir 下的 path）。
 //! backup 路径由 [`backup_path`] 派生（追加 `.bak` 后缀），调用方一般无需感知。
 
 use std::ffi::OsString;

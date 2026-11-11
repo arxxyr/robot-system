@@ -750,7 +750,7 @@ mod tests {
     #[test]
     fn mixed_scripted_all_emission_phases_keep_wheel_raw_zero() {
         let mut hardware = crate::coordinator::parse_hardware_section_from_toml(
-            include_str!("../../../../configs/xlerobot_bus2_full.toml"),
+            include_str!("../../../../configs/xlerobot-bus2.toml"),
             "right_arm_full_with_base",
         )
         .unwrap();

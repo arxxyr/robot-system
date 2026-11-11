@@ -1,6 +1,6 @@
 {
   "git": {
-    "sha1": "30d87ed848c35425056a1b8668639850ae6786f0"
+    "sha1": "0ba8c64000b7b5e8c8823c3d357597dd77a0ff55"
   },
   "path_in_vcs": "crates/store/re_protos"
 }

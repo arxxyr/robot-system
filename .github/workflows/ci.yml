@@ -1,8 +1,8 @@
-# CI 严格串行（`docs/10_verification.md` §10.2.3），全程 nightly。
+# CI 严格串行（`docs/10_verification.md` §10.2），全程 nightly。
 #
 # 矩阵：ubuntu-latest (x86_64) + macos-latest (arm64)。两平台都跑前 5 步，
 # 因为 Step 0–5 的交付目标是 "macOS 可跑"（详 docs/00_design.md §11.3
-# 构建假设 + docs/01_implementation_steps.md Step 5 macOS 烟测）。
+# 构建假设）。
 # Step 6+ 的 Linux-only 工作（SCHED_FIFO / mlockall / sd_notify）用后续独立
 # workflow 或 matrix 过滤，本文件不先配。
 # robot-viz 的跨平台纯软件门独立运行；旧 test job 的根 Clippy 平台限制
@@ -90,14 +90,14 @@ jobs:
       # 3. 全 feature 测试
       # W3 需要 release/abort S1；集成测试所需的同源 debug 二进制由 cargo test 生成。
       - name: 构建 W3 release S1 实件
-        run: cargo build --locked --release -p robot-s1 --bin s1_daemon --all-features
+        run: cargo build --locked --release -p robot-s1 --bin robot-s1 --all-features
 
       - name: cargo test --workspace --all-features
         env:
-          B4_E2E_BIN_S0_DAEMON: ${{ github.workspace }}/target/debug/s0_daemon
-          B4_E2E_BIN_S1_DAEMON: ${{ github.workspace }}/target/release/s1_daemon
-          B4_E2E_BIN_ROBOT_RPC_GATEWAY: ${{ github.workspace }}/target/debug/robot_rpc_gateway
-          ROBOT_W3_S1_UNWIND_BIN: ${{ github.workspace }}/target/debug/s1_daemon
+          B4_E2E_BIN_ROBOT_S0: ${{ github.workspace }}/target/debug/robot-s0
+          B4_E2E_BIN_ROBOT_S1: ${{ github.workspace }}/target/release/robot-s1
+          B4_E2E_BIN_ROBOT_GATEWAY: ${{ github.workspace }}/target/debug/robot-gateway
+          ROBOT_W3_S1_UNWIND_BIN: ${{ github.workspace }}/target/debug/robot-s1
         run: cargo test --locked --workspace --all-features
 
       # H2 最终 Disable 的真实 TCP/tonic 预算回归，显式执行以隔离默认单测。
@@ -108,8 +108,7 @@ jobs:
           cargo test --locked -p robot-tests --features comm-fault-rpc
           --test final_stop_transport -- --ignored --test-threads=1 --nocapture
 
-      # 4. iceoryx2 feature off 的保底编译 + 测试（隔离保底，docs/01_implementation_steps.md
-      #    Step 5 退出标准）
+      # 4. iceoryx2 feature off 的保底编译 + 测试，验证 mock 后端隔离。
       - name: cargo test -p robot-transport --no-default-features --features mock
         run: cargo test -p robot-transport --no-default-features --features mock
 
@@ -222,7 +221,7 @@ jobs:
       - name: cargo build -p robot-s0 --no-default-features --features ${{ matrix.combo }}
         run: |
           cargo build --release \
-            -p robot-s0 --bin s0_daemon \
+            -p robot-s0 --bin robot-s0 \
             --no-default-features --features ${{ matrix.combo }}
 
       - name: cargo test -p robot-s0 --no-default-features --features ${{ matrix.combo }}

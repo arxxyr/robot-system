@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn mixed_hold_pose_preserves_only_arm_position_and_stops_wheels() {
         let mut hardware = crate::coordinator::parse_hardware_section_from_toml(
-            include_str!("../../../../configs/xlerobot_bus2_full.toml"),
+            include_str!("../../../../configs/xlerobot-bus2.toml"),
             "right_arm_full_with_base",
         )
         .unwrap();

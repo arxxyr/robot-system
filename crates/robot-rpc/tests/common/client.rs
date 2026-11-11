@@ -25,7 +25,7 @@ use robot_rpc::proto::{
 };
 
 // ============================================================================
-// Fake token 常量（对应 configs/rpc_roles.toml + crates/robot-rpc/src/auth.rs）
+// Fake token 常量（对应 configs/rpc-roles.toml + crates/robot-rpc/src/auth.rs）
 // ============================================================================
 
 pub const VIEWER_TOKEN: &str = "viewer-fake-token-001";

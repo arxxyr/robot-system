@@ -11,7 +11,7 @@
 //! ## Human 模式（默认）
 //!
 //! ```text
-//! 2026-04-25T23:45:12.123456Z [+12345.678901234s]  INFO  robot_s0::s0_daemon: msg
+//! 2026-04-25T23:45:12.123456Z [+12345.678901234s]  INFO  robot_s0: msg
 //!   k1=v1 k2=v2
 //! ```
 //!
@@ -55,7 +55,7 @@
 //!
 //! # RT 铁律
 //!
-//! **RT thread 内严格禁用** `tracing::*!` 带 format arg 的调用（`CLAUDE.md`
+//! **RT thread 内严格禁用** `tracing::*!` 带 format arg 的调用（`AGENTS.md`
 //! 禁用表已列）：带 format arg 的宏会构造 `String`，触发 heap alloc 违反 §4.9。
 //! RT hot path 或不 log，或走 lock-free ring buffer + 异步 flush（v0.3+）。
 //!
@@ -80,7 +80,7 @@ use tracing_subscriber::fmt::time::FormatTime;
 ///
 /// - wall clock：`SystemTime::now()` 通过 `UNIX_EPOCH` 偏移换算 RFC3339 UTC。
 ///   本 crate 是日志基础设施（非 robot-core），允许直接调 `SystemTime::now()`；
-///   业务代码仍经 `robot_core::time::RobotClock` 走（`CLAUDE.md` §5 禁用表）。
+///   业务代码仍经 `robot_core::time::RobotClock` 走（`AGENTS.md` §5 禁用表）。
 /// - monotonic：调 `libc::clock_gettime(CLOCK_MONOTONIC_RAW)`。与 `robot-core::
 ///   time::SystemClock::now()` 同源，日志里的 `mono_ns` 字段和 `rt_thread` 内
 ///   测到的 deadline ns 可直接做差。

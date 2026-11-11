@@ -136,7 +136,7 @@ impl ActionBackend for IkBackend {
         }
 
         // (2) solver 必须注入（Q-IK10b (i) startup 校验兜底）。validate_solver_for_profile
-        // 在 s1_daemon 启动期早已拦下 profile = ["ik"] + solver = None
+        // 在 robot-s1 启动期早已拦下 profile = ["ik"] + solver = None
         // 的路径；本步 defensive 防 unit test 漏注入 / 未来 wiring 漂移。
         let solver = ctx.solver.ok_or_else(|| {
             ActionStartError::Rejected(

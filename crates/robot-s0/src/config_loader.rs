@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// 顶层配置：`[robot]` + `[[hardware]]` + `[[sensor]]`。
 ///
-/// `derive(Serialize)` 仅给单测用（roundtrip 断言）；运行时 `s0_daemon` 不写
+/// `derive(Serialize)` 仅给单测用（roundtrip 断言）；运行时 `robot-s0` 不写
 /// TOML 回去。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +31,7 @@ pub struct RobotConfigToml {
     /// 同份配置的 S1 参数由 S1 解析；S0 只保留该合法顶层段。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s1: Option<toml::Table>,
-    /// `[monitor]` 段（task-31 B'b 加）：系统健康采样配置。缺省时 `s0_daemon`
+    /// `[monitor]` 段（task-31 B'b 加）：系统健康采样配置。缺省时 `robot-s0`
     /// 跑默认值（5 s 间隔 / `top_n=5` / 空 `interested_processes`）。
     #[serde(default)]
     pub monitor: MonitorSection,
@@ -163,7 +163,7 @@ pub struct HardwareSection {
     #[serde(default)]
     pub feetech_bus2_mixed_raw: bool,
     /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
-    /// 不再走 extras）。`None`（缺省）= **true**（保留 `s0_daemon` 既有无条件启动
+    /// 不再走 extras）。`None`（缺省）= **true**（保留 `robot-s0` 既有无条件启动
     /// auto-enable 行为）；`Some(false)` → 启动留 Safe 等 operator `SetEnabled(true)`。
     #[serde(default)]
     pub auto_enable: Option<bool>,
@@ -352,7 +352,7 @@ pub struct LoadedConfig {
     pub identity: IdentityFingerprint,
 }
 
-/// 加载错误。`thiserror` derive 让 `s0_daemon` 可以 `tracing::error!(?err)`
+/// 加载错误。`thiserror` derive 让 `robot-s0` 可以 `tracing::error!(?err)`
 /// 拿到结构化字段 + Display 人类可读消息（详 [`docs/logging.md`](../../../docs/logging.md)
 /// 字段使用约定）。
 #[derive(Debug, thiserror::Error)]
@@ -615,15 +615,15 @@ fps = 30
     fn repository_robot_configs_still_parse() {
         for text in [
             include_str!("../../../configs/xlerobot.toml"),
-            include_str!("../../../configs/xlerobot_bus1_full.toml"),
-            include_str!("../../../configs/xlerobot_bus2_full.toml"),
-            include_str!("../../../configs/xlerobot_left_arm.toml"),
-            include_str!("../../../configs/xlerobot_right_arm.toml"),
-            include_str!("../../../configs/scripted_backend_smoke.toml"),
-            include_str!("../../../configs/robotctl_smoke.toml"),
-            include_str!("../../../configs/crash_restart_smoke.toml"),
-            include_str!("../../../configs/clear_estop_e2e.toml"),
-            include_str!("../../../configs/ik_backend_smoke.toml"),
+            include_str!("../../../configs/xlerobot-bus1.toml"),
+            include_str!("../../../configs/xlerobot-bus2.toml"),
+            include_str!("../../../configs/xlerobot-left-arm.toml"),
+            include_str!("../../../configs/xlerobot-right-arm.toml"),
+            include_str!("../../../configs/scripted-backend-smoke.toml"),
+            include_str!("../../../configs/robotctl-smoke.toml"),
+            include_str!("../../../configs/crash-restart-smoke.toml"),
+            include_str!("../../../configs/clear-estop-e2e.toml"),
+            include_str!("../../../configs/ik-backend-smoke.toml"),
         ] {
             let parsed: RobotConfigToml = toml::from_str(text).unwrap();
             validate_camera_sections(&parsed).unwrap();
@@ -823,7 +823,7 @@ fps = 30
 
     #[test]
     fn auto_enable_absent_is_none() {
-        // SAMPLE_TOML 不写 auto_enable → None（s0_daemon 缺省语义 = true）。
+        // SAMPLE_TOML 不写 auto_enable → None（robot-s0 缺省语义 = true）。
         let f = write_temp(SAMPLE_TOML);
         let cfg = load_robot_config(f.path()).unwrap();
         assert_eq!(cfg.parsed.hardware[0].auto_enable, None);
@@ -852,7 +852,7 @@ fps = 30
         let hw = valid_hw();
         assert!(!hw.feetech_bus2_mixed_raw);
         let mut config: RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         let mut enabled = config.hardware.remove(0);
         enabled.feetech_bus2_mixed_raw = true;
         validate_hardware_section(&enabled).unwrap();
@@ -877,7 +877,7 @@ fps = 30
     #[test]
     fn mixed_raw_rejects_wrong_instance_and_layout_before_factory() {
         let mut config: RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         let mut hardware = config.hardware.remove(0);
         hardware.feetech_bus2_mixed_raw = true;
         validate_hardware_section(&hardware).unwrap();

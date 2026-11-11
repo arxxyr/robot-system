@@ -1,0 +1,133 @@
+# XLeRobot S0 daemon —— left arm-only 6-motor（v0.5 候选 E；Spec D2 身份表 +
+# D13 guard 启动链）。本 unit 通过 Conflicts= 与 full-bus 模板互斥；
+# full-bus 引用当前配置，不是冻结回滚版本。回滚边界见本目录 README.md。
+#
+# ## ExecStart = guard，**不是** robot-s0（QA1 / Y1 终拍）
+#
+# `RestartPreventExitStatus=86 87 89` **只作用于主进程**。若把 preflight/provision
+# 放 `ExecStartPre=`，退 86 不会被捕获 → 连败停止态失效。故 unit **无
+# ExecStartPre**：`robot-deploy guard` 是主进程，六步全绿后 `exec
+# robot-s0` 保住 MainPID（`Type=notify` / watchdog 语义照旧）。
+#
+# ## 六步（pre-increment）
+#
+#   ① 持 /run/robot-system/preflight/xlerobot_left.lock，读连败计数；== 5 → 退 86
+#   ② 任何 pre 步之前先原子写入 n+1（写失败 → 86）
+#   ③ 本 bus 全量 ensure-safe（left arm；崩溃残留扭矩也在覆盖面内）
+#   ④ latch provision（D2 三分支 + 统一 parent-dir fsync）
+#   ⑤ 清零计数（清零失败 → 86）
+#   ⑥ exec robot-s0（自动追加 --config，见下）
+#
+# ## R10-1 config 单源
+#
+# `--` 之后的 s0 args **不得**自带 `--config`——guard 会自动追加
+# `--config /etc/robot/xlerobot-left-arm.toml`（重复即配置错误退 86），
+# 结构性保证 guard 与 robot-s0 引用同一绝对路径。
+#
+# ## 两档预算
+#
+# - 运行期崩溃 / watchdog 风暴：unit 级 `StartLimitIntervalSec=60s` +
+#   `StartLimitBurst=5`（维持既有 S0 值）。
+# - preflight/provision 连败：guard 自管、与墙钟无关的连续失败计数
+#   （单次 pre 最坏 ~12 s 会滚出 60 s 窗口，unit 级限流抓不住慢失败循环）。
+#   人工恢复 = 修硬件 → 清 /run/robot-system/preflight/xlerobot_left.count →
+#   `systemctl start`（详 README.md）。
+
+[Unit]
+Description=XLeRobot S0 daemon (left arm-only, guard-wrapped)
+Documentation=file:///home/loosqk/repo/robot/robot-system/scripts/systemd/README.md
+
+After=network-online.target dev-ttyACM0.device
+Requires=dev-ttyACM0.device
+
+# 全局 handoff 交接（全部 17 电机 ensure-safe）必须先完成。
+Requires=robot-s0-preflight.service
+After=robot-s0-preflight.service
+
+# 旧栈兜底互斥（防绕过 handoff 的边缘路径，与 handoff unit 双保险）。
+Conflicts=xlerobot-coordinator.service xlerobot-web.service robot-s0-bus1.service robot-s0-bus2.service
+After=xlerobot-coordinator.service xlerobot-web.service robot-s0-bus1.service robot-s0-bus2.service
+
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+User=loosqk
+Group=loosqk
+SupplementaryGroups=dialout
+WorkingDirectory=/home/loosqk/repo/robot/robot-system
+
+# guard 连败计数目录：普通 User 无权在 root:root 0755 的 /run 自建一级目录，
+# 必须由 systemd 原生三件套提供。`preserve=yes` 精确给出"自动 restart 与
+# 手工 stop/start 均保留、reboot 因 /run tmpfs 清零"。
+RuntimeDirectory=robot-system/preflight
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+# ── 调度硬化（2026-09-01；配合 --serial-fifo/--cpu 与内核 isolcpus=4,5）──
+# RestrictRealtime 已移除：它以 seccomp 拦掉 RT 调度类，与 --serial-fifo 互斥。
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+# 普通线程圈定杂务核 0-3。线程可用 sched_setaffinity 越出继承掩码
+# （继承掩码是初值不是上限；硬上限只有 cgroup cpuset），serial 线程由
+# daemon 内 pin_to_cpu 自行钉到 4 号隔离核。刻意不设 AllowedCPUs=
+# —— 那是 cpuset 硬上限，会真拦住 serial 线程进 4/5。
+CPUAffinity=0-3
+
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-deploy guard \
+    --arm left \
+    --config /etc/robot/xlerobot-left-arm.toml \
+    --s0-bin /home/loosqk/repo/robot/robot-system/target/release/robot-s0 \
+    -- \
+    --robot-id xlerobot_left \
+    --hardware-id left_arm \
+    --latch-path /var/lib/robot/xlerobot_left/estop_latch \
+    --tick-hz 50 \
+    --serial-fifo 70 \
+    --cpu 4 \
+    --notify-mode required \
+    --strict-rt
+
+# **TimeoutStartSec=infinity 是硬要求**（round 1 P0-2）：有限值会在"部分
+# 电机已写、其余尚未处理"时截断 ensure-safe 的末尾聚合（D13 备选"可证明
+# 总时限"未采）。guard 的 pre 步最坏 ~12 s 本身有界；notify READY 由 exec
+# 之后的 robot-s0 发出；main 首句监督器以 88 兜底，允许 systemd 重启。
+TimeoutStartSec=infinity
+
+WatchdogSec=2s
+Restart=on-failure
+RestartSec=2s
+
+# 86 = guard 停止态专用码（预算耗尽 / 计数 I/O / 锁冲突 / 配置级 exec 前置
+# 失败）。**exec 后同样作用于 robot-s0**，故 86 是 robot-s0 的永久保留
+# 退出码（回归锁见 AC-E3 / deploy::guard 单测）。
+# 87 = RX 信任锁被占用；89 = latch 目标稳定锁被另一进程持有（S48 A3d / W1，
+# guard provision 与 robot-s0 同码）。两者都是并发实例冲突，重启只会反复
+# 撞锁，故禁止重启。1（名字 / 锁 IO / 恢复失败）与 88（监督器）保留
+# on-failure 重启路径。精确列表由 tests/deploy_units.rs 锁定。
+RestartPreventExitStatus=86 87 89
+
+ReadWritePaths=/var/lib/robot/xlerobot_left
+
+StandardOutput=journal
+StandardError=journal
+Environment=ROBOT_LOG_FORMAT=json
+Environment=RUST_LOG=info,robot=debug
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

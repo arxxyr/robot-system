@@ -30,7 +30,7 @@ yanked = "deny"
 # ignore 仅按公告 ID 或精确撤回包版本登记，不关闭整类检查。
 # 加条目前必须先在 docs/CHANGELOG.md 登记 "偏离" 条，写明豁免理由 + 复审触发。
 ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "Rerun 0.42.0 经 re_string_interner/re_query 使用 paste 1.0.15 编译期宏；上游停止维护且无修复版本；SDK/paste、依赖路径或公告变化及下次发布审计时复审，替代落地后移除" },
+    { id = "RUSTSEC-2024-0436", reason = "Rerun 0.43.0 经 re_string_interner/re_query 使用 paste 1.0.15 编译期宏；上游停止维护且无修复版本；SDK/paste、依赖路径或公告变化及下次发布审计时复审，替代落地后移除" },
 ]
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ arc-swap    = { workspace = true }
 [features]
 # 默认同时启用 mock（保底 / trybuild 负向测试）和 iceoryx2（真后端）。
 # iceoryx2 feature off 时（`--no-default-features --features mock`）仍可编译 +
-# 跑 mock 测试，作为后端隔离保底（docs/01_implementation_steps.md Step 5 退出标准）。
+# 跑 mock 测试，作为后端隔离保底。
 default = ["mock", "iceoryx2"]
 mock = []
 iceoryx2 = ["dep:iceoryx2"]

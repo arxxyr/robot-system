@@ -24,11 +24,11 @@ robot-adapter-mock    = { workspace = true, optional = true }
 robot-adapter-feetech = { workspace = true, optional = true }
 # watchdog / ipc_thread 非 RT 事件队列（Part 2）。
 crossbeam-channel   = { workspace = true }
-# s0_daemon bin 构造 iceoryx2 Node / subscriber / publisher（lib 层只抽象 Subscriber/Publisher 类型）。
+# robot-s0 bin 构造 iceoryx2 Node / subscriber / publisher（lib 层只抽象 Subscriber/Publisher 类型）。
 iceoryx2            = { workspace = true }
-# s0_daemon bin 信号处理（SIGINT / SIGTERM）直接用 libc 的 signal FFI。
+# robot-s0 bin 信号处理（SIGINT / SIGTERM）直接用 libc 的 signal FFI。
 libc                = { workspace = true }
-# Step 7 task 25：config TOML loader（仅 s0_daemon / config_loader 用）。
+# Step 7 task 25：config TOML loader（仅 robot-s0 / config_loader 用）。
 # robot-core 不引入 serde/toml，恪守 §4.2 零 runtime 依赖；白名单登记见
 # docs/CHANGELOG.md 2026-04-24 "Step 7 task 25 robot-s0 / robot-core::config 依赖白名单更新"。
 serde               = { workspace = true }
@@ -44,10 +44,10 @@ flatbuffers         = { workspace = true }
 
 # 段(9) 部署件 CLI：真串口读写要 serialport / libudev，故 required-features
 # 锁死在 xlerobot-real——dev / CI 默认 build 不拉这条系统依赖。
-# （s0_daemon 仍走 src/bin/ 自动发现，显式列一个 bin 不影响其余自动发现。）
+# （robot-s0 仍走 src/bin/ 自动发现，显式列一个 bin 不影响其余自动发现。）
 [[bin]]
-name              = "xlerobot_deploy"
-path              = "src/bin/xlerobot_deploy.rs"
+name              = "robot-deploy"
+path              = "src/bin/robot-deploy.rs"
 required-features = ["xlerobot-real"]
 
 [dev-dependencies]
@@ -75,7 +75,7 @@ mock    = ["dep:robot-adapter-mock"]
 feetech = ["dep:robot-adapter-feetech"]
 
 # 对齐 robot-core::rt_guard feature；binary 侧需要自己声明 AllocDisabler
-# 作为 global_allocator 才能让 assert_no_alloc 生效（见 src/bin/s0_daemon.rs）。
+# 作为 global_allocator 才能让 assert_no_alloc 生效（见 src/bin/robot-s0.rs）。
 rt_guard = ["robot-core/rt_guard", "dep:assert_no_alloc"]
 
 # ── A2 freeze hook（test-only；闭 §6.7 #2 systemd watchdog e2e）──
@@ -110,7 +110,7 @@ workspace = true
 name = "comm_fault_startup"
 required-features = ["test-comm-fault-hook"]
 
-# S48 A3d / W1：无硬件夹具验证 xlerobot_deploy provision 子命令的 89 / 1 / 71 映射；
+# S48 A3d / W1：无硬件夹具验证 robot-deploy provision 子命令的 89 / 1 / 71 映射；
 # 与 bin 同受 xlerobot-real 约束（默认 gate 不编译，独立门显式启用该 feature）。
 [[test]]
 name = "xlerobot_deploy_provision"

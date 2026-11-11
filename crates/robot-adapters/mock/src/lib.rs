@@ -1,7 +1,7 @@
 //! Mock `HardRT` adapter —— S0 最小闭环的纯内存关节模型。
 //!
 //! 对应 `docs/00_design.md` §4.4 `ManipulatorAdapter` trait、§4.6 RT 分级
-//! （声明 `HardRT`）+ `docs/01_implementation_steps.md` Step 6 交付清单。
+//! （声明 `HardRT`）；用于无硬件的执行链与安全策略验证。
 //!
 //! ### 物理模型（Part 1）
 //!
@@ -271,7 +271,7 @@ impl OutputSafetyProbe for MockHardRTAdapter {
 
 /// `MockHardRTAdapter` 的 inventory 工厂。
 ///
-/// `[[hardware]] adapter = "mock_hard_rt"` 时被 `s0_daemon` 命中。
+/// `[[hardware]] adapter = "mock_hard_rt"` 时被 `robot-s0` 命中。
 /// build 出的 adapter 用 `JointLimits::default()`（全 0），调用方按需 reset。
 pub struct MockFactory;
 
@@ -288,7 +288,7 @@ impl AdapterFactory for MockFactory {
     }
 
     /// task-30 v9 finding #3：`HardRT` 专用入口，返回综合 trait object，
-    /// **编译期保证** `RtSafeCtrl` 已实现。`s0_daemon` `HardRT` 分支调本方法
+    /// **编译期保证** `RtSafeCtrl` 已实现。`robot-s0` `HardRT` 分支调本方法
     /// 而不是 `build`。
     fn build_hard_rt(
         &self,
@@ -327,7 +327,7 @@ inventory::submit! { &MockFactory as &dyn AdapterFactory }
 // 编译期保证它**只能**走 `RtClass::SerialRT` 路径（spawn_serial_io_thread）。
 // `info().rt_class` 报告 SerialRT；`info().name` 报告 `mock_serial_rt`。
 //
-// 用途：robot-s0 的 SerialRT 端到端集成测试 + s0_daemon dispatch 锁测，
+// 用途：robot-s0 的 SerialRT 端到端集成测试 + robot-s0 dispatch 锁测，
 // 不依赖真硬件即可验证 build_serial_rt → spawn_serial_io_thread 全链路。
 
 /// `RtClass::SerialRT` 的 mock adapter。
@@ -394,9 +394,9 @@ impl OutputSafetyProbe for MockSerialRTAdapter {
 
 /// `MockSerialRTAdapter` 的 inventory 工厂。
 ///
-/// `[[hardware]] adapter = "mock_serial_rt"` 时被 `s0_daemon` 命中。
+/// `[[hardware]] adapter = "mock_serial_rt"` 时被 `robot-s0` 命中。
 /// 与 `MockFactory` 的关键区别：**不** override `build_hard_rt`（保持
-/// default = `Unsupported`），改 override `build_serial_rt`。`s0_daemon`
+/// default = `Unsupported`），改 override `build_serial_rt`。`robot-s0`
 /// 的三段 dispatch 自然落到 `SerialRT` 路径。
 pub struct MockSerialRTFactory;
 

@@ -1,8 +1,7 @@
 //! S0 RT 线程：`SCHED_FIFO` + `mlockall` + tick 闭环。
 //!
 //! 对应 `docs/00_design.md` §1.2 `s0_rt_thread` + §1.3 启动流程 + §4.9 RT 铁律。
-//! 对应 `docs/handoffs/2026-04-24.md` §2.3 方案 B（每 `HardRT` bus 一实例，v0.2
-//! 单 bus 等价）。
+//! 每条 `HardRT` 总线独立运行一个实例，保持唯一执行者。
 //!
 //! ### tick 闭环（每 tick 运行在 `rt_entry!` scope 内）
 //!
@@ -126,7 +125,7 @@ pub struct RtThreadMetrics {
     pub normal_completed_count: AtomicU64,
     /// **S48 A3b**：`RtSnapshotPublisher::publish` 返回错误（版本耗尽 / 写端损坏）
     /// 的次数。首次出错即结束本 worker（guard 退出后结束外层循环），由
-    /// `s0_daemon` 的 `is_finished` / 进度停滞监督判错；不清 latch、不伪装 Ready。
+    /// `robot-s0` 的 `is_finished` / 进度停滞监督判错；不清 latch、不伪装 Ready。
     pub snapshot_publish_errors: AtomicU64,
     /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
     /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）；与 daemon 的真实

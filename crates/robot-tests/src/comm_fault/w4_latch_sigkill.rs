@@ -33,7 +33,7 @@ use super::report::{Report, file_hash};
 use super::sla::send_sample_request;
 
 const FILTER: &str = "W4-FILE-SIGKILL-SMOKE";
-const DAEMON_LOG: &str = "warn,s0_daemon=info";
+const DAEMON_LOG: &str = "warn,robot_s0=info";
 const STARTUP_NS: u64 = 12_000_000_000;
 const REQUEST_NS: u64 = 5_000_000_000;
 const REAP_NS: u64 = 2_000_000_000;

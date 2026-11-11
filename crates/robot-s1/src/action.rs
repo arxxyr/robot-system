@@ -1,69 +1,16 @@
-//! v0.3 Phase B B2 action interface 类型骨架 + Coordinator API 表层类型。
+//! S1 action 类型、backend trait 与 coordinator 交互契约。
 //!
-//! **变更历史**：
+//! 本模块定义 ActionId、请求/事件/状态与错误类型；backend 注册和执行分别由
+//! `action_backend` 与 `coordinator` 负责，协议编解码留在 RR / pubsub 模块。
 //!
-//! - **B2 (1/3)** (`4b9d4de` + reviewer fix `54521ed` / `8508c3d`)：lib 纯
-//!   类型 + trait 定义初版（[`ActionId`] / [`ActionKind`] /
-//!   [`ActionRequest`] / [`ActionBackend`] / [`ActionInstance`] /
-//!   [`JointCommandBody`] / 错误枚举）。
-//! - **B2 (2/3)**：[`SubmitError::NotReady`]（Booting 拒 submit）+
-//!   [`ActionTicket`] / [`ActionEvent`] / [`ActionStatus`] coordinator API
-//!   表层（详
-//!   [`docs/handoffs/v0.3_b2_outline.md`](../../../docs/handoffs/v0.3_b2_outline.md)
-//!   §7 + reviewer 拍板补充）。
-//!
-//! 本模块仍**只**含 lib 类型 + trait 定义；backend 实现 /
-//! `BackendRegistry` / `Coordinator` wiring 在
-//! [`crate::action_backend`] / [`crate::coordinator`] 落地，**不**进本文件
-//! （B2 (2/3) reviewer 文件边界锁定）。
-//!
-//! ## 模块入口
-//!
-//! - [`ActionId`]：UUIDv7 newtype（§10 决策 #2）。
-//! - [`ActionKind`]：B2 enum 仅 [`ActionKind::DwellMs`] +
-//!   [`ActionKind::HoldPose`] 两个 variant（§10 决策 #1 + 阻断 3）；
-//!   `Stop` / `MoveToPose` / `FollowTrajectory` / `PolicyAction`
-//!   **不**进 B2 enum。
-//! - [`ActionRequest`] + [`ActionRequest::validate`]：纯字段校验
-//!   （deadline / idempotency_key / payload 长度上限 + 哨兵 schema_id
-//!   守门）。
-//! - [`NO_PAYLOAD_SCHEMA_ID`]：`payload_schema_id` 哨兵值（reviewer 阻
-//!   断 1 锁定，去掉 [`ActionBackend::supported_schemas`] 空切片魔法语
-//!   义）。
-//! - [`JointCommandBody`]：`Vec<u8>` newtype，让"这是 JointCommand body
-//!   字节流"在类型上一目了然（§10 决策 #8）。
-//! - [`ActionBackend`] / [`ActionInstance`] trait：B2 (2/3) 起按
-//!   `inventory::submit!` 静态注册到
-//!   [`crate::action_backend::BackendRegistry`]。
-//! - [`ActionContext`]：tick 时由 coordinator 借给 backend 的上下文
-//!   （`RobotClock` / `HardwareSection` / `CoordinatorConfig` /
-//!   `anchor_bias` / v0.5 候选 E 段(5) 起的 `scripted_start_pose`）；B2
-//!   **不**暴露 publisher trait object（§10 决策 #8 + outline §2.5 注释）。
-//! - [`ActionInstance::successful_hold_target`]（v0.5 候选 E 段(5)，Spec
-//!   D3 第 3 条 + QA2）：终态数据通路——**仅** Scripted 在末 waypoint
-//!   target 已发布后返 `Some`；默认 `None` 让其余 backend 天然走
-//!   `idle_hold_target = anchor_bias` reset（穷尽式单一规则由类型承担）。
-//! - 错误枚举：[`SubmitError`] / [`ActionStartError`] / [`ActionCancelError`]
-//!   / [`ClearError`] / [`ActionFailure`]。`SubmitError::NotReady` =
-//!   B2 (2/3) 加，对应 `Booting` 状态拒 submit（reviewer 拍板补充：
-//!   不复用 `ShuttingDown`，因两阶段生命周期相反）。
-//! - [`ActionTicket`] / [`ActionEvent`] / [`ActionStatus`]：coordinator
-//!   `submit()` 表层类型；事件 channel 用 `std::sync::mpsc::Receiver`
-//!   （reviewer 阻断 1 锁定，**不**用 tokio；B4 时 robot-rpc-gateway 起
-//!   adapter thread 桥到 tokio）。
-//!
-//! ## 不做（B2 边界）
-//!
-//! - **不**实现 backend / [`crate::action_backend::BackendRegistry`] /
-//!   `parse_profile_section_from_toml` 自身：这些落
-//!   [`crate::coordinator`] + [`crate::action_backend`] 模块（B2 (2/3)
-//!   同 commit chain，**不**进本文件）。
-//! - **不**改 `s1_daemon` binary（→ B2 (3/3)）。
-//! - **不**引入跨进程 fbs schema：`payload: Vec<u8>` 字段先占位，B4
-//!   真接 RPC `InvokeTask` 时再引入 `action_request.fbs` /
-//!   `action_status.fbs`（§10 决策 #9）。
+//! 请求在提交前校验期限、幂等 key、payload 长度与 schema。backend 借用
+//! ActionContext 中的时钟、硬件配置、求解器、启动锚点及命令序号；不得自造
+//! JointCommand 序号。Scripted 使用提交时的当前位作起点，不能退回启动锚点。
+//! 只有已发布末 waypoint 的 Scripted 才提供 successful_hold_target，其余路径
+//! 沿 coordinator 的原 hold 规则。事件使用进程内同步 channel，再由 events_drain
+//! 桥接到每个 ActionId 的 pub/sub topic。
 
-// 中文 doc 块大量 identifier-like 字串（mock_s1 / s1_daemon /
+// 中文 doc 块大量 identifier-like 字串（mock_s1 / robot-s1 /
 // coordinator / RobotClock 等），跟 lib 同款宽松 doc-markdown。
 #![allow(clippy::doc_markdown)]
 
@@ -159,13 +106,12 @@ pub enum ActionKind {
     /// 值之一。
     HoldPose,
     /// joint-space 线性插值 + waypoint dwell 序列（v0.4 候选 1 land）。
-    /// 详 `docs/handoffs/v0.4_entry.md` §3.2 +
-    /// `team-swe/specs/v0_4_scripted_backend.md`。Payload 走
+    /// Payload 走
     /// `SCHEMA_SCRIPTED_PAYLOAD` (= `0x0000_040B`)；backend impl 落
     /// `crates/robot-s1/src/action_backend/scripted.rs` (2/3 land)。
     Scripted,
     /// 笛卡尔 pose IK 解算 + 关节位置输出（v0.4 候选 2 round 2 land）。
-    /// 详 `team-swe/specs/v0_4_robot_kinematics_round2.md` Q-IK1..Q-IK17。
+    /// 输入语义见 `robot-msg/schemas/ik_payload.fbs`。
     /// Payload 走 `SCHEMA_IK_PAYLOAD` (= `0x0000_040C`)；backend impl
     /// 落 `crates/robot-s1/src/action_backend/ik.rs`（round 2 (3/4)
     /// 待 land）；solver impl 走 `crates/robot-kinematics-xlerobot`
@@ -356,9 +302,7 @@ pub enum ActionSource {
 ///   缺此值 → `ActionStartError::Rejected`，**绝不** fallback 到
 ///   `anchor_bias`（静默跳变危险）。与 `anchor_bias` 物理隔离：两者
 ///   同时存在但语义不同——前者是 per-action 起点，后者是启动锚点。
-/// - `command_seq`（B3 (1/2) 加，详
-///   [`docs/handoffs/v0.3_b3_outline.md`](../../../docs/handoffs/v0.3_b3_outline.md)
-///   §3.4 reviewer round 2 显式放行）：本 tick 即将 publish 的
+/// - `command_seq`：本 tick 即将 publish 的
 ///   `JointCommand` frame 的 `source_task_id` / `FrameHeader.seq`，由
 ///   [`crate::coordinator::run_action_tick_loop`] 维护
 ///   [`crate::coordinator::TickState::cmd_seq`] 透传到此。Backend
@@ -386,19 +330,19 @@ pub struct ActionContext<'a> {
     /// IK solver borrow（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
     /// `Option<&dyn ArmIkSolver>` 引用 plumb，**不** `Arc` / **不** clone）。
     ///
-    /// **存在性**：`Some(_)` 仅当 `backend-ik` feature 启用 + `s1_daemon`
+    /// **存在性**：`Some(_)` 仅当 `backend-ik` feature 启用 + `robot-s1`
     /// 启动期成功构造 [`robot_kinematics_xlerobot::XLeRobotArmIkSolver`]
     /// 并注入 [`crate::coordinator::Coordinator::new`]。Coordinator 借用
     /// 内部 `Option<Box<dyn ArmIkSolver>>` 透传到本字段。
     ///
     /// **None 路径**：
     ///
-    /// - `backend-ik` feature off → `s1_daemon` 永不构造 solver，注入
+    /// - `backend-ik` feature off → `robot-s1` 永不构造 solver，注入
     ///   `None`；本字段恒为 `None`（trait crate 永远 link，类型仍存在）。
     /// - feature on 但 profile 未启用 `"ik"` → coordinator submit 永远
     ///   走 [`crate::action::SubmitError::NoBackendForKind`] 早拦掉，本
     ///   字段是否 `Some` 不可见。
-    /// - feature on + profile 启用 `"ik"` + `s1_daemon` 漏注入 →
+    /// - feature on + profile 启用 `"ik"` + `robot-s1` 漏注入 →
     ///   [`crate::coordinator::validate_solver_for_profile`] 在 startup
     ///   期 fail-fast（Q-IK10b (i) ACK；详 coordinator 同名函数 doc）。
     ///

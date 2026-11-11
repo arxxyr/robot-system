@@ -1,4 +1,4 @@
-//! 段(4)：`s1_daemon` 显式 `--layout-id` 与 config 派生冲突 → **exit 2**
+//! 段(4)：`robot-s1` 显式 `--layout-id` 与 config 派生冲突 → **exit 2**
 //! bin 层 fail-fast（PD-E5(a)：config 派生唯一权威，显式传值仅一致性断言）。
 //!
 //! 沿既有 e2e 启动失败断言模式：spawn 真 binary（`CARGO_BIN_EXE_`）+
@@ -27,7 +27,7 @@ fn explicit_layout_id_conflict_exits_2() {
     )
     .unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_s1_daemon"))
+    let out = Command::new(env!("CARGO_BIN_EXE_robot-s1"))
         .arg("--robot-id")
         .arg("lc_robot")
         .arg("--hardware-id")
@@ -37,7 +37,7 @@ fn explicit_layout_id_conflict_exits_2() {
         .arg("--layout-id")
         .arg("0x1")
         .output()
-        .expect("spawn s1_daemon");
+        .expect("spawn robot-s1");
 
     assert_eq!(
         out.status.code(),

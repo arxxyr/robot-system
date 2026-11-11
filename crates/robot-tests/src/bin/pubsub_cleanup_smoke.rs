@@ -10,12 +10,12 @@
 //! 3. Inline `FakeStatePublisher`（沿 `crates/robot-rpc/tests/common/fake_state.rs`
 //!    模式 —— 50Hz JointState publish + `SystemClock` 填 `stamp_ns` +
 //!    leak Node）；Plan v3 §P.2.1.c 拍板 binary 路径自包含、不改公共 API
-//! 4. `SubprocessHandle` + spawn s1_daemon / robot_rpc_gateway 双进程；
+//! 4. `SubprocessHandle` + spawn robot-s1 / robot-gateway 双进程；
 //!    `Stdio::piped()` 2 路 drain 到共享 `Arc<TokioMutex<Vec<String>>>`；
 //!    `kill_on_drop(true)` RAII 兜底；显式 SIGTERM grace → SIGKILL fallback
 //!    shutdown 路径
 //! 5. 三段式 ready signal（Plan v3 §P.2.1）：
-//!    - Phase 1: s1_daemon stderr marker `"rr_server_threads ready"`
+//!    - Phase 1: robot-s1 stderr marker `"rr_server_threads ready"`
 //!    - Phase 2: gateway TCP probe `127.0.0.1:<port>`（gateway binary
 //!      没有 stderr ready marker；TCP `connect` 成功代理）
 //!    - Phase 3: gateway tonic `GetTaskStatus` 探活，action_id = zero
@@ -53,7 +53,7 @@
 //!   --bin-dir <DIR>                  默认 target/release
 //!   --robot-id-prefix <STR>          默认 pubsub_cleanup
 //!   --hardware-id <ID>               必填（跟 --config TOML 的 [[hardware]].id 一致）
-//!   --config <TOML>                  必填（s1_daemon --config）
+//!   --config <TOML>                  必填（robot-s1 --config）
 //!   --joints <N>                     默认 1（跟 config [[hardware]].joints 一致）
 //!   --iterations <N>                 (2/2) 用；默认 1000（Q1 拍板）
 //!   --metric-sample-every <K>        (2/2) 用；默认 100
@@ -71,16 +71,12 @@
 //! - `1`：CLI / preflight / 子进程 spawn 错（含 (1/2) 收 `--phase A1|A2|A3|all`）
 //! - `2`：≥1 case FAIL（含 (2/2) AC FAIL + 任一条件性 AC 触发）
 //!
-//! ## 跟 Spec / Plan 的链接
-//!
-//! - [`team-swe/specs/v0_4_pubsub_cleanup.md`](../../../../../team-swe/specs/v0_4_pubsub_cleanup.md)
-//!   §AC + §Plan §P.2.1 / §P.2.2
-//! - [`docs/handoffs/v0.4_entry.md`](../../../../../docs/handoffs/v0.4_entry.md)
-//!   §4 当前切入点 + §5 6 条 hard boundaries
+//! 相关字段与转换见 `robot-msg/schemas` 和 `robot-rpc/src/task_handlers.rs`；
+//! 本模块上方列出实际验证阶段，历史计划通过 Git 查询。
 
 #![cfg(target_os = "linux")]
 // Smoke binary：复杂的进程协调 + tempdir 路径，doc 块大量 identifier-like
-// 字串（s1_daemon / robot_rpc_gateway / iceoryx2 / TaskHandleRef 等），跟
+// 字串（robot-s1 / robot-gateway / iceoryx2 / TaskHandleRef 等），跟
 // 其它 smoke binary（`crash_restart_smoke` / `clear_estop_e2e`）一致放宽
 // pedantic。
 #![allow(clippy::doc_markdown, clippy::too_many_lines)]
@@ -293,7 +289,7 @@ USAGE:
 
 OPTIONS (required):
     --hardware-id <ID>               跟 --config [[hardware]].id 一致
-    --config <TOML>                  s1_daemon --config 路径
+    --config <TOML>                  robot-s1 --config 路径
 
 OPTIONS (defaulted):
     --bin-dir <DIR>                  默认 target/release
@@ -418,20 +414,20 @@ async fn main() -> ExitCode {
 }
 
 fn preflight(args: &Args) -> Result<(), String> {
-    let s1 = args.bin_dir.join("s1_daemon");
+    let s1 = args.bin_dir.join("robot-s1");
     if !s1.exists() {
         return Err(format!(
-            "s1_daemon binary not found at {} (build via \
-             `cargo build --release -p robot-s1 --bin s1_daemon`)",
+            "robot-s1 binary not found at {} (build via \
+             `cargo build --release -p robot-s1 --bin robot-s1`)",
             s1.display()
         ));
     }
-    let gw = args.bin_dir.join("robot_rpc_gateway");
+    let gw = args.bin_dir.join("robot-gateway");
     if !gw.exists() {
         return Err(format!(
-            "robot_rpc_gateway binary not found at {} (build via \
+            "robot-gateway binary not found at {} (build via \
              `cargo build --release -p robot-rpc --features client \
-             --bin robot_rpc_gateway`)",
+             --bin robot-gateway`)",
             gw.display()
         ));
     }
@@ -460,7 +456,7 @@ static CASE_SEQ: AtomicU32 = AtomicU32::new(0);
 /// + loopback port，避并发 case 串扰 + iceoryx2 service 命名冲突。
 #[derive(Debug, Clone)]
 struct CaseCtx {
-    /// 每 case 全局唯一：`<robot_id_prefix>_<pid>_<seq>`。同时作为 s1_daemon
+    /// 每 case 全局唯一：`<robot_id_prefix>_<pid>_<seq>`。同时作为 robot-s1
     /// `--robot-id` + iceoryx2 RR topic 前缀
     /// （`/<robot_id>/control/{task_invoke,task_cancel,task_status,clear_error}`
     /// + `/<robot_id>/s1/action_events/<action_id>`）。
@@ -478,9 +474,9 @@ struct CaseCtx {
     bin_dir: PathBuf,
     /// `<workdir>/<robot_id>/`，case 内一切 forensic 文件都放这里。
     case_dir: PathBuf,
-    /// `<case_dir>/rpc_roles.toml`：harness 写一份最小 role 表（含 4
+    /// `<case_dir>/rpc-roles.toml`：harness 写一份最小 role 表（含 4
     /// fake token + maintainer/operator/viewer/admin 4 role），跟
-    /// `configs/rpc_roles.toml` 兼容。
+    /// `configs/rpc-roles.toml` 兼容。
     role_table_path: PathBuf,
     /// gateway loopback 端口。`allocate_loopback_port` 取 OS 自动分配。
     gateway_port: u16,
@@ -493,7 +489,7 @@ impl CaseCtx {
         let case_dir = args.workdir.join(&robot_id);
         std::fs::create_dir_all(&case_dir)
             .map_err(|e| format!("mkdir case_dir {}: {e}", case_dir.display()))?;
-        let role_table_path = case_dir.join("rpc_roles.toml");
+        let role_table_path = case_dir.join("rpc-roles.toml");
         write_role_table(&role_table_path)?;
         // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
         // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
@@ -532,11 +528,11 @@ impl CaseCtx {
     }
 }
 
-/// 写最小 rpc_roles.toml：4 fake token + 4 role，跟 `configs/rpc_roles.toml`
+/// 写最小 rpc-roles.toml：4 fake token + 4 role，跟 `configs/rpc-roles.toml`
 /// 兼容（B4 (2/3-b) 收紧后 `[roles.operator]` **不**持 `clear_error`）。
 fn write_role_table(path: &Path) -> Result<(), String> {
-    let toml_text = r#"# pubsub_cleanup_smoke 临时 rpc_roles.toml（每 case 独立）。
-# 跟 configs/rpc_roles.toml 同款 capability 集（B4 (2/3-b) 收紧后
+    let toml_text = r#"# pubsub_cleanup_smoke 临时 rpc-roles.toml（每 case 独立）。
+# 跟 configs/rpc-roles.toml 同款 capability 集（B4 (2/3-b) 收紧后
 # `[roles.operator]` 不持 clear_error；maintainer/admin 保留）。
 
 [tokens]
@@ -562,7 +558,7 @@ description  = "smoke admin"
 capabilities = ["read_state", "invoke_task", "clear_estop", "set_enabled", "clear_error", "estop", "reload_calibration", "set_policy", "shutdown"]
 "#;
     std::fs::write(path, toml_text)
-        .map_err(|e| format!("write rpc_roles.toml {}: {e}", path.display()))
+        .map_err(|e| format!("write rpc-roles.toml {}: {e}", path.display()))
 }
 
 /// 用 `TcpListener::bind("127.0.0.1:0")` 让 OS 自动分配 loopback 端口。
@@ -587,7 +583,7 @@ const PUBLISH_INTERVAL: Duration = Duration::from_millis(20); // 50Hz
 const FAKE_S0_SOURCE_ID: u32 = 1; // s0 约定 source_id = 1（s1 = 2）
 
 /// 测试侧扮演 s0 角色 publish `JointState` 给 `/<robot_id>/s0/<hardware_id>/state`，
-/// 让 s1_daemon `anchor_or_fail` 能在 5s timeout 内拿到 stable bias 完成
+/// 让 robot-s1 `anchor_or_fail` 能在 5s timeout 内拿到 stable bias 完成
 /// anchor。
 ///
 /// 沿 `crates/robot-rpc/tests/common/fake_state.rs::FakeStatePublisher`
@@ -639,13 +635,12 @@ impl FakeStatePublisher {
                 };
                 // node 持 publisher 内部 shm fd；leak 让 publisher 整生命
                 // 周期内 node 不被 drop（同 daemon / events_drain / rr_io
-                // leak 模式；详 `team-swe/codemap/v0_4_pubsub_cleanup.md`
-                // §3.6）。
+                // leak 模式）。
                 Box::leak(Box::new(node));
                 let _ = ready_tx.send(());
                 drop(ready_tx);
 
-                // 用 SystemClock 拿真 CLOCK_MONOTONIC_RAW ns —— 跟 s1_daemon
+                // 用 SystemClock 拿真 CLOCK_MONOTONIC_RAW ns —— 跟 robot-s1
                 // `read_anchor_from_s0_state` 同款 clock domain（max_stale_ms
                 // = 200ms）。
                 let clock = SystemClock::new();
@@ -722,7 +717,7 @@ impl SubprocessHandle {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         // ROBOT_LOG_FORMAT=json + NO_COLOR=1 + RUST_LOG=info：让日志
         // 格式确定（按行 substring 匹配可靠），不靠 ANSI 彩色 trick；
-        // RUST_LOG=info 让 s1_daemon `rr_server_threads ready` info!
+        // RUST_LOG=info 让 robot-s1 `rr_server_threads ready` info!
         // marker 必出现。
         command
             .env("ROBOT_LOG_FORMAT", "json")
@@ -887,11 +882,11 @@ fn spawn_stream_drain(
 }
 
 // ============================================================================
-// spawn s1_daemon + spawn gateway
+// spawn robot-s1 + spawn gateway
 // ============================================================================
 
 fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("s1_daemon");
+    let bin = ctx.bin_dir.join("robot-s1");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -901,11 +896,11 @@ fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
         .arg(&ctx.config)
         .arg("--poll-interval-ms")
         .arg("1");
-    SubprocessHandle::spawn("s1_daemon", cmd)
+    SubprocessHandle::spawn("robot-s1", cmd)
 }
 
 fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("robot_rpc_gateway");
+    let bin = ctx.bin_dir.join("robot-gateway");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -926,8 +921,8 @@ fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
 // Readiness：s1 marker / gateway TCP / GetTaskStatus 探活
 // ============================================================================
 
-/// Phase 1：等 s1_daemon stderr 出现 `"rr_server_threads ready"` marker
-/// （`crates/robot-s1/src/bin/s1_daemon.rs:453` info! 行）。
+/// Phase 1：等 robot-s1 stderr 出现 `"rr_server_threads ready"` marker
+/// （`crates/robot-s1/src/bin/robot-s1.rs:453` info! 行）。
 async fn wait_for_s1_marker(s1: &mut SubprocessHandle, timeout: Duration) -> Result<(), String> {
     s1.wait_for_marker("rr_server_threads ready", timeout).await
 }
@@ -1146,16 +1141,16 @@ fn count_proc_threads(pid: u32) -> Result<u64, String> {
     Ok(count)
 }
 
-/// 从 captured 日志行（s1_daemon stderr）倒序扫最近一条
+/// 从 captured 日志行（robot-s1 stderr）倒序扫最近一条
 /// `events_registry_len=N` 数值（兼容 JSON `"events_registry_len":N` +
 /// human `events_registry_len=N` 两种 tracing format）。
 ///
-/// **打点位置**（s1_daemon info 级 log，反映当前 in-flight registry 长
+/// **打点位置**（robot-s1 info 级 log，反映当前 in-flight registry 长
 /// 度，倒序取最近值即可）：
 ///
 /// - `handle_invoke` 成功 register 后即时打（每条新 task）
-/// - s1_daemon shutdown `shutdown_pre` / `shutdown_post`（关停前 / 后）
-/// - **v0.4 候选 3 AC-C1**：s1_daemon reaper thread 每次 `reaped > 0`
+/// - robot-s1 shutdown `shutdown_pre` / `shutdown_post`（关停前 / 后）
+/// - **v0.4 候选 3 AC-C1**：robot-s1 reaper thread 每次 `reaped > 0`
 ///   时打 `op="reap"` + `reaped` + `events_registry_len`，让 C1 收敛
 ///   曲线在 long-run sample 间隙也有更新；reaper.stop 之后打
 ///   `op="reaper_stopped"`
@@ -1193,11 +1188,11 @@ async fn scrape_events_registry_len(captured: &Arc<TokioMutex<Vec<String>>>) -> 
 struct MetricRow {
     /// task iter 索引（0..N，N=`args.iterations`，default 1000）。
     iter: u32,
-    /// s1_daemon `/proc/<pid>/status::VmRSS` KB。
+    /// robot-s1 `/proc/<pid>/status::VmRSS` KB。
     vmrss_s1_kb: u64,
     /// gateway `/proc/<pid>/status::VmRSS` KB。
     vmrss_gw_kb: u64,
-    /// 从 s1_daemon stderr scrape 的最近一条 `events_registry_len`（如
+    /// 从 robot-s1 stderr scrape 的最近一条 `events_registry_len`（如
     /// 当前还没打任一 register/shutdown event log → `None`，CSV 写
     /// `"NA"`）。
     events_registry_len: Option<u64>,
@@ -1315,7 +1310,7 @@ fn write_csv(path: &Path, rows: &[MetricRow]) -> std::io::Result<()> {
 /// 同款；本地 `request_id` 接 `&str`（uuidv7_compat 返字串），不引
 /// `uuid` crate）。
 ///
-/// **`server-side DwellMs duration_ms` 由 s1_daemon `--config` 注入的
+/// **`server-side DwellMs duration_ms` 由 robot-s1 `--config` 注入的
 /// `MockDwellBackend::with_duration_ms` 决定**（B2 frozen lib API；详
 /// `crates/robot-s1/src/action_backend/mock_dwell.rs:60-67`），client
 /// 端**不**直接控制。`timeout_ms` 参数是 client `CommandMeta.timeout_ms`
@@ -1374,7 +1369,7 @@ fn build_task_handle_ref_req(request_id: &str, action_id: &str) -> tonic::Reques
 ///   (`clock_domain_violation`)，**不**用 `saturating_sub` 掩盖时钟域
 ///   假设破裂
 ///
-/// smoke binary 跟 s1_daemon / gateway 必须**同机器**跑（跨机器跨 clock
+/// smoke binary 跟 robot-s1 / gateway 必须**同机器**跑（跨机器跨 clock
 /// domain 不在候选 3 范围）。
 ///
 /// 调用方典型：AC-A1 长跑（丢 `latency_ns`，关心 throughput / leak）+
@@ -1487,12 +1482,12 @@ struct BringUp {
     client: RobotControlClient<tonic::transport::Channel>,
 }
 
-/// Bring up s1_daemon + gateway 双进程 + fake S0 + 三段式 ready signal。
+/// Bring up robot-s1 + gateway 双进程 + fake S0 + 三段式 ready signal。
 ///
 /// 顺序：
 /// 1. spawn `FakeStatePublisher`（50Hz JointState publisher；放 s1 spawn
 ///    之前保证 anchor 可用）
-/// 2. spawn s1_daemon → wait marker `"rr_server_threads ready"` (5s)
+/// 2. spawn robot-s1 → wait marker `"rr_server_threads ready"` (5s)
 /// 3. spawn gateway → wait TCP `127.0.0.1:<port>` (2s)
 /// 4. tonic connect → `GetTaskStatus` zero-UUID 探活（5s）→ 期 NotFound
 ///
@@ -1510,10 +1505,10 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
         Ok(h) => h,
         Err(e) => {
             fake_s0.shutdown();
-            return Err(format!("spawn s1_daemon: {e}"));
+            return Err(format!("spawn robot-s1: {e}"));
         }
     };
-    eprintln!("[bring_up] s1_daemon spawned pid={:?}", s1.pid);
+    eprintln!("[bring_up] robot-s1 spawned pid={:?}", s1.pid);
 
     if let Err(e) = wait_for_s1_marker(&mut s1, Duration::from_secs(5)).await {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
@@ -1524,7 +1519,7 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[bring_up] Phase 1 PASS: s1_daemon rr_server_threads ready");
+    eprintln!("[bring_up] Phase 1 PASS: robot-s1 rr_server_threads ready");
 
     let gw = match spawn_gateway(ctx) {
         Ok(h) => h,
@@ -1602,7 +1597,7 @@ async fn tear_down_pair(bring_up: BringUp) {
         eprintln!("[tear_down] gateway shutdown warn: {e}");
     }
     if let Err(e) = s1.shutdown(Duration::from_secs(3)).await {
-        eprintln!("[tear_down] s1_daemon shutdown warn: {e}");
+        eprintln!("[tear_down] robot-s1 shutdown warn: {e}");
     }
     fake_s0.shutdown();
 }
@@ -1611,7 +1606,7 @@ async fn tear_down_pair(bring_up: BringUp) {
 // run_selftest
 // ============================================================================
 
-/// (1/2) selftest case：spawn fake_s0 → s1_daemon → wait marker →
+/// (1/2) selftest case：spawn fake_s0 → robot-s1 → wait marker →
 /// gateway → wait TCP → tonic connect → GetTaskStatus 探活 → shutdown
 /// (gateway → s1 → fake_s0) → cleanup。
 ///
@@ -1890,7 +1885,7 @@ async fn run_phase_a1(args: &Args) -> Result<A1Report, String> {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
         let _ = gw.dump_captured_to(&ctx.case_dir).await;
         eprintln!(
-            "[A1] FAIL forensic dump → {} (s1_daemon.log + gateway.log)",
+            "[A1] FAIL forensic dump → {} (robot-s1.log + gateway.log)",
             ctx.case_dir.display()
         );
     }
@@ -1996,7 +1991,7 @@ async fn run_phase_a2(args: &Args) -> Result<A2Report, String> {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
         let _ = gw.dump_captured_to(&ctx.case_dir).await;
         eprintln!(
-            "[A2] FAIL forensic dump → {} (s1_daemon.log + gateway.log)",
+            "[A2] FAIL forensic dump → {} (robot-s1.log + gateway.log)",
             ctx.case_dir.display()
         );
     }
@@ -2199,7 +2194,7 @@ async fn run_phase_a3_case(args: &Args, which: A3aSigkill) -> Result<A3CaseResul
             let _ = s1_ref.dump_captured_to(&ctx.case_dir).await;
         }
         eprintln!(
-            "[{label}] FAIL forensic dump → {} (s1_daemon.log + gateway.log; \
+            "[{label}] FAIL forensic dump → {} (robot-s1.log + gateway.log; \
              restart_ok={restart_ok} probe_ok={probe_ok}/{total})",
             ctx.case_dir.display()
         );
@@ -2488,7 +2483,7 @@ mod tests {
             uuidv7_compat()
         ));
         std::fs::create_dir_all(&tmp).unwrap();
-        let path = tmp.join("rpc_roles.toml");
+        let path = tmp.join("rpc-roles.toml");
         write_role_table(&path).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         // 4 fake token + 4 role + B4 收紧（operator 不含 clear_error）

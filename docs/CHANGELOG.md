@@ -1,5 +1,7 @@
 # CHANGELOG
 
+旧文档路径、章节与行号在本文件中仅作历史变更登记；已删除文件的完整原文可按 [清理前固定提交](https://github.com/arxxyr/robot-system/tree/37b6f26ff8d895ed78f9cd352649985c5d7decee) 中的原路径查询，不代表当前实现或授权。
+
 > 本文件记录 `docs/00_design.md` 冻结后的语义讨论与决定，以及 target 文档硬契约的增删改。
 > 三类条目：
 > 1. **偏离登记**：允许临时偏离设计文档（冻结原则下）；
@@ -9,6 +11,14 @@
 > 每条记录：日期 + 涉及小节 + 状态（偏离 / 已回写 / target-contract）+ 理由 + 约束 + 影响面 + 审阅人。
 
 ---
+
+## 2026-11-11 · 当前入口统一命名与依赖整理
+
+正式程序统一为 `robot-s0`、`robot-s1`、`robot-gateway`、`robot-deploy`，服务使用 `robot-` 前缀，原交接预检改名为 `robot-s0-preflight.service`；配置文件使用小写连字符。robot ID、topic、校准数值和保护目录保持。安装器备份新旧六个 unit 路径，安装新三份并撤旧三份；回滚按原存在性恢复，不迁移旧预检完成态。旧名运行进程仍纳入占用检查，避免与遗留实例并行访问设备。
+
+项目约定仅保留 `AGENTS.md`；旧交接、重复阶段清单、Archify 输出及已无调用的脚本从工作树移除，独有实机原帧、失败记录、使用中的兼容夹具与回滚原件保留。当前进度统一在 `s0_hal_status.md`，历史按 Git 查询。
+
+根 `workspace.dependencies` 按用途分组，构建、测试与基准工具集中列出，子 crate 继续仅继承。Rerun 与 `re_protos` 从0.42.0升级至0.43.0；官方 `re_protos` 仍精确绑定 protoc 3.2.0，与根3.3.0实际解析冲突，保留仅构建工具版本的补丁。iceoryx2/cal 0.10.0官方包仍缺少本项目严格 RR 接口，真实编译失败，保留必要补丁。FlatBuffers/flatc维持最新稳定配套25.12.19。`robot-viz` 按 libc 已变更的 Apple/BSD 信号接口修正处理函数类型，Linux注册与停止语义不变。来源与移除条件见 `3rd-party/*VENDOR_SOURCE.md`；新产物的正式启动验收独立执行，不继承旧 ELF 结果。
 
 ## 2026-11-11 · 已验全总线接入原部署guard（软件候选）
 
@@ -194,7 +204,7 @@ Mac定向15、隔离Linux根fmt/Clippy与S1完整默认并行287通过，原FAIL
 
 `b01603b` 快进整合后完成 Orin 新 V2 六配方七冻结件；更新 nightly 仍为 `5c543b0b8`，589 输入聚合 `c0388807`。
 本轮 fmt / 根 Clippy、71 Python、七 help、冻结 mock 四组各 2 样本、同源 tonic 6 测试 / 9 场景通过；710+5 仅引用已验同源原件。
-release/post 独审与 root 软件验收通过；[证据入口](../.verify/h2_serial_recovery_2026-09-30/summary.json)与[完整 SHA / 交接](../team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+release/post 独审与 root 软件验收通过；[证据入口](../.verify/h2_serial_recovery_2026-09-30/summary.json)与[完整 SHA / 交接](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 正式四件和服务/进程只读比较一致；本轮非完整 workspace，未部署、未 push 或执行硬件。
 下一步阶段提交后远端快进对齐、新 alignment、当次现场事实与独立 GO。
 右 H2 历史整体 FAIL、D15 OPEN/DEFERRED 及 `deployable=false` 保持，原失败原件保留。
@@ -225,7 +235,7 @@ D15 OPEN/DEFERRED、历史右 H2 整体 FAIL、`deployable=false` 及历史 34 �
 用户确认当前无独立自动断电保护，并明确“没有独立断电，这部分可以记下暂时搁置，先通过”。
 据此暂缓候选 E D15 的实施与验收，状态保留 **OPEN/DEFERRED**，不将搁置写为 PASS，
 不改变 AC-E25 原判据、正式退役门或 `deployable=false`。受监督 demo 沿既有 D15-R 条件继续。
-供电分域仍未知，本轮不再追问、选型、采购或接线；[工作单](../team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)
+供电分域仍未知，本轮不再追问、选型、采购或接线；[工作单](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/d15_hardware_fail_safe.CLOSURE.md)
 保留为未批准的 CodeMap 与建议矩阵。下一步为右 H2 完整复测，原整体 FAIL 保留。
 本次仅同步范围与状态，冻结设计/Spec、控制实现及硬件均未修改。
 
@@ -732,7 +742,7 @@ fresh 与正式产物门通过。两端各四个无测试 hook 正式产物已�
 
 用户已授权更新 Orin 原仓库、停止六项开发服务，调试 / RT 需要权限时直接 `sudo`；
 真实串口与物理 SLA 未由软件门代验。复现命令与函数级约束见
-[PLAN](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
+[PLAN](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
 当前证据只维护 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
 [C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；
 旧轮次日志、源码快照、重复产物和历史归档按用户授权清除。
@@ -743,7 +753,7 @@ fresh 与正式产物门通过。两端各四个无测试 hook 正式产物已�
 传递依赖锁定；保留 libc 1.0 alpha 精确 pin，FlatBuffers / flatc 和 iceoryx2 版本
 配对不变。没有新增 runtime 依赖或修改冻结架构；统一应用版本仍为 0.1.2。
 逐项版本、最终 lock 哈希与验证记录见
-[依赖升级记录](handoffs/dependency_upgrade_2026-09-08.md)。依赖分包从 C4 单独验证，
+[依赖升级记录](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/dependency_upgrade_2026-09-08.md)。依赖分包从 C4 单独验证，
 不把主工作树未完成的 C5 代码或现场结果算入通过证据。
 
 验收 fix-forward：旧 Feetech 13 电机握手夹具全部返回 ID 1，与 C2 新增的严格
@@ -833,7 +843,7 @@ tag 本身不创建 Emergency / 写 policy / 发 gen，权威请求仍由 safety
 
 用户授权对齐文档并由固定开发、独立评审持续推进。2026-09-05 的 Spec round 21
 批准继续有效；正式计划见
-[`post_e_comm_fault_hardening.PLAN.md`](../team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
+[`post_e_comm_fault_hardening.PLAN.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.PLAN.md)，
 内部审批与实施进度记在同目录 HANDOFF。冻结设计 `00_design.md` 未修改。
 
 - **S-39 / D3：IPC 超时未必已有 seq**。核 `ipc_tick.rs` 的总超时判断早于首次
@@ -1771,7 +1781,7 @@ reviewer 2026-07-10 两条口头输入改变候选 E premise：**(1)** dimos-dep
 reviewer 本人仓库、仅 demo 验证使用、后续不用、以当前为基础；**(2)** 系统目标 =
 完全替换 dimos-deploy。原 workflow handoff §3 "dimos-deploy 团队 buy-in"框架
 （外部团队）**消解**，三类输入改由
-[`handoffs/v0.5_dimos_buyin_decision.md`](handoffs/v0.5_dimos_buyin_decision.md)
+[`handoffs/v0.5_dimos_buyin_decision.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.5_dimos_buyin_decision.md)
 D-BI0~3 逐条拍板。决策单经 **r1**（reviewer 3 阻断：D-BI0 范围收窄 + 撤"10 RPC
 够用"预设 / D-BI2 真机 gate + 退役顺序 / §5 同步范围五项）+ **r2**（reviewer 3
 执行级：拍板表权威同步 / disable 措辞收紧 / 撤"gripper additive"预钉）两轮修正
@@ -1939,7 +1949,7 @@ reviewer 本人 push origin/master）。
 outline+round 1 reviewer ACK + 2 段 feat + 1 段 docs land。**路由 (a)：gateway
 publish `EStopEvent` 到 `/<robot>/events/estop` topic → S0 既有 `poll_estop`
 消费链**（design §6.6 字面）——**S0 0 改，proto 形态无 design-freeze diff**。
-封存详 [`docs/handoffs/v0.5_estop_summary.md`](handoffs/v0.5_estop_summary.md)
+封存详 [`docs/handoffs/v0.5_estop_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.5_estop_summary.md)
 + 审计全表 `team-swe/specs/v0_5_estop.md` §P.3/§P.4。
 
 ### 实现登记：第 10 method（additive，无 design-freeze diff）
@@ -2024,7 +2034,7 @@ Plan `67b1eea` / feat (1/3) `4c8a6b3` + (2/3) `27cc80b`）。(2/3) reviewer 阻�
 operator+）。经 RIPER CodeMap(+amend) + Spec round 1-4 + Plan round 1-5 reviewer
 ACK + 5 段 feat + 1 Reverse Sync land。**D1 保留 frozen `bool enabled` 不加
 hardware_id（范围 = 单 S0 daemon）→ proto 形态无 design-freeze diff**。封存详
-[`docs/handoffs/v0.5_set_enabled_summary.md`](handoffs/v0.5_set_enabled_summary.md)
+[`docs/handoffs/v0.5_set_enabled_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.5_set_enabled_summary.md)
 + 审计全表 `team-swe/specs/v0_5_set_enabled.md` §P.4。
 
 ### 偏离 1：state machine 事件集 §1.4 12 种 → +`Event::Disable`（13 种）
@@ -2079,7 +2089,7 @@ hardware_id（范围 = 单 S0 daemon）→ proto 形态无 design-freeze diff**�
 候选 B 在 B4 frozen 6-RPC schema 上 **additive** 实现 design §5.3 的两条**只读**
 RPC（`GetState` / `StreamState`），method 6 → 8。经 RIPER Spec round 1-3 + Plan
 round 1-2 reviewer ACK + 4 段 feat land。封存详
-[`docs/handoffs/v0.5_get_stream_state_summary.md`](handoffs/v0.5_get_stream_state_summary.md)。
+[`docs/handoffs/v0.5_get_stream_state_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.5_get_stream_state_summary.md)。
 
 ### 偏离 1：design §5.3 `GetState(Empty)` → `GetState(GetStateRequest{hardware_id})`
 
@@ -2201,7 +2211,7 @@ reviewer（用户）— v0.5 候选 A Plan round 2 Approved（进入 (1/5) 实�
 
 v0.4 候选 2 **round 1**（trait crate first release）完结后（详
 2026-05-19 候选 2 round 1 §1.1；
-[`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](handoffs/v0.4_robot_kinematics_round1_summary.md)），
+[`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_robot_kinematics_round1_summary.md)），
 按 round 1 §6 接班 10 步 checklist 开 **round 2** = impl crate +
 `IkBackend` 第三个真 action backend + S1 coordinator solver wiring +
 cross-process e2e（**独立** reviewer round + 独立 CodeMap / Spec /
@@ -2210,7 +2220,7 @@ Plan，沿 round 1 拍板节奏）。本日志记录 **round 2 完结**。
 ### 行为落地（round 2）
 
 **3 docs/spec/plan 前置 + 4 实施 commit + 1 summary = 8 commit**
-（详 [`docs/handoffs/v0.4_robot_kinematics_round2_summary.md`](handoffs/v0.4_robot_kinematics_round2_summary.md)
+（详 [`docs/handoffs/v0.4_robot_kinematics_round2_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_robot_kinematics_round2_summary.md)
 §2 commit chain）：
 
 | commit | 段 | 内容 |
@@ -2417,7 +2427,7 @@ reviewer ACK Plan round 1+2 + (1/4)..(4/4) 全部 ACK + summary 待 ACK
 ### 背景
 
 v0.4 候选 1 (Scripted backend) 完结后（详 2026-05-14 候选 1 §1.1；
-[`docs/handoffs/v0.4_scripted_backend_summary.md`](handoffs/v0.4_scripted_backend_summary.md)），
+[`docs/handoffs/v0.4_scripted_backend_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_scripted_backend_summary.md)），
 按 v0.4_entry §3.1 优先级 3 → 1 → 2 → 4 排序开候选 2（robot-
 kinematics + IK trait）。v0.4_entry §3.3 reviewer 拍板候选 2 **拆两
 轮 reviewer round**：**round 1** = trait crate first release（trait +
@@ -2429,7 +2439,7 @@ CodeMap / Spec / Plan）。本日志记录 **round 1 完结**。
 ### 行为落地（round 1）
 
 **3 docs/spec/plan 前置 + 1 实施 commit + 1 summary = 5 commit**
-（详 [`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](handoffs/v0.4_robot_kinematics_round1_summary.md)
+（详 [`docs/handoffs/v0.4_robot_kinematics_round1_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_robot_kinematics_round1_summary.md)
 §2 commit chain）：
 
 | commit | 段 | 内容 |
@@ -2561,7 +2571,7 @@ reviewer ACK Plan round 1+2+3 + (1/1) ACK + summary 待 ACK
 
 v0.4 候选 3 (per-ActionId pubsub cleanup + AC-C1 reap_finished) 完结
 后（详 2026-05-13 候选 3 §1.1；
-[`docs/handoffs/v0.4_pubsub_cleanup_summary.md`](handoffs/v0.4_pubsub_cleanup_summary.md)），
+[`docs/handoffs/v0.4_pubsub_cleanup_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_pubsub_cleanup_summary.md)），
 按 v0.4_entry §3.1 优先级 3 → 1 → 2 → 4 排序开候选 1：第二个真
 action backend = Scripted（joint-space 线性插值 + waypoint dwell；
 reviewer v0.4_entry §3.2 拍板插值策略；不选直接跳点 / 不选 cubic）。
@@ -2570,7 +2580,7 @@ B3 `HoldPoseBackend` 是第一个真 backend，本轮加 Scripted 是第二个�
 ### 行为落地
 
 **6 docs/spec/plan 前置 + 3 实施 commit + 1 summary = 10 commit**（详
-[`docs/handoffs/v0.4_scripted_backend_summary.md`](handoffs/v0.4_scripted_backend_summary.md)
+[`docs/handoffs/v0.4_scripted_backend_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.4_scripted_backend_summary.md)
 §2 commit chain）：
 
 | commit | 段 | 内容 |
@@ -2735,14 +2745,14 @@ regression 同意留 follow-up。
 
 B2 (1/3) → (3/3) 全部 land 后（详 2026-04-29 B2 §1.5 状态机扩展登
 记），Phase B 进度推到"至少一个真 action backend"门槛（详
-[`docs/handoffs/v0.3_entry.md`](handoffs/v0.3_entry.md) §2 Phase B
+[`docs/handoffs/v0.3_entry.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_entry.md) §2 Phase B
 路线）。B3 选 `HoldPose` 作第一个真 backend：复用 B1 落地的
 `build_hold_command(cfg, layout_id, anchor_bias, source_task_id,
 now_ns)`，hold-until-cancel 语义；走 EXECUTING 路径但 wire 输出跟
 Idle 状态 hold loop 字节级等价。
 
 reviewer round 2 阻断 1 锁定核心契约（详
-[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)
+[`docs/handoffs/v0.3_b3_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_b3_summary.md)
 §3）：HoldPose body 的 `source_task_id` **必须**等于
 `run_action_tick_loop` 当前 `TickState.cmd_seq`，**不**得 backend
 私有计数。证据链：
@@ -2870,7 +2880,7 @@ ctx.command_seq, ctx.clock.now().0)`。
 **额外观察**（B4 接班需注意）：B3 引入的"`source_task_id` 必须 ==
 `TickState.cmd_seq`"虽不属 §6.7 invariant，但属 wire 协议契约。B4
 做 RPC adapter 时不得在 gateway 端重写 frame seq（详
-[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)
+[`docs/handoffs/v0.3_b3_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_b3_summary.md)
 §3.7）。后续如需提升为 §6.7 第 6 条不变量，走 errata + reviewer 拍板。
 
 ### 影响面
@@ -2897,7 +2907,7 @@ reviewer ACK：
   2026-04-30；其中 B3 代码侧 = 实现 2 + fix 1 = 3 commit。
 
 详细 commit chain + 关键契约审计 + reviewer 决策表见
-[`docs/handoffs/v0.3_b3_summary.md`](handoffs/v0.3_b3_summary.md)。
+[`docs/handoffs/v0.3_b3_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_b3_summary.md)。
 
 ---
 
@@ -2909,7 +2919,7 @@ reviewer ACK：
 （+ 启动 BOOTING / 停机 SHUTTING_DOWN）共 5 个 variant；v0.2 + v0.3 B1
 期间 S1 仅落地"hold + heartbeat"单态闭环（隐式 IDLE），其余 4 个 state
 留作设计文档冻结概念，**未**进 Rust 类型系统。B2 outline 拍板（详
-[`docs/handoffs/v0.3_b2_outline.md`](handoffs/v0.3_b2_outline.md)
+[`docs/handoffs/v0.3_b2_outline.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_b2_outline.md)
 §5 + §10 决策 #11）："CHANGELOG 仅登记 §1.5 状态机扩展（IDLE /
 EXECUTING / DEGRADED 真落地）；**不**动 §6.7 invariant"。
 
@@ -3018,7 +3028,7 @@ reviewer ACK：
   本机 5/5+5/5 实跑通过；nit 修留下次 docs 整理）。
 
 详细 commit chain + 拍板表见
-[`docs/handoffs/v0.3_b2_summary.md`](handoffs/v0.3_b2_summary.md)。
+[`docs/handoffs/v0.3_b2_summary.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/v0.3_b2_summary.md)。
 
 ---
 
@@ -3910,7 +3920,7 @@ reviewer（用户）— 要求将 `ClearEStop control action` 写入 design erra
    ≥ 1 / `s0_daemon starting` ≥ 2 / `freeze_control thread ready` ≥ 2 /
    `state=Ready` ≥ 1）。
 3. **真机回归**：FRIDAY workstation 本机 5/5 PASS + Orin AGX 1 round
-   PASS（详 [`docs/handoffs/2026-04-26_6.md`](handoffs/2026-04-26_6.md)
+   PASS（详 [`docs/handoffs/2026-04-26_6.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_6.md)
    §5 完整 journal 时序 + 数据对照表）。
 4. **跨发行版兼容性**：smoke `journalctl` query 走系统 journal
    `_SYSTEMD_USER_UNIT=<unit>` matcher（commit `b33b5c4`），兼容启用 /
@@ -3933,7 +3943,7 @@ reviewer（用户）— 要求将 `ClearEStop control action` 写入 design erra
 - 同步更新 [`scripts/systemd/README.md`](../scripts/systemd/README.md)
   "验证 systemd 重启路径" 段从"**仅** Restart=on-failure 已锁；watchdog
   cap-deadlock **留 v0.3**" 改成 "**全套已锁**"。
-- [`crates/robot-s0/src/systemd_notify.rs`](../crates/robot-s0/src/systemd_notify.rs)
+- `crates/robot-s0/src/systemd_notify.rs`（历史文件路径，现职责见 [robot-health/systemd.rs](../crates/robot-health/src/systemd.rs)）
   模块 doc "Liveness-gated" 段补 "v0.3 已端到端验证" 引用 + 证据链路。
 - 模板 [`scripts/systemd/xlerobot-s0-freeze-test.service`](../scripts/systemd/xlerobot-s0-freeze-test.service)
   L49 字面残留 `state=Safe` 改成 `state=Ready` 跟 smoke 实际硬断言对齐
@@ -4168,7 +4178,7 @@ reviewer (用户) ✓ — round 4 给的边界 "代码语义 fail-closed + watch
 
 ### 背景
 
-[`docs/handoffs/2026-04-26_3.md`](handoffs/2026-04-26_3.md) Stage 2 真
+[`docs/handoffs/2026-04-26_3.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_3.md) Stage 2 真
 机闭环之后，按 reviewer 命令推进 v0.2 收尾的三件事 —— **Step 9 EStop
 crash/restart 测试套**（§6.7 不变量 #3 + #4 真机锁定）+ **systemd
 Type=notify 双 bus 集成**（§6.7 不变量 #2 systemd 是最外层看门狗 落地）+
@@ -4177,7 +4187,7 @@ tool 故意保留）。reviewer 三轮 review 各点出阻断，每轮全数修�
 
 ### 验证结果（2026-04-26）
 
-详见 [`handoffs/2026-04-26_4.md`](handoffs/2026-04-26_4.md) §3-§4。
+详见 [`handoffs/2026-04-26_4.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_4.md) §3-§4。
 关键证据：
 
 - **Step 9**：Orin 真机 `crash_restart_smoke` 5/5 PASS。SIGKILL daemon
@@ -4261,14 +4271,14 @@ reviewer (用户) ✓ —— 三轮 review，三轮全数修完真机回归通�
 
 ### 背景
 
-[`docs/handoffs/2026-04-26_2.md`](handoffs/2026-04-26_2.md) Stage 2 软件
+[`docs/handoffs/2026-04-26_2.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_2.md) Stage 2 软件
 就绪 + Heartbeat QoS 修复 + §2.2 Operating_Mode + EEPROM unlock 序列修
 正落地后，本场把全部交付物上 Orin AGX `10.0.1.41` 真机 bus2（9 motor）
 端到端验证。
 
 ### 验证结果（2026-04-26）
 
-详见 [`handoffs/2026-04-26_3.md`](handoffs/2026-04-26_3.md) §2。**§2.1 ping
+详见 [`handoffs/2026-04-26_3.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_3.md) §2。**§2.1 ping
 → §2.2 Operating_Mode 切换 → §2.3 baseline → §3 smoke → §4 ballet（含
 双 watch 同跑回归）→ §5 EStop → §6 base 不动锁测 → §7 latch 重启 / 删 /
 2nd EStop 全过**。关键证据：
@@ -4290,7 +4300,7 @@ reviewer (用户) ✓ —— 三轮 review，三轮全数修完真机回归通�
 - `docs/handoffs/2026-04-26.md` §5.1：横幅升级"待 Stage 2 回归"→"✅ 已撤
   销"，列出真机证据（Stage 2 §4 双 watch 各 45 sample）。
 - `docs/handoffs/2026-04-26_bus2_runbook.md` 附 A 表 + 附 C.1：横幅同步
-  升级 ✅ 已撤销 + PASS 真机证据指向 [`2026-04-26_3.md`](handoffs/2026-04-26_3.md)
+  升级 ✅ 已撤销 + PASS 真机证据指向 [`2026-04-26_3.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26_3.md)
   §2.5。
 - `docs/handoffs/2026-04-26_bus2_runbook_stage2.md` 顶部 ⏳ → ✅ Stage 2
   真机闭环全过 + 列出 5 条关键证据。
@@ -4416,7 +4426,7 @@ bus2 right_arm 6-motor 配置 + Orin runbook + ensure_latch_parent 守门）。
 
 ### 验证结果（2026-04-26）
 
-详见 [`handoffs/2026-04-26.md`](handoffs/2026-04-26.md) §3。**§2 ping → §3
+详见 [`handoffs/2026-04-26.md`](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/docs/handoffs/2026-04-26.md) §3。**§2 ping → §3
 smoke → §4 ballet → §5 EStop → §6 重启 latch=true → §7 删 latch 恢复 + 再
 EStop 全过**。关键证据：
 
@@ -5024,7 +5034,7 @@ v0.1.2 冻结设计只管 framework 语义。随 `targets/` 目录落地（2026-
 | `docs/CHANGELOG.md` 序言 | 两类条目 → 三类条目；新增 "Target 契约登记" 说明 + 指向 `targets/README.md` |
 | `docs/CHANGELOG.md`（本条） | 新增本条目 |
 | `docs/README.md` Spec 分工表 | Target spec 行本就限定 §2（2026-04-24 上午已改）；本次新增指向"登记规则表" |
-| `docs/targets/README.md` | 优先级表 XLeRobot 一行：文档列从"见 §11.3（暂不独立成 target spec）" → `[xlerobot.md](xlerobot.md)`；撤回相应说明段 |
+| `docs/targets/README.md` | 优先级表 XLeRobot 一行：文档列从"见 §11.3（暂不独立成 target spec）" → `[xlerobot.md](targets/xlerobot.md)`；撤回相应说明段 |
 | `docs/targets/xlerobot.md` | **新增**。6 节骨架；§2 大量标 TBD |
 | `docs/02_start_here.md` 上游参考段 | 不动；`xlerobot.md` 里重新整理成 target 视角的指针即可 |
 | `docs/00_design.md` | **不动**。设计冻结 |

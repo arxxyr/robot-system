@@ -11,7 +11,7 @@
    结构化字段（`k = v`），不要 `format!` 拼字符串。
 3. **错误打印**：`tracing::error!(?err, "feetech connect failed")` —— 保留
    `thiserror` 的结构。
-4. **环境变量控制**：`RUST_LOG=debug ./s0_daemon` / `ROBOT_LOG_FORMAT=json ./s0_daemon`。
+4. **环境变量控制**：`RUST_LOG=debug ./robot-s0` / `ROBOT_LOG_FORMAT=json ./robot-s0`。
 5. **RT thread 内禁用** 带 format arg 的 `tracing::*!`（heap alloc，违反 §4.9）。
 
 ## 格式
@@ -19,7 +19,7 @@
 ### Human 模式（默认）
 
 ```
-2026-04-25T23:45:12.123456Z [+12345.678901234s]  INFO  robot_s0::s0_daemon: feetech factory built adapter motor_id=6 address="/dev/..."
+2026-04-25T23:45:12.123456Z [+12345.678901234s]  INFO  robot_s0: feetech factory built adapter motor_id=6 address="/dev/..."
 ```
 
 - **wall clock RFC3339 UTC** + **monotonic `[+秒.纳秒s]`**（自进程启动）
@@ -27,7 +27,7 @@
   - monotonic 方便后期日志回放算事件时延（NTP 跳 / 闰秒无感）
 - 级别 5 字符对齐：`INFO ` / `WARN ` / `ERROR` / `DEBUG` / `TRACE`
 - ANSI 彩色 on（TTY 自动检测，非 TTY 关；`NO_COLOR=1` 强制关）
-- `target` = 模块路径（`robot_s0::s0_daemon`），便于定位
+- `target` = 模块路径（`robot_s0`），便于定位
 - 结构化字段 `k=v` 紧随 message
 
 ### JSON 模式
@@ -36,7 +36,7 @@
 采集：
 
 ```json
-{"timestamp":"2026-04-25T23:45:12.123456Z [+12345.678901234s]","level":"INFO","target":"robot_s0::s0_daemon","fields":{"message":"feetech factory built adapter","motor_id":6,"address":"/dev/..."}}
+{"timestamp":"2026-04-25T23:45:12.123456Z [+12345.678901234s]","level":"INFO","target":"robot_s0","fields":{"message":"feetech factory built adapter","motor_id":6,"address":"/dev/..."}}
 ```
 
 ## 字段命名约定（词汇表）

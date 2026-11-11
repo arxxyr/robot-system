@@ -1,14 +1,14 @@
-# vendor re_protos 0.42.0 来源与最小构建补丁
+# vendor re_protos 0.43.0 来源与最小构建补丁
 
-本目录用于解除 `re_protos 0.42.0` 与本项目最新 `protoc-bin-vendored 3.3.0` 的精确版本冲突。不改运行时代码、生成 Rust 或 protobuf 协议；根 workspace 的 patch/exclude 与锁文件由根依赖图管理。
+本目录用于解除 `re_protos 0.43.0` 与本项目最新 `protoc-bin-vendored 3.3.0` 的精确版本冲突。发布包按 0.43.0 原件更新；本地补丁不改其运行时代码、生成 Rust 或 protobuf 协议；根 workspace 的 patch/exclude 与锁文件由根依赖图管理。
 
 ## 原件身份
 
-- 发布包：[re_protos-0.42.0.crate](https://static.crates.io/crates/re_protos/re_protos-0.42.0.crate)。
-- 原包大小：231060 字节；SHA256：`c1ba8df9caee6c880ebcd490e9ab807695f8592922fc1666e06806dffc5ecde2`，与接入前根锁文件的 registry checksum 一致。
-- `.cargo_vcs_info.json` 的上游提交：`30d87ed848c35425056a1b8668639850ae6786f0`；仓库内路径：`crates/store/re_protos`。
-- 上游源码：[该提交的 re_protos](https://github.com/rerun-io/rerun/tree/30d87ed848c35425056a1b8668639850ae6786f0/crates/store/re_protos)。
-- 原包含 33 个普通文件，已拒绝绝对路径、父目录穿越、重复路径、链接及特殊文件后解包。仓库不额外保存 `.crate` 或另一份源码副本。
+- 发布包：[re_protos-0.43.0.crate](https://static.crates.io/crates/re_protos/re_protos-0.43.0.crate)。
+- 原包大小：243697 字节；SHA256：`216de7d63556508cdffc5eb2bfcd4d439b98677b1c3cbb9fcbc071008b90f050`，与本次官方 crates.io 元数据 checksum 一致。
+- `.cargo_vcs_info.json` 的上游提交：`0ba8c64000b7b5e8c8823c3d357597dd77a0ff55`；仓库内路径：`crates/store/re_protos`。
+- 上游源码：[该提交的 re_protos](https://github.com/rerun-io/rerun/tree/0ba8c64000b7b5e8c8823c3d357597dd77a0ff55/crates/store/re_protos)。
+- 原包含 34 个普通文件，已拒绝绝对路径、父目录穿越、重复路径、链接及特殊文件后解包。仓库不额外保存 `.crate` 或另一份源码副本。
 
 ## 唯一构建改动
 
@@ -16,7 +16,7 @@
 
 上游 `build.rs` 仅用 vendored protoc 和其 include 路径生成带 imports/source info 的 `FileDescriptorSet`，不重生成已发布 Rust 类型。本地只调整该构建工具的依赖版本，不修改构建脚本或它的参数。
 
-接入时逐文件 SHA256 核对：除实际 `Cargo.toml` 外，原包其余 32 个文件完全一致，其中 23 个 `.rs`（含构建脚本、测试和生成类型）及 5 个 `.proto` 均未变化。编译后的 descriptor 兼容性须由本项目定向测试验证，文件相同不代替编译与功能验收。
+接入时逐文件 SHA256 核对：除实际 `Cargo.toml` 外，原包其余 33 个文件完全一致，其中 24 个 `.rs`（含构建脚本、测试和生成类型）及 5 个 `.proto` 均未变化。编译后的 descriptor 兼容性须由本项目定向测试验证，文件相同不代替编译与功能验收。
 
 ## 补齐上游许可原件
 
@@ -27,7 +27,7 @@
 | `LICENSE-APACHE` | 10850 | `8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90` |
 | `LICENSE-MIT` | 1087 | `7d3db59468f92d70f176170deacf8ac6858b6d78010a30ae01eba42bac302940` |
 
-来源分别为 [LICENSE-APACHE](https://github.com/rerun-io/rerun/blob/30d87ed848c35425056a1b8668639850ae6786f0/LICENSE-APACHE) 与 [LICENSE-MIT](https://github.com/rerun-io/rerun/blob/30d87ed848c35425056a1b8668639850ae6786f0/LICENSE-MIT)。
+来源分别为 [LICENSE-APACHE](https://github.com/rerun-io/rerun/blob/0ba8c64000b7b5e8c8823c3d357597dd77a0ff55/LICENSE-APACHE) 与 [LICENSE-MIT](https://github.com/rerun-io/rerun/blob/0ba8c64000b7b5e8c8823c3d357597dd77a0ff55/LICENSE-MIT)。
 
 ## 移除条件
 

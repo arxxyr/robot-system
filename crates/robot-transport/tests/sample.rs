@@ -4,7 +4,7 @@
 
 //! Step 4 集成测试：`SampleLease` / `SampleWriter` / mock 后端。
 //!
-//! 覆盖 `docs/01_implementation_steps.md` Step 4 "测试"：
+//! 覆盖借用、所有权与样本生命周期：
 //! - round-trip：publisher.loan → writer.publish → subscriber.latest → view
 //! - SampleLease drop 归还 loan（mock 计数器）
 //! - SampleWriter drop without publish = discard

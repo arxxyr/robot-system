@@ -23,7 +23,7 @@
 //! ### `layout_id`
 //!
 //! `JointState.layout_id` = `cfg.joint_layout_id`——**生产权威值由
-//! `s0_daemon::resolve()` 从 config 派生**（`compute_layout_id`，v0.5
+//! `robot-s0::resolve()` 从 config 派生**（`compute_layout_id`，v0.5
 //! 候选 E 段(3)），`PubThreadConfig` 仅承载该值；struct Default 的
 //! `0xCAFE_BABE_DEAD_BEEF` 占位只服务 CLI-only 边界与单测（对齐
 //! `hello_pubsub`）。**adapter 不是也不得成为第二权威源**。
@@ -60,7 +60,7 @@ pub struct PubThreadConfig {
     pub heartbeat_hz: f64,
     /// `Heartbeat.source_id`：S0 固定 1（§3.5 约定）。
     pub s0_source_id: u32,
-    /// `JointState.layout_id`。生产权威值 = `s0_daemon::resolve()` config
+    /// `JointState.layout_id`。生产权威值 = `robot-s0::resolve()` config
     /// 派生（段(3)，与 ipc gate 同一 `ResolvedArgs.authoritative_layout`
     /// 单源）；Default 占位只服务 CLI-only 与单测。
     pub joint_layout_id: u64,

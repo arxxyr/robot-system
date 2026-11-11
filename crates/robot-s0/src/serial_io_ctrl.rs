@@ -1,7 +1,7 @@
 //! Task-30 v9 / M6：`SerialIoCtrlClient` —— `RtClass::SerialRT` 路径的
 //! [`ExecutorCtrlClient`] 实现。
 //!
-//! 对应 `docs/designs/task-30_state_machine_adapter_link.md` §4.5 + v9 §0.5。
+//! 为状态机与 SerialRT 唯一总线执行者提供请求、回执和安全控制通路。
 //!
 //! ## 设计决策：与 HardRT 共用 atomic-packed 协议
 //!

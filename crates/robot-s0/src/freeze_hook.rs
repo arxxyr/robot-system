@@ -2,19 +2,11 @@
 //! #2 systemd 是最外层看门狗）。
 //!
 //! ⚠️ **test-only**：整 module 由 `cfg(any(test, feature = "test-freeze-hook"))`
-//! 守门，**不进生产 release**。reviewer 拍板硬边界（详
-//! [`docs/handoffs/v0.3_entry.md`](../../../../docs/handoffs/v0.3_entry.md)
-//! §4.2）：`test-freeze-hook` 不能进 default feature / 任何生产 release combo
+//! 守门，**不进生产 release**。`test-freeze-hook` 不能进 default feature / 任何生产 release combo
 //! （Cargo.toml feature 表已注释守门）。
 //!
-//! ## 为什么需要
-//!
-//! v0.2 收尾把 §6.7 #2 降级宣称为"代码层面到位 / 没端到端测过"
-//! （详 [`docs/handoffs/2026-04-26_5.md`](../../../../docs/handoffs/2026-04-26_5.md)）：
-//! `robot_health::systemd::LivenessObserver`（段(8) 前 = `crate::systemd_notify`）真接 4 worker `tick_count`，watchdog
-//! 主循环 liveness-gated 不喂 `sd_notify(WATCHDOG=1)`，但缺一条端到端测试证
-//! 明 worker-stall → `WatchdogSec` → systemd `Restart=on-failure` 拉起新 PID 真
-//! 跑通。A2 freeze hook + A2-3 `freeze_systemd_smoke` 集成测试就是补这条 e2e。
+//! 测试覆盖 worker 停滞 → liveness-gated 停喂 → systemd 超时 → 新 PID 重启；
+//! 它不证明 S0 死亡后的硬件安全输出，D15 仍独立验收。
 //!
 //! ## 工作原理
 //!

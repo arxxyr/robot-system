@@ -358,13 +358,13 @@ mod tests {
 
     fn repo_config(arm: DeployArm) -> PathBuf {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../configs");
-        PathBuf::from(format!("{root}/xlerobot_{}_arm.toml", arm.label()))
+        PathBuf::from(format!("{root}/xlerobot-{}-arm.toml", arm.label()))
     }
 
     fn full_config(arm: DeployArm) -> LoadedConfig {
         let file = match arm {
-            DeployArm::Left => "xlerobot_bus1_full.toml",
-            DeployArm::Right => "xlerobot_bus2_full.toml",
+            DeployArm::Left => "xlerobot-bus1.toml",
+            DeployArm::Right => "xlerobot-bus2.toml",
         };
         load_robot_config(
             &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -505,7 +505,7 @@ mod tests {
         }
     }
 
-    /// **round 2 P0-1**：`calibration_paths` 住 extras，`s0_daemon` 对
+    /// **round 2 P0-1**：`calibration_paths` 住 extras，`robot-s0` 对
     /// 缺失 / 非数组 / 元素非字符串一律**静默折叠成空数组**，而空数组在
     /// feetech factory 里等价于"无标定照常启动"。五档全拒。
     #[test]

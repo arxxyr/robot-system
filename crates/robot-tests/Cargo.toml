@@ -21,15 +21,15 @@ name = "iceoryx2_rt_baseline"
 path = "src/bin/iceoryx2_rt_baseline.rs"
 
 # Step 9 EStop latch crash/restart 测试套（task #15 后续 v0.2 收尾）。
-# spawn s0_daemon + mock_s1 + robotctl 真子进程，SIGKILL daemon 后验证 latch
-# 一致性。详 docs/handoffs/2026-04-26_3.md §5 + 本文件注释。
+# spawn robot-s0 + mock_s1 + robotctl 真子进程，SIGKILL daemon 后验证 latch
+# 一致性；仅使用 mock 设备。
 [[bin]]
 name = "crash_restart_smoke"
 path = "src/bin/crash_restart_smoke.rs"
 
 # v0.3 A2-3 systemd e2e test —— freeze ipc_thread 5s → systemd WatchdogSec
-# timeout → Restart=on-failure 拉起新 daemon → 5/5 round PASS。详
-# docs/handoffs/v0.3_entry.md §4.4 + scripts/systemd/xlerobot-s0-freeze-test.service。
+# timeout → Restart=on-failure 拉起新 daemon，模板见
+# scripts/systemd/robot-s0-freeze-test.service。
 #
 # `required-features` 守门：本 bin 需要 `freeze-systemd-smoke` feature（启用
 # `robot-s0` optional dep + 它的 `test-freeze-hook` feature），生产构建（如
@@ -41,7 +41,7 @@ required-features = ["freeze-systemd-smoke"]
 
 # v0.3 A1-3 (3/3) ClearEStop control plane 端到端 smoke binary。
 #
-# 起两进程（`s0_daemon` + `robot_rpc_gateway`）+ 用 tonic gRPC client 真跑
+# 起两进程（`robot-s0` + `robot-gateway`）+ 用 tonic gRPC client 真跑
 # RPC → iceoryx2 RR shm → daemon ipc_thread → clear_estop_action → latch
 # fsync 双写。
 #
@@ -56,7 +56,7 @@ required-features = ["clear-estop-e2e"]
 
 # v0.4 候选 3 (1/2) pubsub cleanup smoke binary。
 #
-# 起两进程（`s1_daemon` + `robot_rpc_gateway`）+ tonic gRPC client 真跑
+# 起两进程（`robot-s1` + `robot-gateway`）+ tonic gRPC client 真跑
 # task control plane RPC (InvokeTask / StreamTaskEvents) → iceoryx2 RR
 # shm → s1 coordinator → per-ActionId pubsub topic → gateway subscribe
 # → client。AC-A1/A2/A3 实测套件（长跑 + grace + leftover）留 (2/2)。
@@ -73,14 +73,13 @@ required-features = ["pubsub-cleanup-smoke"]
 
 # v0.4 候选 1 (3/3) ScriptedBackend cross-process e2e smoke binary。
 #
-# 起两进程（s1_daemon + robot_rpc_gateway）+ tonic gRPC client 真跑
+# 起两进程（robot-s1 + robot-gateway）+ tonic gRPC client 真跑
 # InvokeTask(kind=Scripted, payload=ScriptedPayload) → iceoryx2 RR shm
 # → s1 coordinator → ScriptedBackend.tick() 50Hz → JointCommand
 # publish → gateway StreamTaskEvents 收 Started/Progress/终态。覆盖
 # AC-4 happy multi-waypoint / AC-5 source_task_id 跨 segment 严格单调
 # / AC-6 cancel mid stream 终态 = Cancelled only / AC-7 payload boundary
-# 四子 case。详 team-swe/specs/v0_4_scripted_backend.md §Plan P.2.3 +
-# AC-4..AC-7。
+# 四子 case；具体判据见 src/bin/scripted_backend_smoke.rs 模块注释。
 #
 # `required-features = ["scripted-backend-smoke"]`：跟 pubsub-cleanup-
 # smoke / clear-estop-e2e 同款 feature 守门 —— 生产 release 默认
@@ -105,7 +104,7 @@ path = "src/bin/ik_backend_smoke.rs"
 required-features = ["ik-backend-smoke"]
 
 # v0.5 候选 A (5/5) robotctl operator CLI cross-process e2e smoke。
-# 起 gateway + s1_daemon + FakeStatePublisher（fake s0），**唯一被测路径 =
+# 起 gateway + robot-s1 + FakeStatePublisher（fake s0），**唯一被测路径 =
 # spawn `robotctl` 真子进程**（reviewer 审查重点 3：严禁 smoke 内调 tonic
 # client）。**不显式启用 `robot-rpc/client`、也不直接启用 `dep:tonic`**：独立
 # feature 构建不生成 `RobotControlClient`，源码不调用 tonic client；**但
@@ -337,8 +336,8 @@ robotctl-smoke = ["dep:tokio", "dep:serde_json", "dep:robot-rpc"]
 # - 本机跑：先 `cargo build --release -p robot-s1 --features test-freeze-hook`
 #   + `cargo build --release -p robot-rpc --features test-freeze-hook`，再
 #   `cargo run -p robot-tests --bin sd_watchdog_smoke --features
-#   sd-watchdog-smoke -- --s1-bin target/release/s1_daemon --gateway-bin
-#   target/release/robot_rpc_gateway --phase all`。
+#   sd-watchdog-smoke -- --s1-bin target/release/robot-s1 --gateway-bin
+#   target/release/robot-gateway --phase all`。
 # - `robot-rpc/test-freeze-hook` 仅在本 feature 启用，不污染 clear-estop-e2e
 #   等其它 feature 的构建面；**不**开 `robot-rpc/client`（smoke 只 import
 #   freeze_control wire struct）；与其它 feature 合并构建时 additive 无害。

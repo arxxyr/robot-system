@@ -1106,13 +1106,13 @@ mod tests {
 
     fn bus1_layout() -> crate::grouped_position::XleRobotBus1Layout {
         let config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus1_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus1.toml")).unwrap();
         crate::grouped_position::XleRobotBus1Layout::from_hardware(&config.hardware[0]).unwrap()
     }
 
     fn mixed_command() -> JointCommandBuf {
         let config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         crate::grouped_position::XleRobotBus2Layout::from_hardware(&config.hardware[0])
             .unwrap()
             .command([0.4; 6], [100, -100, 50], 77, 100, 200)

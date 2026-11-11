@@ -73,7 +73,7 @@ impl Case {
     }
 
     pub(super) fn command(&self) -> Command {
-        let mut command = isolated_command(&self.bin_dir.join("s0_daemon"));
+        let mut command = isolated_command(&self.bin_dir.join("robot-s0"));
         command
             .args(["--config"])
             .arg(&self.config)

@@ -33,7 +33,7 @@ async fn real_drain_ready_panic_keeps_typed_terminal_and_replay_after_run_cancel
 #[tokio::test]
 async fn injected_drain_spawn_rejection_keeps_typed_terminal_and_replay_after_run_cancellation() {
     let _serial = SERIAL.lock().await;
-    std::env::var_os("B4_E2E_BIN_S1_DAEMON").expect("runner 必须显式绑定 release S1 实件");
+    std::env::var_os("B4_E2E_BIN_ROBOT_S1").expect("runner 必须显式绑定 release S1 实件");
     run_case("w3_spawn_error_release", "spawn-error", None).await;
 }
 
@@ -53,7 +53,7 @@ async fn release_s1_qos_mismatch_exits_one_without_replacing_existing_service() 
     use robot_transport::iceoryx2::{RrProfile, RrStaticLimits, topic_to_service_name};
 
     let _serial = SERIAL.lock().await;
-    let binary = std::env::var_os("B4_E2E_BIN_S1_DAEMON")
+    let binary = std::env::var_os("B4_E2E_BIN_ROBOT_S1")
         .map(std::path::PathBuf::from)
         .expect("runner 必须绑定本轮 release S1 实件");
     let (mut ctx, (existing, node, topic, before)) =
@@ -101,7 +101,7 @@ async fn release_s1_qos_mismatch_exits_one_without_replacing_existing_service() 
         loop {
             let lines = ctx.daemon_output().await;
             if lines.iter().any(|line| {
-                line.contains("s1_daemon rr_server_threads ready")
+                line.contains("robot-s1 rr_server_threads ready")
                     || line.contains("panicked at")
                     || line.contains("w3_real_drain_factory_panic")
             }) {
@@ -207,7 +207,7 @@ async fn release_drain_factory_panic_keeps_uncertain_gateway_responsibility() {
     let id = Uuid::now_v7();
     let id_text = id.to_string();
     // release 实件由 runner 显式绑定；不能无声回退到可能 unwind 的 debug 二进制。
-    let binary = std::env::var_os("B4_E2E_BIN_S1_DAEMON")
+    let binary = std::env::var_os("B4_E2E_BIN_ROBOT_S1")
         .map(std::path::PathBuf::from)
         .expect("runner 必须显式绑定 release/abort S1 实件");
     let (ctx, mut run, shutdown) = CaseCtx::bring_up_with_owned_gateway_binary(

@@ -5,8 +5,7 @@
 // `CancelTask` / `ClearError` 三条 RPC 边界 wire format 平行存在 ——
 // proto 是 client ↔ gateway 跨网络 (HTTP/2 wire)，fbs 是 gateway ↔
 // s1_daemon 跨进程 (iceoryx2 RR zero-copy)，两套 schema 分开维护
-// （对齐 v0.3 A1 ClearEStop 已建立的双层 schema 分工，详
-// `clear_estop.fbs` 顶部 + docs/handoffs/v0.3_b4_outline.md §6）。
+// （分工与 `clear_estop.fbs` 相同）。
 //
 // ### 跨进程通道（B4 outline §4 / §5.4 拍板）
 //
@@ -19,8 +18,7 @@
 //   - `/<robot_id>/control/clear_error`
 //
 // `task_invoke` 走 `action_request.fbs`；`StreamTaskEvents` **不**走
-// RR，走 per-ActionId pubsub `action_event.fbs`（详
-// docs/handoffs/v0.3_b4_outline.md §5.2 拍板）。
+// RR，走 per-ActionId pubsub `action_event.fbs`。
 //
 // ### 字段 / 安全边界
 //
@@ -107,9 +105,8 @@ enum ActionFailureKindFb : ubyte {
 // (2/3) gateway 端实现 `action_rpc_status_to_tonic_code` 时落地，
 // 沿 A1 `rpc_status_variant_count_matches_explicit_mapping` 同款锁测）。
 //
-// variant 集来自 docs/handoffs/v0.3_b4_outline.md §7.1 错误码映射
-// 表 round 4 终版（reviewer round 4 拍板 BusyExecuting → AlreadyExists
-// + BackendStartFailed 按 ActionStartError 内部 variant 拆）：
+// variant 与 S1 action 错误的显式映射保持一致：BusyExecuting → AlreadyExists，
+// BackendStartFailed 按 ActionStartError 内部 variant 拆分：
 //   - `Ok` = 调用成功（submit / cancel / clear_error / status 查询命中）
 //   - `FailedPrecondition` = NotReady / CoordinatorDegraded / NotDegraded /
 //     BackendStartFailed::{Rejected,PayloadDecode,HardwareMismatch}
@@ -257,10 +254,9 @@ table CancelTaskResponse {
 // 不变量。语义是"action 失败后回 IDLE"恢复路径。
 //
 // 权限层级（reviewer round 2 阻断 4 + outline §8.1 #7c 拍板）：
-// `maintainer+`；configs/rpc_roles.toml 的 [roles.operator] 删
+// `maintainer+`；configs/rpc-roles.toml 的 [roles.operator] 删
 // `clear_error`，[roles.maintainer] / [roles.admin] 保留。本字段
-// 收紧由 B4 (2/3) gateway 实现期落地（详
-// docs/handoffs/v0.3_b4_outline.md §8.1）。
+// 收紧由 gateway 的 capability 校验执行。
 table ClearErrorRequest {
     request_id:      string;
     idempotency_key: string;

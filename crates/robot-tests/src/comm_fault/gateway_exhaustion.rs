@@ -76,7 +76,7 @@ async fn exercise(case: &Case, owned: &mut Owned) -> Result<Value, String> {
         .env("ROBOT_LOG_FORMAT", "json")
         .env(
             "RUST_LOG",
-            "warn,s0_daemon=info,robot_s0::ipc_runtime=info,robot_s0::rr_server_thread=info",
+            "warn,robot_s0=info,robot_s0::ipc_runtime=info,robot_s0::rr_server_thread=info",
         );
     save(case, "s0_launch.json", &launch(&command))?;
     owned.s0 = Some(case.spawn("s0", command)?);

@@ -57,9 +57,7 @@ pub const SCHEMA_HEARTBEAT: u32 = 0x0000_0301;
 
 // ------------------------ 0x400..0x4FF · control -----------------------------
 //
-// v0.3 A1 ClearEStop control-plane slice（`docs/handoffs/v0.3_entry.md` §3）+
-// v0.3 B4 task control plane（`docs/handoffs/v0.3_b4_outline.md`）。后续
-// v0.5+ 其它 §5.3 RPC payload 也分配本段。
+// ClearEStop、任务控制与 SetEnabled 的控制面 payload 分配在本段。
 
 /// `robot.msg.ClearEStopRequest` —— v0.3 A1 `ClearEStop` control action 跨
 /// 进程 wire format（iceoryx2 `RequestResponse` client → server payload）。
@@ -68,7 +66,7 @@ pub const SCHEMA_CLEAR_ESTOP_REQUEST: u32 = 0x0000_0400;
 /// 进程 wire format（iceoryx2 `RequestResponse` server → client reply payload）。
 pub const SCHEMA_CLEAR_ESTOP_RESPONSE: u32 = 0x0000_0401;
 
-// ----- v0.3 B4 task control plane（`docs/handoffs/v0.3_b4_outline.md`）-----
+// ------------------------ 任务控制面 ----------------------------------------
 //
 // 4 个 RR 一对 request/response（task_invoke / task_status / task_cancel /
 // clear_error）+ 1 个 pubsub event envelope = 9 个 schema_id。
@@ -95,7 +93,7 @@ pub const SCHEMA_ACTION_EVENT_ENVELOPE: u32 = 0x0000_040A;
 
 // ----- v0.4 候选 1 Scripted backend payload -----
 //
-// 详 `docs/handoffs/v0.4_entry.md` §3.2 + `team-swe/specs/v0_4_scripted_backend.md`。
+// 字段语义见 `crates/robot-msg/schemas/scripted_payload.fbs`。
 // 落 `SizeTier::Control`（详 `crates/robot-msg/src/size_tier.rs`）；
 // 实际接收上限由 gateway `MAX_SCRIPTED_PAYLOAD_BYTES` byte cap 控制
 // （reviewer Plan round 3 拍板 only byte cap，不做 waypoint count
@@ -109,13 +107,12 @@ pub const SCHEMA_SCRIPTED_PAYLOAD: u32 = 0x0000_040B;
 /// payload（笛卡尔 pose + 5-DOF IK 解算入口；Q-IK4 (a) 最小集 +
 /// Q-IK7 (a) frame 占位字符串）。
 ///
-/// 详 `crates/robot-msg/schemas/ik_payload.fbs` + `team-swe/specs/
-/// v0_4_robot_kinematics_round2.md` Q-IK4..Q-IK7 拍板。
+/// 字段语义见 `crates/robot-msg/schemas/ik_payload.fbs`。
 pub const SCHEMA_IK_PAYLOAD: u32 = 0x0000_040C;
 
 /// `robot.msg.SetEnabledRequest` —— v0.5 候选 C `SetEnabled` control-plane RR
 /// request（gateway → S0 `/<robot_id>/control/set_enabled`）。详
-/// `crates/robot-msg/schemas/set_enabled.fbs` + `team-swe/specs/v0_5_set_enabled.md`。
+/// `crates/robot-msg/schemas/set_enabled.fbs`。
 pub const SCHEMA_SET_ENABLED_REQUEST: u32 = 0x0000_040D;
 
 /// `robot.msg.SetEnabledResponse` —— v0.5 候选 C `SetEnabled` RR response

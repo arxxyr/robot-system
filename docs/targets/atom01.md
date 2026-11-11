@@ -20,7 +20,7 @@
 | §6 风险与门槛 | 工程风险清单 | PR 直接改 |
 | §7 参考 | 外部链接 | PR 直接改 |
 
-**迁移路线图（项目管理，非 spec）**：见 [`atom01_migration.md`](atom01_migration.md)。
+**当前工作顺序**：见 [Roadmap](../s0_hal_status.md#roadmap)；本目标合同不表示已完成 ATOM01 接入或验收。
 **源码级 walkthrough（commit-pinned 快照）**：见 [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md)。
 
 ---
@@ -497,7 +497,7 @@ loop {
 | 原上游仓库 | https://github.com/Roboparty/atom01_deploy.git |
 | 本地仓库位置 | `~/repo/robot/atom01_deploy` |
 | 源码快照文档（commit `d983373`） | [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md) |
-| 迁移路线图（非 spec） | [`atom01_migration.md`](atom01_migration.md) |
+| 当前工作顺序 | [Roadmap](../s0_hal_status.md#roadmap) |
 | inference_node 主逻辑 | `atom01_deploy/src/inference/src/inference_node.{hpp,cpp}` |
 | 启动脚本 / Fast DDS profile | `atom01_deploy/tools/start_robot.sh`、`assets/rt_fastdds_profile.xml` |
 | `RobotInterface`（硬件封装） | `atom01_deploy/src/inference/src/robot_interface.{cpp,hpp}` |

@@ -1,6 +1,6 @@
 //! robot-msg 运行时兼容性测试。
 //!
-//! 覆盖 `docs/01_implementation_steps.md` Step 2 "测试" 章节的运行时部分：
+//! 覆盖 schema 兼容性的运行时行为：
 //!
 //! - 每个 table round-trip（writer → bytes → reader → 字段对等）
 //! - old-reader-new-writer：`v0::JointState` 解析当前 `msg::JointState` bytes，

@@ -41,7 +41,7 @@
 //!
 //! ## shutdown 顺序契约（reviewer round 5 阻断锁定）
 //!
-//! `s1_daemon` shutdown 路径**必须**按以下顺序，避免 RR thread stop-but-
+//! `robot-s1` shutdown 路径**必须**按以下顺序，避免 RR thread stop-but-
 //! not-join 期间 in-flight invoke 调
 //! [`crate::events_drain_thread::EventsDrainRegistry::register`] 跟
 //! `events_registry.stop_and_join_all` 撞上 late register：
@@ -84,7 +84,7 @@ pub mod handler;
 pub mod runtime;
 pub mod wire;
 
-// 主要外部 API 直接 re-export，让调用方（s1_daemon binary、未来 lib 调用
+// 主要外部 API 直接 re-export，让调用方（robot-s1 binary、未来 lib 调用
 // 方）只需要 `use robot_s1::rr_server::*` 一次拿到所需类型。runtime 层
 // 跟 handler 层公开 surface 较多（`RrServerThreadConfig` / 4 个
 // `spawn_*_server` / `RealHandlerCtx` / 4 个 `handle_*`），逐项 re-export

@@ -1,8 +1,8 @@
-//! `iceoryx2_rt_baseline` —— Step 6 Part 2 **关键硬门槛**。
+//! `iceoryx2_rt_baseline` —— 同进程两线程 IPC 延迟诊断。
 //!
-//! 同进程两线程 publish → subscribe 端到端延迟直方图。Orin 上 10 min soak 的
-//! p99 < 100 µs / p999 < 500 µs 是 v0.2 Step 6 验收条件（`docs/00_design.md` §6
-//! + `docs/01_implementation_steps.md` Step 6）。
+//! 采集 publish → subscribe 端到端延迟直方图。发布频率 ≥50 Hz 时，旧 p99
+//! <100 µs / p999 <500 µs 判据已撤销；内置 FAIL 仅作 legacy 诊断，适用范围见
+//! `docs/10_verification.md` §10.1。
 //!
 //! ### 线程布局
 //!

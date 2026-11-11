@@ -24,8 +24,7 @@
 //!
 //! ### 为什么默认 60s
 //!
-//! `docs/handoffs/2026-04-24_5.md` §8 task 26 写 "1min ignored 回归测试"。60s 是
-//! 合理的"短期 soak"窗口：
+//! 60s 作为短期 soak 窗口：
 //! - 快到能在 dev 机上跑（但 ignored 默认不跑）；
 //! - 长到能涵盖 50 Hz × 60s = 3000 ticks，覆盖 metrics overflow / cache thrash
 //!   一类时序敏感问题；

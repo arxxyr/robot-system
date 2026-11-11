@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn rt_class_three_variants_are_distinct() {
         // pre-1a：SerialRT 与 HardRT / SoftRT 在 PartialEq / Hash / Debug 维度
-        // 完全独立。后续 s0_daemon dispatch_by_rt_class 会基于 PartialEq 路由。
+        // 完全独立。后续 robot-s0 dispatch_by_rt_class 会基于 PartialEq 路由。
         let v = [RtClass::HardRT, RtClass::SerialRT, RtClass::SoftRT];
         for (i, a) in v.iter().enumerate() {
             for (j, b) in v.iter().enumerate() {

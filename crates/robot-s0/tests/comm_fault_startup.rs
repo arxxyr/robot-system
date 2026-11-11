@@ -169,7 +169,7 @@ impl Process {
         let observation = directory.path().join("observation");
         let page = ObservationPage::create(&observation).unwrap();
         let log = std::fs::File::create(directory.path().join("s0.log")).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_s0_daemon"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_robot-s0"));
         for (key, _) in std::env::vars_os() {
             if key.to_string_lossy().starts_with("ROBOT_TEST_") {
                 command.env_remove(key);

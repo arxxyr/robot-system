@@ -1,6 +1,6 @@
 [package]
 name         = "robot-s1"
-description  = "S1（快反射层）：v0.3 起 coordinator lib 层 + s1_daemon production binary；mock_s1 保留作 ballet 工具。"
+description  = "S1（快反射层）：v0.3 起 coordinator lib 层 + robot-s1 production binary；mock_s1 保留作 ballet 工具。"
 version    .workspace = true
 edition    .workspace = true
 license    .workspace = true
@@ -18,23 +18,19 @@ publish    .workspace = true
 [features]
 default            = ["backend-mock-dwell", "backend-hold-pose", "backend-scripted", "backend-ik"]
 backend-mock-dwell = []
-# v0.3 B3 (1/2)：HoldPoseBackend 第一个真 action backend（详
-# docs/handoffs/v0.3_b3_outline.md round 2）。Feature off 时整文件
+# HoldPoseBackend。Feature off 时整文件
 # 不 link → BackendRegistry::from_inventory 收集不到 hold_pose →
 # `[s1.profile.backends = ["hold_pose"]]` 启动期 fail-fast，符合
 # "配置与编译 profile 不匹配启动期 fail-fast"硬约束。
 backend-hold-pose  = []
-# v0.4 候选 1 (2/3)：ScriptedBackend（joint-space 线性插值 + waypoint
-# dwell，详 team-swe/specs/v0_4_scripted_backend.md + Plan P.2.2）。
+# ScriptedBackend（joint-space 线性插值 + waypoint dwell）。
 # Q17(a) 拍板：进 default features，沿 hold_pose / mock_dwell 同款策略
 # （避免 smoke binary / 文档维护额外 feature flag）。Feature off 时整
 # 文件不 link → BackendRegistry::from_inventory 收集不到 scripted →
 # `[s1.profile.backends = ["scripted"]]` 启动期 fail-fast，符合
 # "配置与编译 profile 不匹配启动期 fail-fast"硬约束。
 backend-scripted   = []
-# v0.4 候选 2 round 2 (3/4)：IkBackend（笛卡尔 pose IK 解算 + 关节
-# 位置一次性输出；详 team-swe/specs/v0_4_robot_kinematics_round2.md
-# Q-IK1..Q-IK17 + Plan §P.3.2）。Q-IK11 (a) 拍板：进 default features，
+# IkBackend（笛卡尔 pose IK 解算 + 关节位置一次性输出），进 default features，
 # 沿 hold_pose / mock_dwell / scripted 同款策略。Feature off 时整文
 # 件不 link → BackendRegistry::from_inventory 收集不到 ik →
 # `[s1.profile.backends = ["ik"]]` 启动期 fail-fast (validate_
@@ -43,13 +39,13 @@ backend-scripted   = []
 #
 # **双 workspace dep**（Q-IK1 ACK）：feature on 时把 `robot-kinematics`
 # (trait crate) + `robot-kinematics-xlerobot` (impl crate) 一起拉进
-# binary；不允许只 link trait 而漏 impl（会导致 s1_daemon 编不出 solver
+# binary；不允许只 link trait 而漏 impl（会导致 robot-s1 编不出 solver
 # 注入路径）。
 # **dep policy**：`robot-kinematics`（trait crate）**永远**链接（零 runtime
 # 依赖，仅 `ArmIkSolver` trait + POD 共享类型；让 `ActionContext::solver` /
 # `Coordinator::solver` 字段不必 cfg gate）；只 `robot-kinematics-xlerobot`
 # （impl crate）由本 feature optional gate（XLeRobotArmIkSolver 实例化
-# 只在 s1_daemon binary，按 backend-ik feature 走 cfg 路径）。
+# 只在 robot-s1 binary，按 backend-ik feature 走 cfg 路径）。
 backend-ik         = ["dep:robot-kinematics-xlerobot"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/s1/test/freeze`
@@ -63,23 +59,23 @@ test-freeze-hook   = []
 # 无执行期 failure 触发器（Scripted 运行期只 Continue/Completed，IK 错误全在
 # start 阶段），AC-E14 执行期不对称终态 / AC-E18 failure 分支靠它驱动。
 # **永不进 default features**；e2e 前显式 `cargo build --release -p robot-s1
-# --bin s1_daemon --features test-fault-backend`（P.0 活清单）。
+# --bin robot-s1 --features test-fault-backend`（P.0 活清单）。
 # **profile 冲突消除**：启用它的 config 必须从 `[s1.profile] backends` 移除
 # `mock_dwell`（分发键重合，dispatch 取首个命中）。
 test-fault-backend = []
 
-# v0.3 B1 (2/3)：mock_s1 / s1_daemon 显式列出 [[bin]]。
+# v0.3 B1 (2/3)：mock_s1 / robot-s1 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production
-#   S1，详 docs/handoffs/v0.3_b1_outline.md §6.2）。
-# - s1_daemon：v0.3 B1 production S1 binary（hold + heartbeat 最小闭环 +
+#   S1）。
+# - robot-s1：v0.3 B1 production S1 binary（hold + heartbeat 最小闭环 +
 #   启动锚定 fail-fast）。
 [[bin]]
 name = "mock_s1"
 path = "src/bin/mock_s1.rs"
 
 [[bin]]
-name = "s1_daemon"
-path = "src/bin/s1_daemon.rs"
+name = "robot-s1"
+path = "src/bin/robot-s1.rs"
 
 [dependencies]
 robot-core      = { workspace = true }
@@ -120,7 +116,7 @@ inventory       = { workspace = true }
 #   IkError 共享类型）；Coordinator 持 Option<Box<dyn ArmIkSolver>>，
 #   ActionContext 透传 Option<&dyn ArmIkSolver>。
 # - robot-kinematics-xlerobot：XLeRobotArmIkSolver impl（5-DOF 闭式
-#   IK；s1_daemon binary 启动期按 backend-ik feature 创建实例注入
+#   IK；robot-s1 binary 启动期按 backend-ik feature 创建实例注入
 #   Coordinator）。
 robot-kinematics          = { workspace = true }
 robot-kinematics-xlerobot = { workspace = true, optional = true }

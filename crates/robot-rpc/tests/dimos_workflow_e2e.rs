@@ -15,7 +15,7 @@
 //! ```bash
 //! cargo build --release --workspace
 //! # AC-E14 执行期 failure / AC-E18 failure 分支需要 test-only fault backend：
-//! cargo build --release -p robot-s1 --bin s1_daemon --features test-fault-backend
+//! cargo build --release -p robot-s1 --bin robot-s1 --features test-fault-backend
 //! ```
 //!
 //! 漏编 `test-fault-backend` 时，仅 `*_failure` / `pair_partial_failure_paths`
@@ -424,7 +424,7 @@ async fn post_success_reset_matrix_cancel() {
 async fn post_success_reset_matrix_failure() {
     let ctx = DualCtx::bring_up_with("matrix_failure", DualCtxOptions::default())
         .await
-        .expect("bring up（需 s1_daemon --features test-fault-backend）");
+        .expect("bring up（需 robot-s1 --features test-fault-backend）");
     let mut pair = arm_pair(&ctx);
     let anchor = positions(&ctx.left).await;
 
@@ -630,7 +630,7 @@ async fn start_pose_stale_rejected() {
 async fn pair_partial_failure_paths() {
     let ctx = DualCtx::bring_up_with("partial", DualCtxOptions::default())
         .await
-        .expect("bring up（需 s1_daemon --features test-fault-backend）");
+        .expect("bring up（需 robot-s1 --features test-fault-backend）");
     let mut pair = arm_pair(&ctx);
     let clock = robot_core::time::SystemClock::new();
     let cfg = pair_cfg();
@@ -769,9 +769,9 @@ async fn s0_drops_wrong_layout_commands() {
         .expect("latch bak");
 
     let layout = load_hardware_layout(&config, hardware_id).expect("layout");
-    let s0_bin = common::subprocess::locate_test_bin("s0_daemon").expect("s0 bin");
+    let s0_bin = common::subprocess::locate_test_bin("robot-s0").expect("s0 bin");
     let mut s0 = common::subprocess::SubprocessHandle::spawn(
-        "s0_daemon",
+        "robot-s0",
         common::subprocess::build_s0_daemon_command(
             &s0_bin,
             &robot_id,

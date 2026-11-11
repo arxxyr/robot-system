@@ -59,7 +59,7 @@ pub struct Shim12 {
 }
 
 impl Shim12 {
-    /// 左臂 6 维（idx 0-5，含夹爪）——与 `configs/xlerobot_left_arm.toml`
+    /// 左臂 6 维（idx 0-5，含夹爪）——与 `configs/xlerobot-left-arm.toml`
     /// joints 顺序同构。
     #[must_use]
     pub fn left_arm(&self) -> [f64; ARM_DIM] {
@@ -68,7 +68,7 @@ impl Shim12 {
         out
     }
 
-    /// 右臂 6 维（idx 6-11，含夹爪）——与 `configs/xlerobot_right_arm.toml`
+    /// 右臂 6 维（idx 6-11，含夹爪）——与 `configs/xlerobot-right-arm.toml`
     /// joints 顺序同构。
     #[must_use]
     pub fn right_arm(&self) -> [f64; ARM_DIM] {

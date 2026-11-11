@@ -2,7 +2,7 @@
 
 > FlatBuffers schema 编译器 `flatc` 的 vendor 副本。
 > Version pin：与 `flatbuffers` Rust crate 一一对应，当前 `VERSION` 文件为权威来源。
-> 存在理由：`robot-msg` 的 `build.rs` 绝不依赖系统 `flatc`，保证 "无网可 build" 与 "clean host 可 build"（参见 `docs/01_implementation_steps.md` Step 2 退出标准）。
+> 存在理由：`robot-msg` 的 `build.rs` 使用仓库内编译器，不依赖系统 `flatc`，保证 schema 编译器在无网和全新主机环境中可用。
 
 ## 目录结构
 

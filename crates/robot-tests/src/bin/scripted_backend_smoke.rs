@@ -5,13 +5,12 @@
 //!
 //! 跨进程 e2e（沿 `pubsub_cleanup_smoke` / `clear_estop_e2e` 模式）：
 //!
-//! 1. spawn fake S0 (50Hz `JointState`) + `s1_daemon` + `robot_rpc_gateway`
+//! 1. spawn fake S0 (50Hz `JointState`) + `robot-s1` + `robot-gateway`
 //! 2. 用 tonic gRPC client 真跑 `InvokeTask(kind=Scripted,
 //!    payload=ScriptedPayload)` → iceoryx2 RR shm → s1 coordinator →
 //!    `ScriptedBackend.tick()` 50Hz → `JointCommand` publish →
 //!    `StreamTaskEvents` 收 Started/Progress/终态
-//! 3. 5 phase 覆盖 AC-4 至 AC-7（详 team-swe/specs/v0_4_scripted_backend.md
-//!    §AC）：
+//! 3. 5 个阶段覆盖多点执行、序号、取消与载荷边界：
 //!    - `selftest`：harness 通（不调 InvokeTask）
 //!    - `happy_multi_waypoint` (AC-4)：N=3 waypoint → Started + ≥N
 //!      Progress (单调 ≤ 1.0) + Completed(Success)
@@ -46,7 +45,7 @@
 //!   --bin-dir <DIR>                  默认 target/release
 //!   --robot-id-prefix <STR>          默认 scripted_backend
 //!   --hardware-id <ID>               必填（跟 --config TOML 一致）
-//!   --config <TOML>                  必填（s1_daemon --config）
+//!   --config <TOML>                  必填（robot-s1 --config）
 //!   --joints <N>                     默认 1（跟 config [[hardware]].joints 一致）
 //!   --phase <PHASE>                  默认 all
 //!     selftest | happy_multi_waypoint | source_task_id_monotonic |
@@ -64,12 +63,8 @@
 //! - `1`：CLI / preflight / 子进程 spawn 错
 //! - `2`：≥1 phase FAIL
 //!
-//! ## 跟 Spec / Plan 的链接
-//!
-//! - [`team-swe/specs/v0_4_scripted_backend.md`](../../../../../team-swe/specs/v0_4_scripted_backend.md)
-//!   §AC-4..AC-7 + §Plan P.2.3
-//! - [`docs/handoffs/v0.3_b4_outline.md`](../../../../../docs/handoffs/v0.3_b4_outline.md)
-//!   §6.1 双层 schema 模型（gateway 透传 payload bytes 不解码）
+//! 相关字段与转换见 `robot-msg/schemas` 和 `robot-rpc/src/task_handlers.rs`；
+//! 本模块上方列出实际验证阶段，历史计划通过 Git 查询。
 
 #![cfg(target_os = "linux")]
 #![allow(clippy::doc_markdown, clippy::too_many_lines)]
@@ -369,20 +364,20 @@ async fn main() -> ExitCode {
 // ============================================================================
 
 fn preflight(args: &Args) -> Result<(), String> {
-    let s1 = args.bin_dir.join("s1_daemon");
+    let s1 = args.bin_dir.join("robot-s1");
     if !s1.exists() {
         return Err(format!(
-            "s1_daemon binary not found at {} (build via \
-             `cargo build --release -p robot-s1 --bin s1_daemon`)",
+            "robot-s1 binary not found at {} (build via \
+             `cargo build --release -p robot-s1 --bin robot-s1`)",
             s1.display()
         ));
     }
-    let gw = args.bin_dir.join("robot_rpc_gateway");
+    let gw = args.bin_dir.join("robot-gateway");
     if !gw.exists() {
         return Err(format!(
-            "robot_rpc_gateway binary not found at {} (build via \
+            "robot-gateway binary not found at {} (build via \
              `cargo build --release -p robot-rpc --features client \
-             --bin robot_rpc_gateway`)",
+             --bin robot-gateway`)",
             gw.display()
         ));
     }
@@ -426,7 +421,7 @@ impl CaseCtx {
         let case_dir = args.workdir.join(&robot_id);
         std::fs::create_dir_all(&case_dir)
             .map_err(|e| format!("mkdir case_dir {}: {e}", case_dir.display()))?;
-        let role_table_path = case_dir.join("rpc_roles.toml");
+        let role_table_path = case_dir.join("rpc-roles.toml");
         write_role_table(&role_table_path)?;
         // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
         // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
@@ -464,7 +459,7 @@ impl CaseCtx {
 }
 
 fn write_role_table(path: &Path) -> Result<(), String> {
-    let toml_text = r#"# scripted_backend_smoke 临时 rpc_roles.toml（每 case 独立）。
+    let toml_text = r#"# scripted_backend_smoke 临时 rpc-roles.toml（每 case 独立）。
 
 [tokens]
 "viewer-fake-token-001"     = "viewer"
@@ -489,7 +484,7 @@ description  = "smoke admin"
 capabilities = ["read_state", "invoke_task", "clear_estop", "set_enabled", "clear_error", "estop", "reload_calibration", "set_policy", "shutdown"]
 "#;
     std::fs::write(path, toml_text)
-        .map_err(|e| format!("write rpc_roles.toml {}: {e}", path.display()))
+        .map_err(|e| format!("write rpc-roles.toml {}: {e}", path.display()))
 }
 
 fn allocate_loopback_port() -> Result<u16, String> {
@@ -826,11 +821,11 @@ fn spawn_stream_drain(
 }
 
 // ============================================================================
-// spawn s1_daemon + spawn gateway
+// spawn robot-s1 + spawn gateway
 // ============================================================================
 
 fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("s1_daemon");
+    let bin = ctx.bin_dir.join("robot-s1");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -840,11 +835,11 @@ fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
         .arg(&ctx.config)
         .arg("--poll-interval-ms")
         .arg("1");
-    SubprocessHandle::spawn("s1_daemon", cmd)
+    SubprocessHandle::spawn("robot-s1", cmd)
 }
 
 fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("robot_rpc_gateway");
+    let bin = ctx.bin_dir.join("robot-gateway");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -1115,10 +1110,10 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
         Ok(h) => h,
         Err(e) => {
             fake_s0.shutdown();
-            return Err(format!("spawn s1_daemon: {e}"));
+            return Err(format!("spawn robot-s1: {e}"));
         }
     };
-    eprintln!("[bring_up] s1_daemon spawned pid={:?}", s1.pid);
+    eprintln!("[bring_up] robot-s1 spawned pid={:?}", s1.pid);
 
     if let Err(e) = wait_for_s1_marker(&mut s1, Duration::from_secs(5)).await {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
@@ -1129,7 +1124,7 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[bring_up] Phase 1 PASS: s1_daemon rr_server_threads ready");
+    eprintln!("[bring_up] Phase 1 PASS: robot-s1 rr_server_threads ready");
 
     let gw = match spawn_gateway(ctx) {
         Ok(h) => h,
@@ -1204,7 +1199,7 @@ async fn tear_down_pair(bring_up: BringUp) {
         eprintln!("[tear_down] gateway shutdown warn: {e}");
     }
     if let Err(e) = s1.shutdown(Duration::from_secs(3)).await {
-        eprintln!("[tear_down] s1_daemon shutdown warn: {e}");
+        eprintln!("[tear_down] robot-s1 shutdown warn: {e}");
     }
     fake_s0.shutdown();
 }
@@ -1416,8 +1411,7 @@ async fn run_phase_happy_inner(
     );
 
     // Started 是 informational only：per-ActionId pubsub 是 latest-
-    // sample 模型（详 docs/handoffs/v0.4_pubsub_cleanup_summary.md §3
-    // 关键契约），client 开 stream 时 Started 可能已经被 publisher 推过
+    // sample 模型，client 开 stream 时 Started 可能已经被 publisher 推过
     // → smoke 看不到。AC-4 硬约束 = 终态 Completed + ≥1 Progress（进
     // 度递增证据）；Started 仅作 informational metric。
     if !summary.saw_started {

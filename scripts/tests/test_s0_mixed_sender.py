@@ -253,7 +253,7 @@ class MixedSenderIntegration(unittest.TestCase):
         directory = (Path(tempfile.mkdtemp(prefix="mixed-fail-" if expected_failure else "mixed-ok-", dir=evidence_root))
                      if evidence_root else Path(temporary.name)).resolve()
         maintenance = load_script("run_hardware_maintenance")
-        proc_helper = load_script("run_post_e_h2")
+        proc_helper = load_script("run_comm_fault_probe")
         servo = ServoPty(fail_enable, position_only)
         executor = monitor = None
         monitoring_done, daemon_locks_seen = threading.Event(), threading.Event()

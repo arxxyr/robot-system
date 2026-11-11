@@ -1,7 +1,6 @@
 // scripted_payload.fbs — v0.4 候选 1 Scripted backend payload wire format.
 //
-// 对应 docs/handoffs/v0.4_entry.md §3.2 拍板（joint-space 线性插值 +
-// waypoint dwell）+ team-swe/specs/v0_4_scripted_backend.md Q1(a) 最小集。
+// joint-space 线性插值与 waypoint dwell 的强类型输入。
 //
 // ### 字段语义
 //

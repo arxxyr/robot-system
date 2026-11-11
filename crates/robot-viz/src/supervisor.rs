@@ -39,6 +39,22 @@ extern "C" fn signal_handler(_signal: i32) {
 pub fn install_signals() {
     // SAFETY：静态 C ABI 函数生命周期覆盖进程，只做信号安全的原子 store。
     unsafe {
+        // libc 1 在 BSD 派生平台使用可空函数指针；其余平台保持原整数表示。
+        #[cfg(any(
+            target_vendor = "apple",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        let handler: libc::sig_t = Some(signal_handler);
+        #[cfg(not(any(
+            target_vendor = "apple",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )))]
         let handler = signal_handler as *const () as libc::sighandler_t;
         libc::signal(libc::SIGINT, handler);
         libc::signal(libc::SIGTERM, handler);

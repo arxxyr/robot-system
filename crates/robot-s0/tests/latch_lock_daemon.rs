@@ -1,6 +1,6 @@
-//! S48 A3d / W1：真实 `s0_daemon` 进程级的 latch 稳定锁与启动恢复门。
+//! S48 A3d / W1：真实 `robot-s0` 进程级的 latch 稳定锁与启动恢复门。
 //!
-//! 每个用例都用 `CARGO_BIN_EXE_s0_daemon` 拉起一个独立子进程（独立临时目录、独立
+//! 每个用例都用 `CARGO_BIN_EXE_robot-s0` 拉起一个独立子进程（独立临时目录、独立
 //! `robot_id`、独立信任目录），只从退出码、日志文案与退出后的真实文件态取证；不依赖
 //! `test-comm-fault-hook` 特性，也不读观测页。用例顺序对应 daemon 的启动链：名字校验 →
 //! 信任锁 → 维护子命令 → latch 稳定锁 → 数据对象检查 → W0 恢复 → adapter 构造。所有失败
@@ -105,12 +105,12 @@ impl Fixture {
         std::fs::write(self.backup(), value).unwrap();
     }
 
-    /// 以隔离环境拉起 `s0_daemon`：清掉 systemd 相关与全部 `ROBOT_TEST_*` 变量，固定
+    /// 以隔离环境拉起 `robot-s0`：清掉 systemd 相关与全部 `ROBOT_TEST_*` 变量，固定
     /// 人类可读日志格式且关闭 ANSI（字段 `key=value` 才能按子串断言），stdout / stderr
     /// 一并重定向到临时目录的 `s0.log`。
     fn spawn(&self, configure: impl FnOnce(&mut Command)) -> Daemon {
         let log = std::fs::File::create(self.log_path()).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_s0_daemon"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_robot-s0"));
         for (key, _) in std::env::vars_os() {
             if key.to_string_lossy().starts_with("ROBOT_TEST_") {
                 command.env_remove(key);
@@ -164,7 +164,7 @@ impl Fixture {
     }
 }
 
-/// 一个已拉起的 `s0_daemon` 子进程；drop 时若仍存活则 kill，防止残留进程占住服务名。
+/// 一个已拉起的 `robot-s0` 子进程；drop 时若仍存活则 kill，防止残留进程占住服务名。
 struct Daemon {
     child: Child,
     log_path: PathBuf,

@@ -5,12 +5,10 @@
 //!
 //! [`crate::action::ActionTicket::events`] 是 `Coordinator::submit` 成功后
 //! 返给调用方的 `std::sync::mpsc::Receiver<ActionEvent>`（in-process
-//! sync channel）。`StreamTaskEvents` RPC 跨进程拓扑（详
-//! [`docs/handoffs/v0.3_b4_outline.md`](../../../docs/handoffs/v0.3_b4_outline.md)
-//! §5.2 reviewer round 2 拍板）：
+//! sync channel）。`StreamTaskEvents` RPC 跨进程拓扑：
 //!
 //! ```text
-//! s1_daemon process                       gateway process
+//! robot-s1 process                       gateway process
 //! ─────────────────                       ───────────────────────────
 //!
 //! Coordinator::submit
@@ -65,7 +63,7 @@
 pub mod runtime;
 pub mod wire;
 
-// 主要外部 API 直接 re-export，让调用方（s1_daemon binary、
+// 主要外部 API 直接 re-export，让调用方（robot-s1 binary、
 // rr_server::handler 等）只需 `use robot_s1::events_drain::*` 一次拿到所
 // 需类型。逐项 re-export 而非 glob，让 IDE 跳转 / rustdoc 链接更清晰。
 pub use runtime::{

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""冻结候选的三个 S0 unit 检查、备份、安装与回滚；从不启动服务或操作硬件。"""
+"""冻结候选的三个 S0 unit 改名安装与六路径回滚；从不启动服务或操作硬件。"""
 
 from __future__ import annotations
 
@@ -18,18 +18,24 @@ import tempfile
 
 # 固定解释器以 -I -S 启动时，仅显式加入随脚本冻结的同目录工具。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from post_e_h2_artifacts import elf_identity, installed_file_identity, require, sha256, strict_json
+from artifact_checks import elf_identity, installed_file_identity, require, sha256, strict_json
 
-UNIT_NAMES = ("xlerobot-handoff.service", "xlerobot-s0-bus1.service", "xlerobot-s0-bus2.service")
-BUSINESS_UNITS = tuple(f"xlerobot-{role}-{side}{'-arm' if role == 's0' else ''}.service"
+UNIT_NAMES = ("robot-s0-preflight.service", "robot-s0-bus1.service", "robot-s0-bus2.service")
+OLD_UNIT_NAMES = ("xlerobot-handoff.service", "xlerobot-s0-bus1.service", "xlerobot-s0-bus2.service")
+MANAGED_UNIT_NAMES = (*UNIT_NAMES, *OLD_UNIT_NAMES)
+PREFLIGHT_UNITS = (UNIT_NAMES[0], OLD_UNIT_NAMES[0])
+BACKUP_SCHEMA = "S0_UNIT_RENAME_BACKUP_V1"
+BUSINESS_UNITS = tuple(f"{prefix}-{role}-{side}{'-arm' if role == 's0' else ''}.service"
+                       for prefix in ("xlerobot", "robot")
                        for side in ("left", "right") for role in ("s0", "s1", "gateway")) + (
-    "xlerobot-coordinator.service", "xlerobot-web.service", *UNIT_NAMES[1:],
+    "xlerobot-coordinator.service", "xlerobot-web.service", "robot-coordinator.service", "robot-web.service",
+    *UNIT_NAMES[1:], *OLD_UNIT_NAMES[1:],
 )
 SYSTEMD_PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "UnitFileState",
                       "FragmentPath", "DropInPaths", "Job")
 PROTECTION_NAMES = ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak",
                     "rx_trust.lock", "estop_latch.lock")
-CANDIDATE_FILES = {"camera_capture.py", "configs/xlerobot_bus1_full.toml", "configs/xlerobot_bus2_full.toml",
+CANDIDATE_FILES = {"camera_capture.py", "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml",
                    *("systemd/" + name for name in UNIT_NAMES)}
 CONTENT_KEYS = ("bytes", "sha256", "uid", "gid", "mode")
 
@@ -122,7 +128,7 @@ class S0UnitInstaller:
 
     def _services(self):
         result = {}
-        for name in (*BUSINESS_UNITS, UNIT_NAMES[0]):
+        for name in (*BUSINESS_UNITS, *PREFLIGHT_UNITS):
             raw = self._command(["systemctl", "show", name, "--all", "--property=" + ",".join(SYSTEMD_PROPERTIES)])
             fields = {}
             for line in raw.splitlines():
@@ -133,9 +139,9 @@ class S0UnitInstaller:
             require(set(fields) == set(SYSTEMD_PROPERTIES) and fields["Id"] == name, "systemctl 属性缺失或身份错误")
             require(fields["Job"] == "", "服务存在待执行 Job：" + name)
             require(fields["MainPID"] == "0", "服务仍有主进程：" + name)
-            if name == UNIT_NAMES[0]:
-                require(fields["LoadState"] == "loaded" and (fields["ActiveState"], fields["SubState"])
-                        in (("active", "exited"), ("inactive", "dead")), "handoff 既有完成态变化")
+            if name in PREFLIGHT_UNITS:
+                require(fields["LoadState"] in ("loaded", "not-found") and (fields["ActiveState"], fields["SubState"])
+                        in (("active", "exited"), ("inactive", "dead")), "preflight 既有完成态变化：" + name)
             else:
                 require(fields["LoadState"] in ("loaded", "not-found") and fields["ActiveState"] == "inactive"
                         and fields["SubState"] == "dead", "业务服务未停稳：" + name)
@@ -151,20 +157,21 @@ class S0UnitInstaller:
         return installed_file_identity(path)
 
     def _targets(self, services, *, rollback_record=None):
-        result = {name: self._target(name) for name in UNIT_NAMES}
+        result = {name: self._target(name) for name in MANAGED_UNIT_NAMES}
         for name, row in result.items():
             service = services[name]
-            require(not service["DropInPaths"] and "masked" not in service["UnitFileState"], "拒绝 drop-in 或 mask：" + name)
-            stale_new = (rollback_record is not None and name in UNIT_NAMES[1:] and row["exists"]
-                         and service["LoadState"] == "not-found" and service["FragmentPath"] == ""
-                         and same_content(row, rollback_record["new_units"][name]))
-            stale_removed = (rollback_record is not None and name in UNIT_NAMES[1:] and not row["exists"]
-                             and not rollback_record["originals"][name]["exists"]
-                             and service["LoadState"] == "loaded" and service["FragmentPath"] == row["path"])
+            require(not service["DropInPaths"] and service["UnitFileState"] in ("", "disabled", "static"),
+                    "拒绝 drop-in、mask、alias 或启用状态：" + name)
+            # 文件事务失败后，缓存可以仍指向本次六路径的旧状态；内容允许集在 _apply 再核对。
+            stale = (rollback_record is not None
+                     and ((service["LoadState"] == "not-found" and service["FragmentPath"] == "")
+                          or (service["LoadState"] == "loaded" and service["FragmentPath"] == row["path"])))
             exact = (service["LoadState"] == ("loaded" if row["exists"] else "not-found")
                      and service["FragmentPath"] == (row["path"] if row["exists"] else ""))
-            require(stale_new or stale_removed or exact,
+            require(stale or exact,
                     "unit 实际 FragmentPath 不符：" + name)
+            if name == UNIT_NAMES[0] and not row["exists"]:
+                require(service["ActiveState"] == "inactive", "缺失的新 preflight 不得带有完成态")
         return result
 
     def _manifest(self, *, verify_runtime=True):
@@ -176,7 +183,7 @@ class S0UnitInstaller:
                 and document["deployable"] is False and document["installed"] is False
                 and document["hardware_started"] is False and document["D15"] == "OPEN/DEFERRED", "候选合同错误")
         require(set(document["candidate_files"]) == CANDIDATE_FILES
-                and set(document["binaries"]) == {"xlerobot_deploy", "s0_daemon"}
+                and set(document["binaries"]) == {"robot-deploy", "robot-s0"}
                 and len(document["dependencies"]) == 6, "运行依赖集合不完整")
         refs = list(document["candidate_files"].values()) + list(document["binaries"].values()) + list(document["dependencies"].values())
         require(len({ref["path"] for ref in refs}) == 14, "运行依赖路径重复")
@@ -232,6 +239,12 @@ class S0UnitInstaller:
         protection = self._protection(document)
         services = self._services()
         targets = self._targets(services, rollback_record=rollback_record)
+        if rollback_record is None:
+            for name in UNIT_NAMES:
+                expected = {**document["candidate_files"]["systemd/" + name],
+                            "mode": 0o644, "uid": os.geteuid(), "gid": os.getegid()}
+                require(not targets[name]["exists"] or same_content(targets[name], expected),
+                        "新 unit 路径已被非候选文件占用：" + name)
         self._devices(document)
         require(self._protection(document) == protection, "检查期间保护状态变化")
         return dict(document=document, protection=protection, services=services, targets=targets)
@@ -266,11 +279,13 @@ class S0UnitInstaller:
                     write_new(target, Path(old["path"]).read_bytes())
                     saved[name] = file_identity(target)
                     require(saved[name]["sha256"] == old["sha256"], "备份内容不符")
+            for name in UNIT_NAMES:
                 ref = state["document"]["candidate_files"]["systemd/" + name]
                 new_units[name] = {**ref, "mode": 0o644, "uid": os.geteuid(), "gid": os.getegid()}
-            require({name: self._target(name) for name in UNIT_NAMES} == state["targets"], "备份期间旧目标变化")
+            require({name: self._target(name) for name in MANAGED_UNIT_NAMES} == state["targets"], "备份期间旧目标变化")
             require(self._protection(state["document"]) == state["protection"], "备份期间保护状态变化")
-            record = dict(candidate=str(self.candidate), manifest_sha256=self.manifest_sha256,
+            record = dict(schema=BACKUP_SCHEMA, renames=dict(zip(OLD_UNIT_NAMES, UNIT_NAMES)),
+                          candidate=str(self.candidate), manifest_sha256=self.manifest_sha256,
                           unit_directory=str(self.unit_directory), originals=state["targets"], saved=saved,
                           new_units=new_units, services=state["services"])
             raw = (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
@@ -286,9 +301,12 @@ class S0UnitInstaller:
         file_identity(path / "backup.sha256")
         require((path / "backup.sha256").read_text() == digest + "\n", "备份清单损坏")
         record = strict_json((path / "backup.json").read_text())
+        require(record.get("schema") == BACKUP_SCHEMA
+                and record.get("renames") == dict(zip(OLD_UNIT_NAMES, UNIT_NAMES)), "备份不是本次六路径改名格式")
         require(record["candidate"] == str(self.candidate) and record["manifest_sha256"] == self.manifest_sha256
                 and record["unit_directory"] == str(self.unit_directory)
-                and set(record["originals"]) == set(record["new_units"]) == set(UNIT_NAMES), "备份不属于本候选三 unit")
+                and set(record["originals"]) == set(MANAGED_UNIT_NAMES)
+                and set(record["new_units"]) == set(UNIT_NAMES), "备份不属于本候选六路径")
         require(set(record["saved"]) == {name for name, ref in record["originals"].items() if ref["exists"]}, "备份文件集合错误")
         for name, old in record["originals"].items():
             require(old["path"] == str(self.unit_directory / name), "备份原路径越界")
@@ -327,14 +345,19 @@ class S0UnitInstaller:
         with self._locked():
             path, record = self._read_backup(backup_directory)
             state = self._check(rollback_record=record if rollback else None)
-            for name, current in state["targets"].items():
-                old, new = record["originals"][name], record["new_units"][name]
+            for name, new in record["new_units"].items():
                 source = state["document"]["candidate_files"]["systemd/" + name]
                 require(all(new[key] == source[key] for key in ("path", "bytes", "sha256"))
-                        and new["mode"] == 0o644, "备份候选不一致")
+                        and new["mode"] == 0o644 and new["uid"] == os.geteuid()
+                        and new["gid"] == os.getegid(), "备份候选不一致")
+            for name, current in state["targets"].items():
+                old = record["originals"][name]
+                new = record["new_units"].get(name)
                 if rollback:
                     original = current == old or old["exists"] and current["exists"] and same_content(current, old)
-                    require(original or current["exists"] and same_content(current, new), "回滚目标超出原件/候选允许集：" + name)
+                    installed = current["exists"] and new is not None and same_content(current, new)
+                    retired = not current["exists"] and name in OLD_UNIT_NAMES
+                    require(original or installed or retired, "回滚目标超出原件/候选允许集：" + name)
                 else:
                     require(current == old, "安装前旧目标漂移：" + name)
             operation = "rollback" if rollback else "install"
@@ -348,11 +371,13 @@ class S0UnitInstaller:
             receipt["receipt_path"] = str(receipt_path)
             self._receipt(receipt_path, receipt, first=not rollback)
             try:
-                for name in UNIT_NAMES:
+                # 安装先写新三份再撤旧三份；回滚先恢复旧文件，随后归还新路径原状。
+                order = (*OLD_UNIT_NAMES, *UNIT_NAMES) if rollback else MANAGED_UNIT_NAMES
+                for name in order:
                     target = self.unit_directory / name
                     require(self._target(name) == state["targets"][name], "换入前目标再次漂移：" + name)
-                    expected = record["originals"][name] if rollback else record["new_units"][name]
-                    if rollback and not expected["exists"]:
+                    expected = record["originals"][name] if rollback else record["new_units"].get(name)
+                    if expected is None or rollback and not expected["exists"]:
                         target.unlink(missing_ok=True)
                         sync_directory(target.parent)
                     else:
@@ -364,12 +389,14 @@ class S0UnitInstaller:
                 after = self._services()
                 actual = self._targets(after)
                 for name, row in actual.items():
-                    expected = record["originals"][name] if rollback else record["new_units"][name]
-                    require((not row["exists"] if rollback and not expected["exists"] else row["exists"] and same_content(row, expected)),
+                    expected = record["originals"][name] if rollback else record["new_units"].get(name)
+                    absent = expected is None or rollback and not expected["exists"]
+                    require((not row["exists"] if absent else row["exists"] and same_content(row, expected)),
                             "换入后文件身份不符：" + name)
-                before_handoff, after_handoff = state["services"][UNIT_NAMES[0]], after[UNIT_NAMES[0]]
-                require(all(before_handoff[key] == after_handoff[key] for key in ("ActiveState", "SubState", "MainPID")),
-                        "handoff 完成态变化")
+                for name in PREFLIGHT_UNITS:
+                    before_handoff, after_handoff = state["services"][name], after[name]
+                    require(all(before_handoff[key] == after_handoff[key] for key in ("ActiveState", "SubState", "MainPID")),
+                            "preflight 完成态变化：" + name)
                 require(self._protection(state["document"]) == state["protection"], "换入期间保护状态变化")
                 receipt["status"] = "PASS"
             except BaseException as error:

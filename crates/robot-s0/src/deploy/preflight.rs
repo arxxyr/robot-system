@@ -345,7 +345,7 @@ pub mod feetech {
         }
     }
 
-    /// 从**本臂 config** 解析串口并打开该 bus——guard 与 `xlerobot_deploy`
+    /// 从**本臂 config** 解析串口并打开该 bus——guard 与 `robot-deploy`
     /// 各子命令**共用同一条解析路径**（避免双源漂移）。
     ///
     /// **打开串口之前先过 [`verify`](super::super::identity::verify_arm_config)

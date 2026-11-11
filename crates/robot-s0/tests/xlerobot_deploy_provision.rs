@@ -1,4 +1,4 @@
-//! S48 A3d / W1：无硬件夹具验证 `xlerobot_deploy provision` 子命令的退出码映射。
+//! S48 A3d / W1：无硬件夹具验证 `robot-deploy provision` 子命令的退出码映射。
 //!
 //! 只跑真实 CLI 二进制（`required-features = ["xlerobot-real"]`，与 bin 同门），
 //! 用临时目录的 `--latch-path` 夹具，不打开任何串口、不接触 `/var/lib/robot`：
@@ -17,7 +17,7 @@ use std::process::{Command, Stdio};
 use robot_s0::latch_lock::acquire_latch_lock;
 
 fn run_provision(args: &[&std::ffi::OsStr]) -> (i32, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_xlerobot_deploy"))
+    let output = Command::new(env!("CARGO_BIN_EXE_robot-deploy"))
         .arg("provision")
         .args(args)
         .env("RUST_LOG", "info")
@@ -25,7 +25,7 @@ fn run_provision(args: &[&std::ffi::OsStr]) -> (i32, String) {
         .env_remove("NOTIFY_SOCKET")
         .stdin(Stdio::null())
         .output()
-        .expect("spawn xlerobot_deploy");
+        .expect("spawn robot-deploy");
     let code = output
         .status
         .code()

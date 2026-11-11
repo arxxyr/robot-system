@@ -1,13 +1,13 @@
 # 按需开始
 
-先读项目 [CLAUDE.md](../CLAUDE.md)，再按任务选择下面的入口及相关章节。无需每次通读冻结设计、旧实施步骤或历史交接。
+先读项目 [AGENTS.md](../AGENTS.md)，再按任务选择下面的入口及相关章节。
 
 | 本次任务 | 入口 |
 |---|---|
-| 当前完成边界、阻塞和下一步 | [S0 HAL 状态](s0_hal_status.md) |
+| 当前完成边界、阻塞和 roadmap | [S0 HAL 状态](s0_hal_status.md) |
 | 实现或核对架构契约 | [冻结设计](00_design.md) 的相关章节；冲突以此为准 |
 | 模块、目标平台与规范 | [文档导航](README.md) |
-| 历史失败、验收来源或旧操作说明 | [历史索引](handoffs/README.md)，定位后只读相关段落或原件 |
+| 验证合同与停止保护 | [验证约定](10_verification.md)；原始验收证据从当前状态中的链接查找 |
 
 先确认工作区，再搜索具体符号或任务；保留已有修改。
 
@@ -35,12 +35,14 @@ htop 的 F2 → Display options 中启用 **Show merged command**（`show_merged
 
 <a id="rerun-观测工具当前开发入口"></a>
 
-## Rerun 旧操作说明
+## 只读观测
 
-完整操作说明保留在精简前提交，按需读取相关行：
+已有 `robot-viz` 订阅 S0 的观测镜像，可保存状态与 RGB：
 
 ```bash
-git show 36e663fe929cee29a8bef77a065c3baf62be34a8:docs/02_start_here.md | sed -n '192,260p'
+robot-viz --config <本次实际使用的配置.toml> \
+  --save <输出.rrd> --duration-ms 20000 --max-frames 10000 \
+  --report <报告.json>
 ```
 
-其中“Rerun 观测工具”小节是当时的用法与边界；使用前核对当前参数与发布者。观测画面不构成控制或物理安全确认，相机接入情况以 [S0 HAL 状态](s0_hal_status.md) 为准。
+它不启动 S0/S1、不访问串口、不发控制命令；必须已有匹配配置的发布者。核对 RRD 中实际收到的各路状态、像素及时间推进，topic 存在不等于收到数据。实机启动沿[部署入口](../scripts/systemd/README.md)，观测结果不代替现场动作与停止确认。

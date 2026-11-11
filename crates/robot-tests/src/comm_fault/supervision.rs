@@ -77,7 +77,7 @@ async fn run_case(args: &Args, mode: Mode) -> Result<Value, String> {
     command
         .args(["--notify-mode", "standalone"])
         .env("ROBOT_LOG_FORMAT", "json")
-        .env("RUST_LOG", "warn,s0_daemon=info");
+        .env("RUST_LOG", "warn,robot_s0=info");
     match mode {
         Mode::FileStep => {
             for path in [&case.latch, &case.directory.join("estop_latch.bak")] {

@@ -2,7 +2,7 @@
 //! S48 A3d / W1 接入目标稳定锁与绑定目录 fd）。
 //!
 //! 两个新 arm 身份（`xlerobot_left` / `xlerobot_right`）的 latch 路径是**全新
-//! 的**，而 `s0_daemon` 走 strict fail-closed（primary + backup 双缺失即拒
+//! 的**，而 `robot-s0` 走 strict fail-closed（primary + backup 双缺失即拒
 //! 启动）。首次部署必须 provision，但**不能**借换 `robot_id` 丢掉 `EStop` 记忆
 //! ——故双缺失时写入 **`1\n`（latched）**，由人显式走 `ClearEStop` control
 //! action 才解除。
@@ -26,7 +26,7 @@
 //! ## W1：稳定锁覆盖整个过程，检查与写入相对绑定目录 fd
 //!
 //! 入口先 [`crate::latch_lock::acquire_latch_lock`]（名称校验 → canonical 父目录
-//! → `<name>.lock`），锁在函数返回时随 RAII 释放，guard 因而在 `exec s0_daemon`
+//! → `<name>.lock`），锁在函数返回时随 RAII 释放，guard 因而在 `exec robot-s0`
 //! 之前已不持有它，daemon 再自行获取。持锁后通过
 //! [`LatchTargetLock::check_data_objects`] 判定"缺失"：不跟随符号链接、只接受
 //! `nlink == 1` 的普通文件，仅真实 `NotFound` 进入三分支，symlink / hardlink /
@@ -176,7 +176,7 @@ impl ProvisionIo for RealProvisionIo {
 /// # Errors
 ///
 /// 见 [`ProvisionError`]——任一种都必须 fail-closed（guard 不得 exec
-/// `s0_daemon`）。
+/// `robot-s0`）。
 pub fn provision_latch(latch_path: &Path) -> Result<ProvisionOutcome, ProvisionError> {
     provision_latch_with(latch_path, &mut RealProvisionIo)
 }

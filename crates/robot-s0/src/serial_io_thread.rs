@@ -88,7 +88,7 @@ pub struct SerialIoThreadMetrics {
     pub emergency_preempted_count: AtomicU64,
     /// **S48 A3b**：`RtSnapshotPublisher::publish` 返回错误（版本耗尽 / 写端损坏）
     /// 的次数。首次出错即结束本 worker：已完成的物理 tick 计数不回滚，失败后不再
-    /// 发布也不执行下一 tick；由 `s0_daemon` 的 `is_finished` / 进度停滞监督判错。
+    /// 发布也不执行下一 tick；由 `robot-s0` 的 `is_finished` / 进度停滞监督判错。
     pub snapshot_publish_errors: AtomicU64,
     /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
     /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）。

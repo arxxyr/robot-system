@@ -2,7 +2,7 @@
 //!
 //! ## 拓扑（D-P3：**不**起 s1）
 //!
-//! 每 case 起 **s0_daemon（真）+ FakeHeartbeatPublisher（按需，扮演 s1 心跳源）
+//! 每 case 起 **robot-s0（真）+ FakeHeartbeatPublisher（按需，扮演 s1 心跳源）
 //! + gateway（带 `--config`）**：
 //!
 //! - `SetEnabled` 走 gateway 第 6 条 rr_io_thread → s0 `set_enabled_rr_server`
@@ -122,20 +122,20 @@ impl SetEnabledEnv {
         )
         .expect("write config");
 
-        // rpc_roles.toml（复用 workspace configs/rpc_roles.toml：set_enabled =
+        // rpc-roles.toml（复用 workspace configs/rpc-roles.toml：set_enabled =
         // operator+，viewer 无）。
-        let roles_path = forensic_dir.join("rpc_roles.toml");
+        let roles_path = forensic_dir.join("rpc-roles.toml");
         let roles_text =
             std::fs::read_to_string(workspace_rpc_roles_path()).expect("read workspace rpc_roles");
         std::fs::write(&roles_path, roles_text).expect("write rpc_roles");
 
-        // ── 1) s0_daemon ──
-        let s0_bin = locate_test_bin("s0_daemon").expect("locate s0_daemon bin");
+        // ── 1) robot-s0 ──
+        let s0_bin = locate_test_bin("robot-s0").expect("locate robot-s0 bin");
         let mut s0 = SubprocessHandle::spawn(
             "s0",
             build_s0_command(&s0_bin, &robot_id, &config_path, &latch_path),
         )
-        .expect("spawn s0_daemon");
+        .expect("spawn robot-s0");
         if let Err(e) = s0.wait_for_marker(S0_READY_MARKER, MARKER_TIMEOUT).await {
             for line in s0.snapshot_head_tail(30).await {
                 eprintln!("[set_enabled_e2e s0] {line}");
@@ -151,7 +151,7 @@ impl SetEnabledEnv {
         };
 
         // ── 3) gateway ──
-        let gateway_bin = locate_test_bin("robot_rpc_gateway").expect("locate gateway bin");
+        let gateway_bin = locate_test_bin("robot-gateway").expect("locate gateway bin");
         let mut gateway = SubprocessHandle::spawn(
             "gateway",
             build_gateway_command(
@@ -316,7 +316,7 @@ fn workspace_rpc_roles_path() -> PathBuf {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root")
-        .join("configs/rpc_roles.toml");
+        .join("configs/rpc-roles.toml");
     assert!(path.exists(), "{} 不存在", path.display());
     path
 }
@@ -714,7 +714,7 @@ async fn cli_hardware_id_no_match_fail_fast() {
     let config_path = dir.join("robot.toml");
     std::fs::write(&config_path, build_config_toml(&robot_id, None, false)).expect("write config");
 
-    let s0_bin = locate_test_bin("s0_daemon").expect("locate s0_daemon bin");
+    let s0_bin = locate_test_bin("robot-s0").expect("locate robot-s0 bin");
     let mut cmd = tokio::process::Command::new(&s0_bin);
     cmd.arg("--robot-id")
         .arg(&robot_id)
@@ -730,7 +730,7 @@ async fn cli_hardware_id_no_match_fail_fast() {
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
 
-    let mut child = cmd.spawn().expect("spawn s0_daemon");
+    let mut child = cmd.spawn().expect("spawn robot-s0");
     let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
         .await
         .expect("s0 应在 5s 内 fail-fast 退出（而非常驻运行）")

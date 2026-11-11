@@ -123,7 +123,7 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
         (4, "authorize", 2, Some(b"0\n")),
         (5, "revoke", 0, Some(b"1\n")),
     ] {
-        let mut command = isolated_command(&args.bin_dir.join("s0_daemon"));
+        let mut command = isolated_command(&args.bin_dir.join("robot-s0"));
         command
             .args([
                 "rx-trust",
@@ -151,7 +151,7 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
         }
         operations.push(json!({"operation": operation, "exit_code": code}));
     }
-    let mut authorize = isolated_command(&args.bin_dir.join("s0_daemon"));
+    let mut authorize = isolated_command(&args.bin_dir.join("robot-s0"));
     authorize
         .args([
             "rx-trust",

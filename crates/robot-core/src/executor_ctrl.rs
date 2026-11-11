@@ -1,6 +1,6 @@
 //! Task-30 v9 / M1：`ExecutorCtrlClient` trait + 共享类型 + atomic 编码常量。
 //!
-//! 对应 `docs/designs/task-30_state_machine_adapter_link.md` §4 / §5。
+//! 状态机通过本模块提交执行策略和请求，由各执行线程完成并回执。
 //!
 //! ## 角色
 //!

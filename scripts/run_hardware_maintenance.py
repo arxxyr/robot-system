@@ -25,10 +25,12 @@ TOOL_BYTES = 1469904
 SERIALS = {"left": "5A7C121427", "right": "5A7C122340"}
 DEVICES = {side: f"/dev/serial/by-id/usb-1a86_USB_Single_Serial_{serial}-if00"
            for side, serial in SERIALS.items()}
-UNITS = [f"xlerobot-{role}-{side}{'-arm' if role == 's0' else ''}.service"
+UNITS = [f"robot-{role}-{side}{'-arm' if role == 's0' else ''}.service"
          for side in SERIALS for role in ("s0", "s1", "gateway")]
-OLD_UNITS = ["xlerobot-coordinator.service", "xlerobot-web.service",
-             "xlerobot-s0-bus1.service", "xlerobot-s0-bus2.service"]
+OLD_UNITS = [name.replace('robot-', 'xlerobot-', 1) for name in UNITS] + [
+    "xlerobot-coordinator.service", "xlerobot-web.service", "xlerobot-handoff.service",
+    "xlerobot-s0-bus1.service", "xlerobot-s0-bus2.service", "robot-s0-bus1.service", "robot-s0-bus2.service"]
+HANDOFF_UNIT = 'robot-s0-preflight.service'
 MAINTENANCE_NAMESPACE = Path('/home/loosqk/robot-checks')
 STOP_REGS = ('Torque_Enable','Present_Velocity','Goal_Velocity')
 MIXED_CHILD_BUDGET_NS = 28_000_000_000
@@ -65,8 +67,8 @@ BUS_CONFIG = None
 LEFT_BUS_CONFIG = None
 WHEEL_ROLES = ('front','left','right')
 WHEEL_LABELS = {'front':'前','left':'左','right':'右'}
-DEFAULT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot_bus2_full.toml'
-DEFAULT_LEFT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot_bus1_full.toml'
+DEFAULT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot-bus2.toml'
+DEFAULT_LEFT_BUS_CONFIG = Path(__file__).resolve().parents[1]/'configs/xlerobot-bus1.toml'
 RIGHT_PULSE_SCOPE_TEMPLATE = '仅{target}复用已装SDK同一连接：初始TE/GV0，PV0快速通过或±50经一次14读位置稳定性复核→SYNC零速确认→Enable确认→+500原始值持续发送20秒→一次SYNC零速及独立Disable→最多1秒减速观察，PV0通过或首次±50经一次独立14读稳定性复核→整机停止检查（三轮各按同一获准稳定性判据）；SDK稳定性窗口各为1秒五组、1.5秒预算且PP跨度≤1，断扭后窗口可独立追加最多1.5秒，不续期原减速预算或GO；三轮稳定架空并持续观察'
 RIGHT_PULSE_RAW = {'path':'/home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/quality/frozen/feetech_poke',
                    'sha256':'b2bfedb1bc420c9957a276cd69f36f5fd47c66d0b7aaa519cf3375e257eabd94','bytes':1507224}
@@ -3434,16 +3436,14 @@ def run_right_wheel_pulse(engine):
 
 
 def inspect_unit(io,unit,*,cleanup=False):
-    text = io.command(["systemctl", "show", unit, "--property=Id,LoadState,ActiveState,SubState,MainPID"],cleanup=cleanup)
+    text = io.command(["systemctl", "show", unit, "--property=Id,LoadState,ActiveState,SubState,MainPID,Job"],cleanup=cleanup)
     fields = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
     require(fields.get('Id') == unit, '服务Id不完整')
-    if unit == 'xlerobot-handoff.service':
-        require(fields.get('LoadState')=='loaded' and fields.get('ActiveState')=='active'
-                and fields.get('SubState')=='exited' and fields.get('MainPID')=='0', 'handoff既有状态漂移')
-    else:
-        require(fields.get('LoadState') in (('loaded',) if unit in UNITS else ('loaded','not-found'))
-                and fields.get('ActiveState')=='inactive' and fields.get('MainPID')=='0'
-                and fields.get('SubState')=='dead', f'服务未停稳：{unit}')
+    state = (fields.get('ActiveState'), fields.get('SubState'))
+    require(fields.get('LoadState') in ('loaded', 'not-found') and fields.get('MainPID')=='0'
+            and fields.get('Job') in ('', '0', '0 /')
+            and (state == ('inactive', 'dead') or unit in (HANDOFF_UNIT, 'xlerobot-handoff.service')
+                 and state == ('active', 'exited')), f'业务服务未停稳或预检未完成：{unit}')
     return fields
 
 
@@ -3477,7 +3477,7 @@ def inspect_holder(io,device,elevated,*,cleanup=False):
 
 def idle(io, bindings, proc_helper, *, cleanup=False):
     # 前置保持fail-fast；后验直接调用下面独立函数，逐项留证。
-    for unit in UNITS + OLD_UNITS + ['xlerobot-handoff.service']:
+    for unit in UNITS + OLD_UNITS + [HANDOFF_UNIT]:
         inspect_unit(io,unit,cleanup=cleanup)
     inspect_processes(io,bindings,proc_helper,cleanup=cleanup)
     for device in DEVICES.values():
@@ -3722,7 +3722,7 @@ def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=
                       for camera in contract['cameras'] for elevated in (False,True)]
             tasks.append(('camera_report',lambda:verify_s0_camera_report(report)))
     tasks += [(f'service:{unit}',lambda unit=unit:inspect_unit(io,unit,cleanup=True))
-              for unit in UNITS+OLD_UNITS+['xlerobot-handoff.service']]
+              for unit in UNITS+OLD_UNITS+[HANDOFF_UNIT]]
     tasks.append(('process_snapshot',lambda:inspect_processes(io,bindings,proc_helper,cleanup=True)))
     tasks += [(f"holder:{side}:{'sudo' if elevated else 'ordinary'}",
                lambda side=side,elevated=elevated:inspect_holder(io,DEVICES[side],elevated,cleanup=True))

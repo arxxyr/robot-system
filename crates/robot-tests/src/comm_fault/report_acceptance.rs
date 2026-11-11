@@ -33,9 +33,9 @@ impl Drop for Directory {
 
 fn manifest(name: &str, hash: &str) -> Value {
     let features = match name {
-        "s0_daemon" => vec!["mock", "test-comm-fault-hook"],
+        "robot-s0" => vec!["mock", "test-comm-fault-hook"],
         "comm_fault_e2e" => vec!["comm-fault-e2e"],
-        "robot_rpc_gateway" => vec!["default"],
+        "robot-gateway" => vec!["default"],
         _ => panic!("独立夹具不认识的角色"),
     };
     json!({"sha256": hash, "features": features, "profile": "release",
@@ -45,10 +45,10 @@ fn manifest(name: &str, hash: &str) -> Value {
 
 fn reject_field(field: &str, values: &[Value]) {
     for value in values {
-        let mut record = manifest("s0_daemon", HASH);
+        let mut record = manifest("robot-s0", HASH);
         record[field] = value.clone();
         assert!(
-            verify_build_manifest("s0_daemon", &record, HASH).is_err(),
+            verify_build_manifest("robot-s0", &record, HASH).is_err(),
             "非法清单不能通过：{field}={value}"
         );
     }
@@ -56,7 +56,7 @@ fn reject_field(field: &str, values: &[Value]) {
 
 #[test]
 fn all_roles_accept_explicit_successful_manifests_and_preserve_extra_metadata() {
-    for name in ["s0_daemon", "comm_fault_e2e", "robot_rpc_gateway"] {
+    for name in ["robot-s0", "comm_fault_e2e", "robot-gateway"] {
         for profile in ["dev", "release", "test"] {
             let mut record = manifest(name, HASH);
             record["profile"] = json!(profile);
@@ -65,23 +65,23 @@ fn all_roles_accept_explicit_successful_manifests_and_preserve_extra_metadata() 
         }
     }
     // gateway 的普通构建有效；不能凭角色擅自要求它携带注入 hook。
-    let gateway = manifest("robot_rpc_gateway", HASH);
+    let gateway = manifest("robot-gateway", HASH);
     assert_eq!(gateway["features"], json!(["default"]));
-    verify_build_manifest("robot_rpc_gateway", &gateway, HASH).unwrap();
+    verify_build_manifest("robot-gateway", &gateway, HASH).unwrap();
 }
 
 #[test]
 fn missing_required_fields_and_nonobject_records_are_rejected() {
     for field in ["sha256", "features", "profile", "command", "exit_code"] {
-        let mut record = manifest("s0_daemon", HASH);
+        let mut record = manifest("robot-s0", HASH);
         assert!(record.as_object_mut().unwrap().remove(field).is_some());
         assert!(
-            verify_build_manifest("s0_daemon", &record, HASH).is_err(),
+            verify_build_manifest("robot-s0", &record, HASH).is_err(),
             "不能省略必填字段 {field}"
         );
     }
     for record in [Value::Null, json!([]), json!("UNKNOWN"), json!(true)] {
-        assert!(verify_build_manifest("s0_daemon", &record, HASH).is_err());
+        assert!(verify_build_manifest("robot-s0", &record, HASH).is_err());
     }
 }
 
@@ -108,7 +108,7 @@ fn unknown_empty_mixed_and_duplicate_features_cannot_establish_build_identity() 
         ],
     );
     for (name, features) in [
-        ("s0_daemon", json!(["comm-fault-e2e"])),
+        ("robot-s0", json!(["comm-fault-e2e"])),
         ("comm_fault_e2e", json!(["test-comm-fault-hook"])),
     ] {
         let mut record = manifest(name, HASH);
@@ -177,15 +177,15 @@ fn malformed_hash_or_another_binary_hash_cannot_match_a_manifest() {
     );
     for malformed in ["x".repeat(64), "0".repeat(63), "0".repeat(65)] {
         // 即使清单与输入字符串相等，也不能接受无效 hash 形状。
-        let record = manifest("s0_daemon", &malformed);
-        assert!(verify_build_manifest("s0_daemon", &record, &malformed).is_err());
+        let record = manifest("robot-s0", &malformed);
+        assert!(verify_build_manifest("robot-s0", &record, &malformed).is_err());
     }
 }
 
 #[test]
 fn actual_manifest_reads_reject_absence_invalid_json_and_changed_artifacts() {
     let directory = Directory::new();
-    let name = "s0_daemon";
+    let name = "robot-s0";
     let path = directory.0.join(format!("{name}.build.json"));
     assert!(read_build_manifest(&directory.0, name, HASH).is_err());
     std::fs::write(&path, b"{\"sha256\":").unwrap();
@@ -207,7 +207,7 @@ fn actual_manifest_reads_reject_absence_invalid_json_and_changed_artifacts() {
 fn report_args(directory: &Directory) -> Args {
     let bin_dir = directory.0.join("bin");
     std::fs::create_dir(&bin_dir).unwrap();
-    for name in ["s0_daemon", "robot_rpc_gateway", "comm_fault_e2e"] {
+    for name in ["robot-s0", "robot-gateway", "comm_fault_e2e"] {
         let path = bin_dir.join(name);
         match name {
             "comm_fault_e2e" => {
@@ -240,7 +240,7 @@ fn report_new_requires_every_manifest_before_any_case_can_pass() {
     let report = Report::new(&args).unwrap();
     assert_eq!(report.artifacts.len(), 3);
     assert!(!args.evidence_dir.join("report.json").exists());
-    std::fs::remove_file(args.bin_dir.join("robot_rpc_gateway.build.json")).unwrap();
+    std::fs::remove_file(args.bin_dir.join("robot-gateway.build.json")).unwrap();
     assert!(Report::new(&args).is_err());
     assert!(
         !args.evidence_dir.join("report.json").exists(),

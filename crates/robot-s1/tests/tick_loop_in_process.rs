@@ -23,7 +23,7 @@
 //! 推时间但**不**让出 CPU，跟"逐帧抓"语义不匹配）。
 //!
 //! `run_tick_loop` 自身的 happy path 走 lib 单测覆盖（`tick_once_*`）+
-//! binary smoke（B1 (3/3) `crash_restart_smoke` 切 `s1_daemon`）。
+//! binary smoke（B1 (3/3) `crash_restart_smoke` 切 `robot-s1`）。
 
 // 中文 doc 块大量 identifier-like 字串（tick_once / run_tick_loop /
 // MockClock / MockChannel 等），跟 lib 同款宽松 doc-markdown。

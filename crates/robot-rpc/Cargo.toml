@@ -1,6 +1,6 @@
 [package]
 name         = "robot-rpc"
-description  = "v0.3 A1 ClearEStop control-plane slice gateway。A1-3 (2/3) 起包含 robot_rpc_gateway binary（loopback-only tonic gRPC server + iceoryx2 RR client → s0_daemon）。"
+description  = "v0.3 A1 ClearEStop control-plane slice gateway。A1-3 (2/3) 起包含 robot-gateway binary（loopback-only tonic gRPC server + iceoryx2 RR client → robot-s0）。"
 version    .workspace = true
 edition    .workspace = true
 license    .workspace = true
@@ -13,10 +13,9 @@ publish    .workspace = true
 # - lib：`proto` 模块（tonic codegen）+ `auth` / `idempotency` / `clear_estop`
 #   纯函数 + `gateway` 模块（A1-3 (2/3-a) 起加；ClearEStopHandler + RR I/O
 #   thread + Gateway 服务端类型）。
-# - bin：`robot_rpc_gateway` 独立进程（A1-3 (2/3-a) 起加）；loopback-only
+# - bin：`robot-gateway` 独立进程（A1-3 (2/3-a) 起加）；loopback-only
 #   bind；不暴露外网；fake token + plain TCP（v0.3）；TLS / mTLS 留 v0.4+。
-# - **不**接 S0 mutation；S0 状态变更全走 ClearEStop control action
-#   （A1 全链路 land；详 docs/handoffs/v0.3_a1_4_clear_estop_smoke.md §5）。
+# - S0 状态变更走 control action，不直接修改 daemon 状态或保护文件。
 # - `--allow-empty-latch` / `MissingLatchPolicy::AllowEmpty` **已由 A1-5
 #   撤销**（commit `45df648`）；strict fail-closed 是 latch 缺失唯一
 #   行为，§6.7 #3 真宣称升级登记走 docs/CHANGELOG.md 2026-04-28
@@ -25,7 +24,7 @@ publish    .workspace = true
 #   "v0.3 A1-1 (3/3) robot-rpc / tonic / prost / uuid / blake3 依赖白名单
 #   登记"。tonic transport feature + tokio + crossbeam-channel + iceoryx2
 #   + robot-transport + robot-logging + flatbuffers 见 2026-04-28
-#   "A1-3 (2/3) robot_rpc_gateway binary 依赖" 偏离登记。
+#   "A1-3 (2/3) robot-gateway binary 依赖" 偏离登记。
 
 [dependencies]
 robot-core = { workspace = true }
@@ -42,7 +41,7 @@ prost = { workspace = true }
 tracing = { workspace = true }
 # UUIDv7 验证 CommandMeta.request_id 格式。
 uuid = { workspace = true }
-# configs/rpc_roles.toml 加载。
+# configs/rpc-roles.toml 加载。
 serde = { workspace = true }
 toml  = { workspace = true }
 # Error 派生。
@@ -56,7 +55,7 @@ tokio = { workspace = true }
 # 用 crossbeam-channel；handler 等 RR response 用 tokio::sync::oneshot
 # （在 tokio 自带 sync feature 中）。
 crossbeam-channel = { workspace = true }
-# iceoryx2：跨进程 RR client 端，跟 s0_daemon 端 rr_server_thread 共服务。
+# iceoryx2：跨进程 RR client 端，跟 robot-s0 端 rr_server_thread 共服务。
 iceoryx2 = { workspace = true }
 # robot-transport：rr_client 单端工厂（A1-1 part 2 spike）。
 robot-transport = { workspace = true }
@@ -79,7 +78,7 @@ serde_json = { workspace = true }
 # 段(4) client::layout 单测临时 config 文件。
 tempfile = { workspace = true }
 # B4 (3/3) cross-process integration test (`tests/task_rpc_e2e.rs`) 需 spawn
-# s1_daemon + robot_rpc_gateway 双子进程 + drain stderr / stdout + forensic
+# robot-s1 + robot-gateway 双子进程 + drain stderr / stdout + forensic
 # dump 到 `/tmp/b4_e2e/<robot_id>/`：
 # - tokio `process` feature：tokio::process::Command spawn + Child + kill_on_drop
 # - tokio `fs` feature：forensic dump 到磁盘
@@ -91,14 +90,14 @@ tokio = { workspace = true, features = ["process", "fs", "io-util"] }
 # shutdown）。沿 A1 e2e clear_estop_e2e.rs 同款。
 libc = { workspace = true }
 # robot-core: FakeStatePublisher 用 SystemClock::now() 拿 monotonic ns 填
-# JointState.stamp_ns，跟 s1_daemon `read_anchor_from_s0_state` 比较的
+# JointState.stamp_ns，跟 robot-s1 `read_anchor_from_s0_state` 比较的
 # clock domain 一致（CLOCK_MONOTONIC_RAW）；否则 stamp_ns=0 会立即被
 # `max_stale_ms=200ms` 判 stale，s1 anchor exit 4。
 robot-core = { workspace = true }
 
 [features]
 # **A1-3 (3/3-a)** 拍板：默认**不**生成 tonic gRPC client stub（生产
-# `robot_rpc_gateway` binary 是 server，dimos / Web UI 是 client，client
+# `robot-gateway` binary 是 server，dimos / Web UI 是 client，client
 # 不在 robot-system workspace 内）。开启 `client` feature 让 build.rs 跑
 # `tonic_build::configure().build_client(true)`，让 robot-tests 端的两进程
 # 端到端 smoke (`crates/robot-tests/src/bin/clear_estop_e2e.rs`) 能直接调
@@ -114,9 +113,8 @@ robot-core = { workspace = true }
 # 无条件依赖 `robot-rpc = { features = ["client"] }`，故 `cargo test
 # --workspace` 解析时 robot-rpc 必带 `client` → required-features 被满足
 # → task_rpc_e2e **默认随 workspace 跑**（不再"默认跳过"）。这是测试覆盖
-# 增加、非生产路径放宽：`robot_rpc_gateway` 等生产二进制单独构建仍不带
-# `client`（不依赖 robot-cli），0 client-only runtime 影响。详
-# team-swe/specs/v0_5_operator_cli.md §P.4 diff #A4。
+# 增加、非生产路径放宽：`robot-gateway` 等生产二进制单独构建仍不带
+# `client`（不依赖 robot-cli），无 client-only runtime 影响。
 client = []
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
@@ -138,7 +136,7 @@ test-rr-fixtures = ["robot-transport/test-rr-fixtures"]
 # `robot-rpc/client`，故 `cargo test --workspace` 默认会跑。
 #
 # **运行前置**（P.0 活清单）：`cargo build --release --workspace` +
-# `cargo build --release -p robot-s1 --bin s1_daemon --features
+# `cargo build --release -p robot-s1 --bin robot-s1 --features
 # test-fault-backend`（AC-E14 执行期 failure / AC-E18 failure 分支需要
 # test-only fault backend；漏编时仅这两个 case bring-up 失败）。
 name = "dimos_workflow_e2e"
@@ -163,7 +161,7 @@ path = "tests/state_rpc_e2e.rs"
 required-features = ["client"]
 
 [[test]]
-# v0.5 候选 C (5/5) SetEnabled cross-process e2e：s0_daemon（真）+ fake
+# v0.5 候选 C (5/5) SetEnabled cross-process e2e：robot-s0（真）+ fake
 # heartbeat（扮演 s1 心跳源，D-P3）+ gateway。required-features = ["client"]
 # 守门 → workspace feature unification 下默认随 `cargo test --workspace` 跑。
 name = "set_enabled_e2e"
@@ -171,7 +169,7 @@ path = "tests/set_enabled_e2e.rs"
 required-features = ["client"]
 
 [[test]]
-# v0.5 候选 D (2/3) EStop 触发 RPC cross-process e2e：s0_daemon（真）+
+# v0.5 候选 D (2/3) EStop 触发 RPC cross-process e2e：robot-s0（真）+
 # gateway + harness estop-topic 订阅计数线程（PD1）+ fake heartbeat（按需）。
 # required-features = ["client"] 守门 → 默认随 `cargo test --workspace` 跑。
 name = "estop_e2e"

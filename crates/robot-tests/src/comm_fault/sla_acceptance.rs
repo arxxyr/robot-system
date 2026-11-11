@@ -706,7 +706,7 @@ fn px56_snapshot(serial_cpu: usize) -> ProcessRtSnapshot {
         tids_before: vec![700, 701, 702],
         tids_after: vec![700, 701, 702],
         threads: vec![
-            ordinary_thread(700, "s0_daemon"),
+            ordinary_thread(700, "robot-s0"),
             ordinary_thread(701, "s0_ipc_thread"),
             ThreadRtSnapshot {
                 policy: Some(libc::SCHED_FIFO),

@@ -1,5 +1,5 @@
 //! **部署件**：真机交接 fail-closed 启动链（v0.5 候选 E 段(9)，Spec D13 +
-//! P.2.9；PD-E2(a) 宿主 = robot-s0 lib + `xlerobot_deploy` bin）。
+//! P.2.9；PD-E2(a) 宿主 = robot-s0 lib + `robot-deploy` bin）。
 //!
 //! ## 为什么需要它
 //!
@@ -23,7 +23,7 @@
 //! ## feature 边界（段(9) 形态补充，登记 Spec P.4）
 //!
 //! Spec P.2.9 写"`xlerobot-real` feature 域内"。实施时**只把真串口实现与
-//! bin 放进该 feature**（`preflight::feetech` / `[[bin]] xlerobot_deploy`），
+//! bin 放进该 feature**（`preflight::feetech` / `[[bin]] robot-deploy`），
 //! 纯逻辑（types / identity / counter / provision / preflight trait 与聚合
 //! 算法 / guard）
 //! **不加 feature 门**——否则 AC-E16 / E21 / E22 的 unit 判据在默认 gate

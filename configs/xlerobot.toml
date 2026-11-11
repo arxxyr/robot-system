@@ -1,11 +1,11 @@
-# XLeRobot 模拟配置；真实总线接线见 xlerobot_bus1_full.toml / xlerobot_bus2_full.toml。
+# XLeRobot 模拟配置；真实总线接线见 xlerobot-bus1.toml / xlerobot-bus2.toml。
 #
 # `docs/00_design.md` §7.2 / §7.3 schema：
 #   [robot]            必填，给 ConfigIdentity 用
 #   [[hardware]]       本示例仅使用 mock
 #   [[sensor]]         可选，显式声明归属硬件实例的 opencv_v4l2 BGR8 相机
 #
-# 供 s0_daemon `--config configs/xlerobot.toml` 替代纯 CLI 模式。
+# 供 robot-s0 `--config configs/xlerobot.toml` 替代纯 CLI 模式。
 
 [robot]
 id             = "xlerobot"
@@ -52,5 +52,5 @@ motor_ids    = [7, 8, 9]
 wheel_radius = 0.05
 base_radius  = 0.125
 
-# 本模拟配置不声明相机设备。已核实的头部 RGB 配置见 xlerobot_bus1_full.toml；
+# 本模拟配置不声明相机设备。已核实的头部 RGB 配置见 xlerobot-bus1.toml；
 # 腕部设备须核对稳定路径和实际格式后再填写，不使用未实现的深度或 IMU 字段。

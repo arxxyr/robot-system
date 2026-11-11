@@ -66,7 +66,7 @@ fn u32_len(len: usize) -> u32 {
 mod tests {
     use super::compute_layout_id;
 
-    /// D2 权威左臂身份（`configs/xlerobot_left_arm.toml` 同源字面）。
+    /// D2 权威左臂身份（`configs/xlerobot-left-arm.toml` 同源字面）。
     const LEFT_ARM_JOINTS: &[(&str, u32)] = &[
         ("left_arm_shoulder_pan", 1),
         ("left_arm_shoulder_lift", 2),

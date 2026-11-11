@@ -7,7 +7,7 @@
 //! 1. 已递增的计数**留在盘上**（不回滚、不被"清理"）；
 //! 2. `flock` 由内核在进程死亡时释放，**下一次启动不会误判并发**；
 //! 3. 连续 5 次"递增后、完成前崩溃" → 第 6 次启动**直接退 86** 进停止态；
-//! 4. 全程 **`s0_daemon` 从未被 exec**。
+//! 4. 全程 **`robot-s0` 从未被 exec**。
 //!
 //! ## 子进程怎么来的
 //!
@@ -33,7 +33,7 @@ use robot_s0::deploy::types::DeployArm;
 const CHILD_DIR_ENV: &str = "ROBOT_S0_GUARD_KILL_DIR";
 /// 子进程在 preflight 里落下的 marker（父进程据此精确择时 `SIGKILL`）。
 const PREFLIGHT_MARKER: &str = "preflight_started";
-/// 一旦出现即证明 `exec s0_daemon` 被执行过——本套 case 全程不得出现。
+/// 一旦出现即证明 `exec robot-s0` 被执行过——本套 case 全程不得出现。
 const EXEC_MARKER: &str = "exec_called";
 /// 单次等待上限（marker 出现 / 子进程退出）。
 const WAIT_LIMIT: Duration = Duration::from_secs(20);
@@ -43,8 +43,8 @@ const ROBOT_ID: &str = "xlerobot_left";
 fn guard_config(dir: &Path) -> GuardConfig {
     GuardConfig {
         arm: DeployArm::Left,
-        config_path: dir.join("xlerobot_left_arm.toml"),
-        s0_bin: dir.join("s0_daemon"),
+        config_path: dir.join("xlerobot-left-arm.toml"),
+        s0_bin: dir.join("robot-s0"),
         runtime_dir: dir.join("run"),
         robot_id: ROBOT_ID.to_string(),
         s0_args: vec![
@@ -130,14 +130,14 @@ fn spawn_child(dir: &Path) -> std::process::Child {
 }
 
 /// 连续 5 次"递增后、完成前 `SIGKILL`" → 计数逐次保留、锁每次释放、第 6 次
-/// 直接停止态，且 `s0_daemon` 全程从未被 exec。
+/// 直接停止态，且 `robot-s0` 全程从未被 exec。
 #[test]
 fn sigkill_during_preflight_preserves_count_and_never_execs() {
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let dir = tmp.path();
     std::fs::create_dir(dir.join("run")).unwrap();
     // s0_bin 必须存在（validate_invocation 前置校验）。
-    std::fs::write(dir.join("s0_daemon"), b"#!/bin/true\n").unwrap();
+    std::fs::write(dir.join("robot-s0"), b"#!/bin/true\n").unwrap();
 
     let cfg = guard_config(dir);
     let count_file = count_path(&cfg.runtime_dir, ROBOT_ID);
@@ -171,7 +171,7 @@ fn sigkill_during_preflight_preserves_count_and_never_execs() {
             .close();
         assert!(
             !exec_marker.exists(),
-            "第 {attempt} 次：s0_daemon 绝不允许被 exec"
+            "第 {attempt} 次：robot-s0 绝不允许被 exec"
         );
     }
 
@@ -183,7 +183,7 @@ fn sigkill_during_preflight_preserves_count_and_never_execs() {
         "第 6 次必须进停止态退 86"
     );
     assert!(!marker.exists(), "停止态下不得执行 preflight");
-    assert!(!exec_marker.exists(), "停止态下不得 exec s0_daemon");
+    assert!(!exec_marker.exists(), "停止态下不得 exec robot-s0");
     assert_eq!(
         read_count(&count_file).expect("read count"),
         MAX_CONSECUTIVE_FAILURES,

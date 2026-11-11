@@ -307,8 +307,8 @@ impl Managed {
                 std::fs::write(path, b"1\n").map_err(|e| e.to_string())?;
             }
         }
-        let daemon = std::fs::canonicalize(self.case.bin_dir.join("s0_daemon"))
-            .map_err(|e| e.to_string())?;
+        let daemon =
+            std::fs::canonicalize(self.case.bin_dir.join("robot-s0")).map_err(|e| e.to_string())?;
         let tool = std::fs::canonicalize(self.case.bin_dir.join("comm_fault_e2e"))
             .map_err(|e| e.to_string())?;
         if std::env::current_exe().map_err(|e| e.to_string())? != tool {

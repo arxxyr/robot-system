@@ -24,7 +24,7 @@ use tonic::transport::{Channel, Endpoint};
 
 use crate::common::subprocess::{MarkerError, SubprocessHandle};
 
-const S1_READY_MARKER: &str = "s1_daemon rr_server_threads ready";
+const S1_READY_MARKER: &str = "robot-s1 rr_server_threads ready";
 /// **count-independent 前缀**（v0.5 候选 C 修）：gateway 该行带 rr_io_thread
 /// 计数（B4 时 5 → 候选 C 6），全串硬编码会在每次 method append 后 timeout
 /// 假死（marker 永不匹配）。readiness 只需"全部 rr_io_thread 已 spawn"信号
@@ -57,7 +57,7 @@ pub enum ReadyError {
 
 /// 等三段式 ready 完成。
 ///
-/// 1. wait s1 marker `"s1_daemon rr_server_threads ready"` (5s timeout)
+/// 1. wait s1 marker `"robot-s1 rr_server_threads ready"` (5s timeout)
 /// 2. wait gateway marker `"rr_io_threads started"`（count-independent 前缀，
 ///    5s timeout）
 /// 3. TCP probe gateway listen_addr (500ms total / 50ms retry)

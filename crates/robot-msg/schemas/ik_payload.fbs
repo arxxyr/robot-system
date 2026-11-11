@@ -1,8 +1,6 @@
 // ik_payload.fbs — v0.4 候选 2 round 2 IK backend payload wire format.
 //
-// 对应 team-swe/specs/v0_4_robot_kinematics_round2.md Q-IK4 (a) 最小
-// 集 + Q-IK6 (a) yaw != 0 拒绝路径 + Q-IK7 (a) frame 字段纳入（占位
-// 字符串，round 2 不做实际 frame 变换）。
+// 笛卡尔 pose 输入；yaw != 0 拒绝，frame 当前只作字符串标识，不做坐标变换。
 //
 // ### 字段语义
 //

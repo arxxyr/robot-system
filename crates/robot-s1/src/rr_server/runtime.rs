@@ -27,7 +27,7 @@
 //!   须不阻塞 IO（B4 (2/3-a) handler 调 [`crate::coordinator::Coordinator`]
 //!   in-process API + spawn 普通线程，无网络 / 文件 / 长锁）。
 //! - 退出靠 `Arc<AtomicBool>` stop signal（沿 A1 同款）。
-//! - `s1_daemon` 主循环退出时**逐个** [`RrServerThreadHandle::request_stop`]
+//! - `robot-s1` 主循环退出时**逐个** [`RrServerThreadHandle::request_stop`]
 //!   + [`RrServerThreadHandle::join`]；所有 RR server 线程都 join 完才返
 //!     main —— **不**悬挂线程到 process exit。详 [`S1RrServerHandles`]。
 //!

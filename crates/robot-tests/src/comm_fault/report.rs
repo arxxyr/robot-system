@@ -58,9 +58,9 @@ fn verify_build_manifest(name: &str, manifest: &Value, hash: &str) -> Result<(),
         }
     }
     let required = match name {
-        "s0_daemon" => Some("test-comm-fault-hook"),
+        "robot-s0" => Some("test-comm-fault-hook"),
         "comm_fault_e2e" => Some("comm-fault-e2e"),
-        "robot_rpc_gateway" => None,
+        "robot-gateway" => None,
         _ => return Err(format!("未知验收产物角色：{name}")),
     };
     if let Some(required) = required
@@ -125,7 +125,7 @@ impl Report {
             "hardware_id": args.hardware_id, "current_exe": current_exe, "current_exe_sha256": current_hash});
         std::fs::create_dir_all(directory).map_err(|error| format!("创建证据目录失败：{error}"))?;
         let mut artifacts = Vec::new();
-        for name in ["s0_daemon", "robot_rpc_gateway", "comm_fault_e2e"] {
+        for name in ["robot-s0", "robot-gateway", "comm_fault_e2e"] {
             let path = bin_dir.join(name);
             let hash = file_hash(&path)?;
             let build = read_build_manifest(bin_dir, name, &hash)?;

@@ -303,7 +303,7 @@ pub struct PendingSetEnabled {
 pub struct IpcThreadConfig {
     /// 主循环轮询间隔（纳秒）。默认 500 µs（2 kHz）。
     pub poll_interval_ns: u64,
-    /// 启动期 Guards 快照。大部分字段由 caller（`s0_daemon`）在 `adapter.connect()`
+    /// 启动期 Guards 快照。大部分字段由 caller（`robot-s0`）在 `adapter.connect()`
     /// 成功后填入 all-true；`estop_latched` 从 latch 文件读。
     pub initial_guards: Guards,
     /// 初始 state。生产 `S0State::Safe`；测试可注入任意初值。
@@ -369,7 +369,7 @@ pub struct IpcThreadMetrics {
     /// state 变化次数（`new_state != prev_state`）。
     pub state_changes: AtomicU64,
     /// **S48 A3b**：`state_pub.publish` 返回错误（版本耗尽 / 写端损坏）的次数。
-    /// 首次出错即结束本 worker，由 `s0_daemon` READY 循环的 `is_finished` 判错。
+    /// 首次出错即结束本 worker，由 `robot-s0` READY 循环的 `is_finished` 判错。
     pub snapshot_publish_errors: AtomicU64,
     /// **S48 A3b（test-only）**：真实 `publish` 调用之前取的 `RobotClock` 时刻，
     /// 仅该次返回 `VersionExhausted` 时原子记录（0 = 未发生）。
@@ -1246,7 +1246,7 @@ mod tests {
 
     fn mixed_hardware() -> crate::config_loader::HardwareSection {
         let mut config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         config.hardware.remove(0)
     }
 

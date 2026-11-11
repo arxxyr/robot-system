@@ -2,8 +2,7 @@
 #
 # scripts/baseline.sh —— iceoryx2_rt_baseline 一键封装。
 #
-# 设计动机见 `docs/handoffs/2026-04-24_5.md` §5.4，与本次 CHANGELOG
-# "2026-04-24 · Step 6.5 RT 调优搁置 + XLeRobot 不卡硬门槛" 同期落地。
+# 指标适用范围与 F7 旧判据限制见 `docs/10_verification.md` §10.1。
 #
 # XLeRobot 不卡 `docs/00_design.md` §10.1 的 100 µs / 500 µs 硬门槛
 # （Orin Nano 算力 + 非 PREEMPT_RT 内核做不到也不需要）。本脚本两种模式都

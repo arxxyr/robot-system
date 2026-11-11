@@ -8,8 +8,8 @@ Rust 实现的通用机器人控制架构。当前里程碑是 S0 全身硬件�
 
 | 查什么 | 入口 |
 |---|---|
-| 当前完成边界和下一步 | [S0 HAL 状态](docs/s0_hal_status.md) |
-| 开发规则与最小验证 | [CLAUDE.md](CLAUDE.md)、[按需开始](docs/02_start_here.md) |
+| 当前完成边界和 roadmap | [S0 HAL 状态](docs/s0_hal_status.md) |
+| 开发规则与最小验证 | [AGENTS.md](AGENTS.md)、[按需开始](docs/02_start_here.md) |
 | 当前配置与测试夹具 | [配置导航](configs/README.md) |
 | 服务模板与部署边界 | [systemd 导航](scripts/systemd/README.md) |
 | 架构与其他文档 | [文档导航](docs/README.md) |

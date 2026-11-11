@@ -95,7 +95,7 @@ use robot_health::systemd::{
 // GatewayConfig
 // ============================================================================
 
-/// `robot_rpc_gateway` 运行期配置。bin 端 CLI parse 后构造。
+/// `robot-gateway` 运行期配置。bin 端 CLI parse 后构造。
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
     /// gRPC server bind 地址。**必须**是 loopback（`127.0.0.0/8` IPv4 或
@@ -295,7 +295,7 @@ pub struct GatewayHandlerState {
     /// `commit` 都是短临界区（不在 `await` 期间持锁）。
     pub(crate) ledger: crate::gateway_ledger::SharedLedger,
     /// `RobotClock`：算 wire `deadline_ns` + `stamp_ns`。生产用
-    /// `SystemClock`，测试可用 `MockClock`。CLAUDE.md 禁
+    /// `SystemClock`，测试可用 `MockClock`。AGENTS.md 禁
     /// `SystemTime::now()` / `Instant::now()`，时间读取经 trait。
     pub clock: Arc<dyn RobotClock>,
     /// 等 RR response 超过 `request.timeout_ms` 后再多等的 grace（ms）。
@@ -1226,7 +1226,7 @@ pub async fn run_gateway_with_ready(
         idempotency_ttl_secs = cfg.idempotency_ttl_secs,
         idempotency_max_entries = cfg.idempotency_max_entries,
         rr_timeout_grace_ms = cfg.rr_timeout_grace_ms,
-        "robot_rpc_gateway: starting tonic gRPC server (A1-3 (2/3-c) ClearEStop handler with full 12-step logic + shutdown gate + rr_io_thread integration)"
+        "robot-gateway: starting tonic gRPC server (A1-3 (2/3-c) ClearEStop handler with full 12-step logic + shutdown gate + rr_io_thread integration)"
     );
 
     // 2) TcpListener bind 主动控制（不依赖 tonic 内部 bind 时机）
@@ -1281,7 +1281,7 @@ pub async fn run_gateway_with_ready(
                 break;
             }
         }
-        tracing::info!("robot_rpc_gateway: shutdown signal received; tonic graceful stop");
+        tracing::info!("robot-gateway: shutdown signal received; tonic graceful stop");
     };
 
     tonic::transport::Server::builder()
@@ -1291,7 +1291,7 @@ pub async fn run_gateway_with_ready(
 
     tracing::info!(
         actual_addr = %actual_addr,
-        "robot_rpc_gateway: tonic server stopped cleanly"
+        "robot-gateway: tonic server stopped cleanly"
     );
     Ok(())
 }

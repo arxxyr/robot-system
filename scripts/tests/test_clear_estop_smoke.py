@@ -12,7 +12,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "run_clear_estop_smoke.sh"
 HOST = "x86_64-unknown-linux-gnu"
-BINARIES = ("s0_daemon", "robot_rpc_gateway", "clear_estop_e2e")
+BINARIES = ("robot-s0", "robot-gateway", "clear_estop_e2e")
 FAKE_DRIVER = r'''
 import json
 import os
@@ -32,7 +32,7 @@ if role == "cargo":
     target = args[args.index("--target") + 1]
     output = target_dir / target / "release"
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("s0_daemon", "robot_rpc_gateway"):
+    for name in ("robot-s0", "robot-gateway"):
         (output / name).write_text("新构建的 " + name)
     harness = output / "clear_estop_e2e"
     harness.write_text("""#!/usr/bin/env bash
@@ -43,7 +43,7 @@ elif role == "harness":
     executable, *argv = args
     output = Path(executable).parent
     assert argv == ["--bin-dir", str(output), "--case", "all"]
-    for name in ("s0_daemon", "robot_rpc_gateway"):
+    for name in ("robot-s0", "robot-gateway"):
         assert (output / name).read_text() == "新构建的 " + name
     (receipts / "harness.json").write_text(json.dumps({"executable": executable, "args": argv}))
     sys.exit(int(os.environ.get("SMOKE_TEST_HARNESS_EXIT", "0")))

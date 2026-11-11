@@ -1,4 +1,4 @@
-//! `CaseCtx`：单 test fn 一份，统管 robot_id / forensic dir / s1_daemon /
+//! `CaseCtx`：单 test fn 一份，统管 robot_id / forensic dir / robot-s1 /
 //! gateway / fake state 子进程的整个 lifecycle。
 //!
 //! ## 顺序：bring_up
@@ -6,10 +6,10 @@
 //! 1. 派生唯一 `robot_id` (`task_rpc_e2e_<pid>_<seq>`)
 //! 2. 分配 loopback `listen_addr` (TcpListener::bind 0 + drop)
 //! 3. 创建 forensic dir `/tmp/b4_e2e/<robot_id>/`
-//! 4. 写 s1.toml + 复制 rpc_roles.toml 到 forensic dir
+//! 4. 写 s1.toml + 复制 rpc-roles.toml 到 forensic dir
 //! 5. spawn `FakeStatePublisher` (在 spawn s1 **之前**，保证 anchor 可用)
-//! 6. 找 `s1_daemon` / `robot_rpc_gateway` 二进制路径
-//! 7. spawn s1_daemon
+//! 6. 找 `robot-s1` / `robot-gateway` 二进制路径
+//! 7. spawn robot-s1
 //! 8. spawn gateway
 //! 9. wait_ready 三段式 → 拿 tonic Channel
 //!
@@ -45,7 +45,7 @@ use crate::common::subprocess::{
 const HARDWARE_ID: &str = "test_arm";
 const JOINTS_COUNT: usize = 1;
 // 段(4)：layout 撤固定常量——由 per-case config 派生（PD-E5(a) 单源），
-// FakeState stamping / ctx 值与 s1_daemon 派生值天然一致（过渡窗口闭合）。
+// FakeState stamping / ctx 值与 robot-s1 派生值天然一致（过渡窗口闭合）。
 
 /// `CASE_SEQ` 给每个 test fn 派生唯一 `robot_id`，避免 iceoryx2 service
 /// 名 / loopback port 在并发 spawn 时撞车（即使 `--test-threads=1` 串行
@@ -100,7 +100,7 @@ pub struct CaseCtx {
 }
 
 impl CaseCtx {
-    /// 主入口：spawn fake state → s1_daemon → gateway → wait_ready。
+    /// 主入口：spawn fake state → robot-s1 → gateway → wait_ready。
     ///
     /// # Errors
     ///
@@ -115,7 +115,7 @@ impl CaseCtx {
         s1_environment: &[(&str, &str)],
     ) -> Result<Self, BringUpError> {
         let mut ctx = Self::prepare(test_name, s1_environment, None).await?;
-        let gateway_bin = locate_test_bin("robot_rpc_gateway").map_err(BringUpError::LocateBin)?;
+        let gateway_bin = locate_test_bin("robot-gateway").map_err(BringUpError::LocateBin)?;
         ctx.gateway = Some(SubprocessHandle::spawn(
             "gateway",
             build_gateway_command(
@@ -301,12 +301,12 @@ impl CaseCtx {
             .await
             .map_err(|e| BringUpError::Config(format!("write s1.toml: {e}")))?;
 
-        let roles_toml_path = forensic_dir.join("rpc_roles.toml");
+        let roles_toml_path = forensic_dir.join("rpc-roles.toml");
         let roles_toml = std::fs::read_to_string(workspace_rpc_roles_path()?)
-            .map_err(|e| BringUpError::Config(format!("read workspace rpc_roles.toml: {e}")))?;
+            .map_err(|e| BringUpError::Config(format!("read workspace rpc-roles.toml: {e}")))?;
         tokio::fs::write(&roles_toml_path, &roles_toml)
             .await
-            .map_err(|e| BringUpError::Config(format!("write rpc_roles.toml: {e}")))?;
+            .map_err(|e| BringUpError::Config(format!("write rpc-roles.toml: {e}")))?;
 
         // 段(4)：layout 由 per-case config 派生（client::layout 单源）。
         let layout = robot_rpc::client::layout::load_hardware_layout(&config_path, HARDWARE_ID)
@@ -317,7 +317,7 @@ impl CaseCtx {
             FakeStatePublisher::spawn(&robot_id, HARDWARE_ID, JOINTS_COUNT, layout.layout_id, None)
                 .map_err(|e| BringUpError::FakeState(e.to_string()))?;
 
-        // 2. locate s1_daemon binary
+        // 2. locate robot-s1 binary
         let s1_bin = match s1_binary {
             Some(path) if path.is_file() => path.to_path_buf(),
             Some(path) => {
@@ -326,12 +326,12 @@ impl CaseCtx {
                     path.display()
                 )));
             }
-            None => locate_test_bin("s1_daemon").map_err(BringUpError::LocateBin)?,
+            None => locate_test_bin("robot-s1").map_err(BringUpError::LocateBin)?,
         };
         let setup = setup(&robot_id)?;
         let mut command = build_s1_daemon_command(&s1_bin, &robot_id, HARDWARE_ID, &config_path);
         command.envs(s1_environment.iter().copied());
-        let daemon = SubprocessHandle::spawn("s1_daemon", command)?;
+        let daemon = SubprocessHandle::spawn("robot-s1", command)?;
 
         let channel = Endpoint::from_shared(format!("http://{listen_addr}"))
             .map_err(|error| BringUpError::Config(error.to_string()))?
@@ -475,9 +475,9 @@ motor_ids = [{motor_ids_csv}]
     )
 }
 
-/// 找 workspace 的 `configs/rpc_roles.toml`。从 CARGO_MANIFEST_DIR 派生。
+/// 找 workspace 的 `configs/rpc-roles.toml`。从 CARGO_MANIFEST_DIR 派生。
 fn workspace_rpc_roles_path() -> Result<PathBuf, BringUpError> {
-    // CARGO_MANIFEST_DIR = .../crates/robot-rpc → ../../configs/rpc_roles.toml
+    // CARGO_MANIFEST_DIR = .../crates/robot-rpc → ../../configs/rpc-roles.toml
     let manifest = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(manifest)
         .parent()
@@ -485,7 +485,7 @@ fn workspace_rpc_roles_path() -> Result<PathBuf, BringUpError> {
         .ok_or_else(|| {
             BringUpError::Config(format!("CARGO_MANIFEST_DIR={manifest:?} no grandparent"))
         })?
-        .join("configs/rpc_roles.toml");
+        .join("configs/rpc-roles.toml");
     if !path.exists() {
         return Err(BringUpError::Config(format!(
             "{} 不存在（workspace 结构改了？）",

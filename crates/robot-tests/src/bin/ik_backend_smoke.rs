@@ -8,7 +8,7 @@
 //! 抽公共库"，所有 fbs / tonic / fake-S0 / process spawn helper inline
 //! 复制）：
 //!
-//! 1. spawn fake S0 (50Hz `JointState`) + `s1_daemon` + `robot_rpc_gateway`
+//! 1. spawn fake S0 (50Hz `JointState`) + `robot-s1` + `robot-gateway`
 //! 2. 用 tonic gRPC client 真跑 `InvokeTask(kind=Ik, payload=IkPayload)`
 //!    → iceoryx2 RR shm → s1 coordinator → `IkBackend.start()` 调
 //!    `XLeRobotArmIkSolver.solve()` → first tick publish `JointCommand`
@@ -41,7 +41,7 @@
 //!   wait_for_*  / build_invoke_task_cmd / uuidv7_compat 全部 inline
 //!   复制；如未来 reviewer 决策抽 `robot-tests-helpers` 公共 crate，再
 //!   走独立 PR。
-//! - **不**改 schema / 既有 backend / coordinator / s1_daemon binary。
+//! - **不**改 schema / 既有 backend / coordinator / robot-s1 binary。
 //!
 //! ## CLI
 //!
@@ -52,7 +52,7 @@
 //!   --bin-dir <DIR>                  默认 target/release
 //!   --robot-id-prefix <STR>          默认 ik_backend
 //!   --hardware-id <ID>               必填（跟 --config TOML 一致；默认配置 `ik_arm`）
-//!   --config <TOML>                  必填（s1_daemon --config）
+//!   --config <TOML>                  必填（robot-s1 --config）
 //!   --joints <N>                     默认 5（XLeRobot 5-DOF；不可改）
 //!   --phase <PHASE>                  默认 all
 //!     selftest | happy | monotonic | unreachable_clamp | invalid_input | all
@@ -69,12 +69,8 @@
 //! - `1`：CLI / preflight / 子进程 spawn 错
 //! - `2`：≥1 phase FAIL
 //!
-//! ## 跟 Spec / Plan 的链接
-//!
-//! - [`team-swe/specs/v0_4_robot_kinematics_round2.md`](../../../../../team-swe/specs/v0_4_robot_kinematics_round2.md)
-//!   Q-IK1..Q-IK17 + Plan §P.3.2 #1..#12
-//! - [`docs/handoffs/v0.3_b4_outline.md`](../../../../../docs/handoffs/v0.3_b4_outline.md)
-//!   §6.1 双层 schema 模型（gateway 透传 payload bytes 不解码）
+//! 相关字段与转换见 `robot-msg/schemas` 和 `robot-rpc/src/task_handlers.rs`；
+//! 本模块上方列出实际验证阶段，历史计划通过 Git 查询。
 
 #![cfg(target_os = "linux")]
 #![allow(clippy::doc_markdown, clippy::too_many_lines)]
@@ -379,20 +375,20 @@ async fn main() -> ExitCode {
 // ============================================================================
 
 fn preflight(args: &Args) -> Result<(), String> {
-    let s1 = args.bin_dir.join("s1_daemon");
+    let s1 = args.bin_dir.join("robot-s1");
     if !s1.exists() {
         return Err(format!(
-            "s1_daemon binary not found at {} (build via \
-             `cargo build --release -p robot-s1 --bin s1_daemon`)",
+            "robot-s1 binary not found at {} (build via \
+             `cargo build --release -p robot-s1 --bin robot-s1`)",
             s1.display()
         ));
     }
-    let gw = args.bin_dir.join("robot_rpc_gateway");
+    let gw = args.bin_dir.join("robot-gateway");
     if !gw.exists() {
         return Err(format!(
-            "robot_rpc_gateway binary not found at {} (build via \
+            "robot-gateway binary not found at {} (build via \
              `cargo build --release -p robot-rpc --features client \
-             --bin robot_rpc_gateway`)",
+             --bin robot-gateway`)",
             gw.display()
         ));
     }
@@ -433,7 +429,7 @@ impl CaseCtx {
         let case_dir = args.workdir.join(&robot_id);
         std::fs::create_dir_all(&case_dir)
             .map_err(|e| format!("mkdir case_dir {}: {e}", case_dir.display()))?;
-        let role_table_path = case_dir.join("rpc_roles.toml");
+        let role_table_path = case_dir.join("rpc-roles.toml");
         write_role_table(&role_table_path)?;
         // v0.5 候选 E 段(2) 回修 P0-1：样板 config 结构化重写 [robot].id =
         // 本 case 唯一 robot_id（身份锁下"静态 config + 动态 robot_id"消费
@@ -471,7 +467,7 @@ impl CaseCtx {
 }
 
 fn write_role_table(path: &Path) -> Result<(), String> {
-    let toml_text = r#"# ik_backend_smoke 临时 rpc_roles.toml（每 case 独立）。
+    let toml_text = r#"# ik_backend_smoke 临时 rpc-roles.toml（每 case 独立）。
 
 [tokens]
 "viewer-fake-token-001"     = "viewer"
@@ -496,7 +492,7 @@ description  = "smoke admin"
 capabilities = ["read_state", "invoke_task", "clear_estop", "set_enabled", "clear_error", "estop", "reload_calibration", "set_policy", "shutdown"]
 "#;
     std::fs::write(path, toml_text)
-        .map_err(|e| format!("write rpc_roles.toml {}: {e}", path.display()))
+        .map_err(|e| format!("write rpc-roles.toml {}: {e}", path.display()))
 }
 
 fn allocate_loopback_port() -> Result<u16, String> {
@@ -835,11 +831,11 @@ fn spawn_stream_drain(
 }
 
 // ============================================================================
-// spawn s1_daemon + spawn gateway
+// spawn robot-s1 + spawn gateway
 // ============================================================================
 
 fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("s1_daemon");
+    let bin = ctx.bin_dir.join("robot-s1");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -849,11 +845,11 @@ fn spawn_s1_daemon(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
         .arg(&ctx.config)
         .arg("--poll-interval-ms")
         .arg("1");
-    SubprocessHandle::spawn("s1_daemon", cmd)
+    SubprocessHandle::spawn("robot-s1", cmd)
 }
 
 fn spawn_gateway(ctx: &CaseCtx) -> std::io::Result<SubprocessHandle> {
-    let bin = ctx.bin_dir.join("robot_rpc_gateway");
+    let bin = ctx.bin_dir.join("robot-gateway");
     let mut cmd = Command::new(&bin);
     cmd.arg("--robot-id")
         .arg(&ctx.robot_id)
@@ -1091,10 +1087,10 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
         Ok(h) => h,
         Err(e) => {
             fake_s0.shutdown();
-            return Err(format!("spawn s1_daemon: {e}"));
+            return Err(format!("spawn robot-s1: {e}"));
         }
     };
-    eprintln!("[bring_up] s1_daemon spawned pid={:?}", s1.pid);
+    eprintln!("[bring_up] robot-s1 spawned pid={:?}", s1.pid);
 
     if let Err(e) = wait_for_s1_marker(&mut s1, Duration::from_secs(5)).await {
         let _ = s1.dump_captured_to(&ctx.case_dir).await;
@@ -1105,7 +1101,7 @@ async fn bring_up_pair(ctx: &CaseCtx) -> Result<BringUp, String> {
             ctx.case_dir.display()
         ));
     }
-    eprintln!("[bring_up] Phase 1 PASS: s1_daemon rr_server_threads ready");
+    eprintln!("[bring_up] Phase 1 PASS: robot-s1 rr_server_threads ready");
 
     let gw = match spawn_gateway(ctx) {
         Ok(h) => h,
@@ -1180,7 +1176,7 @@ async fn tear_down_pair(bring_up: BringUp) {
         eprintln!("[tear_down] gateway shutdown warn: {e}");
     }
     if let Err(e) = s1.shutdown(Duration::from_secs(3)).await {
-        eprintln!("[tear_down] s1_daemon shutdown warn: {e}");
+        eprintln!("[tear_down] robot-s1 shutdown warn: {e}");
     }
     fake_s0.shutdown();
 }

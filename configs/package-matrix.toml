@@ -1,0 +1,15 @@
+# 仅登记当前 XLeRobot Orin S0 的生产组合；不改写配置或安装路径。
+[packages.xlerobot-orin-s0]
+target = "aarch64-unknown-linux-gnu"
+cargo_package = "robot-s0"
+default_features = true
+features = ["xlerobot-real"]
+bins = ["robot-s0", "robot-deploy"]
+files = [
+    { source = "configs/xlerobot-bus1.toml", destination = "configs/xlerobot-bus1.toml" },
+    { source = "configs/xlerobot-bus2.toml", destination = "configs/xlerobot-bus2.toml" },
+    { source = "scripts/systemd/robot-s0-preflight.service", destination = "systemd/robot-s0-preflight.service" },
+    { source = "scripts/systemd/robot-s0-bus1.service", destination = "systemd/robot-s0-bus1.service" },
+    { source = "scripts/systemd/robot-s0-bus2.service", destination = "systemd/robot-s0-bus2.service" },
+    { source = "scripts/camera_capture.py", destination = "scripts/camera_capture.py" },
+]

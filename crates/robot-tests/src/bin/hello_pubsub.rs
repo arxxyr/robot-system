@@ -1,8 +1,7 @@
 //! Step 5 交付示例：同进程 iceoryx2 pub + sub，发 3 条 JointState，打印收到
 //! 的 header + body 字段。
 //!
-//! 对应 `docs/01_implementation_steps.md` Step 5 交付 "同进程 pub → sub 收到
-//! JointState"。跑通 = Step 5 最小闭环达成。
+//! 验证同进程 publisher → subscriber 的 `JointState` 最小闭环。
 //!
 //! ```
 //! cargo run -p robot-tests --bin hello_pubsub

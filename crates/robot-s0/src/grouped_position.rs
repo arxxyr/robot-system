@@ -229,13 +229,13 @@ mod tests {
 
     pub(super) fn hardware() -> HardwareSection {
         let mut config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus1_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus1.toml")).unwrap();
         config.hardware.remove(0)
     }
 
     fn bus2_fixture() -> HardwareSection {
         let mut config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         let mut hardware = config.hardware.remove(0);
         // 黄金槽位属于本测试夹具，实际配置的六种映射另行验证。
         hardware.joints = [
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn mixed_bus2_uses_configured_slots_for_every_wheel_id_permutation() {
         let mut config: crate::config_loader::RobotConfigToml =
-            toml::from_str(include_str!("../../../configs/xlerobot_bus2_full.toml")).unwrap();
+            toml::from_str(include_str!("../../../configs/xlerobot-bus2.toml")).unwrap();
         let original = config.hardware.remove(0);
         for [front, left, right] in [
             [7, 8, 9],

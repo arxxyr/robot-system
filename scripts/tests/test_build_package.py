@@ -33,12 +33,12 @@ COMMIT = "1234567890abcdef1234567890abcdef12345678"
 RELEASE_TAG = "v0.1.2+1234567"
 EXPECTED_ARGV = [
     "cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0",
-    "--bin", "s0_daemon", "--bin", "xlerobot_deploy", "--features", "xlerobot-real",
+    "--bin", "robot-s0", "--bin", "robot-deploy", "--features", "xlerobot-real",
 ]
 PAYLOAD_NAMES = {
-    "bin/s0_daemon", "bin/xlerobot_deploy",
-    "configs/xlerobot_bus1_full.toml", "configs/xlerobot_bus2_full.toml",
-    "systemd/xlerobot-handoff.service", "systemd/xlerobot-s0-bus1.service", "systemd/xlerobot-s0-bus2.service",
+    "bin/robot-s0", "bin/robot-deploy",
+    "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml",
+    "systemd/robot-s0-preflight.service", "systemd/robot-s0-bus1.service", "systemd/robot-s0-bus2.service",
     "scripts/camera_capture.py", "VERSION", "README.md",
 }
 REJECTED = (ValueError, OSError)
@@ -162,20 +162,20 @@ class PackageFixture:
         self.target = self.root / "isolated-target"
         self.output = self.root / "output"
         self.repository.mkdir()
-        self.matrix = tomllib.loads((REPOSITORY / "configs" / "package_matrix.toml").read_text())
+        self.matrix = tomllib.loads((REPOSITORY / "configs" / "package-matrix.toml").read_text())
         self.write_matrix()
         self.write("Cargo.toml", '[workspace]\nmembers = ["crates/robot-s0"]\n\n[workspace.package]\nversion = "0.1.2"\n')
         self.write("Cargo.lock", "version = 4\n")
         self.write("rust-toolchain.toml", '[toolchain]\nchannel = "nightly"\n')
         self.write("crates/robot-s0/Cargo.toml", (REPOSITORY / "crates/robot-s0/Cargo.toml").read_text())
-        self.write("crates/robot-s0/src/bin/s0_daemon.rs", "fn main() {}\n")
-        self.write("crates/robot-s0/src/bin/xlerobot_deploy.rs", "fn main() {}\n")
+        self.write("crates/robot-s0/src/bin/robot-s0.rs", "fn main() {}\n")
+        self.write("crates/robot-s0/src/bin/robot-deploy.rs", "fn main() {}\n")
         for row in self.matrix["packages"][PACKAGE_ID]["files"]:
             source = row["source"]
             self.write(source, (REPOSITORY / source).read_bytes())
-        self.write("configs/xlerobot_left_arm.toml", (REPOSITORY / "configs/xlerobot_left_arm.toml").read_bytes())
-        self.frozen_release = self.repository / "target" / "release" / "s0_daemon"
-        self.write("target/release/s0_daemon", "正式产物占位不可覆盖\n")
+        self.write("configs/xlerobot-left-arm.toml", (REPOSITORY / "configs/xlerobot-left-arm.toml").read_bytes())
+        self.frozen_release = self.repository / "target" / "release" / "robot-s0"
+        self.write("target/release/robot-s0", "正式产物占位不可覆盖\n")
         self.commands = FakeBuildCommands(self.repository, self.target)
 
     def write(self, relative, content):
@@ -197,7 +197,7 @@ class PackageFixture:
             for row in entry["files"]:
                 lines.append("  { source = " + json.dumps(row["source"]) + ", destination = " + json.dumps(row["destination"]) + " },")
             lines.extend(["]", ""])
-        self.write("configs/package_matrix.toml", "\n".join(lines))
+        self.write("configs/package-matrix.toml", "\n".join(lines))
 
     def build(self, package_id=PACKAGE_ID, **kwargs):
         return builder.build_package(
@@ -234,7 +234,7 @@ class PackageBuilderTests(unittest.TestCase):
 
     def external_formal_binaries(self):
         formal = self.fixture.root / "formal-installation"
-        for name in ("s0_daemon", "xlerobot_deploy"):
+        for name in ("robot-s0", "robot-deploy"):
             path = formal / "target" / "release" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(elf_bytes())
@@ -243,8 +243,8 @@ class PackageBuilderTests(unittest.TestCase):
             if not row["source"].endswith(".service"):
                 continue
             path = self.fixture.repository / row["source"]
-            text = re.sub(r"(?m)^ExecStart=\S+", "ExecStart=" + str(formal / "target" / "release" / "xlerobot_deploy"), path.read_text())
-            text = re.sub(r"--s0-bin\s+\S+", "--s0-bin " + str(formal / "target" / "release" / "s0_daemon"), text)
+            text = re.sub(r"(?m)^ExecStart=\S+", "ExecStart=" + str(formal / "target" / "release" / "robot-deploy"), path.read_text())
+            text = re.sub(r"--s0-bin\s+\S+", "--s0-bin " + str(formal / "target" / "release" / "robot-s0"), text)
             path.write_text(text)
         return formal
 
@@ -257,7 +257,7 @@ class PackageBuilderTests(unittest.TestCase):
         self.assertEqual(entry["cargo_package"], "robot-s0")
         self.assertIs(entry["default_features"], True)
         self.assertEqual(entry["features"], ["xlerobot-real"])
-        self.assertEqual(entry["bins"], ["s0_daemon", "xlerobot_deploy"])
+        self.assertEqual(entry["bins"], ["robot-s0", "robot-deploy"])
         self.assertEqual(len(entry["files"]), 6)
         self.assert_no_cargo()
 
@@ -268,14 +268,14 @@ class PackageBuilderTests(unittest.TestCase):
 
     def test_new_matrix_entry_changes_native_features_bins_and_payload(self):
         alternate = copy.deepcopy(self.fixture.matrix["packages"][PACKAGE_ID])
-        alternate.update(default_features=False, features=["mock-only"], bins=["s0_daemon"])
-        alternate["files"] = [row for row in alternate["files"] if row["destination"] != "systemd/xlerobot-s0-bus2.service"]
+        alternate.update(default_features=False, features=["mock-only"], bins=["robot-s0"])
+        alternate["files"] = [row for row in alternate["files"] if row["destination"] != "systemd/robot-s0-bus2.service"]
         self.fixture.matrix["packages"]["mock-s0"] = alternate
         self.fixture.write_matrix()
         self.assertEqual(set(builder.load_matrix(self.fixture.repository)), {PACKAGE_ID, "mock-s0"})
         expected = [
             "cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0",
-            "--bin", "s0_daemon", "--no-default-features", "--features", "mock-only",
+            "--bin", "robot-s0", "--no-default-features", "--features", "mock-only",
         ]
         self.fixture.commands.expected_argv = expected
         entry = builder.select_package(self.fixture.repository, "mock-s0")
@@ -283,19 +283,19 @@ class PackageBuilderTests(unittest.TestCase):
         result = self.fixture.build("mock-s0")
         self.assertEqual(result["manifest"]["package_id"], "mock-s0")
         self.assertEqual(Path(result["archive"]).name, "robot-system-" + RELEASE_TAG + "-mock-s0.tar.gz")
-        self.assert_archive_names(result, PAYLOAD_NAMES - {"bin/xlerobot_deploy", "systemd/xlerobot-s0-bus2.service"})
+        self.assert_archive_names(result, PAYLOAD_NAMES - {"bin/robot-deploy", "systemd/robot-s0-bus2.service"})
         self.assertEqual(FakeBuildCommands.local_features(self.fixture.commands.cargo_package("robot-s0")[1], expected), ["mock", "mock-only"])
 
     def test_editing_matrix_changes_default_closure_and_adds_selected_file(self):
         entry = self.fixture.matrix["packages"][PACKAGE_ID]
-        entry.update(bins=["s0_daemon"], features=[])
-        entry["files"].append({"source": "configs/xlerobot_left_arm.toml", "destination": "configs/xlerobot_left_arm.toml"})
+        entry.update(bins=["robot-s0"], features=[])
+        entry["files"].append({"source": "configs/xlerobot-left-arm.toml", "destination": "configs/xlerobot-left-arm.toml"})
         self.fixture.write_matrix()
-        expected = ["cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0", "--bin", "s0_daemon"]
+        expected = ["cargo", "build", "--locked", "--release", "--message-format=json", "-p", "robot-s0", "--bin", "robot-s0"]
         self.fixture.commands.expected_argv = expected
         self.assertEqual(builder.build_argv(builder.select_package(self.fixture.repository, PACKAGE_ID)), expected)
         result = self.fixture.build()
-        self.assert_archive_names(result, (PAYLOAD_NAMES - {"bin/xlerobot_deploy"}) | {"configs/xlerobot_left_arm.toml"})
+        self.assert_archive_names(result, (PAYLOAD_NAMES - {"bin/robot-deploy"}) | {"configs/xlerobot-left-arm.toml"})
         self.assertEqual(FakeBuildCommands.local_features(self.fixture.commands.cargo_package("robot-s0")[1], expected), ["default", "feetech", "mock", "xlerobot"])
 
     def test_matrix_can_select_another_existing_workspace_package(self):
@@ -383,9 +383,9 @@ class PackageBuilderTests(unittest.TestCase):
 
     def test_hardlinked_external_formal_binary_in_cache_is_rejected_before_cargo(self):
         formal = self.external_formal_binaries()
-        cached = self.fixture.target / "release" / "s0_daemon"
+        cached = self.fixture.target / "release" / "robot-s0"
         cached.parent.mkdir(parents=True)
-        os.link(formal / "target" / "release" / "s0_daemon", cached)
+        os.link(formal / "target" / "release" / "robot-s0", cached)
         with self.assertRaises(REJECTED):
             self.fixture.build()
         self.assert_no_cargo()
@@ -466,7 +466,7 @@ class PackageBuilderTests(unittest.TestCase):
         self.fixture.commands.mutate_records = lambda rows: rows.pop(1)
         with self.assertRaises(REJECTED):
             self.fixture.build()
-        self.assertTrue((self.fixture.target / "release" / "xlerobot_deploy").is_file())
+        self.assertTrue((self.fixture.target / "release" / "robot-deploy").is_file())
         self.assert_no_archive()
 
     def test_wrong_feature_closure_is_rejected(self):

@@ -1,5 +1,4 @@
-//! Test-only freeze control thread（v0.3 A2-2 / `docs/handoffs/v0.3_entry.md`
-//! §4.3 选项 A）。订阅 test-only iceoryx2 topic，把测试驱动 publish 的 freeze
+//! 测试专用 freeze 控制线程。订阅 test-only iceoryx2 topic，把测试驱动 publish 的 freeze
 //! 命令路由到对应 worker 的 [`crate::freeze_hook::freeze_check`] 原子。
 //!
 //! ⚠️ **test-only**：整 module 由 `cfg(any(test, feature = "test-freeze-hook"))`
@@ -28,7 +27,7 @@
 //!
 //! ## 控制路径
 //!
-//! 1. daemon 启动期 `s0_daemon` 主线程构造 [`FreezeControlContext`]（5 worker
+//! 1. daemon 启动期 `robot-s0` 主线程构造 [`FreezeControlContext`]（5 worker
 //!    metrics 引用 + clock + robot_id）→ [`spawn_freeze_control_thread`]。
 //! 2. control thread 启动 iceoryx2 Node → service `<robot_id>/test/freeze`
 //!    `publish_subscribe::<TestFreezeCommand>()` open_or_create → subscriber。
@@ -45,7 +44,7 @@
 
 #![cfg(any(test, feature = "test-freeze-hook"))]
 // 整 module 是 test-only。中文 doc 块里大量出现 `Ipc` / `HardRT` /
-// `monotonic` / `graceful_stop` / `s0_daemon` 等 identifier-like 字串，跟生产
+// `monotonic` / `graceful_stop` / `robot-s0` 等 identifier-like 字串，跟生产
 // 模块对 doc backtick 严格化的标准比，这里牺牲 doc-markdown 严格性换可读性。
 // 行为代码不影响。
 #![allow(clippy::doc_markdown)]

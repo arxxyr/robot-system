@@ -421,7 +421,7 @@ async fn normal_boot(args: &Args, joints: usize) -> Result<Value, String> {
 async fn too_many_joints(args: &Args, cli_only: bool) -> Result<Value, String> {
     let case = Case::new(&args.evidence_dir, &args.bin_dir, "joint_limit", 33)?;
     let command = if cli_only {
-        let mut command = isolated_command(&args.bin_dir.join("s0_daemon"));
+        let mut command = isolated_command(&args.bin_dir.join("robot-s0"));
         command
             .args(["--robot-id", &case.robot_id, "--joints", "33"])
             .arg("--latch-path")
@@ -733,7 +733,7 @@ fn verify_lock_rejection(
 }
 
 fn rx_trust_command(case: &Case, operation: &str) -> tokio::process::Command {
-    let mut command = isolated_command(&case.bin_dir.join("s0_daemon"));
+    let mut command = isolated_command(&case.bin_dir.join("robot-s0"));
     command
         .args([
             "rx-trust",
