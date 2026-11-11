@@ -6,7 +6,7 @@
 |---|---|---|
 | 现有 arm-only S0 | `xlerobot-s0-left-arm.service`、`xlerobot-s0-right-arm.service` | 经 `xlerobot_deploy guard` 启动；使用 `/etc/robot/xlerobot_{left,right}_arm.toml` |
 | 现有 S1、gateway 与交接 | `xlerobot-s1-*.service`、`xlerobot-gateway-*.service`、`xlerobot-handoff.service` | 安装、备份及回滚按[交接操作单](README_dimos_replace.md) |
-| 全身 S0 候选 | `xlerobot-s0-bus1.service`、`xlerobot-s0-bus2.service` | 分别引用当前 `configs/xlerobot_bus{1,2}_full.toml`；默认入口实机验收尚未完成 |
+| 全身 S0 候选 | `xlerobot-s0-bus1.service`、`xlerobot-s0-bus2.service` | 分别引用 `configs/xlerobot_bus{1,2}_full.toml`；默认S0实机结论见[当前状态](../../docs/s0_hal_status.md)，模板安装与启动仍待验证 |
 | systemd 故障测试 | `xlerobot-*-freeze-test.service` | 仅由对应 smoke 渲染占位符后使用，不直接安装或启动模板 |
 
 ## 配置与产物边界
@@ -18,7 +18,7 @@
 
 ## 启停与保护状态
 
-- 现有 arm-only 部署、交接、首次 provision 和故障恢复统一走[交接操作单](README_dimos_replace.md)及原工具。全总线候选须先完成自身验收，不能照抄 arm-only 的身份或保护路径。
+- 现有 arm-only 部署、交接、首次 provision 和故障恢复统一走[交接操作单](README_dimos_replace.md)及原工具。全总线模板接入须核对运行身份与保护目录，不能照抄 arm-only 的身份或保护路径；默认S0维护入口通过不代替服务安装与启动验证。
 - EStop latch、RX marker、锁文件不是可回滚的普通配置。**不得删除、覆盖为0或复制旧保护文件来解除急停**；解除沿原 `ClearEStop` 权限和验证流程。
 - `auto_enable=false` 只禁止自动启用，不代表启动无硬件写入；默认 S0 启动会执行停止收敛。实机启动仍须当次现场条件和动作通知。
 - `Type=notify`、worker 存活检查和 systemd watchdog 保留；这些软件机制不替代未完成的 D15 硬件 fail-safe。
