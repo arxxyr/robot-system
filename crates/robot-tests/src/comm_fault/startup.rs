@@ -247,9 +247,7 @@ fn verify_ipc_ready_exit(
         ));
     }
     let log = case.logs("s0")?;
-    let timeout_at = log
-        .find("启动物理/ACK 截止失败")
-        .ok_or("未见真实启动截止失败")?;
+    let timeout_at = log.find("启动就绪等待超时").ok_or("未见真实启动截止失败")?;
     let retained_at = log
         .find("收尾未完成 join，不导出快照耗尽尝试时刻")
         .ok_or("未见未join IPC原件保留")?;

@@ -1,0 +1,44 @@
+{
+  "base_commit": "975e07d0a4c04cbcdcf0bd511756433c86c05d11",
+  "status": "SOFTWARE_PASS_HARDWARE_NOT_RUN",
+  "negative_control": {
+    "exit_code": 101,
+    "reason": "旧实现提前回收启动期断帧相机，新回归在原helper存活断言失败"
+  },
+  "checks": {
+    "workspace_clippy": "PASS",
+    "hardware_rt_features_clippy": "PASS",
+    "fmt": "PASS",
+    "source_local_orin_match": "PASS"
+  },
+  "tests": {
+    "camera-unit.log": {
+      "passed": 33,
+      "failed": 0
+    },
+    "startup-unit.log": {
+      "passed": 3,
+      "failed": 0
+    },
+    "camera-integration.log": {
+      "passed": 6,
+      "failed": 0
+    },
+    "ipc-startup.log": {
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "test_total": 43,
+  "source_sha256": {
+    "crates/robot-s0/src/bin/robot-s0.rs": "f64314bf962294b4db2e70985af03f2e11d599aa5c8d81142dfd0008a0041e1f",
+    "crates/robot-s0/src/io_thread.rs": "e73c3f27048959792108663a86349f71d1bb406d8dbbbb4a71fa389bfbba2ba3",
+    "crates/robot-s0/src/pub_thread.rs": "f301c7520722be5ecc434860eb39574b70e268b269edf4856399acaec2765da6",
+    "crates/robot-s0/tests/comm_fault_startup.rs": "fcc123bd449c7e824893a294f2aff2386b4fc9edd6500bed02d67d9ae7058c55",
+    "crates/robot-s0/tests/comm_fault_startup/camera_actuator.rs": "66d0bc9658ee7daad26d9c998869547078a80dfb47b9a2c1a8901ccdfcace35a",
+    "crates/robot-tests/src/comm_fault/startup.rs": "48f4a638af056ac76931e42bf2efc288119519971b1a65572d235af7b8f4fe89"
+  },
+  "remote_work_root": "/home/loosqk/robot-checks/s0-camera-startup-20261112",
+  "hardware": "仅只读journal和服务状态；测试均为临时mock执行器及标准库图像夹具，未安装、启停或重启正式服务",
+  "boundary": "仅启动期WARN和原预算内恢复，1秒帧龄、READY后失流回收、物理ACK和整机保护不变；USB -71根因未确定"
+}

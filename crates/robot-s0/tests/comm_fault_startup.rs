@@ -69,15 +69,25 @@ try:
         time.sleep(0.01)
     if mode == 'eof':
         raise SystemExit(0)
+    last_stamp = 0
     while True:
         if (directory / 'camera-stall').exists():
             while True:
                 time.sleep(0.01)
+        resumed = False
+        if (directory / 'camera-pause').exists():
+            (directory / 'camera-paused').write_text(str(last_stamp))
+            while (directory / 'camera-pause').exists():
+                time.sleep(0.01)
+            resumed = True
         stamp = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
         if not (directory / 'camera-first-frame').exists():
             (directory / 'camera-first-frame').write_text(str(stamp))
         sys.stdout.buffer.write(struct.pack('<4sIIIQ', b'RCAM', 2, 1, 6, stamp) + bytes(range(stream_index + 1, stream_index + 7)))
         sys.stdout.buffer.flush()
+        last_stamp = stamp
+        if resumed:
+            (directory / 'camera-resumed-frame').write_text(str(stamp))
         time.sleep(0.05)
 finally:
     (directory / 'camera-stopped').write_text('stopped')
@@ -485,7 +495,7 @@ fn camera_helper_eof_before_first_frame_exits_without_ready_and_reaps() {
     assert_eq!(observed.stop_bitmap, 0xff);
     assert_eq!(observed.exit_residual_bitmap, 0);
     assert!(
-        process.log().contains("相机首帧初始化失败，拒绝READY"),
+        process.log().contains("相机启动失败，拒绝READY"),
         "{}",
         process.log()
     );
@@ -530,7 +540,7 @@ fn camera_without_frames_exits_at_original_startup_deadline_without_ready_and_re
         "无首帧必须沿原启动截止退出，不能提前或重启预算：{observed:?}"
     );
     assert!(
-        process.log().contains("启动物理/ACK 截止失败"),
+        process.log().contains("启动就绪等待超时"),
         "{}",
         process.log()
     );
@@ -877,14 +887,10 @@ fn ipc_ready_pause_returns_original_residual_before_cp2() {
         "elapsed={elapsed}"
     );
     let log = process.log();
+    assert_log_order(&log, "comm_fault_hook stage=ipc_ready", "启动就绪等待超时");
     assert_log_order(
         &log,
-        "comm_fault_hook stage=ipc_ready",
-        "启动物理/ACK 截止失败",
-    );
-    assert_log_order(
-        &log,
-        "启动物理/ACK 截止失败",
+        "启动就绪等待超时",
         "收尾未完成 join，不导出快照耗尽尝试时刻",
     );
     assert!(

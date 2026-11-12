@@ -6,6 +6,8 @@
 
 **S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过，软件版本为0.0.1。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；本次双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
 
+后续用户手动启动复现了头部相机断帧造成bus1首次启动失败，systemd重试一次才成功；此前验收结果保留，但不能据此认定启动稳定性已闭环。dev已修复原启动期限内的短暂失流：WARN并清槽、保留原采集器等待新帧。Orin两组Clippy、43项软件测试通过，旧实现负控已复现失败，见[软件验证](evidence/s0_camera_startup_2026-11-12/software-summary.json)。尚未安装或实机启动复验；同刻RGB接口USB `-71`的根因未确定。[原始事件选集](evidence/s0_camera_startup_2026-11-12/index.json)保留首次失败和自动重试成功。
+
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
 | 既有手动启动验收 | 状态/心跳 | RGB | 停止与清场 |
@@ -24,7 +26,7 @@
 | 上层接口与 S1 | RPC网关属于上层接口，调用S1；不属于S0，也不是S0启动依赖。S1沿既有控制权与命令接口，Idle/Scripted当前仅发送轮raw0，非零raw验收使用维护入口 |
 | S0 HAL | `robot-core`定义契约，`robot-s0`组织设备、分组与生命周期；两个daemon各管一条总线，每条总线唯一串口所有者、SerialRT writer、命令流、控制权及停止域 |
 | 硬件适配器 | 沿既有`ManipulatorAdapter`/`SerialRtAdapter`封装Feetech协议；左总线臂1–6＋头7/8位置分组，右总线臂1–6位置＋三轮raw速度 |
-| RGB | `[[sensor]]`按`hardware_id`归属；左实例采头/左腕，右实例采右腕；独立`SensorAdapter`、BGR帧槽和topic，经SoftRT采集，状态/心跳优先；保留1秒帧龄/失流检查，尚不支持低于1Hz，时间戳为读取完成时刻 |
+| RGB | `[[sensor]]`按`hardware_id`归属；左实例采头/左腕，右实例采右腕；独立`SensorAdapter`、BGR帧槽和topic，经SoftRT采集，状态/心跳优先；保留1秒帧龄，dev在启动短暂失流时清槽并等待恢复，运行期仍按原失流回收；尚不支持低于1Hz，时间戳为读取完成时刻 |
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
 | 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证及本轮实际服务前后CPU/FIFO/VmLck读取通过；未据此证明硬实时截止保证 |
 
@@ -50,7 +52,7 @@
 
 1. **S0结案边界**：`df6c1bb`候选已安装并通过一次真实重启复验；新boot两侧保持`Fault(CommFault)/AdapterUncertain`20.188秒、各`NRestarts=0`，实际SerialRT为CPU4/5、FIFO70且锁页生效。17电机STOP51全零、三轮各14读和资源清场通过，现场确认没有自行移动、结束后整机静止。见[验收原件](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)及[现场回执](evidence/s0_startup_deadline_2026-11-12/field-observation.json)。本轮未重采RGB，既有RGB验收与本次helper存活核对分别保留。
 
-   三服务自启已保留；当前两侧S0均PID0，保留Dirty停止时的`failed/exit-code 1`终态，preflight为`active/exited`完成态。停止依据独立STOP51，不以故障退出代替；下次开机会自启但默认不上扭、不清故障。本轮GO已消费，看护结束，不再追加启动。已安装根为`/home/loosqk/robot-checks/s0-startup-deadline-20261112`；升级回滚和自启备份分别为`/var/lib/robot/deploy-backup-s0-deadline-df6c1bb`、`/var/lib/robot/deploy-backup-s0-autostart-df6c1bb`，不回滚保护状态。
+   三服务自启已保留；该轮验收收尾时两侧S0均PID0，保留Dirty停止时的`failed/exit-code 1`终态，preflight为`active/exited`完成态。后续用户手动启动后两侧恢复运行，bus1发生上述相机失败及一次重试；本次软件排查未操作服务。停止依据独立STOP51，不以故障退出代替；开机默认不上扭、不清故障。旧GO已消费，不能重放。已安装根为`/home/loosqk/robot-checks/s0-startup-deadline-20261112`；升级回滚和自启备份分别为`/var/lib/robot/deploy-backup-s0-deadline-df6c1bb`、`/var/lib/robot/deploy-backup-s0-autostart-df6c1bb`，不回滚保护状态。
 
    上轮启动[FAIL原件](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)保留：ACK已完成却误用2秒窗口等待全部worker；修复经旧版负控、17项既有回归、新增用例单项及3项边界单测验证。安装器68项、入口13项软件测试及Clippy通过。Orin日志未持久化，一次请求及首次新boot可绑定，不能排除断线期间额外boot。`.verify`已退出Git跟踪，原件留本地及Orin；当前报告与必要原帧收录在[证据选集](evidence/README.md)，完整历史仍可查Git。配置矩阵产出0.0.1候选包，包内提交、发布提交与新标签保持一致；已安装候选不自动替换，既有发布标签不覆盖。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。

@@ -1402,6 +1402,7 @@ mod tests {
                 adapter: Box::new(camera),
                 frames,
             }],
+            None,
         )
         .unwrap();
         entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();

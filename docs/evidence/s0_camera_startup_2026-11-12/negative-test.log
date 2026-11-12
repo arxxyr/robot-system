@@ -1,0 +1,31 @@
+   Compiling robot-core v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-core)
+   Compiling robot-msg v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-msg)
+   Compiling iceoryx2-cal v0.10.0 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/3rd-party/iceoryx2-cal)
+   Compiling iceoryx2 v0.10.0 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/3rd-party/iceoryx2)
+   Compiling robot-logging v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-logging)
+   Compiling robot-adapter-mock v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-adapters/mock)
+   Compiling robot-adapter-feetech v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-adapters/feetech)
+   Compiling robot-health v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-health)
+   Compiling robot-transport v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-transport)
+   Compiling robot-s0 v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-s0)
+    Finished `test` profile [optimized + debuginfo] target(s) in 1m 10s
+     Running tests/comm_fault_startup.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-s0/ed1cfadea0458d8f/out/comm_fault_startup-ed1cfadea0458d8f)
+
+running 1 test
+0 [W] "Config::global_config()" 
+| No config file was loaded, a config with default values will be used. 
+
+thread 'camera_actuator::camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame' (8747) panicked at crates/robot-s0/tests/comm_fault_startup/camera_actuator.rs:161:5:
+启动暖机期间不得回收第一路helper
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+失败证据保留：/tmp/.tmppaO4HO
+test camera_actuator::camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame ... FAILED
+
+failures:
+
+failures:
+    camera_actuator::camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.20s
+
+error: test failed, to rerun pass `-p robot-s0 --test comm_fault_startup`

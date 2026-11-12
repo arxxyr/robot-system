@@ -91,6 +91,142 @@ fn assert_settled(bytes: &[u8], request_id: &str) {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "同一启动实例保留首帧、暂停、恢复、READY与回收的完整顺序"
+)]
+fn camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame() {
+    let mut process =
+        Process::spawn_inner(6, &[], None, None, false, &[], &[CameraFixture::Frames; 2]);
+    let node = NodeBuilder::new().create::<Service>().unwrap();
+    let mut images: Vec<_> = (0..2)
+        .map(|index| {
+            subscriber::<markers::ImageHeader>(
+                &node,
+                &format!("/{}/sensors/fixture_camera_{index}/color", process.robot_id),
+                TopicClass::Sensor,
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut image_stamp = |index: usize| {
+        let lease = images[index].latest().unwrap()?;
+        let view = lease.view().unwrap();
+        let image: msg::ImageHeader = view.body.get();
+        assert_eq!(image.stamp_ns(), view.header.stamp_ns());
+        Some(image.stamp_ns())
+    };
+    for index in 0..2 {
+        process.wait_camera_started_at(index);
+    }
+    std::fs::write(process.camera_file_at(0, "camera-go"), b"go").unwrap();
+    wait(
+        &mut process,
+        "第一路已被S0接受并发布的首帧",
+        || image_stamp(0).is_some(),
+    );
+    assert!(!process.page.snapshot().ready_reached, "第二路仍无首帧");
+
+    let pause = process.camera_file_at(0, "camera-pause");
+    let paused = process.camera_file_at(0, "camera-paused");
+    let stopped = process.camera_file_at(0, "camera-stopped");
+    let helper_pid: u32 = std::fs::read_to_string(process.camera_file_at(0, "camera-pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let helper_process = std::path::PathBuf::from(format!("/proc/{helper_pid}"));
+    std::fs::write(&pause, b"pause").unwrap();
+    let read_stamp = |path: &std::path::Path| {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+    };
+    let mut last_stamp = None;
+    wait(
+        &mut process,
+        "第一路暂停确认及最后发送时间戳",
+        || {
+            last_stamp = read_stamp(&paused);
+            last_stamp.is_some()
+        },
+    );
+    let last_stamp = last_stamp.unwrap();
+    assert_ne!(last_stamp, 0);
+    let expired_at = last_stamp + robot_s0::io_thread::CAMERA_MAX_AGE_NS + 100_000_000;
+    wait(
+        &mut process,
+        "第一路停帧超过原一秒鲜度期限",
+        || SystemClock.now().0 >= expired_at,
+    );
+    assert!(!stopped.exists(), "启动暖机期间不得回收第一路helper");
+    assert!(helper_process.exists(), "原第一路helper必须仍存活");
+    assert!(!process.page.snapshot().ready_reached);
+    assert!(!process.camera_file_at(1, "camera-first-frame").exists());
+
+    // 先让第二路完成暖机，第一路的旧帧仍不能参与READY判定。
+    std::fs::write(process.camera_file_at(1, "camera-go"), b"go").unwrap();
+    let mut second_stamp = None;
+    wait(
+        &mut process,
+        "第二路已被S0接受并发布的首帧",
+        || {
+            second_stamp = image_stamp(1);
+            second_stamp.is_some()
+        },
+    );
+    assert!(!process.page.snapshot().ready_reached, "第一路仍只有过期帧");
+    assert!(!stopped.exists(), "第一路必须仍由原helper等待恢复");
+    assert!(helper_process.exists(), "恢复必须复用原第一路helper");
+
+    let resumed = process.camera_file_at(0, "camera-resumed-frame");
+    std::fs::remove_file(pause).unwrap();
+    let mut resumed_stamp = None;
+    wait(
+        &mut process,
+        "第一路恢复发送的首帧时间戳",
+        || {
+            resumed_stamp = read_stamp(&resumed);
+            resumed_stamp.is_some()
+        },
+    );
+    let resumed_stamp = resumed_stamp.unwrap();
+    assert!(resumed_stamp >= expired_at);
+    wait(&mut process, "第一路恢复后的真实图像", || {
+        image_stamp(0).is_some_and(|stamp| stamp >= resumed_stamp)
+    });
+    let ready = process.wait_ready(5000);
+    assert!(ready.ready_ns >= resumed_stamp);
+    assert!(ready.ready_ns >= second_stamp.unwrap());
+    assert!(
+        ready.ready_ns < ready.main_start_ns + robot_s0::boot_supervisor::absolute_boot_budget(6).0,
+        "恢复不重启原绝对启动预算：{ready:?}"
+    );
+    process.stop();
+    let log = process.log();
+    let warnings: Vec<_> = log
+        .lines()
+        .filter(|line| line.contains("相机启动期超过新鲜度期限，等待新帧"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "同一次暖机断档只告警一次：{log}");
+    assert!(
+        warnings[0].split_whitespace().any(|field| field == "WARN"),
+        "启动期断档必须记录WARN：{log}"
+    );
+    assert!(
+        !log.contains("相机超过新鲜度期限未产新帧，停用并回收相机"),
+        "启动恢复不能走运行期永久回收：{log}"
+    );
+    for index in 0..2 {
+        process.assert_camera_reaped_at(index);
+    }
+    let observed = process.page.snapshot();
+    assert_eq!(observed.stop_bitmap, 0xff);
+    assert_eq!(observed.residual_bitmap, 0);
+    assert_eq!(observed.exit_residual_bitmap, 0);
+    assert_eq!(observed.fired_checkpoint, 0);
+}
+
+#[test]
 fn dirty_boot_with_delayed_camera_keeps_timely_ack_until_absolute_deadline() {
     let mut process = Process::spawn_inner(
         6,

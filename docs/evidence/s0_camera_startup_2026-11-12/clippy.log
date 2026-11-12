@@ -1,0 +1,29 @@
+    Checking robot-core v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-core)
+   Compiling robot-msg v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-msg)
+    Checking iceoryx2-cal v0.10.0 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/3rd-party/iceoryx2-cal)
+    Checking robot-logging v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-logging)
+    Checking robot-health v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-health)
+    Checking iceoryx2 v0.10.0 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/3rd-party/iceoryx2)
+    Checking robot-adapter-feetech v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-adapters/feetech)
+    Checking robot-adapter-mock v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-adapters/mock)
+   Compiling re_protos v0.43.0 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/3rd-party/re_protos)
+    Checking robot-transport v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-transport)
+    Checking robot-s0 v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-s0)
+   Compiling robot-rpc v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-rpc)
+    Checking re_log_encoding v0.43.0
+    Checking robot-kinematics v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-kinematics)
+    Checking re_log_channel v0.43.0
+    Checking robot-kinematics-xlerobot v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-kinematics-xlerobot)
+    Checking re_chunk_store v0.43.0
+    Checking robot-s1 v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-s1)
+    Checking re_query v0.43.0
+    Checking re_grpc_client v0.43.0
+    Checking re_sdk v0.43.0
+    Checking re_entity_db v0.43.0
+    Checking re_redap_client v0.43.0
+    Checking robot-tests v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-tests)
+    Checking robot-cli v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-cli)
+    Checking rr-memory-model v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/tools/rr-memory-model)
+    Checking rerun v0.43.0
+    Checking robot-viz v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-viz)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 56.62s

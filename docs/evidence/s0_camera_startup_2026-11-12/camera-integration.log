@@ -1,0 +1,16 @@
+   Compiling robot-s0 v0.0.1 (/home/loosqk/robot-checks/s0-camera-startup-20261112/src/crates/robot-s0)
+    Finished `test` profile [optimized + debuginfo] target(s) in 13.11s
+     Running tests/comm_fault_startup.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-s0/ed1cfadea0458d8f/out/comm_fault_startup-ed1cfadea0458d8f)
+
+running 6 tests
+test camera_actuator::camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame ... 0 [W] "Config::global_config()" 
+| No config file was loaded, a config with default values will be used. 
+ok
+test camera_actuator::dirty_boot_with_delayed_camera_keeps_timely_ack_until_absolute_deadline ... ok
+test camera_actuator::three_cameras_isolate_stall_and_preserve_mock_feedback_until_clean_shutdown ... ok
+test camera_helper_eof_before_first_frame_exits_without_ready_and_reaps ... ok
+test camera_without_frames_exits_at_original_startup_deadline_without_ready_and_reaps ... ok
+test configured_camera_commits_ready_only_after_a_real_helper_frame ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 26.25s
+

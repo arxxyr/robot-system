@@ -1938,6 +1938,7 @@ fn run_workers(
         clock.clone(),
         stops.flag(WorkerKind::Io),
         cameras,
+        Some(supervisor.shared()),
     )
     .map_err(|error| startup_io_error(&error))?;
     workers.meta.io = Some(io.metrics().clone());
@@ -2347,7 +2348,7 @@ fn wait_startup(
         }
         if let Some(io) = &workers.meta.io {
             if io.startup_failed.load(Ordering::Acquire) {
-                tracing::error!("相机首帧初始化失败，拒绝READY");
+                tracing::error!("相机启动失败，拒绝READY");
                 return Err(1);
             }
             all_ready &= io.ready.load(Ordering::Acquire);
@@ -2373,7 +2374,7 @@ fn wait_startup(
                 camera_errors = ?io.map(|io| io.camera_errors.load(Ordering::Acquire)),
                 io_ticks = ?io.map(|io| io.tick_count.load(Ordering::Acquire)),
                 camera_last_frame_ns = ?io.map(|io| io.last_frame_ns.load(Ordering::Acquire)),
-                "启动物理/ACK 截止失败"
+                "启动就绪等待超时"
             );
             return Err(1);
         };
