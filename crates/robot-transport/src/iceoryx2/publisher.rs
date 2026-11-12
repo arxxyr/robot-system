@@ -296,7 +296,7 @@ impl Iceoryx2SampleWriter<'_> {
         // 占用长度 H；后续用 H 计算真实 body_offset = 4 + H。两遍 build 的
         // 所有非 offset 字段（stamp_ns / seq / flags 等）保持完全一致，
         // 使 vtable 长度在两遍间稳定。
-        let probe_header = encode_header(&FrameHeaderArgs {
+        let probe_len = build_header(&FrameHeaderArgs {
             magic: 0x5242_5443,
             abi_version: 1,
             schema_id: self.schema_id,
@@ -310,8 +310,10 @@ impl Iceoryx2SampleWriter<'_> {
             blob_offset: probe_blob_offset,
             blob_size: blob_size_val,
             header_crc32: 0,
-        });
-        let h = u32::try_from(probe_header.len())
+        })
+        .finished_data()
+        .len();
+        let h = u32::try_from(probe_len)
             .map_err(|_| TransportError::Backend("frame_header > u32::MAX".into()))?;
         let body_offset = 4 + h;
         let body_end = body_offset + body_size;
@@ -319,7 +321,7 @@ impl Iceoryx2SampleWriter<'_> {
             Some(_) => (body_end, blob_size_val),
             None => (0, 0),
         };
-        let real = encode_header(&FrameHeaderArgs {
+        let real = build_header(&FrameHeaderArgs {
             magic: 0x5242_5443,
             abi_version: 1,
             schema_id: self.schema_id,
@@ -334,16 +336,17 @@ impl Iceoryx2SampleWriter<'_> {
             blob_size,
             header_crc32: 0,
         });
-        if real.len() != probe_header.len() {
+        let header = real.finished_data();
+        if header.len() != probe_len {
             return Err(TransportError::Backend(format!(
                 "probe/real FrameHeader size mismatch ({} vs {})",
-                probe_header.len(),
-                real.len()
+                probe_len,
+                header.len()
             )));
         }
         Ok(WireParts {
             header_size: h.to_le_bytes(),
-            header: real,
+            header: header.to_vec(),
             body: core::mem::take(&mut self.body_bytes),
             blob: self.blob_bytes.take(),
         })
@@ -360,11 +363,11 @@ impl Drop for Iceoryx2SampleWriter<'_> {
     }
 }
 
-fn encode_header(args: &FrameHeaderArgs) -> Vec<u8> {
+fn build_header(args: &FrameHeaderArgs) -> FlatBufferBuilder<'static> {
     let mut fbb = FlatBufferBuilder::new();
     let fh = FbFrameHeader::create(&mut fbb, args);
     fbb.finish(fh, None);
-    fbb.finished_data().to_vec()
+    fbb
 }
 
 /// 仅依据 0.9.3 的真实 `send_sample` 顺序分类，不根据错误文字猜测副作用。

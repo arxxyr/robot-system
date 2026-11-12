@@ -32,7 +32,7 @@
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
 | 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证及本轮实际服务前后CPU/FIFO/VmLck读取通过；未据此证明硬实时截止保证 |
 
-S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0去掉三个临时数组，S1混合保持在编码时清零轮位；通用发布层将帧头、正文直接分段写入SHM，不再分配完整wire数组。观测队列接管原缓冲、按容量计预算，镜像仍写入独立SHM。原消息字节、失败边界、跨锁目标快照和独立状态缓存保留；未宣称端到端零拷贝或时延提升。见[分段发布验证](evidence/publish_wire_parts_2026-11-11/software-summary.json)及[状态/发布验证](evidence/publish_owned_state_2026-11-12/software-summary.json)。RPC缓存共享快照属于旁路，保留[原验证](evidence/s1_rpc_copy_2026-11-12/software-summary.json)；本轮未修改RPC、相机或RT命令槽代码，未安装或启动实机。
+S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0去掉三个临时数组，S1混合保持在编码时清零轮位，Scripted驻留复用目标，试算帧头只取长度；通用发布层将帧头、正文直接分段写入SHM，不再分配完整wire数组。观测队列接管原缓冲、按容量计预算，镜像仍写入独立SHM。原消息字节、失败边界、跨锁目标快照和独立状态缓存保留；未宣称端到端零拷贝或时延提升。见[小复制收尾验证](evidence/publish_small_copies_2026-11-12/software-summary.json)、[分段发布验证](evidence/publish_wire_parts_2026-11-11/software-summary.json)及[状态/发布验证](evidence/publish_owned_state_2026-11-12/software-summary.json)。RPC缓存共享快照属于旁路，保留[原验证](evidence/s1_rpc_copy_2026-11-12/software-summary.json)；本轮未修改RPC、相机或RT命令槽代码，未安装或启动实机。
 
 轮位唯一来源为[xlerobot-bus2.toml](../configs/xlerobot-bus2.toml)的同下标`joints`/`motor_ids`，当前**前8、左9、右7**，只支持既有ID7/8/9排列；校准数值按物理ID保留。改配置必须重建计划，旧GO失效，不在代码复制映射。
 

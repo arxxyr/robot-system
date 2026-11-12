@@ -477,9 +477,7 @@ impl ActionInstance for ScriptedInstance {
             }
             Phase::Dwell { start_ns } => {
                 let elapsed = now_ns.saturating_sub(start_ns);
-                // Dwell 期 target = waypoint.positions 不变。
-                self.tick_buf.clear();
-                self.tick_buf.extend_from_slice(&current_wp.positions);
+                // Interp→Dwell 时已将终点写入 tick_buf，驻留期间直接复用。
                 if elapsed >= dwell_ns {
                     // Dwell 完成 → advance waypoint（或 Completed）。
                     return Ok(self.advance_waypoint_and_emit(ctx, now_ns));
@@ -1284,6 +1282,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn dwell_reuses_current_waypoint_across_segment_transition() {
+        let first = [2.0, 4.0, 6.0];
+        let second = [-1.0, -3.0, -5.0];
+        let payload = build_scripted_payload_bytes(&[
+            (first.to_vec(), 200, 100),
+            (second.to_vec(), 100, 100),
+        ]);
+        let start_ns = 1_000_000_000;
+        let (mut instance, cfg, hardware, anchor, clock) =
+            fresh_instance_with_payload(payload, &[0.0; 3], start_ns);
+        // 第一段驻留、切段、插值以及第二段驻留使用不同目标，防止复用旧段数据。
+        for (seq, (elapsed_ms, expected)) in [
+            (0_u64, [0.0; 3]),
+            (100, first),
+            (150, first),
+            (299, first),
+            (300, first),
+            (350, [0.5; 3]),
+            (400, second),
+            (450, second),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let now_ns = start_ns + elapsed_ms * 1_000_000;
+            clock.set(MonoRawNs(now_ns));
+            let seq = u64::try_from(seq).unwrap() + 10;
+            let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor, seq);
+            let ActionTickOutput::Continue {
+                command: Some(body),
+                ..
+            } = instance.tick(&mut ctx).unwrap()
+            else {
+                panic!("t={elapsed_ms}ms 应继续发布目标");
+            };
+            let cmd = root::<FbJointCommand<'_>>(body.as_bytes()).unwrap();
+            assert_eq!(decode_target(&body), expected);
+            assert_eq!(cmd.source_task_id(), seq);
+            assert_eq!(cmd.deadline_ns(), now_ns + cfg.deadline_offset_ns());
+        }
+        clock.set(MonoRawNs(start_ns + 500_000_000));
+        let mut ctx = tick_ctx(&clock, &hardware, &cfg, &anchor, 18);
+        assert!(matches!(
+            instance.tick(&mut ctx).unwrap(),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        assert_eq!(instance.successful_hold_target(), Some(second.to_vec()));
     }
 
     // ----- 9. tick_completed_after_last_dwell（v0.5 候选 E 段(5) 末点发布

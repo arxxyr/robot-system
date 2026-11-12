@@ -1,0 +1,60 @@
+{
+  "base_commit": "9d0d8cb5c1afa471d61fd2b95af84100e9be0768",
+  "scope": "仅清理试算帧头临时Vec及Scripted驻留重复目标复制；未安装、未启动实机或服务",
+  "rustc": "rustc 1.102.0-nightly (ac8310ba6 2026-11-09)\nbinary: rustc\ncommit-hash: ac8310ba643a3796cbe77d2e06944d7c8513999f\ncommit-date: 2026-11-09\nhost: aarch64-unknown-linux-gnu\nrelease: 1.102.0-nightly\nLLVM version: 23.1.5",
+  "log_root": "/Users/loosqk/repo/rust/robot-system/.verify/publish-small-copies-20261112",
+  "cargo_target_dir": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": "cargo fmt --all",
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "clippy",
+      "command": "cargo clippy --all --all-targets -- -D warnings",
+      "exit_code": 0,
+      "log_sha256": "e30b3331b9ec2000c58e8c4fddd581fb2e77c5c18cf290151008edcf98861664"
+    },
+    {
+      "name": "transport",
+      "command": "cargo test --locked -p robot-transport --lib --test sample --test parser --test iceoryx2_roundtrip --test observer_mirror --test publisher_origin -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "3dc3cc4f50f7408bcd54952d9b7804c741e8aac7d1f6cd11730b0bb53a862f6f",
+      "passed": 128,
+      "failed": 0,
+      "ignored": 1
+    },
+    {
+      "name": "s0-pub",
+      "command": "cargo test --locked -p robot-s0 --lib pub_thread::tests -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "7acba991d74fa0d37f7561c4777cdb741f101b0553149fd5d217dc4875b6a010",
+      "passed": 16,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "s1",
+      "command": "cargo test --locked -p robot-s1 --lib -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "a67997c26a69d707c98c2457369f9494c9490ee1e12e1d1e59c063e88595623e",
+      "passed": 297,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "code_sha256": {
+    "crates/robot-transport/src/iceoryx2/publisher.rs": "d1ea12cb301b0e890e18432fa3ec33dac80907f3587af513cc03bf2deb0a6405",
+    "crates/robot-s1/src/action_backend/scripted.rs": "9740f1f744e7059f3120fca12223707b5c04e940c9db2555fa51db00b91590c1"
+  },
+  "source_manifest_sha256": "6ab8e80d1b771d0ea0eff5f655288d810d1aaee30fb43d7d4c8006a8b04555bb",
+  "source_binding": "验证前后两端2125项已跟踪文件校验一致；之后仅更新状态文档与本证据，Rust文件SHA保持一致",
+  "coverage": [
+    "复用命令/状态/心跳与mock的逐字节对照，覆盖元数据零值、非零、最大值及无blob/空blob/有blob；保留probe/real长度检查和失败分类",
+    "新增跨路点驻留回归：目标切换、插值、重复驻留、每拍命令序号与期限，以及最终完成时刻和保持值均符合原合同",
+    "既有零驻留、大步时钟、末点发布、取消和混合模式测试通过；S0发布线程16项、S1库297项通过"
+  ],
+  "limits": "保留真实帧头和正文的自有缓冲、必要快照与隔离语义；未改RPC、相机或RT命令槽。未测量时延或吞吐，不宣称端到端零拷贝。"
+}
