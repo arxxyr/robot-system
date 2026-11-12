@@ -8,7 +8,7 @@
 
 - 左臂六关节＋头部两关节原位保持20秒，同时采集头部、左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`，同时采集右腕RGB。两侧分别完成动作观察、停止及清场。
 - 正式链路为 `robot-s0-preflight → guard → robot-s0`；两侧服务为 `robot-s0-bus1/bus2`。手动启停及此前真实重启后的双侧保护待机自启已验证，默认不上扭、故障保持锁存。
-- 最新安装候选 `dcd781e` 按左→右各启动20秒：心跳988/989条，头部301、左腕102、右腕102帧，`NRestarts=0`；通讯线程实际CPU4/5、FIFO70、锁页保持。安装前及两侧收尾的原STOP51、三轮位置复核均通过，现场确认无自行移动、结束静止。
+- 最近实机验收候选 `dcd781e` 按左→右各启动20秒：心跳988/989条，头部301、左腕102、右腕102帧，`NRestarts=0`；通讯线程实际CPU4/5、FIFO70、锁页保持。安装前及两侧收尾的原STOP51、三轮位置复核均通过，现场确认无自行移动、结束静止。
 - 本轮是故障保护待机验收：Dirty状态下关节消息因位置数组与布局长度不同被拒收，不能写成健康关节采样通过。安装外层退出码记录损坏；安装器三子命令退出码0，备份和安装件独立核验通过，未重试安装。
 - Orin全workspace/all-features为3059通过、23 ignored，其中13项已另行补测；453项Python测试零跳过。三组构建矩阵、release、依赖检查及打包验证通过。原失败不因后续通过而改写；测试结果、原帧和性能报告不再提交Git。
 
@@ -39,9 +39,9 @@
 
 ## 安装、发布与下一步
 
-当前安装根为`/home/loosqk/robot-checks/s0-dev-full-20261112`，升级备份为`/var/lib/robot/deploy-backup-s0-dev-dcd781e`。三服务保持enabled；两侧S0已停止、PID0并保留Dirty的`failed/exit-code 1`，preflight为`active/exited`。双份RX/EStop为1，进程、相机、UART及锁已清场，本轮GO已消费、看护已结束。
+当前正式安装根为`/home/loosqk/robot-checks/s0-release-0.0.1-20261112-r3`，提交`ad04d8d`，本批备份为`/var/lib/robot/deploy-backup-s0-release-ad04d8d`。原安装根和备份保留；本次沿既有安装器完成check、backup、install，仅daemon-reload，未启动服务。三服务保持enabled；两侧S0仍为PID0、Dirty的`failed/exit-code 1`，preflight为`active/exited`，双份RX/EStop为1。左右启动脚本及只读预检已准备，等待本轮现场状态后按左→右启动并保持运行，不启用电机。
 
-正式0.0.1从最终发布提交在Orin按 [配置矩阵](../configs/package-matrix.toml) 重新打包；包内`commit`、master与`v0.0.1+<该提交7位SHA>`一致，具体SHA和附件校验值随Release记录。两个远程同步，所有旧标签保留；发布包不自动替换上述安装件，不追加启动、重启或动作。后续开发仍仅推dev。
+正式版 [v0.0.1+ad04d8d](https://github.com/arxxyr/robot-system/releases/tag/v0.0.1%2Bad04d8d) 已从最终提交在Orin按 [配置矩阵](../configs/package-matrix.toml) 重新打包并发布；包内`commit`、两个远程master与标签均为`ad04d8d7057264eb8445944196baf60ed3d32d3f`，附件校验值见Release。所有旧标签保留；GitHub Actions因账户付款或额度限制未启动步骤，不能记作CI通过，本次依据Orin验证。部署状态更新仅进dev，不改变发布提交或标签。
 
 1. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；服务链实机验收另行开展，不追加为S0结案条件。
 2. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU和第二种硬件后端；分别验证，不预建RPC、插件或新框架。
