@@ -33,7 +33,8 @@ BUSINESS_UNITS = tuple(f"{prefix}-{role}-{side}{'-arm' if role == 's0' else ''}.
     *UNIT_NAMES[1:], *OLD_UNIT_NAMES[1:],
 )
 SYSTEMD_PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "UnitFileState",
-                      "FragmentPath", "DropInPaths", "Job", "Result")
+                      "FragmentPath", "DropInPaths", "Job", "Result", "ExecMainCode", "ExecMainStatus")
+TERMINAL_PROPERTIES = ("ActiveState", "SubState", "MainPID", "Result", "ExecMainCode", "ExecMainStatus")
 PROTECTION_NAMES = ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak",
                     "rx_trust.lock", "estop_latch.lock")
 CANDIDATE_FILES = {"camera_capture.py", "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml",
@@ -139,7 +140,7 @@ class S0UnitInstaller:
                 "命令失败或出现未知诊断：" + repr(dict(argv=argv, exit_code=row.returncode, stderr=row.stderr)))
         return row.stdout
 
-    def _services(self, *, allow_failed_units=False):
+    def _services(self, *, allow_failed_units=False, upgrade=False):
         result = {}
         for name in (*BUSINESS_UNITS, *PREFLIGHT_UNITS):
             raw = self._command(["systemctl", "show", name, "--all", "--property=" + ",".join(SYSTEMD_PROPERTIES)])
@@ -155,7 +156,11 @@ class S0UnitInstaller:
             # 仅撤销自启可接受本批三 unit 已退出的失败终态；不清除 Result。
             failed_current = (allow_failed_units and name in UNIT_NAMES and fields["LoadState"] == "loaded"
                               and (fields["ActiveState"], fields["SubState"]) == ("failed", "failed"))
-            if failed_current:
+            # 同名候选升级仅容纳已停稳的 Dirty 退出，不清除 systemd 保存的失败记录。
+            failed_upgrade = (upgrade and name in UNIT_NAMES[1:] and fields["LoadState"] == "loaded"
+                              and tuple(fields[key] for key in TERMINAL_PROPERTIES)
+                              == ("failed", "failed", "0", "exit-code", "1", "1"))
+            if failed_current or failed_upgrade:
                 pass
             elif name in PREFLIGHT_UNITS:
                 require(fields["LoadState"] in ("loaded", "not-found") and (fields["ActiveState"], fields["SubState"])
@@ -280,15 +285,22 @@ class S0UnitInstaller:
         return dict(candidate=str(self.previous_candidate), manifest_sha256=self.previous_manifest_sha256,
                     manifest=manifest, units=units)
 
-    def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True, allow_failed_units=False):
+    def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True, allow_failed_units=False,
+               allow_upgrade_state=True):
         # 回滚及撤销自启仍固定清单；撤销自启不要求运行产物与设备就绪。
         document = self._manifest(verify_runtime=rollback_record is None and verify_runtime)
         protection = self._protection(document)
-        services = self._services(allow_failed_units=allow_failed_units)
-        targets = self._targets(services, rollback_record=rollback_record, autostart=autostart)
-        previous = None
         if rollback_record is None:
             previous = self._previous(document)
+            upgrade = previous is not None
+        else:
+            previous, upgrade = self._backup_previous(rollback_record)
+        upgrade = upgrade and allow_upgrade_state
+        services = self._services(allow_failed_units=allow_failed_units, upgrade=upgrade)
+        targets = self._targets(services, rollback_record=rollback_record, autostart=autostart or upgrade)
+        if upgrade:
+            require(all(not targets[name]["exists"] for name in OLD_UNIT_NAMES), "同名升级要求旧三 unit 路径全部不存在")
+        if rollback_record is None:
             unit_owner = self.unit_directory.stat()
             for name in UNIT_NAMES:
                 source = previous["units"][name] if previous is not None else document["candidate_files"]["systemd/" + name]
@@ -437,6 +449,8 @@ class S0UnitInstaller:
             require({name: self._target(name) for name in MANAGED_UNIT_NAMES} == state["targets"], "备份期间旧目标变化")
             require(self._protection(state["document"]) == state["protection"], "备份期间保护状态变化")
             require(self._previous(state["document"]) == state["previous_candidate"], "备份期间上一版源文件身份变化")
+            if state["previous_candidate"] is not None:
+                require(self._services(upgrade=True) == state["services"], "备份期间服务状态变化")
             record = dict(schema=BACKUP_SCHEMA, renames=dict(zip(OLD_UNIT_NAMES, UNIT_NAMES)),
                           candidate=str(self.candidate), manifest_sha256=self.manifest_sha256,
                           unit_directory=str(self.unit_directory), originals=state["targets"], saved=saved,
@@ -447,6 +461,48 @@ class S0UnitInstaller:
             write_new(path / "backup.json", raw)
             write_new(path / "backup.sha256", (hashlib.sha256(raw).hexdigest() + "\n").encode())
             return dict(result="BACKUP_PASS", files=len(saved), backup_directory=str(path), changed_units=0)
+
+    def _backup_previous(self, record):
+        if "previous_candidate" not in record:
+            return None, False
+        previous = record["previous_candidate"]
+        require(isinstance(previous, dict) and set(previous) == {"candidate", "manifest_sha256", "manifest", "units"},
+                "备份上一版候选字段错误")
+        candidate = absolute(previous["candidate"])
+        require(candidate != self.candidate and isinstance(previous["manifest_sha256"], str)
+                and re.fullmatch(r"[0-9a-f]{64}", previous["manifest_sha256"])
+                and isinstance(previous["units"], dict) and set(previous["units"]) == set(UNIT_NAMES),
+                "备份上一版候选身份错误")
+        identity_keys = {"path", "bytes", "sha256", "uid", "gid", "mode", "device", "inode", "mtime_ns", "ctime_ns"}
+        for name, ref in [("manifest.json", previous["manifest"]),
+                          *(("systemd/" + name, previous["units"][name]) for name in UNIT_NAMES)]:
+            require(isinstance(ref, dict) and set(ref) == identity_keys
+                    and ref["path"] == str(candidate / name)
+                    and isinstance(ref["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+                    and all(type(ref[key]) is int and ref[key] >= 0 for key in identity_keys - {"path", "sha256"})
+                    and ref["mode"] <= 0o7777, "备份上一版文件身份错误：" + name)
+        require(previous["manifest"]["sha256"] == previous["manifest_sha256"], "备份上一版清单 SHA 不一致")
+        unit_owner = self.unit_directory.stat()
+        require(all(record["originals"][name]["exists"] is False for name in OLD_UNIT_NAMES),
+                "同名升级备份不得包含旧三 unit")
+        for name in UNIT_NAMES:
+            old = record["originals"][name]
+            expected = {**previous["units"][name], "mode": 0o644, "uid": unit_owner.st_uid, "gid": unit_owner.st_gid}
+            require(old["exists"] is True and same_content(old, expected), "同名升级备份原件不匹配上一版：" + name)
+        require(isinstance(record.get("services"), dict)
+                and set(record["services"]) == set((*BUSINESS_UNITS, *PREFLIGHT_UNITS)), "同名升级备份服务集合错误")
+        complete = all(isinstance(service, dict) and set(service) == set(SYSTEMD_PROPERTIES)
+                       for service in record["services"].values())
+        legacy_properties = set(SYSTEMD_PROPERTIES) - {"ExecMainCode", "ExecMainStatus"}
+        legacy = all(isinstance(service, dict) and set(service) == legacy_properties
+                     for service in record["services"].values())
+        require(complete or legacy, "同名升级备份服务属性不完整")
+        for name in UNIT_NAMES:
+            service = record["services"][name]
+            require(service["Id"] == name and service["UnitFileState"] in (("enabled", "disabled") if complete else ("disabled",)),
+                    "同名升级备份自启状态错误：" + name)
+        # 历史备份没有退出码属性，仅沿用原 strict 回滚，不补造成功终态。
+        return previous, complete
 
     def _read_backup(self, backup_directory):
         path = self._backup_path(backup_directory)
@@ -469,6 +525,7 @@ class S0UnitInstaller:
                 ref = record["saved"][name]
                 require(ref["path"] == str(path / "units" / name)
                         and same_content(file_identity(ref["path"]), ref) and ref["sha256"] == old["sha256"], "备份文件损坏")
+        self._backup_previous(record)
         return path, record
 
     def _atomic_replace(self, target, data, expected):
@@ -499,13 +556,16 @@ class S0UnitInstaller:
     def _apply(self, backup_directory, rollback):
         with self._locked():
             path, record = self._read_backup(backup_directory)
-            previous = record.get("previous_candidate")
+            previous, upgrade = self._backup_previous(record)
             if not rollback:
                 require((previous is None and self.previous_candidate is None)
                         or (isinstance(previous, dict) and previous.get("candidate") == str(self.previous_candidate)
                             and previous.get("manifest_sha256") == self.previous_manifest_sha256),
                         "安装的上一版选择与备份不一致")
-            state = self._check(rollback_record=record if rollback else None)
+            state = self._check(rollback_record=record if rollback else None, allow_upgrade_state=upgrade)
+            if upgrade:
+                require(all(state["services"][name]["UnitFileState"] == record["services"][name]["UnitFileState"]
+                            for name in UNIT_NAMES), "换入前自启状态与备份不一致")
             if not rollback:
                 require(state["previous_candidate"] == previous, "上一版源文件身份与备份不一致")
             for name, new in record["new_units"].items():
@@ -549,8 +609,13 @@ class S0UnitInstaller:
                     receipt["completed"].append(name)
                     self._receipt(receipt_path, receipt)
                 self._command(["systemctl", "daemon-reload"])
-                after = self._services()
-                actual = self._targets(after)
+                after = self._services(upgrade=upgrade)
+                actual = self._targets(after, autostart=upgrade)
+                if upgrade:
+                    require(all(after[name]["UnitFileState"] == record["services"][name]["UnitFileState"]
+                                for name in UNIT_NAMES), "换入后自启状态与备份不一致")
+                    require(all(all(state["services"][name][key] == after[name][key] for key in TERMINAL_PROPERTIES)
+                                for name in UNIT_NAMES), "同名升级期间服务终态变化")
                 for name, row in actual.items():
                     expected = record["originals"][name] if rollback else record["new_units"].get(name)
                     absent = expected is None or rollback and not expected["exists"]

@@ -162,6 +162,8 @@ class FakeCommands:
                 "SubState": "exited" if unit == OLD_UNIT_NAMES[0] else "dead",
                 "MainPID": "0",
                 "Result": "success",
+                "ExecMainCode": "0",
+                "ExecMainStatus": "0",
                 "Job": "",
                 "ExecMainPID": "0",
                 "ControlPID": "0",
@@ -391,6 +393,25 @@ class UnitInstallerTests(unittest.TestCase):
                                       previous_candidate=fixture.candidate,
                                       previous_manifest_sha256=fixture.manifest_sha256)
 
+    def stopped_failed_upgrade(self, fixture=None):
+        fixture = fixture or self.fixture
+        subject = self.prepare_upgrade(fixture)
+        fixture.commands.autostart = dict.fromkeys(UNIT_NAMES, "enabled")
+        fixture.commands.overrides = {
+            name: {"ActiveState": "failed", "SubState": "failed", "Result": "exit-code",
+                   "ExecMainCode": "1", "ExecMainStatus": "1"}
+            for name in UNIT_NAMES[1:]
+        }
+        return subject
+
+    @staticmethod
+    def rewrite_backup(fixture, record):
+        raw = (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
+        (fixture.backup_dir / "backup.json").chmod(0o600)
+        (fixture.backup_dir / "backup.sha256").chmod(0o600)
+        fixture.write(fixture.backup_dir / "backup.json", raw, 0o400)
+        fixture.write(fixture.backup_dir / "backup.sha256", (hashlib.sha256(raw).hexdigest() + "\n").encode(), 0o400)
+
     def test_explicit_previous_candidate_upgrades_and_rolls_back_six_paths(self):
         subject = self.prepare_upgrade()
         targets = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
@@ -436,6 +457,251 @@ class UnitInstallerTests(unittest.TestCase):
         self.assert_no_autostart_changes(self.fixture.commands)
         self.assert_no_reload()
 
+    def test_enabled_failed_upgrade_and_rollback_preserve_autostart_failure_and_protection(self):
+        subject = self.stopped_failed_upgrade()
+        # 每份状态按备份分别保存，允许既有三份自启状态不一致。
+        self.fixture.commands.autostart[UNIT_NAMES[1]] = "disabled"
+        before = subject._services(upgrade=True)
+        originals = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        protection = {ref["path"]: reference(Path(ref["path"])) for rows in self.fixture.protection.values() for ref in rows.values()}
+        default = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        with self.assertRaises(ValueError):
+            default.check()
+        self.assertEqual(subject.check()["result"], "CHECK_PASS")
+        subject.backup(self.fixture.backup_dir)
+        record = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        self.assertEqual(record["services"], before)
+        self.assertEqual(subject.install(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(subject._services(upgrade=True), before)
+        for path in [self.fixture.candidate / "manifest.json", *[self.fixture.candidate / "systemd" / name for name in UNIT_NAMES]]:
+            path.unlink()
+        # 回滚保留当下终态，不要求回到备份时的终态。
+        self.fixture.commands.overrides[UNIT_NAMES[1]] = {"ActiveState": "inactive", "SubState": "dead", "Result": "success",
+                                                        "ExecMainCode": "1", "ExecMainStatus": "0"}
+        rollback_before = default._services(upgrade=True)
+        self.assertEqual(default.rollback(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(default._services(upgrade=True), rollback_before)
+        for name, expected in originals.items():
+            current = subject._target(name)
+            self.assertEqual(current["exists"], expected["exists"])
+            if expected["exists"]:
+                self.assertTrue(installer.same_content(current, expected))
+        self.assertEqual(protection, {path: reference(Path(path)) for path in protection})
+        self.assert_no_autostart_changes(self.fixture.commands)
+        self.assertEqual(sum(call == ["systemctl", "daemon-reload"] for call in self.fixture.commands.calls), 2)
+
+    def test_legacy_same_name_backup_rolls_back_strictly_without_exit_code_properties(self):
+        subject = self.prepare_upgrade()
+        original = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        subject.backup(self.fixture.backup_dir)
+        record = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        for service in record["services"].values():
+            service.pop("ExecMainCode")
+            service.pop("ExecMainStatus")
+        self.rewrite_backup(self.fixture, record)
+        self.assertEqual(subject.install(self.fixture.backup_dir)["status"], "PASS")
+        for path in [self.fixture.candidate / "manifest.json", *[self.fixture.candidate / "systemd" / name for name in UNIT_NAMES]]:
+            path.unlink()
+        self.fixture.commands.calls.clear()
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        self.assertEqual(rollback.rollback(self.fixture.backup_dir)["status"], "PASS")
+        for name, expected in original.items():
+            current = rollback._target(name)
+            self.assertEqual(current["exists"], expected["exists"])
+            if expected["exists"]:
+                self.assertTrue(installer.same_content(current, expected))
+        self.assertEqual(json.loads((self.fixture.backup_dir / "backup.json").read_text()), record)
+        self.assertEqual(sum(call == ["systemctl", "daemon-reload"] for call in self.fixture.commands.calls), 1)
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_legacy_same_name_backup_does_not_allow_enabled_or_failed_install_or_rollback(self):
+        subject = self.prepare_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        record = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        for service in record["services"].values():
+            service.pop("ExecMainCode")
+            service.pop("ExecMainStatus")
+        self.rewrite_backup(self.fixture, record)
+        self.fixture.commands.calls.clear()
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        before = {name: rollback._target(name) for name in MANAGED_UNIT_NAMES}
+        failed = {"ActiveState": "failed", "SubState": "failed", "Result": "exit-code", "ExecMainCode": "1", "ExecMainStatus": "1"}
+        for name in UNIT_NAMES:
+            for override in ({"UnitFileState": "enabled"}, failed):
+                with self.subTest(name=name, override=override):
+                    self.fixture.commands.overrides = {name: override}
+                    for operation in (subject.install, rollback.rollback):
+                        with self.assertRaises(ValueError):
+                            operation(self.fixture.backup_dir)
+                    self.assertEqual({name: rollback._target(name) for name in MANAGED_UNIT_NAMES}, before)
+        self.assertFalse((self.fixture.backup_dir / "install-result.json").exists())
+        self.assertFalse(list(self.fixture.backup_dir.glob("rollback-*-result.json")))
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_upgrade_failure_exception_rejects_other_units_and_unknown_terminal_states(self):
+        subject = self.stopped_failed_upgrade()
+        failed = self.fixture.commands.overrides[UNIT_NAMES[1]].copy()
+        invalid = [(name, failed) for name in (UNIT_NAMES[0], *OLD_UNIT_NAMES, installer.BUSINESS_UNITS[0])]
+        invalid += [(UNIT_NAMES[1], {**failed, **change}) for change in (
+            {"Result": "signal"}, {"ExecMainCode": "2"}, {"ExecMainCode": "exited"}, {"ExecMainStatus": "2"},
+            {"ActiveState": "active", "SubState": "running"}, {"MainPID": "42"}, {"Job": "1 /job/1"})]
+        for name, value in invalid:
+            with self.subTest(name=name, value=value):
+                self.fixture.commands.overrides = {name: value}
+                before = {unit: subject._target(unit) for unit in MANAGED_UNIT_NAMES}
+                with self.assertRaises(ValueError):
+                    subject.backup(self.fixture.backup_dir)
+                self.assertFalse(self.fixture.backup_dir.exists())
+                self.assertEqual({unit: subject._target(unit) for unit in MANAGED_UNIT_NAMES}, before)
+        self.fixture.commands.overrides = {UNIT_NAMES[1]: failed}
+        for key in ("ExecMainCode", "ExecMainStatus"):
+            with self.subTest(missing=key):
+                self.fixture.commands.omit_properties = {key}
+                with self.assertRaises(ValueError):
+                    subject.check()
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_same_name_upgrade_and_bound_rollback_reject_live_old_unit_paths(self):
+        subject = self.stopped_failed_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        for name in OLD_UNIT_NAMES:
+            with self.subTest(name=name):
+                path = self.fixture.unit_directory / name
+                self.fixture.write(path, b"unexpected old unit\n")
+                self.fixture.commands.cached_values.clear()
+                for operation in (subject.check, lambda: subject.install(self.fixture.backup_dir),
+                                  lambda: rollback.rollback(self.fixture.backup_dir)):
+                    with self.assertRaisesRegex(ValueError, "旧三 unit 路径全部不存在"):
+                        operation()
+                path.unlink()
+                self.fixture.commands.cached_values.clear()
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_bound_rollback_rejects_incomplete_or_unbound_previous_backup(self):
+        subject = self.stopped_failed_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        original = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        for damage in ("null", "extra", "missing", "identity", "sha", "unit-path", "unit-content", "missing-original", "old-original",
+                       "service-code", "mixed-service", "autostart"):
+            with self.subTest(damage=damage):
+                record = json.loads(json.dumps(original))
+                previous = record["previous_candidate"]
+                if damage == "null":
+                    record["previous_candidate"] = None
+                elif damage == "extra":
+                    previous["unexpected"] = True
+                elif damage == "missing":
+                    previous.pop("units")
+                elif damage == "identity":
+                    previous["manifest"]["unexpected"] = True
+                elif damage == "sha":
+                    previous["manifest_sha256"] = "f" * 64
+                elif damage == "unit-path":
+                    previous["units"][UNIT_NAMES[0]]["path"] += ".other"
+                elif damage == "unit-content":
+                    previous["units"][UNIT_NAMES[0]]["sha256"] = "f" * 64
+                elif damage == "missing-original":
+                    record["originals"][UNIT_NAMES[0]]["exists"] = False
+                    record["saved"].pop(UNIT_NAMES[0])
+                elif damage == "old-original":
+                    old = OLD_UNIT_NAMES[0]
+                    record["originals"][old] = {**record["originals"][UNIT_NAMES[0]], "path": str(self.fixture.unit_directory / old)}
+                    target = self.fixture.backup_dir / "units" / old
+                    self.fixture.write(target, (self.fixture.backup_dir / "units" / UNIT_NAMES[0]).read_bytes(), 0o400)
+                    record["saved"][old] = installer.file_identity(target)
+                elif damage == "service-code":
+                    record["services"][UNIT_NAMES[0]].pop("ExecMainCode")
+                elif damage == "mixed-service":
+                    record["services"][UNIT_NAMES[0]].pop("ExecMainCode")
+                    record["services"][UNIT_NAMES[0]].pop("ExecMainStatus")
+                else:
+                    record["services"][UNIT_NAMES[0]]["UnitFileState"] = "alias"
+                self.rewrite_backup(self.fixture, record)
+                with self.assertRaises(ValueError):
+                    rollback.rollback(self.fixture.backup_dir)
+        self.assertFalse(list(self.fixture.backup_dir.glob("rollback-*-result.json")))
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_upgrade_and_bound_rollback_reject_autostart_drift_before_transaction(self):
+        subject = self.stopped_failed_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        originals = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        for name in UNIT_NAMES:
+            with self.subTest(name=name):
+                self.fixture.commands.autostart[name] = "disabled"
+                for operation in (lambda: subject.install(self.fixture.backup_dir), lambda: rollback.rollback(self.fixture.backup_dir)):
+                    with self.assertRaisesRegex(ValueError, "换入前自启状态与备份不一致"):
+                        operation()
+                self.fixture.commands.autostart[name] = "enabled"
+                self.assertEqual({name: subject._target(name) for name in MANAGED_UNIT_NAMES}, originals)
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_upgrade_and_bound_rollback_detect_terminal_or_autostart_drift_after_reload(self):
+        for rollback in (False, True):
+            for damage in ("autostart", "terminal"):
+                with self.subTest(rollback=rollback, damage=damage):
+                    fixture = DeploymentFixture()
+                    self.addCleanup(fixture.cleanup)
+                    subject = self.stopped_failed_upgrade(fixture)
+                    subject.backup(fixture.backup_dir)
+                    if rollback:
+                        subject.install(fixture.backup_dir)
+                        subject = fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+                    failure_before = fixture.commands.overrides[UNIT_NAMES[1]].copy()
+
+                    def command(argv):
+                        result = fixture.commands(argv)
+                        if argv == ["systemctl", "daemon-reload"]:
+                            if damage == "autostart":
+                                fixture.commands.autostart[UNIT_NAMES[0]] = "disabled"
+                            else:
+                                fixture.commands.overrides[UNIT_NAMES[1]] = {"ActiveState": "inactive", "SubState": "dead", "Result": "success"}
+                        return result
+
+                    subject.runner = command
+                    with self.assertRaisesRegex(ValueError, "换入后自启状态" if damage == "autostart" else "服务终态变化"):
+                        (subject.rollback if rollback else subject.install)(fixture.backup_dir)
+                    receipt = (next(fixture.backup_dir.glob("rollback-*-result.json")) if rollback
+                               else fixture.backup_dir / "install-result.json")
+                    self.assertEqual(json.loads(receipt.read_text())["status"], "FAIL")
+                    self.assert_no_autostart_changes(fixture.commands)
+                    if damage == "autostart":
+                        self.assertEqual(fixture.commands.overrides[UNIT_NAMES[1]], failure_before)
+
+    def test_enabled_failed_partial_upgrade_rolls_back_with_original_failure_receipt(self):
+        subject = self.stopped_failed_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        original = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        real_replace = os.replace
+
+        def replace(source, destination, *args, **kwargs):
+            if Path(destination) == self.fixture.unit_directory / UNIT_NAMES[1]:
+                raise OSError("模拟同名升级第二份写入失败")
+            return real_replace(source, destination, *args, **kwargs)
+
+        with patch.object(installer.os, "replace", side_effect=replace), self.assertRaises(OSError):
+            subject.install(self.fixture.backup_dir)
+        receipt = self.fixture.backup_dir / "install-result.json"
+        failed = receipt.read_bytes()
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        self.assertEqual(rollback.rollback(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(receipt.read_bytes(), failed)
+        self.assertEqual(json.loads(failed)["status"], "FAIL")
+        for name, expected in original.items():
+            current = subject._target(name)
+            self.assertEqual(current["exists"], expected["exists"])
+            if expected["exists"]:
+                self.assertTrue(installer.same_content(current, expected))
+        self.assert_no_autostart_changes(self.fixture.commands)
+
     def test_previous_manifest_sha_and_static_contract_are_verified(self):
         for damage in ("sha", "schema", "root", "domain", "protection-path", "unit-path"):
             with self.subTest(damage=damage):
@@ -462,7 +728,7 @@ class UnitInstallerTests(unittest.TestCase):
                 self.assertFalse(fixture.backup_dir.exists())
                 self.assertFalse(any(call == ["systemctl", "daemon-reload"] for call in fixture.commands.calls))
 
-    def test_previous_requires_complete_unmixed_stopped_disabled_units_without_dropins(self):
+    def test_previous_requires_complete_unmixed_stopped_units_without_dropins(self):
         subject = self.prepare_upgrade()
         target = self.fixture.unit_directory / UNIT_NAMES[1]
         original = target.read_bytes()
@@ -482,7 +748,8 @@ class UnitInstallerTests(unittest.TestCase):
                 self.fixture.write(target, original)
                 self.assertFalse(self.fixture.backup_dir.exists())
         for override in ({"ActiveState": "active", "SubState": "running"}, {"MainPID": "42"}, {"Job": "1 /job/1"},
-                         {"UnitFileState": "enabled"}, {"UnitFileState": "masked"}, {"DropInPaths": "/other.conf"}):
+                         {"UnitFileState": "enabled-runtime"}, {"UnitFileState": "alias"},
+                         {"UnitFileState": "masked"}, {"DropInPaths": "/other.conf"}):
             with self.subTest(override=override):
                 self.fixture.commands.overrides = {target.name: override}
                 with self.assertRaises(ValueError):

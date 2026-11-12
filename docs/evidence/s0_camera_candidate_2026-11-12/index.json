@@ -1,0 +1,47 @@
+{
+  "description": "最小准备证据；完整命令和失败假测试输出保留Orin，本轮无GO、无服务变更、无UART/相机设备访问。",
+  "files": [
+    {
+      "path": "installer-tests.log",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-software/installer-tests.log",
+      "sha256": "90c701ecf8f4578398ad886904a47a725c7a5c1b926249fb63c3d714673713b4",
+      "bytes": 177
+    },
+    {
+      "path": "acceptance-tests-r2.log",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-software/acceptance-tests-r2.log",
+      "sha256": "09d445d12cc0d938752100ce89d647355ec2ba66bddcb43e0cc9246c0cdd0c67",
+      "bytes": 6765
+    },
+    {
+      "path": "clippy.log",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-software/clippy.log",
+      "sha256": "b99117aa0e8bb47566b65d4dec385f737e0c30bf01515e65f8c59f797a7eddbb",
+      "bytes": 2569
+    },
+    {
+      "path": "tested-files.sha256",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-software/tested-files.sha256",
+      "sha256": "830c9281bdfbaf4b9b3aa1e3b36388e4d9531e3fb11a0f5b0f0f6aef5e143fb1",
+      "bytes": 475
+    },
+    {
+      "path": "installation-preparation.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/installation-preparation.json",
+      "sha256": "883b1915a4bb72c8bb657fd2392b1fe622de1285b311713ad5dd672d301c681a",
+      "bytes": 532
+    },
+    {
+      "path": "unit-verify.stderr",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/unit-verify-r2.stderr",
+      "sha256": "131a53e0a9314dccf40ff916f603b6b9e08cbd32c16cfee349c7d6c58d353d10",
+      "bytes": 740
+    },
+    {
+      "path": "integration-clippy.log",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/integration-software/clippy.log",
+      "bytes": 2854,
+      "sha256": "ee39ec5884ea82872affce6c9fc2ebbdddd9e41e0743df947cb707aa24d04abc"
+    }
+  ]
+}

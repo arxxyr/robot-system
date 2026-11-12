@@ -1,0 +1,537 @@
+{
+  "result": "PREPARED_NOT_INSTALLED",
+  "candidate_root": "/home/loosqk/robot-checks/s0-camera-candidate-20261112",
+  "source_commit": "3a6d96eabdf739db5bb837d7a6c62cb1dc88c978",
+  "manifest_sha256": "dd489e10449fdfb9044e0c9e5c8d6d8c97b6d60ad8c23ab5f537ed9212a27dd6",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "8ece3097-eef1-4ed4-93e6-0a5ecc445e25"
+  },
+  "scripts": {
+    "installation.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/installation.py",
+      "sha256": "0aeb2cbe7d2b7aeb3130e9cc1edf08fd2ac1370bd5dc6be670f1b2d501d7b8d7"
+    },
+    "systemd_acceptance.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/systemd_acceptance.py",
+      "sha256": "5b388756bd5a819a4824813d814c088b7fd3c0ce6242a1a2fe6ee8ea448b3b07"
+    },
+    "preflight_once.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/preflight_once.py",
+      "sha256": "a8f5c8028d9d93cfc4b142cbf0ef3e3d1fc73ad09ef8986a1c09b9523076aa64"
+    },
+    "inspect_rrd.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/inspect_rrd.py",
+      "sha256": "1b46baedd05d7c33b85a292f83ef1e8ffae5680a60ebc8bac9ec903910db7481"
+    },
+    "install-tools/install_s0_units.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-tools/install_s0_units.py",
+      "sha256": "c377ec04998c43a881c35d2a6c03017ef5ca5e3a45c6764964ecf575ecb6c5d3"
+    },
+    "install-tools/artifact_checks.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/install-tools/artifact_checks.py",
+      "sha256": "8ca75058208dc8b70396d91f2c6494d7d22e83c68ee8f64ada8c94942cb6e952"
+    },
+    "test_installation.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/test_installation.py",
+      "sha256": "9037d3419480843ef5172056bf97f7b5d213927b0ca03501629992b4c905f9ce"
+    },
+    "test_systemd_acceptance.py": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/test_systemd_acceptance.py",
+      "sha256": "8cfd62bcfd5d655163be21becc72b2173519c68a1d9fa99a96b900664fe615a7"
+    }
+  },
+  "binaries": {
+    "robot-s0": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/bin/robot-s0",
+      "bytes": 5381104,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 365,
+      "device": 66305,
+      "inode": 14320812,
+      "mtime_ns": 1794465622076686374,
+      "ctime_ns": 1794465622076686374,
+      "nlink": 1,
+      "symlink": false,
+      "sha256": "ff716af602c2c441008edb481491bdd23860a7f0f4c0729cb3ae02a274a2c1ed",
+      "elf_machine": 183
+    },
+    "robot-deploy": {
+      "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/bin/robot-deploy",
+      "bytes": 1908560,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 365,
+      "device": 66305,
+      "inode": 14320813,
+      "mtime_ns": 1794465622080686511,
+      "ctime_ns": 1794465622080686511,
+      "nlink": 1,
+      "symlink": false,
+      "sha256": "40cfa70e28427cd26efba52f7a02bd25881393a8970c83c891e77d0e617b91ac",
+      "elf_machine": 183
+    }
+  },
+  "checks": {
+    "installer_tests": 77,
+    "acceptance_script_tests": 26,
+    "readonly_prepare_commands": 24,
+    "fmt_exit": 0,
+    "clippy_exit": 0,
+    "candidate_build_exit": 0,
+    "unit_verify_exit": 0,
+    "unit_verify_other_service_warnings": "原有snapd/xlerobot-web/xlerobot-coordinator/nvs-service/nvargus-daemon配置警告，本轮候选unit无诊断；不修改无关服务。",
+    "acceptance_script_tests_note": "26项完成后只在installation.main复用m.set_process_name；该最终入口已在Orin执行24项只读prepare。"
+  },
+  "prior_software_evidence": "docs/evidence/s0_camera_startup_2026-11-12/software-summary.json",
+  "running_before": {
+    "left": {
+      "pid": 7433,
+      "invocation": "68526f3ed2b54fe0a2180731cab3d550",
+      "n_restarts": "1",
+      "rt": {
+        "locked_kib": 2997076,
+        "threads": [
+          {
+            "tid": 7433,
+            "name": "robot-s0",
+            "start_ticks": 273985,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7434,
+            "name": "s0_boot_supervi",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7435,
+            "name": "latch_writer",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7436,
+            "name": "s0_ipc_thread",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7437,
+            "name": "s0_clear_rr",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7438,
+            "name": "s0_set_rr",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7439,
+            "name": "s0_watchdog",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7440,
+            "name": "s0_serial_io_th",
+            "start_ticks": 273992,
+            "policy": 1,
+            "fifo_priority": 70,
+            "cpus": [
+              4
+            ]
+          },
+          {
+            "tid": 7441,
+            "name": "s0_pub_thread",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7442,
+            "name": "s0_io_thread",
+            "start_ticks": 273992,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7445,
+            "name": "robot_observer",
+            "start_ticks": 273995,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7446,
+            "name": "robot_observer",
+            "start_ticks": 273996,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7462,
+            "name": "robot_observer",
+            "start_ticks": 274066,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7463,
+            "name": "robot_observer",
+            "start_ticks": 274125,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7467,
+            "name": "s0_systemd_wd",
+            "start_ticks": 274255,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7468,
+            "name": "robot-health",
+            "start_ticks": 274255,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    "right": {
+      "pid": 7372,
+      "invocation": "7080067e0a244c66a453a07d2cf1ce73",
+      "n_restarts": "0",
+      "rt": {
+        "locked_kib": 1946360,
+        "threads": [
+          {
+            "tid": 7372,
+            "name": "robot-s0",
+            "start_ticks": 272604,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7382,
+            "name": "s0_boot_supervi",
+            "start_ticks": 272610,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7384,
+            "name": "latch_writer",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7385,
+            "name": "s0_ipc_thread",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7386,
+            "name": "s0_clear_rr",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7387,
+            "name": "s0_set_rr",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7388,
+            "name": "s0_watchdog",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7389,
+            "name": "s0_serial_io_th",
+            "start_ticks": 272611,
+            "policy": 1,
+            "fifo_priority": 70,
+            "cpus": [
+              5
+            ]
+          },
+          {
+            "tid": 7390,
+            "name": "s0_pub_thread",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7391,
+            "name": "s0_io_thread",
+            "start_ticks": 272611,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7394,
+            "name": "robot_observer",
+            "start_ticks": 272614,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7396,
+            "name": "robot_observer",
+            "start_ticks": 272616,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7419,
+            "name": "robot_observer",
+            "start_ticks": 272689,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7429,
+            "name": "s0_systemd_wd",
+            "start_ticks": 272883,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "tid": 7430,
+            "name": "robot-health",
+            "start_ticks": 272884,
+            "policy": 0,
+            "fifo_priority": 0,
+            "cpus": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "protected_defaults": {
+    "auto_enable": false,
+    "rx_marker": 1,
+    "estop_latch": 1
+  },
+  "pending": [
+    "停止当前两侧并核退出身份",
+    "原STOP51及三轮稳定性",
+    "四稳定锁独占与设备清场",
+    "原安装器check/backup/install",
+    "新候选已安装后的原PLAN_ONLY",
+    "左后右各20秒启动与停止复验"
+  ],
+  "hardware_started": false,
+  "uart_opened": false,
+  "camera_opened": false,
+  "installed": false,
+  "services_changed": false,
+  "go_created": false,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "integration": {
+    "base_commit": "3fd72f232bcd55b9b0095db22aba96a868e33b26",
+    "fmt_exit": 0,
+    "clippy_exit": 0,
+    "candidate_unchanged": true,
+    "note": "保留远程已有发布缓冲优化；本轮现场候选仍固定3a6d96e。"
+  }
+}

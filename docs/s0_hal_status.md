@@ -8,6 +8,8 @@
 
 后续用户手动启动复现了头部相机断帧造成bus1首次启动失败，systemd重试一次才成功；此前验收结果保留，但不能据此认定启动稳定性已闭环。dev已修复原启动期限内的短暂失流：WARN并清槽、保留原采集器等待新帧。Orin两组Clippy、43项软件测试通过，旧实现负控已复现失败，见[软件验证](evidence/s0_camera_startup_2026-11-12/software-summary.json)。尚未安装或实机启动复验；同刻RGB接口USB `-71`的根因未确定。[原始事件选集](evidence/s0_camera_startup_2026-11-12/index.json)保留首次失败和自动重试成功。
 
+相机修复候选已从`3a6d96e`在Orin隔离构建，原安装/回滚及左后右各20秒启动脚本已准备；安装器77项、验收脚本26项离线测试、fmt/Clippy和24项只读预检通过，见[准备证据](evidence/s0_camera_candidate_2026-11-12/summary.json)。当前两侧仍运行旧候选，尚未停止、安装或启动复验；当次现场确认后才执行旧实例停止及原STOP51、备份换入、新安装件PLAN_ONLY、左后右保护待机/RGB验收。保持原自启设置、`auto_enable=false`及RX/EStop锁存，不重跑已完成的preflight、不清失败记录。
+
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
 | 既有手动启动验收 | 状态/心跳 | RGB | 停止与清场 |
