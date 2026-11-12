@@ -105,7 +105,7 @@ def elf_bytes(elf_type=2):
 
 
 class FakeCommands:
-    """仅模拟 show、fuser 和 daemon-reload，其他子命令立即失败。"""
+    """只模拟安装及固定三 unit 自启命令，启动或停止立即失败。"""
 
     def __init__(self, unit_directory):
         self.unit_directory = unit_directory
@@ -115,6 +115,10 @@ class FakeCommands:
         self.busy_devices = False
         self.reload_returncode = 0
         self.cached_values = {}
+        self.autostart = dict.fromkeys(UNIT_NAMES, "disabled")
+        self.autostart_returncode = 0
+        self.autostart_partial = None
+        self.autostart_stderr = ""
 
     def __call__(self, argv):
         argv = [str(arg) for arg in argv]
@@ -129,6 +133,13 @@ class FakeCommands:
             if self.reload_returncode == 0:
                 self.cached_values.clear()
             return subprocess.CompletedProcess(argv, self.reload_returncode, "", "")
+        if command[1] in ("enable", "disable"):
+            if command != ["systemctl", command[1], *UNIT_NAMES]:
+                raise AssertionError("自启必须固定三 unit 且不得带选项：" + repr(argv))
+            names = UNIT_NAMES if self.autostart_partial is None else UNIT_NAMES[:self.autostart_partial]
+            for name in names:
+                self.autostart[name] = "enabled" if command[1] == "enable" else "disabled"
+            return subprocess.CompletedProcess(argv, self.autostart_returncode, "", self.autostart_stderr)
         if len(command) < 3 or command[1] != "show":
             raise AssertionError("安装器不得启动或停止服务：" + repr(argv))
         units = [arg for arg in command[2:] if arg.endswith(".service")]
@@ -162,6 +173,8 @@ class FakeCommands:
             }
             # systemd 仅在 daemon-reload 后重新发现磁盘上的 unit 文件。
             values = self.cached_values.setdefault(unit, values).copy()
+            if unit in self.autostart and not missing:
+                values["UnitFileState"] = self.autostart[unit]
             values.update(self.overrides.get(unit, {}))
             blocks.append("\n".join(
                 name + "=" + values.get(name, "")
@@ -224,13 +237,15 @@ class DeploymentFixture:
         self.write(self.candidate / "camera_capture.py", "# 离线相机夹具\n".encode(), 0o444)
         for side, bus in (("left", 1), ("right", 2)):
             config = self.candidate / "configs" / (f"xlerobot-bus{bus}.toml")
-            self.write(config, ("[robot]\nid = \"" + self.domains[side]["robot_id"] + "\"\n").encode(), 0o444)
+            self.write(config, ("[robot]\nid = \"" + self.domains[side]["robot_id"]
+                                + "\"\n[[hardware]]\nauto_enable = false\n").encode(), 0o444)
         deploy = self.root / "bin" / "robot-deploy"
         s0 = self.root / "bin" / "robot-s0"
         handoff = (
             "[Service]\nType=oneshot\nRemainAfterExit=yes\n"
             + f"WorkingDirectory={self.candidate}\n"
             + f"ExecStart={deploy} preflight-handoff --left-config {self.config('left')} --right-config {self.config('right')}\n"
+            + "[Install]\nWantedBy=multi-user.target\n"
         )
         self.write(self.candidate / "systemd" / UNIT_NAMES[0], handoff.encode(), 0o444)
         for side, unit in zip(("left", "right"), UNIT_NAMES[1:]):
@@ -242,6 +257,7 @@ class DeploymentFixture:
                 + f"--robot-id {domain['robot_id']} -- --robot-id {domain['robot_id']} "
                 + f"--hardware-id {domain['hardware_id']} --latch-path {domain['latch_path']} "
                 + f"--rx-trust-dir {domain['rx_trust_dir']} --notify-mode required\n"
+                + "[Install]\nWantedBy=multi-user.target\n"
             )
             self.write(self.candidate / "systemd" / unit, content.encode(), 0o444)
         candidate_names = ["camera_capture.py"] + [
@@ -289,6 +305,8 @@ class DeploymentFixture:
 
     def freeze_manifest(self):
         path = self.candidate / "manifest.json"
+        if path.exists():
+            path.chmod(0o644)
         path.write_text(json.dumps(self.manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         path.chmod(0o444)
         self.manifest_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -320,6 +338,284 @@ class UnitInstallerTests(unittest.TestCase):
 
     def assert_no_reload(self):
         self.assertFalse(any(call[-1] == "daemon-reload" for call in self.fixture.commands.calls))
+
+    def prepare_autostart(self, fixture=None):
+        fixture = fixture or self.fixture
+        subject = fixture.make_installer()
+        subject.backup(fixture.backup_dir)
+        subject.install(fixture.backup_dir)
+        for files in fixture.protection.values():
+            for name in ("estop_latch", "estop_latch.bak"):
+                Path(files[name]["path"]).write_bytes(b"1\n")
+        fixture.installation_backup_dir = fixture.backup_dir
+        fixture.backup_dir = fixture.root / "autostart-backup"
+        subject.backup(fixture.backup_dir)
+        fixture.commands.calls.clear()
+        return subject
+
+    def assert_no_autostart_changes(self, commands):
+        self.assertFalse(any(call[:2] in (["systemctl", "enable"], ["systemctl", "disable"])
+                             for call in commands.calls))
+
+    def test_autostart_check_is_read_only_reports_actual_states_and_rx(self):
+        subject = self.prepare_autostart()
+        self.fixture.commands.autostart[UNIT_NAMES[1]] = "enabled"
+        before = {str(path): reference(path) for path in self.fixture.root.rglob("*") if path.is_file()}
+        result = subject.autostart_check()
+        self.assertEqual(result["result"], "AUTOSTART_CHECK_PASS")
+        self.assertEqual(result["autostart"], self.fixture.commands.autostart)
+        self.assertEqual(result["protection_values"]["left"]["rx_trust_marker"], "0\n")
+        self.assertFalse(result["rx_authorize_executed"])
+        self.assertFalse(result["hardware_started"])
+        self.assertEqual(before, {str(path): reference(path) for path in self.fixture.root.rglob("*") if path.is_file()})
+        self.assert_no_autostart_changes(self.fixture.commands)
+        self.assert_no_reload()
+        for action in (subject.check, lambda: subject.install(self.fixture.backup_dir), lambda: subject.rollback(self.fixture.backup_dir)):
+            with self.assertRaisesRegex(ValueError, "启用状态"):
+                action()
+
+    def test_autostart_enable_disable_keeps_batch_backup_and_allows_original_rollback(self):
+        subject = self.prepare_autostart()
+        backup = (self.fixture.backup_dir / "backup.json").read_bytes()
+        self.assertFalse((self.fixture.backup_dir / "install-result.json").exists())
+        protected = {ref["path"]: reference(Path(ref["path"])) for files in self.fixture.protection.values() for ref in files.values()}
+        enabled = subject.enable_autostart(self.fixture.backup_dir)
+        self.assertEqual(enabled["status"], "PASS")
+        self.assertEqual(set(enabled["before"].values()), {"disabled"})
+        self.assertEqual(set(enabled["after"].values()), {"enabled"})
+        with self.assertRaisesRegex(ValueError, "必须全部 disabled"):
+            subject.enable_autostart(self.fixture.backup_dir)
+        disabled = subject.disable_autostart(self.fixture.backup_dir)
+        self.assertEqual(disabled["status"], "PASS")
+        self.assertEqual(set(disabled["after"].values()), {"disabled"})
+        changes = [call for call in self.fixture.commands.calls if call[:2] in (["systemctl", "enable"], ["systemctl", "disable"])]
+        self.assertEqual(changes, [["systemctl", "enable", *UNIT_NAMES], ["systemctl", "disable", *UNIT_NAMES]])
+        self.assertEqual((self.fixture.backup_dir / "backup.json").read_bytes(), backup)
+        self.assertFalse((self.fixture.backup_dir / "install-result.json").exists())
+        self.assertEqual(protected, {path: reference(Path(path)) for path in protected})
+        subject.rollback(self.fixture.installation_backup_dir)
+        self.assert_original_targets()
+
+    def test_autostart_only_relaxes_new_units_enabled_or_disabled_state(self):
+        subject = self.prepare_autostart()
+        for name, state in [(name, "enabled") for name in OLD_UNIT_NAMES] + [(name, "enabled-runtime") for name in UNIT_NAMES] + [(UNIT_NAMES[0], "static")]:
+            with self.subTest(name=name, state=state):
+                self.fixture.commands.overrides = {name: {"UnitFileState": state}}
+                with self.assertRaises(ValueError):
+                    subject.autostart_check()
+        self.fixture.commands.overrides = {}
+        for key, value in (("Job", "123 /job/123"), ("MainPID", "123"), ("ActiveState", "activating")):
+            with self.subTest(key=key):
+                self.fixture.commands.overrides = {UNIT_NAMES[1]: {key: value}}
+                with self.assertRaises(ValueError):
+                    subject.autostart_check()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_autostart_requires_backup_of_installed_and_disabled_candidate_units(self):
+        subject = self.prepare_autostart()
+        with self.assertRaisesRegex(ValueError, "已安装且全部 disabled"):
+            subject.enable_autostart(self.fixture.installation_backup_dir)
+        path = self.fixture.backup_dir / "backup.json"
+        original = json.loads(path.read_text())
+        for name in UNIT_NAMES:
+            with self.subTest(name=name):
+                changed = json.loads(json.dumps(original))
+                changed["services"][name]["UnitFileState"] = "enabled"
+                raw = json.dumps(changed).encode()
+                path.chmod(0o600)
+                self.fixture.write(path, raw, 0o400)
+                checksum = self.fixture.backup_dir / "backup.sha256"
+                checksum.chmod(0o600)
+                self.fixture.write(checksum, (hashlib.sha256(raw).hexdigest() + "\n").encode(), 0o400)
+                with self.assertRaisesRegex(ValueError, "已安装且全部 disabled"):
+                    subject.enable_autostart(self.fixture.backup_dir)
+        self.assert_no_autostart_changes(self.fixture.commands)
+        receipts = list(self.fixture.backup_dir.glob("enable-autostart-*-result.json"))
+        self.assertEqual(len(receipts), 3)
+        self.assertTrue(all(json.loads(path.read_text())["status"] == "FAIL" for path in receipts))
+
+    def test_autostart_enable_rejects_true_or_missing_auto_enable(self):
+        for hardware in ("[[hardware]]\nauto_enable=true\n", "[[hardware]]\n", "", "[[hardware]]\nauto_enable=0\n"):
+            with self.subTest(hardware=hardware):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                config = fixture.config("right")
+                config.chmod(0o644)
+                fixture.write(config, ("[robot]\nid='test'\n" + hardware).encode(), 0o444)
+                fixture.manifest["candidate_files"]["configs/xlerobot-bus2.toml"] = reference(config)
+                fixture.freeze_manifest()
+                subject = self.prepare_autostart(fixture)
+                with self.assertRaisesRegex(ValueError, "auto_enable=false"):
+                    subject.enable_autostart(fixture.backup_dir)
+                self.assert_no_autostart_changes(fixture.commands)
+
+    def test_autostart_rejects_missing_or_additional_install_directives(self):
+        for directives in ("", "WantedBy=other.target\n", "WantedBy=multi-user.target\nAlso=old.service\n"):
+            with self.subTest(directives=directives):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                path = fixture.candidate / "systemd" / UNIT_NAMES[0]
+                path.chmod(0o644)
+                fixture.write(path, (path.read_text().split("[Install]")[0] + "[Install]\n" + directives).encode(), 0o444)
+                fixture.manifest["candidate_files"]["systemd/" + UNIT_NAMES[0]] = reference(path)
+                fixture.freeze_manifest()
+                subject = self.prepare_autostart(fixture)
+                with self.assertRaisesRegex(ValueError, "multi-user.target"):
+                    subject.autostart_check()
+                self.assert_no_autostart_changes(fixture.commands)
+
+    def test_autostart_enable_requires_exact_double_estop_on_both_sides(self):
+        subject = self.prepare_autostart()
+        for side in ("left", "right"):
+            for name in ("estop_latch", "estop_latch.bak"):
+                path = Path(self.fixture.protection[side][name]["path"])
+                for value in (b"0\n", b"", b"1\r\n"):
+                    with self.subTest(side=side, name=name, value=value):
+                        path.write_bytes(value)
+                        with self.assertRaisesRegex(ValueError, "双侧双 EStop"):
+                            subject.enable_autostart(self.fixture.backup_dir)
+                path.write_bytes(b"1\n")
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_autostart_file_drift_blocks_enable_and_disable_with_failure_receipt(self):
+        subject = self.prepare_autostart()
+        self.damage_runtime_file(self.fixture.unit_directory / UNIT_NAMES[1])
+        for operation in (subject.enable_autostart, subject.disable_autostart):
+            with self.assertRaises(ValueError):
+                operation(self.fixture.backup_dir)
+        self.assert_no_autostart_changes(self.fixture.commands)
+        for prefix in ("enable", "disable"):
+            paths = list(self.fixture.backup_dir.glob(prefix + "-autostart-*-result.json"))
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(json.loads(paths[0].read_text())["status"], "FAIL")
+
+    def test_partial_enable_failure_is_preserved_and_explicit_disable_restores_all_three(self):
+        subject = self.prepare_autostart()
+        self.fixture.commands.autostart_partial = 1
+        self.fixture.commands.autostart_returncode = 1
+        with self.assertRaises(ValueError):
+            subject.enable_autostart(self.fixture.backup_dir)
+        self.assertEqual(self.fixture.commands.autostart, dict(zip(UNIT_NAMES, ("enabled", "disabled", "disabled"))))
+        receipt_path = next(self.fixture.backup_dir.glob("enable-autostart-*-result.json"))
+        original_failure = receipt_path.read_bytes()
+        receipt = json.loads(original_failure)
+        self.assertEqual(receipt["status"], "FAIL")
+        self.assertTrue(receipt["protection_unchanged"])
+        self.assertEqual(receipt["services_after_failure"][UNIT_NAMES[0]]["UnitFileState"], "enabled")
+        self.fixture.commands.autostart_partial = None
+        self.fixture.commands.autostart_returncode = 0
+        self.fixture.commands.autostart_stderr = 'Removed "/etc/systemd/system/multi-user.target.wants/robot-s0-preflight.service".\n'
+        self.assertEqual(subject.disable_autostart(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(set(self.fixture.commands.autostart.values()), {"disabled"})
+        self.assertEqual(receipt_path.read_bytes(), original_failure)
+        self.assertEqual(sum(call[:2] == ["systemctl", "enable"] for call in self.fixture.commands.calls), 1)
+
+    def test_identical_unit_replacement_still_invalidates_autostart_backup_identity(self):
+        subject = self.prepare_autostart()
+        target = self.fixture.unit_directory / UNIT_NAMES[1]
+        before = reference(target)
+        subject._atomic_replace(target, target.read_bytes(), before)
+        self.assertEqual(reference(target)["sha256"], before["sha256"])
+        self.assertNotEqual(reference(target)["inode"], before["inode"])
+        with self.assertRaisesRegex(ValueError, "已备份候选"):
+            subject.enable_autostart(self.fixture.backup_dir)
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_enable_protection_change_is_sticky_and_explicit_disable_still_removes_autostart(self):
+        subject = self.prepare_autostart()
+        path = Path(self.fixture.protection["right"]["estop_latch"]["path"])
+        commands = self.fixture.commands
+        def change_protection(argv):
+            result = commands(argv)
+            if argv == ["systemctl", "enable", *UNIT_NAMES]:
+                path.write_bytes(b"0\n")
+            return result
+        subject.runner = change_protection
+        with self.assertRaisesRegex(ValueError, "双侧双 EStop"):
+            subject.enable_autostart(self.fixture.backup_dir)
+        receipt_path = next(self.fixture.backup_dir.glob("enable-autostart-*-result.json"))
+        original_failure = receipt_path.read_bytes()
+        failure = json.loads(original_failure)
+        self.assertEqual(failure["status"], "FAIL")
+        self.assertFalse(failure["protection_unchanged"])
+        self.assertEqual(subject.disable_autostart(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(receipt_path.read_bytes(), original_failure)
+        self.assertEqual(path.read_bytes(), b"0\n")
+        self.assertEqual(set(commands.autostart.values()), {"disabled"})
+
+    def test_disable_remains_available_if_estop_was_changed_after_enable(self):
+        subject = self.prepare_autostart()
+        subject.enable_autostart(self.fixture.backup_dir)
+        path = Path(self.fixture.protection["right"]["estop_latch"]["path"])
+        path.write_bytes(b"0\n")
+        self.assertEqual(subject.disable_autostart(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(path.read_bytes(), b"0\n")
+        self.assertEqual(set(self.fixture.commands.autostart.values()), {"disabled"})
+
+    def test_device_reenumeration_blocks_enable_but_does_not_block_disable(self):
+        subject = self.prepare_autostart()
+        subject.enable_autostart(self.fixture.backup_dir)
+        device = Path(self.fixture.devices["right"]["path"])
+        replacement = device.with_name("reenumerated-right")
+        replacement.symlink_to(os.readlink(device))
+        os.replace(replacement, device)
+        self.assertNotEqual(device.lstat().st_ino, self.fixture.devices["right"]["inode"])
+        for operation in (subject.autostart_check, lambda: subject.enable_autostart(self.fixture.backup_dir)):
+            with self.assertRaisesRegex(ValueError, "设备链接身份变化"):
+                operation()
+        self.fixture.commands.calls.clear()
+        result = subject.disable_autostart(self.fixture.backup_dir)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["protection_before"], result["protection_after"])
+        self.assertEqual(set(self.fixture.commands.autostart.values()), {"disabled"})
+        self.assertFalse(any("fuser" in call for call in self.fixture.commands.calls))
+        with self.assertRaisesRegex(ValueError, "设备链接身份变化"):
+            subject.enable_autostart(self.fixture.backup_dir)
+
+    def test_missing_runtime_binary_or_config_does_not_block_disabling_autostart(self):
+        for relative in ("bin/robot-s0", "candidate/configs/xlerobot-bus2.toml"):
+            with self.subTest(relative=relative):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                subject = self.prepare_autostart(fixture)
+                subject.enable_autostart(fixture.backup_dir)
+                (fixture.root / relative).unlink()
+                for operation in (subject.autostart_check, lambda: subject.enable_autostart(fixture.backup_dir)):
+                    with self.assertRaises(REJECTED):
+                        operation()
+                result = subject.disable_autostart(fixture.backup_dir)
+                self.assertEqual(result["status"], "PASS")
+                self.assertEqual(result["protection_before"], result["protection_after"])
+                self.assertEqual(set(fixture.commands.autostart.values()), {"disabled"})
+
+    def test_command_allowlist_accepts_only_exact_autostart_group_and_rejects_dangerous_commands(self):
+        allowed = [["systemctl", operation, *UNIT_NAMES] for operation in ("enable", "disable")]
+        rejected = [["systemctl", operation, *UNIT_NAMES] for operation in ("start", "stop", "restart", "reset-failed", "reboot")]
+        rejected += [["systemctl", "enable", *UNIT_NAMES, "--now"], ["systemctl", "enable", "--runtime", *UNIT_NAMES],
+                     ["systemctl", "enable", UNIT_NAMES[0]], ["systemctl", "disable", *OLD_UNIT_NAMES],
+                     ["systemctl", "enable", *UNIT_NAMES, "other.service"], ["robot-deploy", "rx-trust", "authorize"]]
+        with patch.object(installer.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+            for argv in allowed:
+                installer.run_command(argv)
+            self.assertEqual(run.call_count, 2)
+            for argv in rejected:
+                with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, "禁止的命令"):
+                    installer.run_command(argv)
+            self.assertEqual(run.call_count, 2)
+
+    def test_autostart_stderr_accepts_only_successful_symlink_diagnostics(self):
+        for operation, message in (("enable", 'Created symlink "/fixture/link" → "/fixture/unit".\n'),
+                                   ("disable", 'Removed "/fixture/link".\n')):
+            with self.subTest(operation=operation):
+                self.subject.runner = lambda argv: subprocess.CompletedProcess(argv, 0, "", message)
+                self.subject._command(["systemctl", operation, *UNIT_NAMES])
+                self.subject.runner = lambda argv: subprocess.CompletedProcess(argv, 1, "", message)
+                with self.assertRaises(ValueError):
+                    self.subject._command(["systemctl", operation, *UNIT_NAMES])
+        for message in ("Failed to enable unit\n", "Warning: unexpected state\n", "Created symlink /fixture/link\nunknown\n"):
+            self.subject.runner = lambda argv: subprocess.CompletedProcess(argv, 0, "", message)
+            with self.assertRaises(ValueError):
+                self.subject._command(["systemctl", "enable", *UNIT_NAMES])
 
     @staticmethod
     def damage_runtime_file(path):

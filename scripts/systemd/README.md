@@ -25,13 +25,26 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 四个操作都显式指定 `--candidate` 与 `--manifest-sha256`；写操作还须 root 和 `--backup-dir`。已有安装记录和当前备份位置只维护在当前状态中。改名前备份仍用其冻结旧安装器恢复；新安装器明确识别六路径备份格式。新 preflight 不继承旧 handoff 的完成态，首次运行须另确认现场条件。回滚保护范围不包括 latch、RX marker、锁或 guard 计数，不用旧快照解除保护。
 
+## 开机自启
+
+仍使用同一安装器及三个 unit，不增加服务或 S0 状态：
+
+- `autostart-check`：只读核对已安装候选、设备占用、两份明确的 `auto_enable=false` 和双侧双份 EStop=1，报告自启状态及 RX 原值；不授权 RX。
+- `backup`：在本批三个 unit 已安装且全部 disabled 时生成新的自启备份，沿用原六路径格式；安装前的旧备份不能替代它。
+- `enable-autostart`：按新备份核对身份后，仅对固定三个服务执行 `systemctl enable`，不带 `--now`，不启动服务。
+- `disable-autostart`：沿同份备份关闭三个服务的自启，可处理前次 enable 部分成功；撤销不要求运行产物完好或重启前的设备节点身份，但仍核对 unit、服务停止状态和保护文件。不停止进程、不修改保护文件；文件回滚仍须先停稳并关闭自启，再走原 `rollback`。
+
+自启不代表控制授权。RX 一次性授权消费后的 Dirty 保持；没有有效授权时，即使启动停止读回成功，仍进入 `CommFault/BootUntrusted + AdapterUncertain`，不能宣称可信断扭。该路径不产生正常关节采样；现有故障退出也不能正常完成停止收尾。因此当前仅准备自启工具和备份，实际 enable 与重启暂缓；不得把故障待机或预期拒帧改成正常验收通过。
+
+默认不上扭，故障及 EStop 不因启动而清除。不增加 S0 对外 Boot/Init 状态：进程初始化沿现有启动流程和 systemd `activating`；S1 已有 `Booting` 保留。后续真实开机验收须独立核对新 boot ID、服务状态、保护状态、心跳/RGB及原停止收尾，不能只检查 enabled 或 active。
+
 ## 正式启动验收
 
 固定解释器、脚本、产物及 PLAN_ONLY 预检完成后，再确认本轮现场支撑和持续看护。按左、右顺序，上一侧停止与清场通过才启动下一侧；本轮保持 `auto_enable=false` 和 EStop 锁存，不发送 ClearEStop 或 SetEnabled。启动仍会访问 UART 并执行停止收敛。
 
 正式运行由 systemd 管理，保留 `Type=notify`、watchdog、原重启策略及 journal。当前验收使用具名 `systemctl start/stop`，按 InvocationID 核对授权消费、正常 boot_ready、MainPID 与 cgroup；仅看到 READY 不够。观察各路状态与实际 RGB 数据的时间推进，退出后沿原维护入口做 STOP51、三轮稳定性复核及资源清场。
 
-失败保留原件；不能自动重发一次性授权或重跑未知结果。停止读回未确认时，按既有维护入口要求进行现场处置。tmux 只承载临时编译和验证，不替代正式服务；本轮不设置开机自启。D15 硬件 fail-safe 仍未闭环，`deployable=false`。
+失败保留原件；不能自动重发一次性授权或重跑未知结果。停止读回未确认时，按既有维护入口要求进行现场处置。tmux 只承载临时编译和验证，不替代正式服务；自启配置与真实重启分别验收。D15 硬件 fail-safe 仍未闭环，`deployable=false`。
 
 ## 保护与恢复边界
 

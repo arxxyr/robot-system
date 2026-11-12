@@ -167,9 +167,25 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
     if wait_exit(&mut child, Duration::from_secs(2)).await? != 0 {
         return Err("为真实一次性消费准备授权失败".to_owned());
     }
-    for (name, expect_fault) in [("consume_authorized", false), ("restart_dirty", true)] {
+    for (name, expect_fault, latched) in [
+        ("consume_authorized", false, false),
+        ("restart_dirty", true, false),
+        ("restart_dirty_latched", true, true),
+    ] {
+        let latch_bytes: &[u8] = if latched { b"1\n" } else { b"0\n" };
+        if latched {
+            // 只准备本场景临时磁盘状态；不发送 EStop，不补 RX 授权。
+            for path in [&case.latch, &case.directory.join("estop_latch.bak")] {
+                std::fs::write(path, latch_bytes).map_err(|error| error.to_string())?;
+            }
+        }
         let mut command = case.command();
         command.args(["--rx-trust-policy", "marker"]);
+        if latched {
+            command
+                .env("ROBOT_LOG_FORMAT", "json")
+                .env("RUST_LOG", "info");
+        }
         let mut child = case.spawn(name, command)?;
         let startup_deadline_ns = SystemClock.now().0.saturating_add(5_000_000_000);
         let result = async {
@@ -184,6 +200,11 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
             if expect_fault {
                 wait_runtime_armed(&case, &mut child, name, startup_deadline_ns).await?;
             }
+            let standby = if latched {
+                Some(verify_dirty_latched_standby(&case, &mut child, name).await?)
+            } else {
+                None
+            };
             let observation = case.observation(name)?;
             if !observation.observation_ready
                 || !observation.ready_reached
@@ -197,14 +218,16 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
                     return Err(format!("{name}未持久消费{marker}"));
                 }
             }
-            if std::fs::read(&case.latch).map_err(|e| e.to_string())? != b"0\n" {
-                return Err(format!("{name}意外修改独立急停latch"));
+            for path in [&case.latch, &case.directory.join("estop_latch.bak")] {
+                if std::fs::read(path).map_err(|e| e.to_string())? != latch_bytes {
+                    return Err(format!("{name}意外修改独立急停latch"));
+                }
             }
-            Ok(json!({"operation": name, "observation": format!("{observation:?}")}))
+            Ok(json!({"operation": name, "observation": format!("{observation:?}"), "standby": standby}))
         }
         .await;
         let cleanup = if expect_fault {
-            stop_dirty_runtime(&case, &mut child, name).await
+            stop_dirty_runtime(&case, &mut child, name, latch_bytes).await
         } else {
             stop(&mut child).await.map(|()| json!({"exit_code": 0}))
         };
@@ -217,6 +240,93 @@ async fn marker_cli(args: &Args) -> Result<Value, String> {
         }
     }
     Ok(json!({"operations": operations, "log_directory": case.directory}))
+}
+
+/// 复用真实 daemon 的诊断与观测页；不向运行中的故障进程注入控制请求。
+async fn verify_dirty_latched_standby(
+    case: &Case,
+    child: &mut Child,
+    name: &str,
+) -> Result<Value, String> {
+    let until = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Err(format!("锁存的 Dirty 待机提前退出：{status}"));
+        }
+        let rows: Vec<Value> = case
+            .logs(name)?
+            .lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+        let summaries: Vec<&Value> = rows
+            .iter()
+            .filter(|row| row["message"] == "串口一秒摘要")
+            .collect();
+        let fault_heartbeat = rows
+            .iter()
+            .any(|row| row["message"] == "heartbeat" && row["state"] == "Fault(CommFault)");
+        if summaries.len() >= 2 && fault_heartbeat {
+            let diagnostics: Vec<&Value> = rows
+                .iter()
+                .filter(|row| row["message"] == "串口诊断事件" && row["site"] == 20)
+                .collect();
+            let faults: Vec<&Value> = diagnostics
+                .iter()
+                .copied()
+                .filter(|row| row["kind"] == 2)
+                .collect();
+            let boot_count = diagnostics
+                .iter()
+                .filter(|row| row["kind"] == 17 && row["a"] == 0)
+                .count();
+            let first = summaries.first().and_then(|row| row["liveness"].as_u64());
+            let last = summaries.last().and_then(|row| row["liveness"].as_u64());
+            let observation = case.observation(name)?;
+            if !rows
+                .iter()
+                .any(|row| row["message"] == "initial estop_latched" && row["latched"] == true)
+                || boot_count != 1
+                || faults.len() != 1
+                || faults[0]["a"] != 2
+                || faults[0]["b"] != 6
+                || diagnostics
+                    .iter()
+                    .any(|row| matches!(row["kind"].as_u64(), Some(4 | 10 | 14)))
+                || summaries.iter().any(|row| {
+                    row["safety"] != "AdapterUncertain"
+                        || row["rx_trust"] != false
+                        || row["comm_level"] != 2
+                        || row["dropped"] != 0
+                        || row["inhibited"].as_u64().is_none_or(|bits| {
+                            bits & u64::from(
+                                robot_core::control_authority::InhibitReason::CommFault.bit(),
+                            ) == 0
+                        })
+                })
+                || !matches!((first, last), (Some(first), Some(last)) if last > first)
+                || observation.disabled_ns == 0
+                || observation.fired_ns != 0
+                || observation.supervisor_exit_ns != 0
+                || observation.stop_bitmap != 0
+                || observation.command_applied != 0
+                || observation.serial_calls != [0, 0, 0, 1, 1, 1]
+            {
+                return Err(format!(
+                    "锁存 Dirty 待机事实不符：{observation:?}；diagnostics={diagnostics:?}；summaries={summaries:?}"
+                ));
+            }
+            return Ok(
+                json!({"state": "Fault(CommFault)", "safety": "AdapterUncertain",
+                "normal_enable_calls": 0, "new_estop_requests": 0,
+                "liveness_before": first, "liveness_after": last,
+                "summaries": summaries, "diagnostics": diagnostics}),
+            );
+        }
+        if tokio::time::Instant::now() >= until {
+            return Err("锁存 Dirty 待机未持续发布故障心跳和两份串口摘要".to_owned());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 pub(super) async fn wait_runtime_armed(
@@ -320,7 +430,12 @@ pub(super) async fn stop_unretired_runtime(
     }))
 }
 
-async fn stop_dirty_runtime(case: &Case, child: &mut Child, name: &str) -> Result<Value, String> {
+async fn stop_dirty_runtime(
+    case: &Case,
+    child: &mut Child,
+    name: &str,
+    latch_bytes: &[u8],
+) -> Result<Value, String> {
     let receipt =
         stop_unretired_runtime(case, child, name, UnretiredRuntimeCase::DirtyWithoutRr).await?;
     for marker in ["rx_trust_marker", "rx_trust_marker.bak"] {
@@ -330,7 +445,7 @@ async fn stop_dirty_runtime(case: &Case, child: &mut Child, name: &str) -> Resul
     }
     let backup_latch = case.directory.join("estop_latch.bak");
     for latch in [&case.latch, &backup_latch] {
-        if std::fs::read(latch).map_err(|error| error.to_string())? != b"0\n" {
+        if std::fs::read(latch).map_err(|error| error.to_string())? != latch_bytes {
             return Err(format!("dirty 收尾改变独立急停 latch：{}", latch.display()));
         }
     }

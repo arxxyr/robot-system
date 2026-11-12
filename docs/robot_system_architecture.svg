@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title description">
   <title id="title">robot-system 通用机器人控制架构</title>
-  <desc id="description">通用机器人控制架构。上层应用与规划中的 S2 为规划方向；已有控制入口和 RPC 网关、S1 动作执行在 S0 硬件抽象层之上。S0 下接执行器和传感器适配，再连接实际硬件。右侧列出配置、构建交付、安装回滚、日志健康和保护支持。当前实机验证后端为 XLeRobot，正式 systemd 启动已验，D15 延期。</desc>
+  <desc id="description">通用机器人控制架构。上层应用与规划中的 S2 为规划方向；已有控制入口和 RPC 网关、S1 动作执行在 S0 硬件抽象层之上。S0 下接执行器和传感器适配，再连接实际硬件。右侧列出配置、构建交付、安装回滚、日志健康和保护支持。当前实机验证后端为 XLeRobot，systemd 手动启停已验，自启待验，D15 延期。</desc>
   <!-- 架构来源：docs/00_design.md、docs/s0_hal_status.md；实际入口为 robot-cli、robot-rpc、robot-s1、robot-s0，以及 Feetech 与 RGB 适配实现。 -->
   <!-- 验证边界：2026-11-11，XLeRobot 左右分别受监督通过；配置矩阵与安装回滚属于本轮软件工作，不表示已发布或可无人值守。 -->
   <defs>
@@ -100,6 +100,6 @@
   <text x="1391" y="984" text-anchor="middle" class="body">贯穿开发与交付</text>
   <text x="1391" y="1022" text-anchor="middle" class="small">软件通过 ≠ 可无人值守</text>
 
-  <text x="48" y="1130" class="note">当前实机验证：XLeRobot（左右分别受监督通过）；systemd 正式启动已验；D15 延期。</text>
+  <text x="48" y="1130" class="note">当前实机验证：XLeRobot（左右分别受监督通过）；systemd 手动启停已验；自启待验；D15 延期。</text>
   <text x="48" y="1170" class="note">S1 完整服务链待实机验收；双总线同时联动尚未验收。框表示职责，实线表示主要命令或状态流。</text>
 </svg>

@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 # 固定解释器以 -I -S 启动时，仅显式加入随脚本冻结的同目录工具。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -92,9 +93,10 @@ def write_new(path, data, mode=0o400):
 
 
 def run_command(argv):
-    # 即便未来误接调用方，也没有 start/stop/enable 或任意命令入口。
+    # 自启只允许固定三份 unit 的整组操作，不提供启动、停止或任意命令入口。
+    autostart = any(argv == ["systemctl", action, *UNIT_NAMES] for action in ("enable", "disable"))
     require(argv == ["systemctl", "daemon-reload"] or argv[:2] == ["systemctl", "show"]
-            or argv[:1] == ["fuser"] or argv[:3] == ["sudo", "-n", "fuser"], "禁止的命令")
+            or argv[:1] == ["fuser"] or argv[:3] == ["sudo", "-n", "fuser"] or autostart, "禁止的命令")
     return subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False,
                           env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
 
@@ -123,7 +125,11 @@ class S0UnitInstaller:
 
     def _command(self, argv, allowed=(0,)):
         row = self.runner(argv)
-        require(row.returncode in allowed and not row.stderr.strip(), "只读查询或 reload 失败：" + repr(argv))
+        autostart = any(argv == ["systemctl", action, *UNIT_NAMES] for action in ("enable", "disable"))
+        messages = row.stderr.strip().splitlines()
+        symlink_messages = autostart and all(re.fullmatch(r"(?:Created symlink|Removed) .+", line) for line in messages)
+        require(row.returncode in allowed and (not messages or symlink_messages),
+                "命令失败或出现未知诊断：" + repr(dict(argv=argv, exit_code=row.returncode, stderr=row.stderr)))
         return row.stdout
 
     def _services(self):
@@ -156,11 +162,12 @@ class S0UnitInstaller:
         file_identity(path)
         return installed_file_identity(path)
 
-    def _targets(self, services, *, rollback_record=None):
+    def _targets(self, services, *, rollback_record=None, autostart=False):
         result = {name: self._target(name) for name in MANAGED_UNIT_NAMES}
         for name, row in result.items():
             service = services[name]
-            require(not service["DropInPaths"] and service["UnitFileState"] in ("", "disabled", "static"),
+            allowed = ("enabled", "disabled") if autostart and name in UNIT_NAMES else ("", "disabled", "static")
+            require(not service["DropInPaths"] and service["UnitFileState"] in allowed,
                     "拒绝 drop-in、mask、alias 或启用状态：" + name)
             # 文件事务失败后，缓存可以仍指向本次六路径的旧状态；内容允许集在 _apply 再核对。
             stale = (rollback_record is not None
@@ -233,12 +240,12 @@ class S0UnitInstaller:
             prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
             require(not self._command(prefix + ["fuser", str(path)], allowed=(1,)).strip(), "设备存在持有者")
 
-    def _check(self, *, rollback_record=None):
-        # 损坏的新运行依赖不能阻止恢复完整旧 unit；回滚仍固定原候选清单。
-        document = self._manifest(verify_runtime=rollback_record is None)
+    def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True):
+        # 回滚及撤销自启仍固定清单；撤销自启不要求运行产物与设备就绪。
+        document = self._manifest(verify_runtime=rollback_record is None and verify_runtime)
         protection = self._protection(document)
         services = self._services()
-        targets = self._targets(services, rollback_record=rollback_record)
+        targets = self._targets(services, rollback_record=rollback_record, autostart=autostart)
         if rollback_record is None:
             unit_owner = self.unit_directory.stat()
             for name in UNIT_NAMES:
@@ -246,9 +253,102 @@ class S0UnitInstaller:
                             "mode": 0o644, "uid": unit_owner.st_uid, "gid": unit_owner.st_gid}
                 require(not targets[name]["exists"] or same_content(targets[name], expected),
                         "新 unit 路径已被非候选文件占用：" + name)
-        self._devices(document)
+        if verify_runtime:
+            self._devices(document)
         require(self._protection(document) == protection, "检查期间保护状态变化")
         return dict(document=document, protection=protection, services=services, targets=targets)
+
+    def _autostart_check(self, *, require_estop=True, verify_runtime=True):
+        state = self._check(autostart=True, verify_runtime=verify_runtime)
+        require(all(state["targets"][name]["exists"] for name in UNIT_NAMES)
+                and all(not state["targets"][name]["exists"] for name in OLD_UNIT_NAMES), "自启要求本批新三 unit 已完整安装且旧三路径已撤除")
+        if verify_runtime:
+            for bus in (1, 2):
+                hardware = tomllib.loads((self.candidate / "configs" / f"xlerobot-bus{bus}.toml").read_text()).get("hardware")
+                require(isinstance(hardware, list) and len(hardware) == 1 and isinstance(hardware[0], dict)
+                        and hardware[0].get("auto_enable") is False, "自启配置必须明确 auto_enable=false")
+        for name in UNIT_NAMES:
+            section, directives = "", []
+            for line in (self.unit_directory / name).read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith(("#", ";")):
+                    continue
+                if line.startswith("["):
+                    section = line
+                elif section == "[Install]":
+                    directives.append(line)
+            require(directives == ["WantedBy=multi-user.target"], "自启 unit 必须仅由 multi-user.target 启用：" + name)
+        values = {}
+        for side, files in state["document"]["protection"].items():
+            values[side] = {name: Path(files[name]["path"]).read_bytes().decode("ascii", errors="backslashreplace") for name in
+                            ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak")}
+            if require_estop:
+                require(all(values[side][name] == "1\n" for name in ("estop_latch", "estop_latch.bak")), "开启自启要求双侧双 EStop 保持1")
+        require(self._protection(state["document"]) == state["protection"], "自启检查期间保护状态变化")
+        state["protection_values"] = values
+        return state
+
+    def autostart_check(self):
+        with self._locked():
+            state = self._autostart_check()
+            return dict(result="AUTOSTART_CHECK_PASS", manifest_sha256=self.manifest_sha256,
+                        autostart={name: state["services"][name]["UnitFileState"] for name in UNIT_NAMES},
+                        services=state["services"], targets=state["targets"], protection=state["protection"],
+                        protection_values=state["protection_values"], rx_authorize_executed=False,
+                        changed_units=0, hardware_started=False)
+
+    def _autostart(self, backup_directory, enable):
+        with self._locked():
+            path, record = self._read_backup(backup_directory)
+            operation = "enable-autostart" if enable else "disable-autostart"
+            descriptor, receipt_name = tempfile.mkstemp(prefix=operation + "-", suffix="-result.json", dir=path)
+            os.close(descriptor)
+            receipt_path = Path(receipt_name)
+            receipt = dict(operation=operation, status="IN_PROGRESS", manifest_sha256=self.manifest_sha256,
+                           receipt_path=str(receipt_path), units=list(UNIT_NAMES), hardware_started=False, rx_authorize_executed=False)
+            self._receipt(receipt_path, receipt)
+            state = None
+            try:
+                require(all(record["originals"][name]["exists"] and record["services"][name]["UnitFileState"] == "disabled"
+                            for name in UNIT_NAMES), "自启备份必须在新三 unit 已安装且全部 disabled 时生成")
+                state = self._autostart_check(require_estop=enable, verify_runtime=enable)
+                for name, expected in record["new_units"].items():
+                    source = state["document"]["candidate_files"]["systemd/" + name]
+                    require(all(expected[key] == source[key] for key in ("path", "bytes", "sha256"))
+                            and same_content(state["targets"][name], expected)
+                            and state["targets"][name] == record["originals"][name], "自启目标不属于本批已备份候选：" + name)
+                receipt["before"] = {name: state["services"][name]["UnitFileState"] for name in UNIT_NAMES}
+                receipt["protection_before"] = state["protection"]
+                if enable:
+                    require(all(value == "disabled" for value in receipt["before"].values()), "开启前新三 unit 必须全部 disabled")
+                self._command(["systemctl", "enable" if enable else "disable", *UNIT_NAMES])
+                after = self._autostart_check(require_estop=enable, verify_runtime=enable)
+                receipt["after"] = {name: after["services"][name]["UnitFileState"] for name in UNIT_NAMES}
+                receipt["protection_after"] = after["protection"]
+                require(all(value == ("enabled" if enable else "disabled") for value in receipt["after"].values()), "自启状态未达到目标")
+                require(after["targets"] == state["targets"] and after["protection"] == state["protection"], "自启操作期间 unit 或保护文件变化")
+                require(all(after["services"][name] == ({**before, "UnitFileState": after["services"][name]["UnitFileState"]}
+                                                       if name in UNIT_NAMES else before)
+                            for name, before in state["services"].items()), "自启操作期间服务状态变化")
+                receipt["status"] = "PASS"
+            except BaseException as error:
+                receipt.update(status="FAIL", error=repr(error))
+                if state is not None:
+                    try:
+                        receipt["services_after_failure"] = self._services()
+                        receipt["protection_unchanged"] = self._protection(state["document"]) == state["protection"]
+                    except BaseException as observation_error:
+                        receipt["observation_error"] = repr(observation_error)
+                self._receipt(receipt_path, receipt)
+                raise
+            self._receipt(receipt_path, receipt)
+            return receipt
+
+    def enable_autostart(self, backup_directory):
+        return self._autostart(backup_directory, True)
+
+    def disable_autostart(self, backup_directory):
+        return self._autostart(backup_directory, False)
 
     def check(self):
         with self._locked():
@@ -416,7 +516,7 @@ class S0UnitInstaller:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", nargs="?", choices=("check", "backup", "install", "rollback"), default="check")
+    parser.add_argument("operation", nargs="?", choices=("check", "backup", "install", "rollback", "autostart-check", "enable-autostart", "disable-autostart"), default="check")
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--manifest-sha256")
     parser.add_argument("--backup-dir", type=Path)
@@ -427,11 +527,11 @@ def main(argv=None):
     try:
         require(args.candidate is not None and args.manifest_sha256 is not None, "必须指定候选目录与清单 SHA")
         installer = S0UnitInstaller(args.candidate, args.manifest_sha256)
-        if args.operation == "check":
-            result = installer.check()
+        if args.operation in ("check", "autostart-check"):
+            result = getattr(installer, args.operation.replace("-", "_"))()
         else:
             require(args.backup_dir is not None and os.geteuid() == 0, "写操作须用 sudo 并指定 --backup-dir")
-            result = getattr(installer, args.operation)(args.backup_dir)
+            result = getattr(installer, args.operation.replace("-", "_"))(args.backup_dir)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
