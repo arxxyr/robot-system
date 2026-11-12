@@ -4,7 +4,7 @@
 
 **通用机器人控制架构的 S0 阶段：首个 XLeRobot 后端已通过受监督 raw 最小闭环。** 默认S0维护入口分别完成：左臂六关节＋头部两关节保持20秒并采头/左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`并采右腕RGB。三路画面和双腕映射已确认，两侧动作观察、断扭、EStop持久化、原STOP51、位置/身份及清场检查均通过，`manual=false`。
 
-**S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过；正在完成仓库清理与0.0.1定稿。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；本次双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
+**S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过，软件版本为0.0.1。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；本次双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
 
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
@@ -48,11 +48,11 @@
 
 ## Roadmap
 
-1. **0.0.1定稿**：`df6c1bb`候选已安装并通过一次真实重启复验；新boot两侧保持`Fault(CommFault)/AdapterUncertain`20.188秒、各`NRestarts=0`，实际SerialRT为CPU4/5、FIFO70且锁页生效。17电机STOP51全零、三轮各14读和资源清场通过，现场确认没有自行移动、结束后整机静止。见[验收原件](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)及[现场回执](evidence/s0_startup_deadline_2026-11-12/field-observation.json)。本轮未重采RGB，既有RGB验收与本次helper存活核对分别保留。
+1. **S0结案边界**：`df6c1bb`候选已安装并通过一次真实重启复验；新boot两侧保持`Fault(CommFault)/AdapterUncertain`20.188秒、各`NRestarts=0`，实际SerialRT为CPU4/5、FIFO70且锁页生效。17电机STOP51全零、三轮各14读和资源清场通过，现场确认没有自行移动、结束后整机静止。见[验收原件](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)及[现场回执](evidence/s0_startup_deadline_2026-11-12/field-observation.json)。本轮未重采RGB，既有RGB验收与本次helper存活核对分别保留。
 
    三服务自启已保留；当前两侧S0均PID0，保留Dirty停止时的`failed/exit-code 1`终态，preflight为`active/exited`完成态。停止依据独立STOP51，不以故障退出代替；下次开机会自启但默认不上扭、不清故障。本轮GO已消费，看护结束，不再追加启动。已安装根为`/home/loosqk/robot-checks/s0-startup-deadline-20261112`；升级回滚和自启备份分别为`/var/lib/robot/deploy-backup-s0-deadline-df6c1bb`、`/var/lib/robot/deploy-backup-s0-autostart-df6c1bb`，不回滚保护状态。
 
-   上轮启动[FAIL原件](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)保留：ACK已完成却误用2秒窗口等待全部worker；修复经旧版负控、17项既有回归、新增用例单项及3项边界单测验证。安装器68项、入口13项软件测试及Clippy通过。Orin日志未持久化，一次请求及首次新boot可绑定，不能排除断线期间额外boot。`.verify`已退出Git跟踪，原件留本地及Orin；当前报告与必要原帧收录在[证据选集](evidence/README.md)，完整历史仍可查Git。接下来按现有配置矩阵打包并同步两个远程；版本保持0.0.1，新标签绑定最终提交，既有发布标签不覆盖。
+   上轮启动[FAIL原件](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)保留：ACK已完成却误用2秒窗口等待全部worker；修复经旧版负控、17项既有回归、新增用例单项及3项边界单测验证。安装器68项、入口13项软件测试及Clippy通过。Orin日志未持久化，一次请求及首次新boot可绑定，不能排除断线期间额外boot。`.verify`已退出Git跟踪，原件留本地及Orin；当前报告与必要原帧收录在[证据选集](evidence/README.md)，完整历史仍可查Git。配置矩阵产出0.0.1候选包，包内提交、发布提交与新标签保持一致；已安装候选不自动替换，既有发布标签不覆盖。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 3. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。
 
