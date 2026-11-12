@@ -103,12 +103,19 @@ def run_command(argv):
 
 class S0UnitInstaller:
     def __init__(self, candidate, manifest_sha256, *, unit_directory=Path("/etc/systemd/system"),
-                 runner=run_command, protection_root=Path("/var/lib/robot")):
+                 runner=run_command, protection_root=Path("/var/lib/robot"),
+                 previous_candidate=None, previous_manifest_sha256=None):
         self.candidate = absolute(candidate)
         self.unit_directory = absolute(unit_directory)
         self.protection_root = absolute(protection_root)
         require(re.fullmatch(r"[0-9a-f]{64}", manifest_sha256), "清单 SHA 格式错误")
         self.manifest_sha256, self.runner = manifest_sha256, runner
+        require((previous_candidate is None) == (previous_manifest_sha256 is None), "上一版候选路径与清单 SHA 必须成对指定")
+        self.previous_candidate = absolute(previous_candidate) if previous_candidate is not None else None
+        self.previous_manifest_sha256 = previous_manifest_sha256
+        if self.previous_candidate is not None:
+            require(self.previous_candidate != self.candidate, "上一版候选不能与新候选相同")
+            require(re.fullmatch(r"[0-9a-f]{64}", previous_manifest_sha256), "上一版清单 SHA 格式错误")
 
     @contextmanager
     def _locked(self):
@@ -246,25 +253,60 @@ class S0UnitInstaller:
             prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
             require(not self._command(prefix + ["fuser", str(path)], allowed=(1,)).strip(), "设备存在持有者")
 
+    def _previous(self, document):
+        if self.previous_candidate is None:
+            return None
+        require(self.previous_candidate.resolve(strict=True) == self.previous_candidate, "上一版候选不能经符号链接")
+        path = self.previous_candidate / "manifest.json"
+        manifest = file_identity(path)
+        previous = S0UnitInstaller(self.previous_candidate, self.previous_manifest_sha256,
+                                   unit_directory=self.unit_directory, protection_root=self.protection_root)
+        old = previous._manifest(verify_runtime=False)
+        require(old["protection_domains"] == document["protection_domains"]
+                and set(old["protection"]) == {"left", "right"}, "上一版保护域与新候选不一致")
+        for side in ("left", "right"):
+            require(set(old["protection"][side]) == set(PROTECTION_NAMES)
+                    and all(old["protection"][side][name]["path"] == document["protection"][side][name]["path"]
+                            for name in PROTECTION_NAMES), "上一版保护文件路径与新候选不一致")
+        units = {}
+        for name in UNIT_NAMES:
+            ref = old["candidate_files"]["systemd/" + name]
+            source = self.previous_candidate / "systemd" / name
+            require(ref["path"] == str(source) and source.resolve(strict=True) == source,
+                    "上一版 unit 源路径不符：" + name)
+            units[name] = file_identity(source)
+            require(same_content(units[name], ref), "上一版 unit 源内容或权限变化：" + name)
+        require(file_identity(path) == manifest, "核对期间上一版清单身份变化")
+        return dict(candidate=str(self.previous_candidate), manifest_sha256=self.previous_manifest_sha256,
+                    manifest=manifest, units=units)
+
     def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True, allow_failed_units=False):
         # 回滚及撤销自启仍固定清单；撤销自启不要求运行产物与设备就绪。
         document = self._manifest(verify_runtime=rollback_record is None and verify_runtime)
         protection = self._protection(document)
         services = self._services(allow_failed_units=allow_failed_units)
         targets = self._targets(services, rollback_record=rollback_record, autostart=autostart)
+        previous = None
         if rollback_record is None:
+            previous = self._previous(document)
             unit_owner = self.unit_directory.stat()
             for name in UNIT_NAMES:
-                expected = {**document["candidate_files"]["systemd/" + name],
+                source = previous["units"][name] if previous is not None else document["candidate_files"]["systemd/" + name]
+                expected = {**source,
                             "mode": 0o644, "uid": unit_owner.st_uid, "gid": unit_owner.st_gid}
-                require(not targets[name]["exists"] or same_content(targets[name], expected),
-                        "新 unit 路径已被非候选文件占用：" + name)
+                if previous is not None:
+                    require(targets[name]["exists"] and same_content(targets[name], expected),
+                            "当前三 unit 必须完整匹配上一版候选：" + name)
+                else:
+                    require(not targets[name]["exists"] or same_content(targets[name], expected),
+                            "新 unit 路径已被非候选文件占用：" + name)
         if verify_runtime:
             self._devices(document)
         require(self._protection(document) == protection, "检查期间保护状态变化")
-        return dict(document=document, protection=protection, services=services, targets=targets)
+        return dict(document=document, protection=protection, services=services, targets=targets, previous_candidate=previous)
 
     def _autostart_check(self, *, require_estop=True, verify_runtime=True, allow_failed_units=False):
+        require(self.previous_candidate is None, "自启操作不接受上一版候选参数")
         state = self._check(autostart=True, verify_runtime=verify_runtime, allow_failed_units=allow_failed_units)
         require(all(state["targets"][name]["exists"] for name in UNIT_NAMES)
                 and all(not state["targets"][name]["exists"] for name in OLD_UNIT_NAMES), "自启要求本批新三 unit 已完整安装且旧三路径已撤除")
@@ -304,6 +346,7 @@ class S0UnitInstaller:
                         changed_units=0, hardware_started=False)
 
     def _autostart(self, backup_directory, enable):
+        require(self.previous_candidate is None, "自启操作不接受上一版候选参数")
         with self._locked():
             path, record = self._read_backup(backup_directory)
             operation = "enable-autostart" if enable else "disable-autostart"
@@ -393,10 +436,13 @@ class S0UnitInstaller:
                 new_units[name] = {**ref, "mode": 0o644, "uid": os.geteuid(), "gid": os.getegid()}
             require({name: self._target(name) for name in MANAGED_UNIT_NAMES} == state["targets"], "备份期间旧目标变化")
             require(self._protection(state["document"]) == state["protection"], "备份期间保护状态变化")
+            require(self._previous(state["document"]) == state["previous_candidate"], "备份期间上一版源文件身份变化")
             record = dict(schema=BACKUP_SCHEMA, renames=dict(zip(OLD_UNIT_NAMES, UNIT_NAMES)),
                           candidate=str(self.candidate), manifest_sha256=self.manifest_sha256,
                           unit_directory=str(self.unit_directory), originals=state["targets"], saved=saved,
                           new_units=new_units, services=state["services"])
+            if state["previous_candidate"] is not None:
+                record["previous_candidate"] = state["previous_candidate"]
             raw = (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
             write_new(path / "backup.json", raw)
             write_new(path / "backup.sha256", (hashlib.sha256(raw).hexdigest() + "\n").encode())
@@ -453,7 +499,15 @@ class S0UnitInstaller:
     def _apply(self, backup_directory, rollback):
         with self._locked():
             path, record = self._read_backup(backup_directory)
+            previous = record.get("previous_candidate")
+            if not rollback:
+                require((previous is None and self.previous_candidate is None)
+                        or (isinstance(previous, dict) and previous.get("candidate") == str(self.previous_candidate)
+                            and previous.get("manifest_sha256") == self.previous_manifest_sha256),
+                        "安装的上一版选择与备份不一致")
             state = self._check(rollback_record=record if rollback else None)
+            if not rollback:
+                require(state["previous_candidate"] == previous, "上一版源文件身份与备份不一致")
             for name, new in record["new_units"].items():
                 source = state["document"]["candidate_files"]["systemd/" + name]
                 require(all(new[key] == source[key] for key in ("path", "bytes", "sha256"))
@@ -519,6 +573,7 @@ class S0UnitInstaller:
         return self._apply(backup_directory, False)
 
     def rollback(self, backup_directory):
+        require(self.previous_candidate is None, "回滚不接受上一版候选参数")
         return self._apply(backup_directory, True)
 
 
@@ -528,13 +583,20 @@ def main(argv=None):
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--manifest-sha256")
     parser.add_argument("--backup-dir", type=Path)
+    parser.add_argument("--previous-candidate", type=Path)
+    parser.add_argument("--previous-manifest-sha256")
     args = parser.parse_args(argv)
-    if args.candidate is None and args.manifest_sha256 is None and args.operation == "check" and args.backup_dir is None:
+    if (args.candidate is None and args.manifest_sha256 is None and args.operation == "check" and args.backup_dir is None
+            and args.previous_candidate is None and args.previous_manifest_sha256 is None):
         parser.print_help()
         return 0
     try:
         require(args.candidate is not None and args.manifest_sha256 is not None, "必须指定候选目录与清单 SHA")
-        installer = S0UnitInstaller(args.candidate, args.manifest_sha256)
+        require((args.previous_candidate is None and args.previous_manifest_sha256 is None)
+                or args.operation in ("check", "backup", "install"), "仅 check/backup/install 接受上一版候选参数")
+        installer = S0UnitInstaller(args.candidate, args.manifest_sha256,
+                                    previous_candidate=args.previous_candidate,
+                                    previous_manifest_sha256=args.previous_manifest_sha256)
         if args.operation in ("check", "autostart-check"):
             result = getattr(installer, args.operation.replace("-", "_"))()
         else:

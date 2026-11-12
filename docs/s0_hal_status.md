@@ -1,12 +1,12 @@
 # S0 HAL 当前状态
 
-更新：2026-11-11（America/Los_Angeles；本轮正式启动为 UTC 2026-11-12）。架构以[冻结设计](00_design.md)为准。
+更新：2026-11-12（UTC）。架构以[冻结设计](00_design.md)为准。
 
 **通用机器人控制架构的 S0 阶段：首个 XLeRobot 后端已通过受监督 raw 最小闭环。** 默认S0维护入口分别完成：左臂六关节＋头部两关节保持20秒并采头/左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`并采右腕RGB。三路画面和双腕映射已确认，两侧动作观察、断扭、EStop持久化、原STOP51、位置/身份及清场检查均通过，`manual=false`。
 
 **0.0.1已发布，受监督功能与systemd手动启停已验；本次真实重启的双侧自启未通过，部署闭环仍未完成。D15为`OPEN/DEFERRED`、`deployable=false`。** 已有实机验收为左右分别执行，不覆盖两总线同时联动、无人值守、深度/IMU或标定后的SI速度。
 
-正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。已安装候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
+正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
 | 正式启动验收 | 状态/心跳 | RGB | 停止与清场 |
 |---|---|---|---|
@@ -48,7 +48,9 @@
 
 ## Roadmap
 
-1. **补齐开机部署**：安装器60项、重启入口11项软件测试及只读预检通过；前次入口因udev集合顺序误拒，修正比较后才实际重启一次。新boot中preflight通过，两侧S0均在物理/ACK截止处退出，systemd各记录5次重启尝试，未进入20秒观察，本轮保持FAIL。真实ACK已完成，但`wait_startup`仍把其余worker就绪压在同一2秒窗口；该接线已修复：旧版负控复现，17项既有启动回归通过，修正新增用例的锁存预期后单项通过，另3项边界单测及两组Clippy通过；原17通过/1失败报告保留。下一步冻结新版候选并重新准备现场验收。左侧另有一次相机失流，未证明与截止问题同因。原STOP51、三轮各14读及资源清场通过，三个服务自启已撤销，两侧PID0并保留failed终态，本轮GO已消费、看护结束。备份仍为`/var/lib/robot/deploy-backup-s0-autostart-c4f9a5a`，原件见[本轮报告](../.verify/s0_autostart_2026-11-12_r2/reboot-observe/report.json)。不增加S0 Boot/Init、不自动授权或清故障；Orin日志未持久化，不能排除断线期间额外boot。后续改动保留本地，启动验收与仓库清理完成、0.0.1正式定稿后再一起推送，不覆盖既有发布标签。
+1. **开机部署待实机复验**：启动修复`df6c1bb`的两ELF已在Orin构建并经原安装器换入，候选为`/home/loosqk/robot-checks/s0-startup-deadline-20261112/candidate`。安装器新增明确上一版来源后，68项测试与Clippy通过；14个运行文件、5个设备及12个保护文件核对通过，保护文件和2个guard计数身份/内容未变。两侧S0停稳、三服务disabled；preflight保留上轮active/exited完成态，不代表新产物运行。升级回滚备份为`/var/lib/robot/deploy-backup-s0-deadline-df6c1bb`，新自启备份另为`/var/lib/robot/deploy-backup-s0-autostart-df6c1bb`。重启入口13项软件测试及新PLAN_ONLY通过，启动器已备好，尚未取得新GO；下一步仅一次重启、双侧保护待机20秒及原停止清场。见[换入核对](../.verify/s0_startup_deadline_2026-11-12/post-install-check.json)与[新计划](../.verify/s0_startup_deadline_2026-11-12/reboot-plan.json)。
+
+   上轮实际重启保持[FAIL原件](../.verify/s0_autostart_2026-11-12_r2/reboot-observe/report.json)：真实ACK已完成，旧`wait_startup`仍将其余worker就绪压在同一2秒窗口，两侧各5次启动失败，未进入20秒观察。修复经旧版负控、17项既有回归、新增延迟相机用例单项及3项边界单测验证；最初17通过/1失败的测试报告保留。左侧另一次相机失流未证明同因。原STOP51、三轮各14读及清场通过，自启已撤销；保存失败状态后仅具名清理systemd失败账本用于换入，未清机器人故障。本轮GO已消费、看护结束。Orin日志未持久化，不能排除断线期间额外boot。不增加Boot/Init，不自动授权或清故障；修复与记录暂留本地，启动验收和仓库清理完成、0.0.1定稿后一起推送，不覆盖既有发布标签。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 3. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。
 

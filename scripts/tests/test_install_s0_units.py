@@ -312,13 +312,34 @@ class DeploymentFixture:
         path.chmod(0o444)
         self.manifest_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def make_installer(self):
+    def next_candidate(self):
+        root = self.root / "next"
+        candidate = root / "candidate"
+        document = json.loads(json.dumps(self.manifest))
+        document["root"] = str(root)
+        for name, ref in document["binaries"].items():
+            path = root / "bin" / name
+            self.write(path, Path(ref["path"]).read_bytes(), ref["mode"])
+            document["binaries"][name] = {**reference(path), "elf_machine": 183}
+        for name, ref in document["candidate_files"].items():
+            path = candidate / name
+            content = Path(ref["path"]).read_text().replace(str(self.candidate), str(candidate))
+            content = content.replace(str(self.root / "bin"), str(root / "bin"))
+            self.write(path, content.encode(), ref["mode"])
+            document["candidate_files"][name] = reference(path)
+        document["devices_stat_only"] = {name: device_identity(Path(ref["path"])) for name, ref in self.devices.items()}
+        path = candidate / "manifest.json"
+        self.write(path, (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(), 0o444)
+        return candidate, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def make_installer(self, *, candidate=None, manifest_sha256=None, **options):
         return installer.S0UnitInstaller(
-            self.candidate,
-            self.manifest_sha256,
+            candidate if candidate is not None else self.candidate,
+            manifest_sha256 if manifest_sha256 is not None else self.manifest_sha256,
             unit_directory=self.unit_directory,
             runner=self.commands,
             protection_root=self.protection_root,
+            **options,
         )
 
     def cleanup(self):
@@ -357,6 +378,215 @@ class UnitInstallerTests(unittest.TestCase):
     def assert_no_autostart_changes(self, commands):
         self.assertFalse(any(call[:2] in (["systemctl", "enable"], ["systemctl", "disable"])
                              for call in commands.calls))
+
+    def prepare_upgrade(self, fixture=None):
+        fixture = fixture or self.fixture
+        previous = fixture.make_installer()
+        previous.backup(fixture.backup_dir)
+        previous.install(fixture.backup_dir)
+        candidate, digest = fixture.next_candidate()
+        fixture.backup_dir = fixture.root / "upgrade-backup"
+        fixture.commands.calls.clear()
+        return fixture.make_installer(candidate=candidate, manifest_sha256=digest,
+                                      previous_candidate=fixture.candidate,
+                                      previous_manifest_sha256=fixture.manifest_sha256)
+
+    def test_explicit_previous_candidate_upgrades_and_rolls_back_six_paths(self):
+        subject = self.prepare_upgrade()
+        targets = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        protection = {ref["path"]: reference(Path(ref["path"])) for files in self.fixture.protection.values() for ref in files.values()}
+        default = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        with self.assertRaisesRegex(ValueError, "非候选文件占用"):
+            default.check()
+        self.assertEqual(subject.check()["result"], "CHECK_PASS")
+        subject.backup(self.fixture.backup_dir)
+        record = json.loads((self.fixture.backup_dir / "backup.json").read_text())
+        self.assertEqual(record["previous_candidate"]["manifest_sha256"], self.fixture.manifest_sha256)
+        self.assertEqual(set(record["previous_candidate"]["units"]), set(UNIT_NAMES))
+        self.assertEqual(subject.install(self.fixture.backup_dir)["status"], "PASS")
+        for name in UNIT_NAMES:
+            self.assertEqual((self.fixture.unit_directory / name).read_bytes(), (subject.candidate / "systemd" / name).read_bytes())
+        default.rollback(self.fixture.backup_dir)
+        for name, expected in targets.items():
+            actual = subject._target(name)
+            self.assertEqual(actual["exists"], expected["exists"])
+            if expected["exists"]:
+                self.assertTrue(installer.same_content(actual, expected))
+        self.assertEqual(protection, {path: reference(Path(path)) for path in protection})
+        self.assert_no_autostart_changes(self.fixture.commands)
+        self.assertEqual(sum(call == ["systemctl", "daemon-reload"] for call in self.fixture.commands.calls), 2)
+
+    def test_previous_parameters_must_be_paired_and_are_rejected_by_rollback_and_autostart(self):
+        for options in ({"previous_candidate": self.fixture.root / "previous"},
+                        {"previous_manifest_sha256": "a" * 64}):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, "必须成对"):
+                self.fixture.make_installer(**options)
+        subject = self.prepare_upgrade()
+        for action in (subject.autostart_check, lambda: subject.enable_autostart(self.fixture.backup_dir),
+                       lambda: subject.disable_autostart(self.fixture.backup_dir), lambda: subject.rollback(self.fixture.backup_dir)):
+            with self.assertRaisesRegex(ValueError, "不接受上一版"):
+                action()
+        for operation in ("rollback", "autostart-check", "enable-autostart", "disable-autostart"):
+            with self.subTest(operation=operation), patch("builtins.print"), patch.object(installer, "S0UnitInstaller") as constructor:
+                code = installer.main([operation, "--candidate", str(subject.candidate), "--manifest-sha256", subject.manifest_sha256,
+                                       "--previous-candidate", str(self.fixture.candidate),
+                                       "--previous-manifest-sha256", self.fixture.manifest_sha256])
+                self.assertEqual(code, 1)
+                constructor.assert_not_called()
+        self.assert_no_autostart_changes(self.fixture.commands)
+        self.assert_no_reload()
+
+    def test_previous_manifest_sha_and_static_contract_are_verified(self):
+        for damage in ("sha", "schema", "root", "domain", "protection-path", "unit-path"):
+            with self.subTest(damage=damage):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                subject = self.prepare_upgrade(fixture)
+                if damage == "sha":
+                    subject.previous_manifest_sha256 = "f" * 64
+                else:
+                    if damage == "schema":
+                        fixture.manifest["schema"] = "UNKNOWN"
+                    elif damage == "root":
+                        fixture.manifest["root"] = str(fixture.root / "other")
+                    elif damage == "domain":
+                        fixture.manifest["protection_domains"]["right"]["robot_id"] = "other"
+                    elif damage == "protection-path":
+                        fixture.manifest["protection"]["right"]["estop_latch"]["path"] += ".other"
+                    elif damage == "unit-path":
+                        fixture.manifest["candidate_files"]["systemd/" + UNIT_NAMES[0]]["path"] += ".other"
+                    fixture.freeze_manifest()
+                    subject.previous_manifest_sha256 = fixture.manifest_sha256
+                with self.assertRaises(ValueError):
+                    subject.check()
+                self.assertFalse(fixture.backup_dir.exists())
+                self.assertFalse(any(call == ["systemctl", "daemon-reload"] for call in fixture.commands.calls))
+
+    def test_previous_requires_complete_unmixed_stopped_disabled_units_without_dropins(self):
+        subject = self.prepare_upgrade()
+        target = self.fixture.unit_directory / UNIT_NAMES[1]
+        original = target.read_bytes()
+        for damage in ("missing", "mixed", "unknown", "mode"):
+            with self.subTest(damage=damage):
+                if damage == "missing":
+                    target.unlink()
+                elif damage == "mixed":
+                    self.fixture.write(target, (subject.candidate / "systemd" / target.name).read_bytes())
+                elif damage == "unknown":
+                    self.fixture.write(target, b"unknown unit\n")
+                else:
+                    target.chmod(0o640)
+                self.fixture.commands.cached_values.clear()
+                with self.assertRaises(ValueError):
+                    subject.backup(self.fixture.backup_dir)
+                self.fixture.write(target, original)
+                self.assertFalse(self.fixture.backup_dir.exists())
+        for override in ({"ActiveState": "active", "SubState": "running"}, {"MainPID": "42"}, {"Job": "1 /job/1"},
+                         {"UnitFileState": "enabled"}, {"UnitFileState": "masked"}, {"DropInPaths": "/other.conf"}):
+            with self.subTest(override=override):
+                self.fixture.commands.overrides = {target.name: override}
+                with self.assertRaises(ValueError):
+                    subject.backup(self.fixture.backup_dir)
+                self.assertFalse(self.fixture.backup_dir.exists())
+        self.fixture.commands.overrides = {}
+        dropin = Path(str(target) + ".d")
+        dropin.mkdir()
+        with self.assertRaisesRegex(ValueError, "drop-in"):
+            subject.backup(self.fixture.backup_dir)
+        dropin.rmdir()
+        self.assert_no_reload()
+        self.assert_no_autostart_changes(self.fixture.commands)
+
+    def test_previous_source_or_target_drift_after_backup_prevents_install(self):
+        for damage in ("source-content", "source-identity", "manifest-identity", "target-content", "target-identity"):
+            with self.subTest(damage=damage):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                subject = self.prepare_upgrade(fixture)
+                subject.backup(fixture.backup_dir)
+                backup = (fixture.backup_dir / "backup.json").read_bytes()
+                path = (fixture.candidate / "systemd" / UNIT_NAMES[1] if damage.startswith("source")
+                        else fixture.candidate / "manifest.json" if damage.startswith("manifest")
+                        else fixture.unit_directory / UNIT_NAMES[1])
+                before = reference(path)
+                if damage.endswith("content"):
+                    self.damage_runtime_file(path)
+                else:
+                    subject._atomic_replace(path, path.read_bytes(), before)
+                    self.assertNotEqual(reference(path)["inode"], before["inode"])
+                with self.assertRaises(ValueError):
+                    subject.install(fixture.backup_dir)
+                self.assertEqual((fixture.backup_dir / "backup.json").read_bytes(), backup)
+                self.assertFalse((fixture.backup_dir / "install-result.json").exists())
+                self.assertFalse(any(call == ["systemctl", "daemon-reload"] for call in fixture.commands.calls))
+
+    def test_install_previous_selection_must_match_backup(self):
+        subject = self.prepare_upgrade()
+        subject.backup(self.fixture.backup_dir)
+        for options in ({}, {"previous_candidate": self.fixture.candidate, "previous_manifest_sha256": "f" * 64},
+                        {"previous_candidate": self.fixture.root / "other", "previous_manifest_sha256": self.fixture.manifest_sha256}):
+            with self.subTest(options=options):
+                selected = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256, **options)
+                with self.assertRaisesRegex(ValueError, "上一版选择与备份不一致"):
+                    selected.install(self.fixture.backup_dir)
+        self.assertFalse((self.fixture.backup_dir / "install-result.json").exists())
+        self.assert_no_reload()
+
+    def test_previous_runtime_and_old_device_generation_are_not_upgrade_dependencies(self):
+        self.subject.backup(self.fixture.backup_dir)
+        self.subject.install(self.fixture.backup_dir)
+        device = Path(self.fixture.devices["right"]["path"])
+        replacement = device.with_name("next-enumeration")
+        replacement.symlink_to(os.readlink(device))
+        os.replace(replacement, device)
+        self.assertNotEqual(device.lstat().st_ino, self.fixture.devices["right"]["inode"])
+        candidate, digest = self.fixture.next_candidate()
+        subject = self.fixture.make_installer(candidate=candidate, manifest_sha256=digest,
+                                              previous_candidate=self.fixture.candidate,
+                                              previous_manifest_sha256=self.fixture.manifest_sha256)
+        for path in (self.fixture.root / "bin/robot-s0", self.fixture.candidate / "camera_capture.py", self.fixture.config("right")):
+            path.unlink()
+        self.fixture.backup_dir = self.fixture.root / "upgrade-backup"
+        self.fixture.commands.calls.clear()
+        self.assertEqual(subject.check()["result"], "CHECK_PASS")
+        subject.backup(self.fixture.backup_dir)
+        replacement.symlink_to(os.readlink(device))
+        os.replace(replacement, device)
+        for action in (subject.check, lambda: subject.install(self.fixture.backup_dir)):
+            with self.assertRaisesRegex(ValueError, "设备链接身份变化"):
+                action()
+        self.assert_no_reload()
+
+    def test_partial_upgrade_rolls_back_without_previous_source_files(self):
+        subject = self.prepare_upgrade()
+        originals = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+        subject.backup(self.fixture.backup_dir)
+        real_replace, replaced = os.replace, []
+
+        def replace(source, destination, *args, **kwargs):
+            target = Path(destination)
+            if target.parent == self.fixture.unit_directory and target.name in UNIT_NAMES:
+                replaced.append(target.name)
+                if len(replaced) == 2:
+                    raise OSError("模拟升级第二份 unit 换入失败")
+            return real_replace(source, destination, *args, **kwargs)
+
+        with patch.object(installer.os, "replace", side_effect=replace), self.assertRaises(OSError):
+            subject.install(self.fixture.backup_dir)
+        receipt = self.fixture.backup_dir / "install-result.json"
+        failure = receipt.read_bytes()
+        self.assertEqual(json.loads(failure)["status"], "FAIL")
+        for path in [self.fixture.candidate / "manifest.json", *[self.fixture.candidate / "systemd" / name for name in UNIT_NAMES]]:
+            path.unlink()
+        rollback = self.fixture.make_installer(candidate=subject.candidate, manifest_sha256=subject.manifest_sha256)
+        self.assertEqual(rollback.rollback(self.fixture.backup_dir)["status"], "PASS")
+        self.assertEqual(receipt.read_bytes(), failure)
+        for name, expected in originals.items():
+            actual = rollback._target(name)
+            self.assertEqual(actual["exists"], expected["exists"])
+            if expected["exists"]:
+                self.assertTrue(installer.same_content(actual, expected))
+        self.assert_no_autostart_changes(self.fixture.commands)
 
     def test_autostart_check_is_read_only_reports_actual_states_and_rx(self):
         subject = self.prepare_autostart()

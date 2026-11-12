@@ -25,6 +25,8 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 四个操作都显式指定 `--candidate` 与 `--manifest-sha256`；写操作还须 root 和 `--backup-dir`。已有安装记录和当前备份位置只维护在当前状态中。改名前备份仍用其冻结旧安装器恢复；新安装器明确识别六路径备份格式。新 preflight 不继承旧 handoff 的完成态，首次运行须另确认现场条件。回滚保护范围不包括 latch、RX marker、锁或 guard 计数，不用旧快照解除保护。
 
+升级已安装的同名三 unit 时，`check / backup / install` 须成对指定 `--previous-candidate` 与 `--previous-manifest-sha256`，当前三份必须完整匹配上一版，且保护域及六个保护文件路径与新候选一致。备份记录上一版清单和三份源文件身份，安装须沿用同一选择并再次核对；旧设备枚举和运行 ELF 不作为升级依赖，新候选仍完整检查。`rollback` 只从本批备份还原原件，自启操作和回滚均不接受上一版参数。
+
 ## 开机自启
 
 仍使用同一安装器及三个 unit，不增加服务或 S0 状态：
