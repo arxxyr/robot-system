@@ -1,8 +1,0 @@
-{
-  "recorded_at": "2026-10-10T07:36:40.072109+00:00",
-  "answer": "现场无法确认",
-  "question": "本轮断电前是否看到底盘轮子转动，或有人移动、碰到底盘",
-  "physical_motion_before_cut": "UNKNOWN",
-  "power_state": "USER_CONFIRMED_OFF",
-  "new_motion_or_UART_GO": false
-}

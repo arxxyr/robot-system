@@ -1,4 +1,0 @@
-rustc-before 0
-fmt 0
-clippy 0
-rustc-after 0

@@ -1,7 +1,0 @@
-{
-  "path": "/home/loosqk/.config/htop/htoprc",
-  "before_sha256": "0f3ec96585d1b1ae5f8f56bbf221ef3df42783628807509674973057b3e3886d",
-  "after_sha256": "190d8496830a924ca87336e0e58d97ff79b70f90b2ca4ba34887ac8363fca23b",
-  "only_change": "show_merged_command: 0 -> 1",
-  "managed_by_chezmoi": false
-}

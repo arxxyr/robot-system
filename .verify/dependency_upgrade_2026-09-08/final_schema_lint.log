@@ -1,7 +1,0 @@
-   Compiling bitflags v2.13.1
-   Compiling flatbuffers v25.12.19
-   Compiling robot-msg v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-msg)
-    Finished `dev` profile [optimized + debuginfo] target(s) in 1.34s
-     Running `target/debug/schema_lint`
-schema_lint: scanned 16 .fbs file(s) under /home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-msg/schemas
-schema_lint: all checks passed ✓

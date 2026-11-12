@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-zero-update-record-quality-r1 $134 %170 746170 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-zero-update-record-quality-r1.py\", \"temporary_runner_sha256\": \"4578d31b8b6da97e2efc13250ea180bde2830c4925e9192076f19d847db29082\"}\n",
-  "stderr": ""
-}

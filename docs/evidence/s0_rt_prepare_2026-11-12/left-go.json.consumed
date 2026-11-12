@@ -1,0 +1,37 @@
+{
+  "schema": "SYSTEMD_S0_GO_20261111_V1",
+  "issued_by": "root",
+  "plan_sha256": "7bf0addb3b051ae94c6a5f116512b61ffca3b668fa45320888041d7b95352f0b",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b"
+  },
+  "side": "left",
+  "scope": "本轮先单次robot-s0-preflight完成17电机停止；随后正式systemd左后右逐侧：既有RX每侧一次authorize，保持auto_enable=false及双latch=1；每侧状态与RGB只读观察20秒，具名stop后原STOP51及三轮本轮14读、进程/相机/串口/锁清场；不ClearEStop、不SetEnabled、不运动、不重跑handoff；D15 OPEN/DEFERRED，deployable=false",
+  "issued_at_ns": 1794446674440306029,
+  "expires_at_ns": 1794447230160000000,
+  "confirmed_at_ns": 1794446630160000000,
+  "answer": "现场全部就绪，可按顺序启动",
+  "source": "本轮用户对call_e1d0b19db5e34e378bee5763f24d061d的现场确认回执",
+  "physical": {
+    "left": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true
+    },
+    "right": {
+      "supported": true,
+      "unloaded": true,
+      "area_clear": true,
+      "continuous_presence_until_cleanup": true,
+      "immediate_power_cut": true,
+      "all_three_wheels_off_ground": true,
+      "base_stably_supported": true,
+      "continuous_wheel_observation": true
+    }
+  }
+}

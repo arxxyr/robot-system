@@ -1,9 +1,0 @@
-{
-  "status": "PASS_ALL_MEMBERS_AND_ORIGINALS_UNCHANGED",
-  "files": 145,
-  "archive_sha256": "4645c597aa9bb48058917639c09a34be588e5d2682a5e332e1ca3a785182d515",
-  "index_sha256": "28ce76f60b8ca10e39b97c4c66011755cecf0ee17c3bcc5035552dfe00963388",
-  "summary_sha256": "4f0c3286d83c3ad36033805c5dde355f1b256ad1027010c68aa92236eeb8daa7",
-  "bytes_sha_mode_all_members_same": true,
-  "originals_before_after_same": true
-}

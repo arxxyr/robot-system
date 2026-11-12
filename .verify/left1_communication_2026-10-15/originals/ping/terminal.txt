@@ -1,3 +1,0 @@
-shell_exit=0
-uart_attempted=1
-finished_utc=2026-10-15T13:10:35Z

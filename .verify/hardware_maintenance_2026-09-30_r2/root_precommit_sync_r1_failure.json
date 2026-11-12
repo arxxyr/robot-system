@@ -1,5 +1,0 @@
-{
-  "status": "FAIL",
-  "reason": "root把已有外部h2-hardware-stage-gate-r1.index.json误当目录内index.json；首次copy已保存tar，未执行额外编译或硬件动作",
-  "fixed": "按实际外部索引路径逐SHA核验，不改源或原包"
-}

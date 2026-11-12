@@ -1,8 +1,0 @@
-{
-  "at_ns": 1792657291894567000,
-  "stage": "read-only-observer",
-  "error": "KeyError: 'velocity_raw'",
-  "cause": "失败的第二采样组保留raw但没有派生velocity_raw；观察器先误假定每组完整",
-  "recovery": "只改同句柄日志解析，未重启/重试硬件",
-  "uart": 0
-}

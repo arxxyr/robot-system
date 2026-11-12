@@ -1,8 +1,0 @@
-{
-  "schema": "H2_TRACE_OWNER_HOST_REVIEW_R1_FAILURE_V1",
-  "status": "FAIL",
-  "hardware_operation": false,
-  "cause": "本机reviewer错误沿用S1 evidence-index.json selfindex名称；实际外包成员集合须按当前包校验",
-  "error": "AssertionError at heredoc line10; no source/archive/original modified",
-  "recorded_ns": 1790801330592119000
-}

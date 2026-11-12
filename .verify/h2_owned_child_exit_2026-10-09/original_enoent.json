@@ -1,8 +1,0 @@
-{
-  "receipt_source": "已收到的 exec_command 原始工具回执副本；非重跑",
-  "label": "original_enoent",
-  "chunk_id": "c63938",
-  "exit_code": 0,
-  "command": "uv run --no-project --python 3.12 python -m unittest discover -s scripts/tests -p test_run_post_e_h2.py -k test_dirfd_replacement_missing_exe_and_exit_are_distinguished -v",
-  "output": "WARN `--no-project` was provided, but no project was found\ntest_dirfd_replacement_missing_exe_and_exit_are_distinguished (test_run_post_e_h2.ProcProbeTests.test_dirfd_replacement_missing_exe_and_exit_are_distinguished) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK\n"
-}

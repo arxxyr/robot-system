@@ -1,5 +1,0 @@
-    Checking robot-core v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-core)
-    Checking tracing v0.1.44
-    Checking robot-adapter-feetech v0.1.2 (/Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech)
-    Finished `dev` profile [optimized + debuginfo] target(s) in 3.84s
-

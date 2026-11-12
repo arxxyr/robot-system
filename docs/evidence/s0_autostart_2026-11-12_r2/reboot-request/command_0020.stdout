@@ -1,0 +1,6 @@
+MainPID=0
+Id=robot-s0-bus2.service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+Job=

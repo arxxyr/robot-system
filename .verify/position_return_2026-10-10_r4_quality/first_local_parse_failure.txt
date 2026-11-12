@@ -1,1 +1,0 @@
-首次本机取回校验在真实已解包后因读取既有Runner不存在的signals_sent字段而KeyError退出1；未重跑远端、未改原件。实际Runner回执键见同批原completion。

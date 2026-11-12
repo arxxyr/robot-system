@@ -1,9 +1,0 @@
-{
-  "at_recorded_utc": "2026-10-22T02:43:46.060492+00:00",
-  "source": "用户直接回复call_beb4483da61947768663328225a442fa",
-  "answer": "不断电，再跑一下轮子，20s",
-  "actual_power_cut_confirmed": false,
-  "power": "NOT_CUT_PER_USER_INSTRUCTION",
-  "original_manual_cut_result_unchanged": true,
-  "no_automatic_retry": true
-}

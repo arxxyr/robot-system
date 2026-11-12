@@ -1,3 +1,0 @@
-{"path": "/home/loosqk/robot-checks/h2-right-r2-commit-quality-20261010-r1/bootstrap/commit_quality_once_r1.py", "sha256": "e37ee653957908e48b84214439a2e524b769302f9451fab49912e17dcb482609", "bytes": 5035}
-{"path": "/home/loosqk/robot-checks/h2-right-r2-commit-quality-20261010-r1/bootstrap/commit_quality_run_r1.sh", "sha256": "0278e0ed6a9880c109bbeb0b6f74ccc9a9cd71dfd16cfa14a26bad6769854c4c", "bytes": 578}
-{"head": "894084738d95a7239611c2b8fbecfe081d3a7fc9", "clean": true, "base": "/home/loosqk/robot-checks/h2-right-r2-commit-quality-20261010-r1", "tmux": "tmux 3.2a"}

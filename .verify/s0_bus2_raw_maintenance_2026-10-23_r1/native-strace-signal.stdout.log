@@ -1,4 +1,0 @@
-{"event": "ready", "pid": 776496, "pgid": 776493}
-{"event": "handler", "signal": 2}
-TAIL_SAFE_CLEANUP
-{"event": "exit", "signal_received": true}

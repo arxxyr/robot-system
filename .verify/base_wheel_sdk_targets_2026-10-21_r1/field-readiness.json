@@ -1,8 +1,0 @@
-{
-  "first_received_at_utc": "2026-10-22T04:19:13Z",
-  "confirmed_at_ns": 1792642753000000000,
-  "answer": "全部就绪，可按顺序各执行一次",
-  "source": "request_user_input_async call_2d4aceae1a11400d94fc3e464f0c8d37 当前直接用户答复",
-  "scope": "先前轮right8，通过后左轮right7，每轮仅一次原始速度+500、20秒，逐轮零速/断扭/停止；已供电、三轮稳定架空、双臂空载支撑、区域空旷，全程观察看护并可立即断电",
-  "motion_notice_sent": true
-}

@@ -1,1 +1,0 @@
-本机解码quality原tar、核实际PASS/597/32d及SHA后，展示receipts误取'name'键，真实KeyError: 'name'、显示命令exit1。远端质量原件与PASS不变，未重跑门。

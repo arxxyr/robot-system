@@ -1,9 +1,0 @@
-{
-  "status": "FAIL_LOCAL_REVIEW_HELPER_ONLY",
-  "error": "AssertionError",
-  "cause": "复核脚本仅对独立Python副本rstrip换行，heredoc与Python原字节实际相等；未执行模板",
-  "exit_code": 1,
-  "ssh_executed": false,
-  "uart_operations": 0,
-  "native_template_executed": false
-}

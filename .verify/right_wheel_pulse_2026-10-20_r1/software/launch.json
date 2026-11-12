@@ -1,5 +1,0 @@
-{
-  "session": "right-wheel-pulse-sw-20261020-r1",
-  "initial_pane": "right-wheel-pulse-sw-20261020-r1 $88 %124 709710 0",
-  "command": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 -B /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/quality.py > /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/owner.log 2>&1; quality_rc=$?; printf \"%s\\n\" \"$quality_rc\" > /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/owner.exit; exit \"$quality_rc\""
-}

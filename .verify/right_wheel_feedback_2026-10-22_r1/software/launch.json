@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"right-wheel-feedback-quality-r1 $123 %159 741249 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/right-wheel-feedback-quality-r1.py\", \"temporary_runner_sha256\": \"b7f85e13c705537d027061917c6ea4b404209dbd55b9762c52a3cb54a4595013\", \"uploaded\": {\"scripts/run_hardware_maintenance.py\": {\"bytes\": 121280, \"sha256\": \"c875a6e266e2894af4256873dd4e0bcf1c1911c2cad8d7206b940ab2afbd137d\"}, \"scripts/tests/test_hardware_maintenance.py\": {\"bytes\": 168317, \"sha256\": \"0a14ee87e778f22cfa5e243f9990416170b8c5e903202c19eec81c3549542ed1\"}}}\n",
-  "stderr": ""
-}

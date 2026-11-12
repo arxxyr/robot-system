@@ -1,0 +1,6 @@
+MainPID=0
+Id=robot-s0-right-arm.service
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+Job=

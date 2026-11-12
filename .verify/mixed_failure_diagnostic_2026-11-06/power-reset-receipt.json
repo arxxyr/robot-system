@@ -1,8 +1,0 @@
-{
-  "recorded_at_ns": 1793950826998714000,
-  "source": "本轮用户直接回复",
-  "answer": "我已经断电重连了",
-  "motor_power_reset": "USER_REPORTED_COMPLETE",
-  "new_motion_authorized": false,
-  "note": "此次报告更新电源状态，不回填旧测试失败，不代替下次动作的现场状态确认"
-}

@@ -1,8 +1,0 @@
-{
-  "at_ns": 1792642233266856000,
-  "route": "existing Orin SSH jump to documented home Gitea server10.0.1.16:20080; original hostname key verification retained",
-  "exit_code": 0,
-  "stdout": "dd9cb5cda40848b3bd038a0badc8853cf9cf83ea\trefs/heads/dev\ndd9cb5cda40848b3bd038a0badc8853cf9cf83ea\trefs/heads/master\n",
-  "stderr": "",
-  "uart": 0
-}

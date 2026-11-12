@@ -1,7 +1,0 @@
-usage:
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> ping
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> sync-zero
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> sync-velocity <value>
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> read  <register>
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> read-raw <register>
-  /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/frozen/feetech_poke <address> <motor_id> write <register> <value>

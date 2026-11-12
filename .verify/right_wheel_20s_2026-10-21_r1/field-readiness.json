@@ -1,8 +1,0 @@
-{
-  "first_received_at_utc": "2026-10-22T03:27:00Z",
-  "confirmed_at_ns": 1792639620000000000,
-  "answer": "现在全部就绪，可执行这一次",
-  "question": "仅右轮right9，原始速度+500持续20秒，随后零速、断扭并检查停止；已供电、三轮稳定架空、双臂有支撑、轮旁空旷，全程看清右轮并持续看护、立即断电",
-  "source": "request_user_input_async call_544a3e19404646e7b6f9c0f1ea10969c 当前直接用户答复",
-  "prior_notice_sent": true
-}

@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "sftp> put -p /Users/loosqk/repo/rust/robot-system/crates/robot-adapters/feetech/examples/feetech_poke.rs /home/loosqk/robot-checks/xlerobot-sync-zero-software-20261013/source/crates/robot-adapters/feetech/examples/feetech_poke.rs\nsftp> put -p /tmp/right-wheel-reference-r2-expected-source.json /home/loosqk/robot-checks/right-wheel-reference-20261020-r2/quality/expected-source.json\n",
-  "stderr": ""
-}

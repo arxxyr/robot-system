@@ -1,8 +1,0 @@
-{
-  "source": "request_user_input_async call_13f817a5c6884e778573d8179833934f 当前直接用户答复",
-  "answer": "前轮明显持续转动，结束后完全停止",
-  "motion": "CONTINUOUS_ROTATION_USER_REPORTED",
-  "stop": "COMPLETELY_STOPPED_USER_REPORTED",
-  "watch_continues_for_left_trial": true,
-  "does_not_renew_initial_field_time": true
-}

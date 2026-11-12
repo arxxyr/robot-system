@@ -1,1 +1,0 @@
-{"status": "READ_ONLY_EXISTING_COMMIT_QUALITY_PHASE", "phase": "/home/loosqk/robot-checks/base-front-pv-compare-r1-commit-quality-20261013", "phase_exists": false, "scope": "仅既有phase状态，不启动batch/不UART/USB/fuser/服务/GO"}

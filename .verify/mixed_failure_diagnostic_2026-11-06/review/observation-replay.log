@@ -1,3 +1,0 @@
-health: mem_error=MemTotal missing or zero in /proc/meminfo load_error=parse load_1m 'broken': invalid float literal -> mem_used_pct=0 load_1m=0
-viz writable report: 原始运行失败: source fixture invalid
-viz directory report: Is a directory (os error 21)

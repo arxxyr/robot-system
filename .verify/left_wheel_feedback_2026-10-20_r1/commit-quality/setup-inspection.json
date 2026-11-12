@@ -1,5 +1,0 @@
-{
-  "exit": 0,
-  "stdout": "{\"/home/loosqk/robot-checks/right-wheel-reference-20261020-r2/commit-quality/quality.py\": true, \"/home/loosqk/robot-checks/base-zero-quality-20261020-r4/quality.py\": true, \"/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/commit-quality/quality.py\": false, \"/home/loosqk/robot-checks/left-wheel-feedback-20261020-r1/software/expected-python-inputs.json\": true}\nmissing stage\n{\"session_exit\": 1, \"stderr\": \"can't find session: left-wheel-feedback-r1-commit-20261020\\n\"}\n",
-  "stderr": ""
-}

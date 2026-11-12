@@ -1,9 +1,0 @@
-{
-  "phase": "COMMIT_QUALITY_ARCHIVE_READY",
-  "sha256": "28689ea89fe56d06f7d5de88f3ba4d33e9209b96531d2468d9c4ca0a8c71916b",
-  "bytes": 5598,
-  "files": 17,
-  "source_bytes": 15759,
-  "runtime_pid": 642308,
-  "pane_exit": 1
-}

@@ -1,0 +1,38 @@
+{
+  "frames_received": 2376,
+  "frames_logged": 2376,
+  "frames_rejected": 0,
+  "per_schema": {
+    "2": {
+      "received": 987,
+      "logged": 987,
+      "rejected": 0
+    },
+    "512": {
+      "received": 402,
+      "logged": 402,
+      "rejected": 0
+    },
+    "769": {
+      "received": 987,
+      "logged": 987,
+      "rejected": 0
+    }
+  },
+  "reject_reasons": [],
+  "topics_seen": [
+    "/xlerobot_bus1_full/s0/heartbeat",
+    "/xlerobot_bus1_full/s0/left_arm_full_with_head/state",
+    "/xlerobot_bus1_full/sensors/head_color/color",
+    "/xlerobot_bus1_full/sensors/left_wrist_color/color"
+  ],
+  "topics_discovered_total": 4,
+  "topics_retired": 0,
+  "observer_dropped": 0,
+  "observer_sequence_gaps": 2,
+  "publisher_instances_seen": 4,
+  "instance_cache_evictions": 0,
+  "output_status": "success",
+  "error": null,
+  "worker_reaped": true
+}

@@ -1,9 +1,0 @@
-{
-  "recorded_at": "2026-10-20T09:17:37.607948+00:00",
-  "question_id": "call_d56e8419345a4ca487ff2355bbb79d8a",
-  "reply": "两轮都没动",
-  "right_wheel": "NO_MOVEMENT_USER_REPORTED",
-  "front_wheel": "NO_MOVEMENT_USER_REPORTED",
-  "scope": "仅本次right-wheel-pulse-r1；不回填历史记录",
-  "new_uart": 0
-}

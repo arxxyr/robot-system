@@ -1,0 +1,6 @@
+MainPID=0
+Id=robot-gateway-right.service
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+Job=

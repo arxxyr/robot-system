@@ -1,8 +1,0 @@
-{
-  "receipt_source": "已收到的 exec_command 原始工具回执副本；非重跑",
-  "label": "green_one",
-  "chunk_id": "3bb0da",
-  "exit_code": 0,
-  "command": "uv run --no-project --python 3.12 python -m unittest discover -s scripts/tests -p test_run_post_e_h2.py -k test_owned_enoent_is_resolved_only_after_child_wait_and_keeps_raw_snapshot -v",
-  "output": "WARN `--no-project` was provided, but no project was found\ntest_owned_enoent_is_resolved_only_after_child_wait_and_keeps_raw_snapshot (test_run_post_e_h2.OwnedChildExitTests.test_owned_enoent_is_resolved_only_after_child_wait_and_keeps_raw_snapshot) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK\n"
-}

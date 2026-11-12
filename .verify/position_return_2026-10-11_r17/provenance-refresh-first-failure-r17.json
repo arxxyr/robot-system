@@ -1,7 +1,0 @@
-{
-  "status": "LOCAL_PROVENANCE_REFRESH_FAIL",
-  "error": "StopIteration: attempted top-level lookup for nested confirm_stopped, guard and block using stale names",
-  "actual_software_tests_affected": false,
-  "files_written_before_failure": 0,
-  "recovery": "read nested functions via AST walk and actual names; no software commands rerun"
-}

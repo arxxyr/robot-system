@@ -1,5 +1,0 @@
-   Compiling robot-adapter-feetech v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-adapters/feetech)
-   Compiling robot-tests v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-tests)
-   Compiling robot-cli v0.1.2 (/home/loosqk/repo/robot/robot-system-dependency-upgrade/crates/robot-cli)
-      Timing report saved to /home/loosqk/repo/robot/robot-system-dependency-upgrade/target/cargo-timings/cargo-timing-20260908T141523247Z-f6b6b0bc77d7d215.html
-    Finished `dev` profile [optimized + debuginfo] target(s) in 0.52s

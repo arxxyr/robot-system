@@ -1,9 +1,0 @@
-{
-  "recorded_at": "2026-10-20T08:56:06.326107+00:00",
-  "question_id": "call_1efefc6ea44448f48106c6640052b48d",
-  "reply": "都没动，你把角度大一点夸张一些，电机坏了也没事",
-  "r4_right_wheel_motion": "NO_MOVEMENT_USER_REPORTED",
-  "r4_front_wheel_motion": "NO_MOVEMENT_USER_REPORTED",
-  "scope": "仅本次R4启动前至停止检查；不回填R3或历史±50",
-  "new_request": "准备可见非零右轮转动；本回执不改写旧GO或现场确认时间"
-}

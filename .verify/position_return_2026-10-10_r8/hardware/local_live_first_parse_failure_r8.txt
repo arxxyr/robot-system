@@ -1,1 +1,0 @@
-爸爸，首次本地R8原包解析断言失败：错误要求所有command exit0，实际fuser无持有者预期exit1；本地完整tar SHA/bytes/757文件及run SHA已核后落盘。不变更原件/不重跑远端或UART。

@@ -1,1 +1,0 @@
-{"status": "PLAN_ONLY", "run_id": "base-feedback-diagnostic-r1", "target": ["right", 9, "base_right_wheel"], "scope": "仅右9/base_right_wheel在TE0/GV0下500ms内0/200/400ms三组TE0→PP56→PV58只读原帧及原STOP51；无WRITE/Enable，三轮已离地且底盘稳定支撑", "actions_started": 0, "register_writes": 0, "motion_commands": 0, "position_targets": [], "new_GO": false}

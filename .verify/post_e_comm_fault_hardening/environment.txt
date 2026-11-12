@@ -1,8 +1,0 @@
-env_id        ubuntu-24.04-x86_64-20260908
-host          FRIDAY · x86_64
-os            Linux 7.0.0-31-generic
-cpu governor  performance
-iceoryx2      0.9.3
-rust toolchain rustc 1.100.0-nightly (cea272fa3 2026-09-07)
-测得项        实现前lib/bin 1345项、RPC integration 45项；C1及后续另记
-备注           本地x86_64；用户级systemd running；CapEff=0；非Orin，无现场延迟宣称

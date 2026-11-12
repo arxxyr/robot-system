@@ -1,9 +1,0 @@
-cargo 1.101.0-nightly (29c5daa1a 2026-10-07)
-release: 1.101.0-nightly
-commit-hash: 29c5daa1afc262323364e039bb70c83372cc702c
-commit-date: 2026-10-07
-host: aarch64-apple-darwin
-libgit2: 1.9.6 (sys:0.21.0 vendored)
-libcurl: 8.7.1 (sys:0.4.90+curl-8.21.0 system ssl:(SecureTransport) LibreSSL/3.3.6)
-ssl: OpenSSL 3.6.3 9 Jun 2026
-os: Mac OS 27.0.1 [64-bit]

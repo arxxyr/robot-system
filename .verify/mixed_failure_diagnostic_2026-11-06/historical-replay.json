@@ -1,8 +1,0 @@
-{
-  "before": "混合原件固定预算/周期数变化",
-  "after": "混合child失败: invalid parameter: feetech calibration",
-  "original_run_sha256": "d62939ac3e3c61def45db71bce28c01eb078ad0dd56e0d3e483be9a1eff754f1",
-  "original_child_sha256": "358ca80651f247ab646b8dec3ed72524ae582f069aea1481e22b6bcdf84ab1e3",
-  "original_run_result_unchanged": "NEEDS_MANUAL_POWER_CUT",
-  "new_uart": false
-}

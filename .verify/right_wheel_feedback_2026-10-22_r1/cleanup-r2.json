@@ -1,9 +1,0 @@
-{
-  "at_ns": 1792668450791244325,
-  "terminal": "right9-feedback-r2-hardware $125 %161 742222 1 0",
-  "owner_absent": true,
-  "only_owned_dead_pane_removed": "%161",
-  "uart_after_capture": 0,
-  "new_go_after_capture": 0,
-  "hardware_watch_closed": true
-}

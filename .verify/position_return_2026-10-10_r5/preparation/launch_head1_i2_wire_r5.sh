@@ -1,5 +1,0 @@
-#!/bin/bash
-set -eu
-export PYTHONDONTWRITEBYTECODE=1
-tmux set-option -w -t "$TMUX_PANE" remain-on-exit on
-exec /home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/i2_trial_head1_wire_r5.py --maintenance /home/loosqk/robot-checks/position-return-20261010-r1/software-facts-r1/scripts/run_hardware_maintenance.py --bindings /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/maintenance_bindings_i2_wire_r5.json --output /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5 --run-id head1-i2-wire-r5 --artifact-root /home/loosqk/robot-checks/position-return-20261010-r1 --execute --approval /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-r5.go.json > /home/loosqk/robot-checks/position-return-20261010-r1/position-return-r5/wire-r2/head1-i2-wire-launch-r5/driver.log 2>&1

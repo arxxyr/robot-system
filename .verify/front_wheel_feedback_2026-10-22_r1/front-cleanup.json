@@ -1,9 +1,0 @@
-{
-  "at_ns": 1792656143449609690,
-  "terminal": "front-wheel-feedback-r1-hardware $114 %150 736982 1 0",
-  "owner_absent": true,
-  "only_owned_dead_pane_removed": "%150",
-  "uart_after_capture": 0,
-  "new_go_after_capture": 0,
-  "hardware_watch_closed": true
-}

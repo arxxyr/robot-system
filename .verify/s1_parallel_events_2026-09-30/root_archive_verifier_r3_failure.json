@@ -1,6 +1,0 @@
-{
-  "status": "FAIL",
-  "scope": "root自索引文件名读取错误，非候选测试失败",
-  "error": "AssertionError：实际额外成员为evidence-index.json，误猜index.json；原工具回执保留",
-  "candidate_not_modified": true
-}

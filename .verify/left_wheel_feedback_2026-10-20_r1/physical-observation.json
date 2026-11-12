@@ -1,9 +1,0 @@
-{
-  "source": "用户直接回复call_a514b1be6a3144298c6d8f314a8a90a8",
-  "answer": "全程看清，左轮没有转动或抖动",
-  "received_at_utc": "2026-10-20T11:22:41Z",
-  "scope": "本次约1秒左轮right7只读采集",
-  "actual_wheel_observation": "NO_VISIBLE_ROTATION_OR_JITTER",
-  "not_electrical_or_instrumented_motion_proof": true,
-  "does_not_authorize_new_uart_or_motion": true
-}

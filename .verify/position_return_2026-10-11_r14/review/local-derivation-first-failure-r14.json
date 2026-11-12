@@ -1,7 +1,0 @@
-{
-  "status": "LOCAL_DERIVATION_PARSE_FAILURE_RETAINED",
-  "error": "ValueError: malformed node or string on line 19: <ast.Call object>; AST assignment map selected later observer.replace() assignment instead of initial literal",
-  "effect": "只发生于本机准备阶段；三脚本写入前退出，仅新建准备目录；SSH/Cargo/UART为0",
-  "correction": "明确选择最初literal observer/payload assignment；不修改Runner或ownedSSH",
-  "recorded_at_utc": "2026-10-11T04:26:35.896270+00:00"
-}

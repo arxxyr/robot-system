@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-zero-stop-update-quality-r1 $132 %168 744836 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-zero-stop-update-quality-r1.py\", \"temporary_runner_sha256\": \"69fde1cd495b90b49b1b0fc5cfe4116a00dfbd6ae85c2d0707fc2a7412ef3f47\", \"uploaded\": {\"scripts/run_hardware_maintenance.py\": {\"bytes\": 124024, \"sha256\": \"14fb328f9ff59567285098e1ca5e0dee8466f7ee2f4318c79db1f76d0992e376\"}, \"scripts/tests/test_hardware_maintenance.py\": {\"bytes\": 183996, \"sha256\": \"9aaed8ed48abc84a90b082c676cbdbfd9814cfe173f4fafc144e5caa22480907\"}}}\n",
-  "stderr": ""
-}

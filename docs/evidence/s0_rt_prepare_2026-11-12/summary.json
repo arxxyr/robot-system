@@ -1,0 +1,258 @@
+{
+  "status": "LEFT_ACCEPTED_RIGHT_OBSERVER_REJECTED",
+  "source_branch": "feat/s0-systemd-acceptance",
+  "remote_root": "/home/loosqk/robot-checks/s0-rt-prepare-20261112",
+  "quality_run": "quality-r5",
+  "serial_rt": {
+    "left": {
+      "cpu": 4,
+      "fifo_priority": 70
+    },
+    "right": {
+      "cpu": 5,
+      "fifo_priority": 70
+    }
+  },
+  "allocation_guard": "rt_guard",
+  "installed_rt_candidate": true,
+  "hardware_started": true,
+  "uart_opened": true,
+  "go_created": true,
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "old_command_slot_reproduction": "old-command-slot-repro/provenance.json",
+  "next": "仅修robot-viz对JointState速度/力矩NaN未知值的兼容并软件验证，另备新右侧实机验收；不重放原GO，不回填旧FAIL。",
+  "software_checks": {
+    "rust_cases_passed": 434,
+    "python_passed": 407,
+    "python_skipped": 11,
+    "wrapper_passed": 9,
+    "fmt": "PASS",
+    "workspace_clippy": "PASS",
+    "real_rt_clippy": "PASS"
+  },
+  "source_commit": "f9e4b9252d9728e2f168dbb4f846f20b73f87021",
+  "manifest_sha256": "a6a50bcba52589242ec9205aa414b5f7d18c1e9ea3b9e30a0d6f062b7ba75646",
+  "plan_sha256": "7bf0addb3b051ae94c6a5f116512b61ffca3b668fa45320888041d7b95352f0b",
+  "preflight_checks": 43,
+  "runtime_files_verified": 14,
+  "backup_directory": "/var/lib/robot/deploy-backup-s0-rt-f9e4b92",
+  "runtime_thread_verification": "PASS",
+  "services": {
+    "robot-s0-preflight.service": {
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "MainPID": 0,
+      "UnitFileState": "disabled"
+    },
+    "robot-s0-bus1.service": {
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "MainPID": 0,
+      "UnitFileState": "disabled"
+    },
+    "robot-s0-bus2.service": {
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "MainPID": 0,
+      "UnitFileState": "disabled"
+    }
+  },
+  "go_consumed": [
+    "preflight",
+    "left",
+    "right"
+  ],
+  "field_watch_ended": true,
+  "protected_files_unchanged_before_start": 12,
+  "preflight_hardware": {
+    "result": "PASS",
+    "receipt": "preflight-run/receipt.json",
+    "stop": "PASS"
+  },
+  "hardware": {
+    "left": {
+      "report": "left/report.json",
+      "original_result": "CAPTURED_PENDING_RRD_ACCEPTANCE",
+      "original_resources_status": "PASS",
+      "errors": [],
+      "stop": "PASS",
+      "cleanup_subchecks": "PASS",
+      "observation_seconds": 20.341924918,
+      "runtime": {
+        "rt_before": {
+          "locked_kib": 2997080,
+          "serial": [
+            {
+              "tid": 339492,
+              "name": "s0_serial_io_th",
+              "start_ticks": 54743487,
+              "policy": 1,
+              "fifo_priority": 70,
+              "cpus": [
+                4
+              ]
+            }
+          ]
+        },
+        "rt_after": {
+          "locked_kib": 2997080,
+          "serial": [
+            {
+              "tid": 339492,
+              "name": "s0_serial_io_th",
+              "start_ticks": 54743487,
+              "policy": 1,
+              "fifo_priority": 70,
+              "cpus": [
+                4
+              ]
+            }
+          ]
+        }
+      },
+      "observation": {
+        "frames_received": 2376,
+        "frames_logged": 2376,
+        "frames_rejected": 0,
+        "per_schema": {
+          "2": {
+            "received": 987,
+            "logged": 987,
+            "rejected": 0
+          },
+          "512": {
+            "received": 402,
+            "logged": 402,
+            "rejected": 0
+          },
+          "769": {
+            "received": 987,
+            "logged": 987,
+            "rejected": 0
+          }
+        },
+        "reject_reasons": [],
+        "topics_seen": [
+          "/xlerobot_bus1_full/s0/heartbeat",
+          "/xlerobot_bus1_full/s0/left_arm_full_with_head/state",
+          "/xlerobot_bus1_full/sensors/head_color/color",
+          "/xlerobot_bus1_full/sensors/left_wrist_color/color"
+        ],
+        "topics_discovered_total": 4,
+        "topics_retired": 0,
+        "observer_dropped": 0,
+        "observer_sequence_gaps": 2,
+        "publisher_instances_seen": 4,
+        "instance_cache_evictions": 0,
+        "output_status": "success",
+        "error": null,
+        "worker_reaped": true
+      },
+      "rrd_sha256": "07ed71770bb21c39fbc79e81d237f13f9574ac77cae7a1789cb7983216824d0b",
+      "acceptance": "left/rrd-acceptance.json",
+      "field_explanation": {
+        "question_id": "call_49c783feafe9405aa023e06bd3c49c9e",
+        "answer": "现场调整过机器人或相机",
+        "meaning": "解释头部首末画面朝向变化；不改先前原件"
+      }
+    },
+    "right": {
+      "report": "right/report.json",
+      "original_result": "FAIL",
+      "original_resources_status": "UNKNOWN",
+      "errors": [
+        "observation_report:ValueError('观测存在拒帧或输出失败')"
+      ],
+      "stop": "PASS",
+      "cleanup_subchecks": "PASS",
+      "observation_seconds": 20.074579571,
+      "runtime": {
+        "rt_before": {
+          "locked_kib": 1946364,
+          "serial": [
+            {
+              "tid": 340105,
+              "name": "s0_serial_io_th",
+              "start_ticks": 54754782,
+              "policy": 1,
+              "fifo_priority": 70,
+              "cpus": [
+                5
+              ]
+            }
+          ]
+        },
+        "rt_after": {
+          "locked_kib": 1946364,
+          "serial": [
+            {
+              "tid": 340105,
+              "name": "s0_serial_io_th",
+              "start_ticks": 54754782,
+              "policy": 1,
+              "fifo_priority": 70,
+              "cpus": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "observation": {
+        "frames_received": 2080,
+        "frames_logged": 1091,
+        "frames_rejected": 989,
+        "per_schema": {
+          "2": {
+            "received": 989,
+            "logged": 0,
+            "rejected": 989
+          },
+          "512": {
+            "received": 101,
+            "logged": 101,
+            "rejected": 0
+          },
+          "769": {
+            "received": 990,
+            "logged": 990,
+            "rejected": 0
+          }
+        },
+        "reject_reasons": [
+          "消息不符合观测约定：数值包含 NaN/Infinity"
+        ],
+        "topics_seen": [
+          "/xlerobot_bus2_full/s0/heartbeat",
+          "/xlerobot_bus2_full/s0/right_arm_full_with_base/state",
+          "/xlerobot_bus2_full/sensors/right_wrist_color/color"
+        ],
+        "topics_discovered_total": 3,
+        "topics_retired": 0,
+        "observer_dropped": 0,
+        "observer_sequence_gaps": 0,
+        "publisher_instances_seen": 3,
+        "instance_cache_evictions": 0,
+        "output_status": "success",
+        "error": null,
+        "worker_reaped": true
+      },
+      "rrd_sha256": "2de2fd6b867f53c07c635539fc943e4551bf6a46e5705fe6149fe4d20d5d41a2"
+    }
+  },
+  "cleanup": {
+    "preflight_completion_cleared_without_uart": true,
+    "own_tmux_sessions_remaining": 0,
+    "control_camera_uart_lock_subchecks": "PASS",
+    "protection_latches": 1,
+    "failed_right_report_preserved": true
+  },
+  "version_release": "NOT_RUN:右侧状态观测验收尚未通过，保持Cargo0.1.2；不创建0.0.1标签",
+  "observer_fix": {
+    "source_commit": "776692a6796d67e644421f800461864c0df4541a",
+    "summary": "../s0_observer_nan_2026-11-12/summary.json",
+    "software_validation": "PASS",
+    "hardware_retry": "NOT_RUN"
+  }
+}

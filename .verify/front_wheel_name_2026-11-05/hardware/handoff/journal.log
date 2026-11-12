@@ -1,3 +1,0 @@
-Nov 06 14:52:42.253416 ubuntu systemd[1]: Starting XLeRobot handoff transaction (ensure-safe all 17 motors on both buses)...
-Nov 06 14:52:42.322981 ubuntu xlerobot_deploy[25716]: {"timestamp":"2026-11-06T06:52:42.322930Z [+0.019776067s]","level":"INFO","message":"preflight-handoff: both buses are safe","motors":17,"writes":20,"target":"xlerobot_deploy"}
-Nov 06 14:52:42.330777 ubuntu systemd[1]: Finished XLeRobot handoff transaction (ensure-safe all 17 motors on both buses).

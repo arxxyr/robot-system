@@ -1,9 +1,0 @@
-{
-  "source": "call_c3fa160aa6a34c0cbc937862a6da5e13 用户当次直接回执",
-  "answer": "已恢复供电，支撑和持续看护就绪，可执行本次前轮只读采集",
-  "received_at_utc": "2026-10-22T07:57:50Z",
-  "confirmed_at_ns": 1792655870000000000,
-  "scope": "仅前轮right8以SYNC_READ先读TE0/GV0，0/250/500/750/1000ms各读PP再PV，末读GV0/TE0，共14次只读；PV原字及PP跨度只作诊断，不判停止、不写电机；三轮稳定架空并持续观察",
-  "one_shot_only": true,
-  "new_test": "front8_feedback_only"
-}

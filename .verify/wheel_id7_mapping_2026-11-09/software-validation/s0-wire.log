@@ -1,7 +1,0 @@
-    Finished `test` profile [optimized + debuginfo] target(s) in 0.24s
-     Running unittests src/lib.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-s0/5a94ee9ed467e531/out/robot_s0-5a94ee9ed467e531)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 695 filtered out; finished in 0.00s
-

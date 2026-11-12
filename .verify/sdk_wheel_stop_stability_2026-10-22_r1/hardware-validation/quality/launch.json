@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"sdk-wheel-hardware-record-quality-r1 $139 %175 749509 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/sdk-wheel-hardware-record-quality-r1.py\", \"temporary_runner_sha256\": \"6c05eb5a958e0b2def82a9ae5663444e0fbe194e614d4a6c12b2f53f19b99679\"}\n",
-  "stderr": ""
-}

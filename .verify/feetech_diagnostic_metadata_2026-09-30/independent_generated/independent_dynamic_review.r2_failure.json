@@ -1,8 +1,0 @@
-{
-  "schema": "B0_INDEPENDENT_DYNAMIC_REVIEW_V1",
-  "status": "FAIL_REVIEWER_OR_EVIDENCE_MISMATCH",
-  "checks": 8657,
-  "error": "ValueError('既有方法三literal实际测试')",
-  "traceback": "Traceback (most recent call last):\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 217, in <module>\n    report = main()\n             ^^^^^^\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 163, in main\n    need('diagnostic::tests::typed_classes_keep_literal_diagnostic_codes' in result['tests']['adapter_lib']['names'], '既有方法三literal实际测试')\n  File \"/Users/loosqk/.codex/worktrees/xlerobot-base-kinematics/robot-system/target/b0-diagnostic-archive-review/independent_dynamic_check.py\", line 19, in need\n    raise ValueError(message)\nValueError: 既有方法三literal实际测试\n",
-  "source_and_originals_modified": false
-}

@@ -1,6 +1,0 @@
-error: no matching package named `arrow` found
-location searched: crates.io index
-required by package `rerun v0.38.1`
-    ... which satisfies dependency `rerun = "=0.38.1"` (locked to 0.38.1) of package `robot-viz v0.1.2 (/home/loosqk/robot-checks/feetech-poke-raw-20261008-r1/source/crates/robot-viz)`
-note: offline mode (via `--offline`) can sometimes cause surprising resolution failures
-help: if this error is too confusing you may wish to retry without `--offline`

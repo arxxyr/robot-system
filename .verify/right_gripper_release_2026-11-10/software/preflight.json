@@ -1,8 +1,0 @@
-{
-  "result": "PASS",
-  "commands": 26,
-  "refs": 77,
-  "uart_access": false,
-  "host": "ubuntu",
-  "boot_id": "a8e5709a-1507-421f-ab2f-0062583a787b"
-}

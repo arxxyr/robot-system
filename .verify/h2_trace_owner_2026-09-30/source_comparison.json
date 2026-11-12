@@ -1,9 +1,0 @@
-{
-  "status": "SOURCE_INTEGRATED",
-  "parent_head": "148663b88753c182192b2c1420eb4be68c065e53",
-  "only_runtime_input_changed": "crates/robot-tests/src/comm_fault/sla.rs",
-  "sha256": "167dc63b2a274b53d9c53fe72c811d242d8ca96d5f031e1bf0ea9981cbd78e18",
-  "bytes": 128812,
-  "input_count": 589,
-  "input_aggregate": "83048e983bb7a13c2f75ae23e593ec301f129b10b412db8f4f80176ca434f62f"
-}

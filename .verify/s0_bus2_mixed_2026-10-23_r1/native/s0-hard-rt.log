@@ -1,8 +1,0 @@
-    Finished `test` profile [optimized + debuginfo] target(s) in 0.27s
-     Running unittests src/lib.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-s0/79cfab88a8d40b86/out/robot_s0-79cfab88a8d40b86)
-
-running 1 test
-test rt_thread::tests::hard_rt_rejects_partial_selection_before_adapter_write ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 689 filtered out; finished in 0.00s
-

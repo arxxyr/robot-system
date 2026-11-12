@@ -1,6 +1,0 @@
-{
-  "local_log_directory": "/tmp/robot-system-s0-grouped-native-k3pj3fgk",
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"s0-grouped-position-native-r1 $143 %179 750930 0\\n\", \"stderr\": \"\", \"synced_files\": 9, \"backups\": 8, \"steps\": [[\"rustc-before\", [\"rustc\", \"-vV\"]], [\"libs\", [\"cargo\", \"test\", \"-p\", \"robot-core\", \"-p\", \"robot-adapter-mock\", \"-p\", \"robot-adapter-feetech\", \"--lib\"]], [\"s0-grouped\", [\"cargo\", \"test\", \"-p\", \"robot-s0\", \"--lib\", \"grouped_position::tests\"]], [\"s0-serial-tick\", [\"cargo\", \"test\", \"-p\", \"robot-s0\", \"--lib\", \"serial_tick::tests\"]], [\"s0-hard-rt\", [\"cargo\", \"test\", \"-p\", \"robot-s0\", \"--lib\", \"hard_rt_rejects_partial_selection_before_adapter_write\"]], [\"serial-rt-e2e\", [\"cargo\", \"test\", \"-p\", \"robot-s0\", \"--test\", \"serial_rt_e2e\", \"--features\", \"test-comm-fault-hook\", \"--\", \"--test-threads=1\"]], [\"fmt\", [\"cargo\", \"fmt\", \"--all\"]], [\"clippy\", [\"cargo\", \"clippy\", \"--all\", \"--all-targets\", \"--\", \"-D\", \"warnings\"]], [\"rustc-after\", [\"rustc\", \"-vV\"]]]}\n",
-  "stderr": ""
-}

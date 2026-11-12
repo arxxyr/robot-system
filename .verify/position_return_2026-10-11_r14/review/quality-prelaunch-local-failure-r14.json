@@ -1,7 +1,0 @@
-{
-  "status": "LOCAL_PRELAUNCH_REVIEW_PATH_ASSERTION_FAILURE_RETAINED",
-  "error": "AssertionError: review assumed at R14 stage root; actual root-quality-input-review-r14.json is in post-live-preparation/commit-quality/",
-  "effect": "质量目录/三脚本复制/host清单创建前退出；owner未启动，SSH/Cargo/UART0",
-  "correction": "使用root已写出的确切review路径；recipe字节未改",
-  "recorded_at_utc": "2026-10-11T04:28:40.333938+00:00"
-}

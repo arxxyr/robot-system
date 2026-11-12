@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"base-zero-hardware-record-quality-r1 $112 %148 736035 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/base-zero-hardware-record-quality-r1.py\", \"temporary_runner_sha256\": \"b49611bfbfaea322bf9651057377840ed010bfaa17a87d953d37e0665e038825\"}\n",
-  "stderr": ""
-}

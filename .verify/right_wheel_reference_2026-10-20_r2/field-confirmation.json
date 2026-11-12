@@ -1,8 +1,0 @@
-{
-  "source": "用户直接答复call_88d348e3272e413a87d1e40855b0231f",
-  "answer": "已恢复供电，三轮稳定架空，观察和看护全部就绪，可执行本次测试",
-  "received_at_utc": "2026-10-20T10:38:49Z",
-  "confirmed_at_ns": 1792492729000000000,
-  "scope": "本次右9先SYNC零速、启用确认后SYNC500的单次试验",
-  "physical_confirmation_is_user_reported": true
-}

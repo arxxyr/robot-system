@@ -1,0 +1,153 @@
+{
+  "status": "PASS",
+  "remote_root": "/home/loosqk/robot-checks/s0-right-recheck-20261112",
+  "scope": "本轮先单次robot-s0-preflight完成17电机停止；随后仅右侧正式systemd复验：既有RX仅右侧一次authorize，保持auto_enable=false及双latch=1；右侧状态与RGB只读观察20秒，具名stop后原STOP51及三轮本轮14读、进程/相机/串口/锁清场；不重跑左侧；不ClearEStop、不SetEnabled、不运动、不重跑handoff；D15 OPEN/DEFERRED，deployable=false",
+  "plan_sha256": "aeacdf1dd932776295ae169a472c361a512e057df6013495cc0a825c10309071",
+  "manifest_sha256": "a6a50bcba52589242ec9205aa414b5f7d18c1e9ea3b9e30a0d6f062b7ba75646",
+  "control_source": "f9e4b9252d9728e2f168dbb4f846f20b73f87021",
+  "observer_source": "776692a6796d67e644421f800461864c0df4541a",
+  "observer_path": "/home/loosqk/robot-checks/s0-observer-nan-20261112/bin/robot-viz",
+  "observer_sha256": "f1bc5d687d2db69c23a12b60452b33d8b7f9d44d59677c9176a6111295353ece",
+  "prior_left": {
+    "schema": "S0_PRIOR_LEFT_EVIDENCE_V1",
+    "plan_sha256": "7bf0addb3b051ae94c6a5f116512b61ffca3b668fa45320888041d7b95352f0b",
+    "refs": [
+      {
+        "path": "/home/loosqk/robot-checks/s0-rt-prepare-20261112/plan.json",
+        "sha256": "1dab91629c2accd99d3b570b45a8f65d42b0a5d209979e8717aff6205b86369b",
+        "bytes": 36815,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 436,
+        "device": 66305,
+        "inode": 16933730,
+        "mtime_ns": 1794418862967454114,
+        "ctime_ns": 1794418862967454114,
+        "nlink": 1,
+        "symlink": false
+      },
+      {
+        "path": "/home/loosqk/robot-checks/s0-rt-prepare-20261112/left/report.json",
+        "sha256": "88d2a000bd84ee6dc49d9d8b99b54ed72d95d87bc23512f984cb3160f0414f61",
+        "bytes": 429268,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 436,
+        "device": 66305,
+        "inode": 17446444,
+        "mtime_ns": 1794446888131917421,
+        "ctime_ns": 1794446888131917421,
+        "nlink": 1,
+        "symlink": false
+      },
+      {
+        "path": "/home/loosqk/robot-checks/s0-rt-prepare-20261112/left/rrd-acceptance.json",
+        "sha256": "c66220fe7c81f290028f979c1fb00ca5536fc29213d70ba963b633dd9687d052",
+        "bytes": 713,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 420,
+        "device": 66305,
+        "inode": 17446445,
+        "mtime_ns": 1794446967862081132,
+        "ctime_ns": 1794446967862081132,
+        "nlink": 1,
+        "symlink": false
+      },
+      {
+        "path": "/home/loosqk/robot-checks/s0-rt-prepare-20261112/left/observation.rrd",
+        "sha256": "07ed71770bb21c39fbc79e81d237f13f9574ac77cae7a1789cb7983216824d0b",
+        "bytes": 256939166,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 436,
+        "device": 66305,
+        "inode": 17446060,
+        "mtime_ns": 1794446880456013903,
+        "ctime_ns": 1794446880456013903,
+        "nlink": 1,
+        "symlink": false
+      }
+    ]
+  },
+  "preflight": {
+    "result": "PLAN_ONLY",
+    "actions_started": 0,
+    "uart_opened": false,
+    "camera_opened": false,
+    "scope": "本轮先单次robot-s0-preflight完成17电机停止；随后仅右侧正式systemd复验：既有RX仅右侧一次authorize，保持auto_enable=false及双latch=1；右侧状态与RGB只读观察20秒，具名stop后原STOP51及三轮本轮14读、进程/相机/串口/锁清场；不重跑左侧；不ClearEStop、不SetEnabled、不运动、不重跑handoff；D15 OPEN/DEFERRED，deployable=false",
+    "plan_sha256": "aeacdf1dd932776295ae169a472c361a512e057df6013495cc0a825c10309071",
+    "checks": 43,
+    "go_created": false
+  },
+  "software_checks": {
+    "local_wrapper_tests": 15,
+    "orin_wrapper_tests": 15,
+    "local_launcher_cases": 3,
+    "orin_fmt": "PASS",
+    "orin_workspace_clippy": "PASS"
+  },
+  "launchers": {
+    "start-preflight.sh": {
+      "path": "/home/loosqk/robot-checks/s0-right-recheck-20261112/start-preflight.sh",
+      "sha256": "0b00fc49252150d46ceb0a11210c8e1848a9279cd964a022e00f06c23a61f4c5"
+    },
+    "start-right.sh": {
+      "path": "/home/loosqk/robot-checks/s0-right-recheck-20261112/start-right.sh",
+      "sha256": "521ffc2d2d7444c744dd2db234120ed174b28fbb6b52b7447292dc76d275248d"
+    },
+    "start-once.sh": {
+      "path": "/home/loosqk/robot-checks/s0-right-recheck-20261112/start-once.sh",
+      "sha256": "26a9ad8db9a238f151df16805a5a23945646d49fb7c81e65c485173010ef8df0"
+    }
+  },
+  "go_created": true,
+  "hardware_started": true,
+  "uart_opened": true,
+  "camera_opened": true,
+  "version": "0.1.2",
+  "release": {
+    "tag": "v0.0.1+c4f9a5a",
+    "commit": "c4f9a5ad20430dced77b7cfcb8e1636d16d804df",
+    "summary": "../s0_release_0.0.1_2026-11-12/summary.json",
+    "ci": "NOT_EXECUTED_BILLING_BLOCKED"
+  },
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "next": "本轮已结束，结案发布完成；GitHub CI受账户付款/额度阻塞未执行。后续S1工作另行开展，不重放GO。",
+  "cleanup": {
+    "temporary_software_worktree_removed": true,
+    "own_software_tmux_remaining": 0,
+    "shared_cache_retained": true,
+    "hardware_tmux_remaining": 0,
+    "units": "3 inactive/dead PID0 disabled",
+    "field_watch_ended": true
+  },
+  "git": {
+    "master_dev_both_remotes": "e5311c8410c94c16c1bf68ee8cc7fe4e6b18368d",
+    "temporary_branch_removed": true
+  },
+  "pre_go_binding_recheck": "PASS",
+  "acceptance": {
+    "preflight": "PASS",
+    "right": "PASS",
+    "receipt": "right/rrd-acceptance.json",
+    "report": "right/report.json",
+    "duration_seconds": 20.358906178,
+    "joint_states": 989,
+    "heartbeats": 990,
+    "rgb": 102,
+    "rejected": 0,
+    "serial_cpu": 5,
+    "fifo_priority": 70,
+    "locked_kib": 1946364,
+    "stop": "PASS",
+    "resources": "PASS",
+    "go_consumed": [
+      "preflight-go.json.consumed",
+      "right-go.json.consumed"
+    ],
+    "field_confirmation": "call_f2f517baba0f4ba4aeb97a7ac0873911: 全部就绪，可执行这一次",
+    "prior_right_failure_preserved": true
+  }
+}

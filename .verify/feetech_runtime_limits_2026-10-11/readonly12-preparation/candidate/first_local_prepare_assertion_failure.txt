@@ -1,1 +1,0 @@
-初次生成脚本把正文不得有字符15误作检查，命中合法帧255而AssertionError；尚未写candidate/test/config或启动任何child/UART。仅检查改为不得遗留旧名称/15项文案后生成，未改协议字段。

@@ -1,4 +1,0 @@
-{
-  "status": "FAIL_LOCAL_GENERATION_HELPER_ONLY",
-  "cause": "head1_d0替换已覆盖test_head1_d0，重复marker断言；候选及测试原件保留，未运行测试/native/UART"
-}

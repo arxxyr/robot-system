@@ -1,0 +1,11 @@
+    Checking robot-core v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-core)
+    Checking iceoryx2-cal v0.10.0 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/3rd-party/iceoryx2-cal)
+    Checking robot-msg v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-msg)
+    Checking iceoryx2 v0.10.0 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/3rd-party/iceoryx2)
+    Checking robot-adapter-feetech v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-adapters/feetech)
+    Checking robot-logging v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-logging)
+    Checking robot-adapter-mock v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-adapters/mock)
+    Checking robot-health v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-health)
+    Checking robot-transport v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-transport)
+    Checking robot-s0 v0.0.1 (/home/loosqk/robot-checks/s0-autostart-20261112/src-r2/crates/robot-s0)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 20.67s

@@ -1,8 +1,0 @@
-{
-  "run_id": "head1-p32-reverse-r16",
-  "scope": "仅头1left7临时P16→32→16、D43/I0不写，一次−24往返及原STOP51；不驱动底盘",
-  "artifact_root": "/home/loosqk/robot-checks/position-return-20261010-r1",
-  "phase": "/home/loosqk/robot-checks/position-return-20261010-r1/head1-p32-reverse-r16",
-  "field_confirmation": null,
-  "approval": null
-}

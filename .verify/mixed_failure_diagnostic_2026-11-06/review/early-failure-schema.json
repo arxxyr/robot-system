@@ -1,7 +1,0 @@
-{
-  "kind": "源码字段及解析器形状复现，未执行Rust主程序或串口打开",
-  "rust_empty_report_has_cycle_count": false,
-  "child_error": "串口打开失败（离线形状复现）",
-  "reported_error": "混合child原件schema字段错误",
-  "uart_access": false
-}

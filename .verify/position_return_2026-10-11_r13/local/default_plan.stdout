@@ -1,1 +1,0 @@
-{"status": "PLAN_ONLY", "target": ["left", 7, "head_motor_1"], "fixed_d": 43, "fixed_i": 0, "temporary_p": 32, "restore_p": 16, "delta_raw": 24, "tolerance_raw": 4, "position_wait_ms": 800, "actions_started": 0, "parameter_writes": 0, "motion_commands": 0, "load_raw_reads": 0}

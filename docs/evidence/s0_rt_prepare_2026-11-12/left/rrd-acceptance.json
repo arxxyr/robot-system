@@ -1,0 +1,15 @@
+{
+  "schema": "S0_SYSTEMD_RRD_ACCEPTANCE_V1",
+  "side": "left",
+  "result": "PASS",
+  "rrd_sha256": "07ed71770bb21c39fbc79e81d237f13f9574ac77cae7a1789cb7983216824d0b",
+  "startup_verified": true,
+  "camera_ids": [
+    "head_color",
+    "left_wrist_color"
+  ],
+  "source": "本轮冻结report原Invocation启动日志、rt_before/after、STOP与资源PASS；rerun-sdk0.43逐帧解码并目视首末四幅PNG，真实RGB且无坏帧。头部视角明显变化，仅验像素与启动，不据此认定整机物理不动。",
+  "created_at_ns": 1794446967762043000,
+  "pixel_summary": "pixels/pixels.json",
+  "visual_boundary": "头部首末视角变化，现场原因尚未确认；不作运动与保持验收。"
+}

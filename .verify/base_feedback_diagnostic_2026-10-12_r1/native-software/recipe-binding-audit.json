@@ -1,9 +1,0 @@
-{
-  "status": "PASS_LOCAL_RECIPE_BINDING_AUDIT_ONLY",
-  "candidate_payload_files": 8,
-  "embedded_all_sha_bytes_verified": true,
-  "actual_AST_equal_draft_except_None_bindings": true,
-  "ssh_owner_sha256": "96d1c8ed14fa94e62cbfcb0ea28ff60f628bdcf0d76cf3796d968602ce14938a",
-  "SSH_starts": 0,
-  "UART_operations": 0
-}

@@ -1,7 +1,0 @@
-{
-  "status": "FAIL_LOCAL_GENERATOR_ONLY",
-  "error": "SyntaxError caused by broad OBSERVER placeholder replacement in phase label",
-  "ssh_started": false,
-  "uart_operations": 0,
-  "bound_prepare_source_preserved": true
-}

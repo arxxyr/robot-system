@@ -1,9 +1,0 @@
-{
-  "source": "request_user_input_async call_391598297ae549c9b6e253d728f77b47 当前直接用户答复",
-  "answer": "全部已就绪，可执行本次右轮零速停止测试",
-  "first_received_utc": "2026-10-22T06:57:00Z",
-  "confirmed_at_ns": 1792652220000000000,
-  "expires_at_ns": 1792652820000000000,
-  "scope": "仅一次right9原始+500/20秒，保持TE1发送零速并固定三组读回，然后原断扭及停止门",
-  "no_timestamp_renewal": true
-}

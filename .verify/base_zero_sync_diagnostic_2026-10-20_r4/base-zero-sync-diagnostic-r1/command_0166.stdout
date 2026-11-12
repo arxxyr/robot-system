@@ -1,1 +1,0 @@
-{"motor_id":9,"operation":"sync_read","raw_unsigned":777,"register":"Model_Number","requested_register_address":3,"rx":[255,255,9,4,0,9,3,230],"serial_device":"/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00","tx":[255,255,254,5,130,3,2,9,108],"width":2}

@@ -1,7 +1,0 @@
-{
-  "result": "PASS",
-  "local_remote_final_equal": true,
-  "source_files": 11,
-  "manifest": "source-manifest.json",
-  "compiled_rust_source_unchanged_after_quality": true
-}

@@ -1,9 +1,0 @@
-{
-  "at_ns": 1792656780643229043,
-  "terminal": "right-zero-after-front-r1-hardware $116 %152 737660 1 1",
-  "owner_absent": true,
-  "only_owned_dead_pane_removed": "%152",
-  "uart_after_capture": 0,
-  "new_go_after_capture": 0,
-  "hardware_watch_closed": true
-}

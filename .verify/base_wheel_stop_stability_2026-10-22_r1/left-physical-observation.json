@@ -1,7 +1,0 @@
-{
-  "source": "call_a947deda5fa34704bf1a61ca91b30150",
-  "answer": "左轮明显持续转动，结束后完全停止",
-  "scope": "本次left-zero-stability-r1，未追加动作",
-  "motion": "USER_CONFIRMED",
-  "stopped": "USER_CONFIRMED"
-}

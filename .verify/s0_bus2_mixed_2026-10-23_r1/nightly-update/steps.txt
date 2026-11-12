@@ -1,3 +1,0 @@
-rustc-before 0
-rustup-update 0
-rustc-after 0

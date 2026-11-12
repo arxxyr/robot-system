@@ -1,7 +1,0 @@
-本地独审元数据解读首失败原输出：
-WARN `--no-project` was provided, but no project was found
-Traceback (most recent call last):
-  File "<stdin>", line 20, in <module>
-AssertionError
-
-原因后核：本地检查误要求所有327条cleanup=false；真实最后18条非UART后验命令按原finally标cleanup=true。327条均reaped、signals[]、owner_errors[]、over_budget=false，原run与原件未改；本地断言错误不是硬件或采集recipe失败。

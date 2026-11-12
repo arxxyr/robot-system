@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"front-zero-intermediate-hardware-record-quality-r1 $122 %158 740770 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/front-zero-intermediate-hardware-record-quality-r1.py\", \"temporary_runner_sha256\": \"d62a8d902b1faf9650c364c2b53ddc38ab6bf30c2f3941cb536dc8413d67db65\"}\n",
-  "stderr": ""
-}

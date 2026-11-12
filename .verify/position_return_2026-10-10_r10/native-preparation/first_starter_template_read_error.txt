@@ -1,1 +1,0 @@
-本机只读尝试展示R8启动器AST时，把launcher的ast.Call交给ast.literal_eval，实际报ValueError: malformed node or string on line 23: <ast.Call object at 0x102e4cf90>。该展示命令exit1；未写启动器、未发SSH或执行候选，已通过的R10原生准备原件不变。

@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "{\"exit_code\": 0, \"stdout\": \"front-wheel-feedback-quality-r1 $113 %149 736577 0\\n\", \"stderr\": \"\", \"temporary_runner\": \"/tmp/front-wheel-feedback-quality-r1.py\", \"temporary_runner_sha256\": \"46f652200ccbdd377dd444eb9b8fbfff7ac068ac5da87c569a6cac63ebaab4d9\"}\n",
-  "stderr": ""
-}

@@ -1,1 +1,0 @@
-{"status": "PLAN_ONLY", "run_id": "head1-p32-reverse-r16", "scope": "仅头1left7临时P16→32→16、D43/I0不写，一次−24往返及原STOP51；不驱动底盘", "target": ["left", 7, "head_motor_1"], "fixed_d": 43, "fixed_i": 0, "temporary_p": 32, "restore_p": 16, "delta_raw": -24, "tolerance_raw": 4, "position_wait_ms": 800, "actions_started": 0, "parameter_writes": 0, "motion_commands": 0, "load_raw_reads": 0}

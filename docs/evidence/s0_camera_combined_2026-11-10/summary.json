@@ -1,0 +1,143 @@
+{
+  "result": "SUPERVISED_XLEROBOT_S0_BODY_HAL_PROTOTYPE_PASS",
+  "rust": {
+    "passed": 72,
+    "quality": "orin/quality-r4"
+  },
+  "python": {
+    "passed": 226,
+    "skipped": 4,
+    "log": "orin/pty-r2/maintenance-tests.log"
+  },
+  "pty": {
+    "unique_passed": 7,
+    "latest_pass_for_each": {
+      "test_enable_failure_stops_without_any_nonzero_command": "pty-r1",
+      "test_full_twenty_seconds_through_default_s0_and_pty": "pty-r1",
+      "test_left_eight_positions_hold_twenty_seconds_through_default_s0_and_pty": "pty-r1",
+      "test_left_enable_failure_stops_without_velocity_command": "pty-r1",
+      "test_left_positions_and_two_cameras_share_twenty_second_window": "pty-r2",
+      "test_camera_stall_uses_existing_estop_and_reaps_real_helper": "pty-r3",
+      "test_right_mixed_and_one_camera_share_twenty_second_window": "pty-r3"
+    },
+    "scope": "真实S0/sender/helper进程与PTY协议、RCAM软件图像；不代表物理动作"
+  },
+  "first_failures": [
+    {
+      "path": "orin/quality-r1",
+      "cause": "新增模块显式import及测试clone lint"
+    },
+    {
+      "path": "orin/quality-r2",
+      "cause": "测试PathBuf导入缺失"
+    },
+    {
+      "path": "orin/pty-r1",
+      "cause": "Orin未提供task/children接口，启用前失败"
+    },
+    {
+      "path": "orin/pty-r2",
+      "cause": "已收齐3组后的额外零速样本误报；失流测试错误强制STOP51 PASS"
+    }
+  ],
+  "fixed_contracts": {
+    "motion_seconds": 20,
+    "zero_observation_ms": 500,
+    "enabled_budget_seconds": 21,
+    "camera_age_max_seconds": 1,
+    "motor_parameters_changed": false,
+    "stop_criteria_relaxed": false
+  },
+  "camera_mapping": "已确认左腕USB2.2、右腕USB2.1，见../s0_camera_identity_2026-11-10/summary.json",
+  "prepared": {
+    "directory": "/home/loosqk/robot-checks/s0-camera-combined-20261111/hardware-left-r2",
+    "plan_sha256": "da669b85ca07ae4cfdb1a1d74475f4f26a74484b4a685ec370bf19e063f03dde",
+    "checks": 30,
+    "scope": "默认S0独占左总线，typed ClearEStop/SetEnabled及心跳命令流；左臂六关节与头部两关节冻结新鲜反馈原位保持20秒，400拍逐拍检查八关节±4raw；Disable及EStop，退出并取回左锁后原整机STOP51与原4raw位置检查；右双锁全程持有，不解除D15或物理验收；同活动hardware_id的1..3路配置sensor并行采集完整20秒，核对逐帧新鲜度、原BGR及helper退出/设备释放",
+    "GO_CREATED": true,
+    "GO_CONSUMED": true,
+    "result": "PASS",
+    "summary": "left-hardware-summary.json"
+  },
+  "resource_cleanup": {
+    "result": "PASS",
+    "owned_pids": 51,
+    "evidence": "orin/cleanup.json",
+    "source_worktree_removed": true,
+    "temporary_source_overlay_removed": true,
+    "duplicate_test_interpreters_removed": 8,
+    "duplicate_interpreter_bytes_reclaimed": 185983424
+  },
+  "hardware": {
+    "left": "PASS",
+    "right": "PASS",
+    "left_summary": "left-hardware-summary.json",
+    "right_summary": "right-hardware-summary.json"
+  },
+  "field_readiness": {
+    "left": "WATCH_ENDED_AFTER_CONFIRMED_STOP_AND_CLEANUP",
+    "right": "WATCH_ENDED_AFTER_CONFIRMED_STOP_AND_CLEANUP"
+  },
+  "D15": "OPEN/DEFERRED",
+  "deployable": false,
+  "source_commit": "03887bb6e73ff2aa98df9e644825fa15752f8322",
+  "source_manifest": "source-sha256.json",
+  "git": {
+    "local_branches": [
+      "master",
+      "dev"
+    ],
+    "source_commit": "03887bb6e73ff2aa98df9e644825fa15752f8322",
+    "origin_master": "abbb753e73bf28516a0e3b2db491abbd7f56ae52",
+    "origin_dev": "abbb753e73bf28516a0e3b2db491abbd7f56ae52",
+    "github_master": "abbb753e73bf28516a0e3b2db491abbd7f56ae52",
+    "github_dev": "abbb753e73bf28516a0e3b2db491abbd7f56ae52",
+    "worktree_clean": true,
+    "temporary_branch_removed": true,
+    "acceptance_commit": "abbb753e73bf28516a0e3b2db491abbd7f56ae52"
+  },
+  "prepared_right": {
+    "directory": "/home/loosqk/robot-checks/s0-camera-combined-20261111/hardware-right-r2",
+    "plan_sha256": "f991feca5ae30634816670766d3dedc5a2becc4c123a5b6da76f2d8fb986ba71",
+    "checks": 28,
+    "scope": "默认S0独占右总线，typed ClearEStop/SetEnabled及心跳命令流；六臂冻结新鲜反馈位置，配置前轮raw+500持续20秒，其余轮raw0；500毫秒零速原字观测、Disable及EStop，退出并取回右锁后原整机STOP51；左双锁全程持有，不解除D15或物理验收；同活动hardware_id的1..3路配置sensor并行采集完整20秒，核对逐帧新鲜度、原BGR及helper退出/设备释放",
+    "GO_CREATED": true,
+    "after_left_run": "已按左侧收尾后的保护文件元数据重新生成计划，无GO和新动作",
+    "GO_CONSUMED": true,
+    "result": "PASS",
+    "summary": "right-hardware-summary.json"
+  },
+  "left_hardware_cleanup": {
+    "result": "PASS",
+    "owned_pids": 400,
+    "holder_checks": 16,
+    "evidence": "orin/hardware-left-r2/cleanup.json"
+  },
+  "acceptance_doc_quality": {
+    "result": "PASS",
+    "path": "orin/accept-left-quality",
+    "checks": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "source_worktree_removed": true
+  },
+  "right_hardware_cleanup": {
+    "result": "PASS",
+    "owned_pids": 387,
+    "holder_checks": 14,
+    "evidence": "orin/hardware-right-r2/cleanup.json"
+  },
+  "acceptance_scope": "一台XLeRobot的受监督raw原型：双臂、头部、底盘、三路RGB通过默认S0，左右两总线分别完成20秒执行器/相机组合；不声明双总线同时使能、整车联动、动态关节往返、SI速度、深度/IMU或无人值守",
+  "formal_services_updated": false,
+  "final_doc_quality": {
+    "result": "PASS",
+    "path": "orin/accept-final-quality",
+    "checks": [
+      "cargo fmt --all",
+      "cargo clippy --all --all-targets -- -D warnings"
+    ],
+    "source_worktree_removed": true
+  },
+  "independent_review": "左右原件、现场回执、图像内容、清场及当前文档边界均复核通过；本阶段受监督raw原型无待执行项"
+}

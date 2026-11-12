@@ -1,5 +1,0 @@
-{
-  "session": "base-zero-quality-20261020-r4",
-  "initial_pane": "base-zero-quality-20261020-r4 $87 %123 709204 0",
-  "command": "/home/loosqk/.local/share/uv/python/cpython-3.12.13-linux-aarch64-gnu/bin/python3 -B /home/loosqk/robot-checks/base-zero-quality-20261020-r4/quality.py > /home/loosqk/robot-checks/base-zero-quality-20261020-r4/owner.log 2>&1; quality_rc=$?; printf \"%s\\n\" \"$quality_rc\" > /home/loosqk/robot-checks/base-zero-quality-20261020-r4/owner.exit; exit \"$quality_rc\""
-}

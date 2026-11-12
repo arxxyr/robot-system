@@ -1,5 +1,0 @@
-{
-  "exit_code": 0,
-  "stdout": "sftp> put -p /Users/loosqk/repo/rust/robot-system/scripts/run_hardware_maintenance.py /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/scripts/run_hardware_maintenance.py\nsftp> put -p /Users/loosqk/repo/rust/robot-system/scripts/tests/test_hardware_maintenance.py /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/scripts/tests/test_hardware_maintenance.py\nsftp> put -p /tmp/right-wheel-pulse-software-final-inputs-20261020.json /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/software/expected-python-inputs.json\nsftp> put -p /Users/loosqk/repo/rust/robot-system/.verify/right_wheel_pulse_2026-10-20_r1/launch-argv.json /home/loosqk/robot-checks/right-wheel-pulse-20261020-r1/launch-argv.json\n",
-  "stderr": ""
-}

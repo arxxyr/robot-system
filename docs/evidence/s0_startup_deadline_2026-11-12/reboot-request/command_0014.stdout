@@ -1,0 +1,6 @@
+MainPID=0
+Id=xlerobot-coordinator.service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+Job=
