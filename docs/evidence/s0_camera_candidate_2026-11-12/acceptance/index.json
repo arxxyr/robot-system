@@ -1,0 +1,131 @@
+{
+  "description": "原报告、journal、STOP51与三轮原帧保留原字节；首末PNG由本轮RRD离线导出。完整RRD及全部命令原件保留Orin原路径。",
+  "files": [
+    {
+      "path": "clippy.log",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/acceptance-doc-software/clippy.log",
+      "bytes": 2987,
+      "sha256": "f7569140ed723b32fdf7c167ce6de2c0300b54c41ddd37c6dcc7172c7d159080"
+    },
+    {
+      "path": "field-observation.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/field-observation.json",
+      "bytes": 443,
+      "sha256": "f9dd1c1e3cd13bdc6b27ef4b4f7f5693195b289a341716cac6a29de55d8db7b6"
+    },
+    {
+      "path": "final-services.txt",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/final-services.txt",
+      "bytes": 419,
+      "sha256": "ad066f7cec239ecf5ed34ca2f9c32cd02a31169a3ec8b3b5a79f318703a41db4"
+    },
+    {
+      "path": "install/report.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/installation-run/report.json",
+      "bytes": 548645,
+      "sha256": "49583976967f93530bc68590d07d9e087e8dcb53d649485cf67867b0b0f60a29"
+    },
+    {
+      "path": "install/stop-receipt.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/installation-run/stop-receipt.json",
+      "bytes": 10013,
+      "sha256": "fb9cb20dc5269d6c894a7e21698252e7190e3145fb6a7e144ce8d66b0da0dd05"
+    },
+    {
+      "path": "left/head_color-first.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-left/pixels/head_color-first.png",
+      "bytes": 283043,
+      "sha256": "41b3368b4486aaba5354464bbead445e8838606dc15ef723cdaf53d5bf89f477"
+    },
+    {
+      "path": "left/head_color-last.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-left/pixels/head_color-last.png",
+      "bytes": 285337,
+      "sha256": "79bffee35efe7d4f90d5e51dfdd617abec98c095cfc739ded85c27f916c3c56e"
+    },
+    {
+      "path": "left/journal.txt",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/left/command_0354.stdout",
+      "bytes": 15407,
+      "sha256": "2c1cb9a7d3ab2c860c4216f387d4a30964380d5143047142f32bfbc5d3285229"
+    },
+    {
+      "path": "left/left_wrist_color-first.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-left/pixels/left_wrist_color-first.png",
+      "bytes": 160200,
+      "sha256": "c6a4f71efba86c424a305b8db3c69741ea5851a3821f1568f81b20675bdfa8ad"
+    },
+    {
+      "path": "left/left_wrist_color-last.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-left/pixels/left_wrist_color-last.png",
+      "bytes": 159355,
+      "sha256": "a758c5567be0a232e8af2a1e92780812a51f9c8e86861e6eb5121e5ff7e3d305"
+    },
+    {
+      "path": "left/observation.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/left/observation.json",
+      "bytes": 932,
+      "sha256": "8ee4782139372e2259f2c79e4fc38da09bb4865c0de1c12aa9604f59aeaf959a"
+    },
+    {
+      "path": "left/pixels.json",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-left/pixels/pixels.json",
+      "bytes": 42435,
+      "sha256": "f69aedd1574f2465896944772993cfbcae67d59bc0f237f2a5b9d189ecb4e3a2"
+    },
+    {
+      "path": "left/report.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/left/report.json",
+      "bytes": 533593,
+      "sha256": "1e3cb2750886c1b931bf972e56c3d99b33dcc4fc656a9103128774f370108e7d"
+    },
+    {
+      "path": "left/rrd-acceptance.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/left/rrd-acceptance.json",
+      "bytes": 1880,
+      "sha256": "183bd10acb87b3a8027c0a11f3c1dc7c27c6a150418f769ab74cc2892d834833"
+    },
+    {
+      "path": "right/journal.txt",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/right/command_0352.stdout",
+      "bytes": 15576,
+      "sha256": "e3d8adcdcdf66c159c0ab06b619ec422d902259280fa2fc20b4bd26995e35e9e"
+    },
+    {
+      "path": "right/observation.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/right/observation.json",
+      "bytes": 882,
+      "sha256": "d233d9253eb6135aecdb89eafdcb68ae7a3469b50e751ceecaea0761675fcb76"
+    },
+    {
+      "path": "right/pixels.json",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-right/pixels/pixels.json",
+      "bytes": 41859,
+      "sha256": "8861ec8f071c3c65ad206706d7bd747678083cc6567381bd04a274aaf2f8b756"
+    },
+    {
+      "path": "right/report.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/right/report.json",
+      "bytes": 531817,
+      "sha256": "4f2a31f1d8e37d1f67557875ba4ab060182d207c51c3817feb2a8ffbe5daa9cf"
+    },
+    {
+      "path": "right/right_wrist_color-first.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-right/pixels/right_wrist_color-first.png",
+      "bytes": 136686,
+      "sha256": "db41b1639976e56f21bf14f6c01f30072e51655409aa52b635c09a5feda601e7"
+    },
+    {
+      "path": "right/right_wrist_color-last.png",
+      "source": "/Users/loosqk/repo/rust/robot-system/.verify/s0_camera_candidate_2026-11-12/accepted-right/pixels/right_wrist_color-last.png",
+      "bytes": 135884,
+      "sha256": "4b51d5d4771f1443d09f90397bb2c7415ea99bbe46677ab4f33fcb76d27ababd"
+    },
+    {
+      "path": "right/rrd-acceptance.json",
+      "source": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/right/rrd-acceptance.json",
+      "bytes": 1195,
+      "sha256": "8ea4cf9028552fe8b81b0c91f282b69eb2820c183b0076f015bd1cd0e3bb01c3"
+    }
+  ]
+}

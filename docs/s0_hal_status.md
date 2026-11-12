@@ -4,11 +4,11 @@
 
 **通用机器人控制架构的 S0 阶段：首个 XLeRobot 后端已通过受监督 raw 最小闭环。** 默认S0维护入口分别完成：左臂六关节＋头部两关节保持20秒并采头/左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`并采右腕RGB。三路画面和双腕映射已确认，两侧动作观察、断扭、EStop持久化、原STOP51、位置/身份及清场检查均通过，`manual=false`。
 
-**S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过，软件版本为0.0.1。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；本次双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
+**S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过，软件版本为0.0.1。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；此前重启验收中的双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
 
-后续用户手动启动复现了头部相机断帧造成bus1首次启动失败，systemd重试一次才成功；此前验收结果保留，但不能据此认定启动稳定性已闭环。dev已修复原启动期限内的短暂失流：WARN并清槽、保留原采集器等待新帧。Orin两组Clippy、43项软件测试通过，旧实现负控已复现失败，见[软件验证](evidence/s0_camera_startup_2026-11-12/software-summary.json)。尚未安装或实机启动复验；同刻RGB接口USB `-71`的根因未确定。[原始事件选集](evidence/s0_camera_startup_2026-11-12/index.json)保留首次失败和自动重试成功。
+**相机修复候选`3a6d96e`已安装并通过左后右首次启动复验。** 两侧各观察20秒、`NRestarts=0`，头部301帧、左腕101帧、右腕102帧，像素、时间推进及首末画面核对通过；实际通讯线程CPU4/5、FIFO70、锁页保持。旧实例停止、左右复验收尾的17电机STOP51与三轮位置复核均通过；现场确认无自行移动、结束静止。原件见[本轮验收](evidence/s0_camera_candidate_2026-11-12/acceptance/summary.json)。
 
-相机修复候选已从`3a6d96e`在Orin隔离构建，原安装/回滚及左后右各20秒启动脚本已准备；安装器77项、验收脚本26项离线测试、fmt/Clippy和24项只读预检通过，见[准备证据](evidence/s0_camera_candidate_2026-11-12/summary.json)。当前两侧仍运行旧候选，尚未停止、安装或启动复验；当次现场确认后才执行旧实例停止及原STOP51、备份换入、新安装件PLAN_ONLY、左后右保护待机/RGB验收。保持原自启设置、`auto_enable=false`及RX/EStop锁存，不重跑已完成的preflight、不清失败记录。
+启动短暂失流按WARN清槽并保留采集器恢复，原启动期限与运行期失流合同不变；[43项软件测试和旧版负控](evidence/s0_camera_startup_2026-11-12/software-summary.json)已验证恢复分支。本次实机没有触发失流WARN，因此只证明首次启动成功，不能宣称USB `-71`根因或长时稳定性已解决。[原失败事件](evidence/s0_camera_startup_2026-11-12/index.json)及[安装准备证据](evidence/s0_camera_candidate_2026-11-12/summary.json)保留。
 
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
@@ -54,11 +54,9 @@
 
 ## Roadmap
 
-1. **S0结案边界**：`df6c1bb`候选已安装并通过一次真实重启复验；新boot两侧保持`Fault(CommFault)/AdapterUncertain`20.188秒、各`NRestarts=0`，实际SerialRT为CPU4/5、FIFO70且锁页生效。17电机STOP51全零、三轮各14读和资源清场通过，现场确认没有自行移动、结束后整机静止。见[验收原件](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)及[现场回执](evidence/s0_startup_deadline_2026-11-12/field-observation.json)。本轮未重采RGB，既有RGB验收与本次helper存活核对分别保留。
+1. **S0当前安装与收尾**：已安装根为`/home/loosqk/robot-checks/s0-camera-candidate-20261112`，本次升级备份为`/var/lib/robot/deploy-backup-s0-camera-3a6d96e`。三服务保持enabled；两侧S0已停止、PID0，保留Dirty停止的`failed/exit-code 1`，preflight保持`active/exited`。双份RX/EStop均为1，进程、UART、相机和四锁均已清场，旧GO已消费、看护已结束。本次未重启Orin；此前`df6c1bb`的[真实重启验收](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)与本次新候选首次启动分别记账。
 
-   三服务自启已保留；该轮验收收尾时两侧S0均PID0，保留Dirty停止时的`failed/exit-code 1`终态，preflight为`active/exited`完成态。后续用户手动启动后两侧恢复运行，bus1发生上述相机失败及一次重试；本次软件排查未操作服务。停止依据独立STOP51，不以故障退出代替；开机默认不上扭、不清故障。旧GO已消费，不能重放。已安装根为`/home/loosqk/robot-checks/s0-startup-deadline-20261112`；升级回滚和自启备份分别为`/var/lib/robot/deploy-backup-s0-deadline-df6c1bb`、`/var/lib/robot/deploy-backup-s0-autostart-df6c1bb`，不回滚保护状态。
-
-   上轮启动[FAIL原件](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)保留：ACK已完成却误用2秒窗口等待全部worker；修复经旧版负控、17项既有回归、新增用例单项及3项边界单测验证。安装器68项、入口13项软件测试及Clippy通过。Orin日志未持久化，一次请求及首次新boot可绑定，不能排除断线期间额外boot。`.verify`已退出Git跟踪，原件留本地及Orin；当前报告与必要原帧收录在[证据选集](evidence/README.md)，完整历史仍可查Git。配置矩阵产出0.0.1候选包，包内提交、发布提交与新标签保持一致；已安装候选不自动替换，既有发布标签不覆盖。
+   保留原升级及自启备份，不回滚保护状态。USB断帧根因与长期稳定性仍待实际复现诊断；不为此自动重测。原[启动失败](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)、日志与原帧保留在[证据选集](evidence/README.md)及Orin原路径。日常仅同步dev；正式发布时包内提交、master与新SemVer标签一致，既有标签不覆盖。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 3. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。
 

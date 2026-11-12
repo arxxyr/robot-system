@@ -1,0 +1,349 @@
+{
+  "schema": "S0_EXISTING_SERVICE_STOP_V1",
+  "result": "PASS",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "8ece3097-eef1-4ed4-93e6-0a5ecc445e25"
+  },
+  "manifest_sha256": "dd489e10449fdfb9044e0c9e5c8d6d8c97b6d60ad8c23ab5f537ed9212a27dd6",
+  "install_plan_sha256": "78a19fdbf5f2647ffcc27dc257c1cb86c118479361c7361c07af3893992bfcaf",
+  "preflight_unit": {
+    "MainPID": "0",
+    "Result": "success",
+    "NRestarts": "0",
+    "ExecMainStartTimestampMonotonic": "14116578",
+    "ExecMainExitTimestampMonotonic": "14273303",
+    "ExecMainPID": "966",
+    "ExecMainCode": "1",
+    "ExecMainStatus": "0",
+    "ControlGroup": "",
+    "CPUAffinity": "",
+    "Id": "robot-s0-preflight.service",
+    "LoadState": "loaded",
+    "ActiveState": "active",
+    "SubState": "exited",
+    "FragmentPath": "/etc/systemd/system/robot-s0-preflight.service",
+    "DropInPaths": "",
+    "Job": "",
+    "InvocationID": "56978d3b2fbc45be81acc6d6fc5fb749"
+  },
+  "stopped_units": {
+    "left": {
+      "MainPID": "0",
+      "Result": "exit-code",
+      "NRestarts": "1",
+      "ExecMainStartTimestampMonotonic": "2739856814",
+      "ExecMainExitTimestampMonotonic": "7314798586",
+      "ExecMainPID": "7433",
+      "ExecMainCode": "1",
+      "ExecMainStatus": "1",
+      "ControlGroup": "",
+      "CPUAffinity": "0-3",
+      "Id": "robot-s0-bus1.service",
+      "LoadState": "loaded",
+      "ActiveState": "failed",
+      "SubState": "failed",
+      "FragmentPath": "/etc/systemd/system/robot-s0-bus1.service",
+      "DropInPaths": "",
+      "Job": "",
+      "InvocationID": "68526f3ed2b54fe0a2180731cab3d550"
+    },
+    "right": {
+      "MainPID": "0",
+      "Result": "exit-code",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "2726043179",
+      "ExecMainExitTimestampMonotonic": "7314787276",
+      "ExecMainPID": "7372",
+      "ExecMainCode": "1",
+      "ExecMainStatus": "1",
+      "ControlGroup": "",
+      "CPUAffinity": "0-3",
+      "Id": "robot-s0-bus2.service",
+      "LoadState": "loaded",
+      "ActiveState": "failed",
+      "SubState": "failed",
+      "FragmentPath": "/etc/systemd/system/robot-s0-bus2.service",
+      "DropInPaths": "",
+      "Job": "",
+      "InvocationID": "7080067e0a244c66a453a07d2cf1ce73"
+    }
+  },
+  "stop_verification": {
+    "status": "PASS",
+    "issues": [],
+    "observed": {
+      "left:1": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:2": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:3": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:4": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:5": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:6": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:7": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "left:8": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:1": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:2": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:3": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:4": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:5": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:6": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:7": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:8": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      },
+      "right:9": {
+        "Torque_Enable": 0,
+        "Present_Velocity": 0,
+        "Goal_Velocity": 0
+      }
+    },
+    "motors_expected": 17,
+    "registers": [
+      "Torque_Enable",
+      "Present_Velocity",
+      "Goal_Velocity"
+    ],
+    "front8_stability_used": true,
+    "left9_stability_used": true,
+    "right7_stability_used": true
+  },
+  "resources_status": "PASS",
+  "final_protection_refs": {
+    "left": {
+      "rx_trust_marker": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust_marker",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15859897,
+        "mtime_ns": 1794446857392311751,
+        "ctime_ns": 1794446857392311751,
+        "nlink": 1,
+        "symlink": false
+      },
+      "rx_trust_marker.bak": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust_marker.bak",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15860036,
+        "mtime_ns": 1794446857384311856,
+        "ctime_ns": 1794446857388311803,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 416,
+        "device": 66305,
+        "inode": 15859906,
+        "mtime_ns": 1794381653645161399,
+        "ctime_ns": 1794381653653161681,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch.bak": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch.bak",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 416,
+        "device": 66305,
+        "inode": 15860110,
+        "mtime_ns": 1794381653657161822,
+        "ctime_ns": 1794381653661161963,
+        "nlink": 1,
+        "symlink": false
+      },
+      "rx_trust.lock": {
+        "path": "/var/lib/robot/xlerobot_left/rx_trust.lock",
+        "sha256": "a90b84c6fa8f520aaf1dee127b346c4045722f489830fee5f220e05c1485765d",
+        "bytes": 5,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15864273,
+        "mtime_ns": 1794463192371682777,
+        "ctime_ns": 1794463192371682777,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch.lock": {
+        "path": "/var/lib/robot/xlerobot_left/estop_latch.lock",
+        "sha256": "a90b84c6fa8f520aaf1dee127b346c4045722f489830fee5f220e05c1485765d",
+        "bytes": 5,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15864354,
+        "mtime_ns": 1794463192371682777,
+        "ctime_ns": 1794463192371682777,
+        "nlink": 1,
+        "symlink": false
+      }
+    },
+    "right": {
+      "rx_trust_marker": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust_marker",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15859893,
+        "mtime_ns": 1794449776817479427,
+        "ctime_ns": 1794449776821479523,
+        "nlink": 1,
+        "symlink": false
+      },
+      "rx_trust_marker.bak": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust_marker.bak",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15859890,
+        "mtime_ns": 1794449776765478175,
+        "ctime_ns": 1794449776773478368,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 416,
+        "device": 66305,
+        "inode": 15859895,
+        "mtime_ns": 1794382593006751178,
+        "ctime_ns": 1794382593014751670,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch.bak": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch.bak",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "bytes": 2,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 416,
+        "device": 66305,
+        "inode": 15860099,
+        "mtime_ns": 1794382593014751670,
+        "ctime_ns": 1794382593018751916,
+        "nlink": 1,
+        "symlink": false
+      },
+      "rx_trust.lock": {
+        "path": "/var/lib/robot/xlerobot_right/rx_trust.lock",
+        "sha256": "be3207bf2f3e67035843ac60b6d11b77fa4dcd9c71a071c04ee573a6a245873a",
+        "bytes": 5,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15864348,
+        "mtime_ns": 1794463178554043381,
+        "ctime_ns": 1794463178554043381,
+        "nlink": 1,
+        "symlink": false
+      },
+      "estop_latch.lock": {
+        "path": "/var/lib/robot/xlerobot_right/estop_latch.lock",
+        "sha256": "be3207bf2f3e67035843ac60b6d11b77fa4dcd9c71a071c04ee573a6a245873a",
+        "bytes": 5,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 384,
+        "device": 66305,
+        "inode": 15864358,
+        "mtime_ns": 1794463178554043381,
+        "ctime_ns": 1794463178554043381,
+        "nlink": 1,
+        "symlink": false
+      }
+    }
+  }
+}

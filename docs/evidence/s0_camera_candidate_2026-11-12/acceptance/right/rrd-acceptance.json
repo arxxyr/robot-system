@@ -1,0 +1,31 @@
+{
+  "schema": "S0_SYSTEMD_RRD_ACCEPTANCE_V1",
+  "side": "right",
+  "result": "PASS",
+  "rrd_sha256": "f0b7fcc1ae3155284e239f1ad9b76e7f4d17e5b05dce00dc018c03fe1a9f5f17",
+  "startup_verified": true,
+  "camera_ids": [
+    "right_wrist_color"
+  ],
+  "source": "根Agent核对RrdReader逐帧像素格式/尺寸/序号时间并查看右腕首末原图；Astra独立核首次READY、NRestarts=0、Fault/CPU5/FIFO70与原STOP51清场。",
+  "cameras": {
+    "right_wrist_color": {
+      "valid_frames": 102,
+      "entity": "/topics/xlerobot_bus2_full/sensors/right_wrist_color/color/instances/821d00002f92a6278597000013000000/image",
+      "first": {
+        "seq": 0,
+        "stamp_ns": 7556839821728,
+        "received_ns": 7557064798944,
+        "pixel_sha256": "a77a1223f275082c7924b16b61eb5f4be8ff005a12102fa8709121c2c0683cca"
+      },
+      "last": {
+        "seq": 101,
+        "stamp_ns": 7576946527104,
+        "received_ns": 7576967926336,
+        "pixel_sha256": "6bc1beeb92e3b7bf17f5a9143151db5ab178eb4bc135ef9bc26b39e216f14e83"
+      },
+      "span_ns": 20106705376
+    }
+  },
+  "visual_note": "画面偏暗但夹爪、黄色鸭子及篮筐可辨；首末构图稳定，非空白帧。"
+}

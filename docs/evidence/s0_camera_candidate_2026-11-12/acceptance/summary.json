@@ -1,0 +1,388 @@
+{
+  "schema": "S0_CAMERA_CANDIDATE_ACCEPTANCE_V1",
+  "result": "PASS",
+  "candidate_source_commit": "3a6d96eabdf739db5bb837d7a6c62cb1dc88c978",
+  "candidate_manifest_sha256": "dd489e10449fdfb9044e0c9e5c8d6d8c97b6d60ad8c23ab5f537ed9212a27dd6",
+  "candidate_root": "/home/loosqk/robot-checks/s0-camera-candidate-20261112",
+  "robot_s0_sha256": "ff716af602c2c441008edb481491bdd23860a7f0f4c0729cb3ae02a274a2c1ed",
+  "host": {
+    "hostname": "ubuntu",
+    "uid": 1000,
+    "gid": 1000,
+    "boot_id": "8ece3097-eef1-4ed4-93e6-0a5ecc445e25"
+  },
+  "installation": "PASS",
+  "backup_directory": "/var/lib/robot/deploy-backup-s0-camera-3a6d96e",
+  "sides": {
+    "left": {
+      "result": "PASS",
+      "observation_seconds": 20.097705397,
+      "invocation_id": "0231302e24d2448d9c72cbde476859c4",
+      "n_restarts": "0",
+      "serial_rt": {
+        "tid": 37722,
+        "name": "s0_serial_io_th",
+        "start_ticks": 739384,
+        "policy": 1,
+        "fifo_priority": 70,
+        "cpus": [
+          4
+        ]
+      },
+      "locked_kib": 2997076,
+      "standby": {
+        "state": "Fault(CommFault)",
+        "safety": "AdapterUncertain",
+        "liveness_before": 491,
+        "liveness_after": 4493,
+        "disabled_basis": "BootUntrusted/CommFault输出抑制诊断；不等于停止确认"
+      },
+      "heartbeat_frames": 987,
+      "rgb_frames": {
+        "head_color": 301,
+        "left_wrist_color": 101
+      },
+      "joint_state_rejected": 986,
+      "joint_reject_reason": [
+        "消息不符合观测约定：position_rad 长度与布局不同"
+      ],
+      "rrd": {
+        "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/left/observation.rrd",
+        "sha256": "69b4b7f2132ec89fdc1427eb5d0cf60f9bdcc665faddb23bc253e07c8031fc15",
+        "bytes": 183597054,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 436,
+        "device": 66305,
+        "inode": 14822607,
+        "mtime_ns": 1794467869319689176,
+        "ctime_ns": 1794467869319689176,
+        "nlink": 1,
+        "symlink": false
+      },
+      "stop_verification": {
+        "status": "PASS",
+        "issues": [],
+        "observed": {
+          "left:1": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:2": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:3": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:4": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:5": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:6": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:7": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:8": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:1": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:2": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:3": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:4": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:5": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:6": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:7": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:8": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:9": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          }
+        },
+        "motors_expected": 17,
+        "registers": [
+          "Torque_Enable",
+          "Present_Velocity",
+          "Goal_Velocity"
+        ],
+        "front8_stability_used": true,
+        "left9_stability_used": true,
+        "right7_stability_used": true
+      },
+      "resources_status": "PASS",
+      "camera_loss_warn_observed": false,
+      "stopped_unit": {
+        "MainPID": "0",
+        "Result": "exit-code",
+        "NRestarts": "0",
+        "ExecMainStartTimestampMonotonic": "7393760629",
+        "ExecMainExitTimestampMonotonic": "7426753571",
+        "ExecMainPID": "37714",
+        "ExecMainCode": "1",
+        "ExecMainStatus": "1",
+        "ControlGroup": "",
+        "CPUAffinity": "0-3",
+        "Id": "robot-s0-bus1.service",
+        "LoadState": "loaded",
+        "ActiveState": "failed",
+        "SubState": "failed",
+        "FragmentPath": "/etc/systemd/system/robot-s0-bus1.service",
+        "DropInPaths": "",
+        "Job": "",
+        "InvocationID": "0231302e24d2448d9c72cbde476859c4"
+      }
+    },
+    "right": {
+      "result": "PASS",
+      "observation_seconds": 20.066162866,
+      "invocation_id": "aa36e7749b16425a8c4072cedcf55302",
+      "n_restarts": "0",
+      "serial_rt": {
+        "tid": 38797,
+        "name": "s0_serial_io_th",
+        "start_ticks": 755460,
+        "policy": 1,
+        "fifo_priority": 70,
+        "cpus": [
+          5
+        ]
+      },
+      "locked_kib": 1946360,
+      "standby": {
+        "state": "Fault(CommFault)",
+        "safety": "AdapterUncertain",
+        "liveness_before": 407,
+        "liveness_after": 4610,
+        "disabled_basis": "BootUntrusted/CommFault输出抑制诊断；不等于停止确认"
+      },
+      "heartbeat_frames": 987,
+      "rgb_frames": {
+        "right_wrist_color": 102
+      },
+      "joint_state_rejected": 987,
+      "joint_reject_reason": [
+        "消息不符合观测约定：position_rad 长度与布局不同"
+      ],
+      "rrd": {
+        "path": "/home/loosqk/robot-checks/s0-camera-candidate-20261112/right/observation.rrd",
+        "sha256": "f0b7fcc1ae3155284e239f1ad9b76e7f4d17e5b05dce00dc018c03fe1a9f5f17",
+        "bytes": 28959426,
+        "uid": 1000,
+        "gid": 1000,
+        "mode": 436,
+        "device": 66305,
+        "inode": 14320970,
+        "mtime_ns": 1794468029732060843,
+        "ctime_ns": 1794468029732060843,
+        "nlink": 1,
+        "symlink": false
+      },
+      "stop_verification": {
+        "status": "PASS",
+        "issues": [],
+        "observed": {
+          "left:1": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:2": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:3": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:4": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:5": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:6": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:7": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "left:8": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:1": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:2": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:3": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:4": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:5": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:6": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:7": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:8": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          },
+          "right:9": {
+            "Torque_Enable": 0,
+            "Present_Velocity": 0,
+            "Goal_Velocity": 0
+          }
+        },
+        "motors_expected": 17,
+        "registers": [
+          "Torque_Enable",
+          "Present_Velocity",
+          "Goal_Velocity"
+        ],
+        "front8_stability_used": true,
+        "left9_stability_used": true,
+        "right7_stability_used": true
+      },
+      "resources_status": "PASS",
+      "camera_loss_warn_observed": false,
+      "stopped_unit": {
+        "MainPID": "0",
+        "Result": "exit-code",
+        "NRestarts": "0",
+        "ExecMainStartTimestampMonotonic": "7554539158",
+        "ExecMainExitTimestampMonotonic": "7587161679",
+        "ExecMainPID": "38789",
+        "ExecMainCode": "1",
+        "ExecMainStatus": "1",
+        "ControlGroup": "",
+        "CPUAffinity": "0-3",
+        "Id": "robot-s0-bus2.service",
+        "LoadState": "loaded",
+        "ActiveState": "failed",
+        "SubState": "failed",
+        "FragmentPath": "/etc/systemd/system/robot-s0-bus2.service",
+        "DropInPaths": "",
+        "Job": "",
+        "InvocationID": "aa36e7749b16425a8c4072cedcf55302"
+      }
+    }
+  },
+  "field_observation": {
+    "schema": "S0_CAMERA_FIELD_OBSERVATION_V1",
+    "recorded_at_ns": 1794468186711471188,
+    "answer": "全程正常，没有自行移动，结束后整机静止",
+    "source": "用户回执 request_user_input_async/call_9b2a30a3e84940429e04c283ab7f5d35",
+    "scope": "本轮左后右两侧各20秒保护待机启动与停止",
+    "no_unexpected_motion": true,
+    "stopped": true,
+    "supervision_ended": true,
+    "no_further_hardware_actions": true
+  },
+  "final": {
+    "both_s0_stopped": true,
+    "unit_file_state": "enabled",
+    "preflight": "active/exited",
+    "s0_terminal": "failed/exit-code 1",
+    "rx_dirty": true,
+    "estop_latched": true,
+    "resources_released": true,
+    "supervision_ended": true
+  },
+  "limits": [
+    "本次无失流WARN，恢复分支由既有软件回归证明",
+    "USB -71根因与长时稳定性仍未知",
+    "本次未重启Orin",
+    "非最新dev性能优化候选的实机验收",
+    "D15 OPEN/DEFERRED，deployable=false"
+  ],
+  "documentation_validation": {
+    "base_commit": "d389523430e97b64e1909c39de9bd57a187e2beb",
+    "fmt_exit": 0,
+    "clippy_exit": 0
+  }
+}
