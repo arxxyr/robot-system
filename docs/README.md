@@ -7,6 +7,7 @@
 | 开始工作、最小检查命令 | [按需开始](02_start_here.md) |
 | 当前配置与测试夹具 | [配置导航](../configs/README.md) |
 | 当前完成边界、阻塞与 roadmap | [S0 HAL 状态](s0_hal_status.md) |
+| 对外通讯、管理界面与单关节控制方案 | [通讯与控制方案](control_plan.md)：已有接口、待补语义；实施TODO只在当前状态维护 |
 | 架构与不变量 | [00_design.md](00_design.md)：v0.1.2 冻结设计，权威 |
 | 架构概览图 | [通用机器人控制架构](robot_system_architecture.svg)：当前职责、实现与待验边界 |
 | 验证契约与工具入口 | [10_verification.md](10_verification.md)：按具体主题检索 |
