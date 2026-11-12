@@ -2326,6 +2326,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_state_corrupt_cache_returns_internal() {
+        let cache = Arc::new(StateCache::new(&["arm".to_string()]));
+        cache.store("arm", vec![1, 2, 3]);
+        let h = GatewayHandler::for_test_with_state_cache(cache);
+        let error = h
+            .get_state(tonic::Request::new(GetStateRequest {
+                hardware_id: "arm".to_string(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Internal);
+    }
+
+    #[tokio::test]
     #[allow(clippy::float_cmp)] // position_rad 透传精确字面值
     async fn stream_state_emits_converted_frame() {
         use tonic::codegen::tokio_stream::StreamExt;
@@ -2350,6 +2364,23 @@ mod tests {
         assert_eq!(first.hardware_id, "arm");
         assert_eq!(first.layout_id, 7);
         assert_eq!(first.stamp_ns, 123);
+        assert_eq!(first.position_rad, vec![1.0, 2.0]);
+
+        cache.store(
+            "arm",
+            robot_msg::build_helpers::build_joint_state(7, 456, &[3.0, 4.0], &[], &[], ""),
+        );
+        let next = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let frame = stream.next().await.unwrap().unwrap();
+                if frame.stamp_ns == 456 {
+                    break frame;
+                }
+            }
+        })
+        .await
+        .expect("既有流应读到缓存替换后的新帧");
+        assert_eq!(next.position_rad, vec![3.0, 4.0]);
         assert_eq!(first.position_rad, vec![1.0, 2.0]);
 
         // drop response stream → tick task 下次 send 失败后退出（不 panic / 不挂）。

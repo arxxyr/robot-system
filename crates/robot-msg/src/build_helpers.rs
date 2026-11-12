@@ -220,8 +220,29 @@ pub fn build_mixed_joint_command(
     priority: u8,
     source_task_id: u64,
 ) -> Vec<u8> {
+    build_mixed_joint_command_from_iter(
+        layout_id,
+        target.iter().copied(),
+        raw_velocities,
+        deadline_ns,
+        priority,
+        source_task_id,
+    )
+}
+
+/// 逐项写入混合命令的位置字段，供非 RT 调用方变换目标而不创建临时数组。
+/// raw 速度和其余 wire 字段沿用切片入口的语义。
+#[must_use]
+pub fn build_mixed_joint_command_from_iter(
+    layout_id: u64,
+    target: impl ExactSizeIterator<Item = f64> + DoubleEndedIterator,
+    raw_velocities: &[i16],
+    deadline_ns: u64,
+    priority: u8,
+    source_task_id: u64,
+) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(256);
-    let target = fbb.create_vector(target);
+    let target = fbb.create_vector_from_iter(target);
     let raw_velocities = fbb.create_vector(raw_velocities);
     let command = JointCommand::create(
         &mut fbb,
@@ -1027,6 +1048,42 @@ pub fn build_clear_error_response_typed(
 mod tests {
     use super::*;
     use flatbuffers::root;
+
+    #[test]
+    fn mixed_command_iterator_matches_original_slice_wire() {
+        let values = [0.0, -0.0, 1.25, f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
+        for count in [0, 1, values.len()] {
+            let positions = &values[..count];
+            let raw = [0, -500, 500];
+            let actual = build_mixed_joint_command_from_iter(
+                42,
+                positions.iter().copied(),
+                &raw,
+                u64::MAX,
+                17,
+                123,
+            );
+            // 保留原切片构造作字节基准，覆盖长度、字段顺序及特殊浮点值。
+            let mut fbb = FlatBufferBuilder::with_capacity(256);
+            let target = fbb.create_vector(positions);
+            let velocity = fbb.create_vector(&raw);
+            let command = JointCommand::create(
+                &mut fbb,
+                &JointCommandArgs {
+                    layout_id: 42,
+                    mode: ControlMode::MixedPositionRawVelocity,
+                    target: Some(target),
+                    raw_velocities: Some(velocity),
+                    deadline_ns: u64::MAX,
+                    priority: 17,
+                    source_task_id: 123,
+                    on_timeout: StaleAction::Hold,
+                },
+            );
+            fbb.finish(command, None);
+            assert_eq!(actual, fbb.finished_data());
+        }
+    }
 
     #[test]
     fn joint_state_iterator_matches_slice_wire_including_unknown_values() {

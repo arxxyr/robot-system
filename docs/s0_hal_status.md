@@ -32,7 +32,7 @@
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
 | 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证及本轮实际服务前后CPU/FIFO/VmLck读取通过；未据此证明硬实时截止保证 |
 
-发布路径已完成[软件优化与验证](evidence/publish_owned_state_2026-11-12/software-summary.json)：S0状态/心跳和S1命令/心跳直接移交body缓冲，S0状态逐项转换写入编码器，去掉三个临时数组。原借用接口、消息字节和失败语义保留；完整wire及共享内存写入仍有复制，相机和RT命令槽未改动。本次未安装或启动实机。
+发布复制优化已完成软件验证：S0状态/心跳和S1命令/心跳直接移交body，S0状态去掉三个临时数组；S1混合保持在编码时清零轮位，RPC缓存快照共享只读缓冲。原消息字节和失败语义保留，S1跨锁目标快照、完整wire组装及共享内存写入的复制仍保留。见[状态/发布验证](evidence/publish_owned_state_2026-11-12/software-summary.json)及[S1/RPC验证](evidence/s1_rpc_copy_2026-11-12/software-summary.json)。相机和RT命令槽未改动，本次未安装或启动实机。
 
 轮位唯一来源为[xlerobot-bus2.toml](../configs/xlerobot-bus2.toml)的同下标`joints`/`motor_ids`，当前**前8、左9、右7**，只支持既有ID7/8/9排列；校准数值按物理ID保留。改配置必须重建计划，旧GO失效，不在代码复制映射。
 

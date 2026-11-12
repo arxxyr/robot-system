@@ -11,9 +11,8 @@
 //! - **唯一底层 subscriber 来源**（reviewer Plan round 1 锁点 2）：`GetState`
 //!   ((2/4)) 与 `StreamState` ((3/4)) 都**只读 cache**，**不**为每 RPC 新建
 //!   底层 iceoryx2 subscriber。
-//! - **convert-on-read（省高频转换）**：cache 存 owned body bytes（`Vec<u8>`），
-//!   读路径才 `flatbuffers::root::<JointState>` + `state_convert`（不在 publish
-//!   rate 上转换）。
+//! - **convert-on-read（省高频转换）**：cache 接管 body 缓冲并用 `Arc` 共享，
+//!   读快照只增加引用计数，解锁后才 root + convert，不复制整帧。
 //! - **错误码三态**（D9）：cache 区分"未知 hardware"（key 不在池 → NotFound）
 //!   / "已知但无首帧"（key 在但值 None → Unavailable）/ "有首帧"（Frame → Ok）。
 //!
@@ -57,15 +56,15 @@ pub enum StateLookup {
     UnknownHardware,
     /// `hardware_id` 已知但常驻订阅尚未拿到首帧 → `Unavailable`。
     NoFrame,
-    /// 有首帧——owned `JointState` body bytes（读路径再 root + convert）。
-    Frame(Vec<u8>),
+    /// 有首帧——共享的只读 body；缓存换帧不影响已取出的快照。
+    Frame(Arc<Vec<u8>>),
 }
 
 /// per-hardware latest-state cache。key 集在 [`StateCache::new`] 时按 config
 /// 固定（之后不增删 key）；每 value 是 keep-last owned body bytes 的内部可变槽。
 #[derive(Debug, Default)]
 pub struct StateCache {
-    per_hw: HashMap<String, Mutex<Option<Vec<u8>>>>,
+    per_hw: HashMap<String, Mutex<Option<Arc<Vec<u8>>>>>,
 }
 
 impl StateCache {
@@ -83,8 +82,10 @@ impl StateCache {
     /// 覆盖）。`hardware_id` 不在池则静默忽略（不会发生——线程只为池内 id 建）。
     pub fn store(&self, hardware_id: &str, body_bytes: Vec<u8>) {
         if let Some(slot) = self.per_hw.get(hardware_id) {
+            // Arc 包住原 Vec，保留现有字节缓冲；只在入库时分配引用计数对象。
+            let frame = Arc::new(body_bytes);
             let mut guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
-            *guard = Some(body_bytes);
+            *guard = Some(frame);
         }
     }
 
@@ -96,7 +97,7 @@ impl StateCache {
             Some(slot) => {
                 let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
                 match &*guard {
-                    Some(bytes) => StateLookup::Frame(bytes.clone()),
+                    Some(bytes) => StateLookup::Frame(Arc::clone(bytes)),
                     None => StateLookup::NoFrame,
                 }
             }
@@ -321,7 +322,42 @@ mod tests {
     fn frame_after_store() {
         let cache = StateCache::new(&["arm".to_string()]);
         cache.store("arm", vec![1, 2, 3]);
-        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![1, 2, 3]));
+        assert_eq!(
+            cache.snapshot("arm"),
+            StateLookup::Frame(Arc::new(vec![1, 2, 3]))
+        );
+    }
+
+    #[test]
+    fn snapshots_share_original_buffer_and_outlive_cache_replacement() {
+        let cache = StateCache::new(&["arm".to_string()]);
+        let mut body = Vec::with_capacity(128);
+        body.extend_from_slice(&[1, 2, 3]);
+        let allocation = (body.as_ptr(), body.capacity());
+        cache.store("arm", body);
+        let StateLookup::Frame(first) = cache.snapshot("arm") else {
+            panic!("应有首帧")
+        };
+        let StateLookup::Frame(second) = cache.snapshot("arm") else {
+            panic!("应有首帧")
+        };
+        assert_eq!((first.as_ptr(), first.capacity()), allocation);
+        assert!(Arc::ptr_eq(&first, &second));
+
+        let old_frame = Arc::downgrade(&first);
+        cache.store("arm", vec![4, 5]);
+        let StateLookup::Frame(latest) = cache.snapshot("arm") else {
+            panic!("应有新帧")
+        };
+        assert!(!Arc::ptr_eq(&first, &latest));
+        assert_eq!(latest.as_slice(), [4, 5]);
+        drop(cache);
+        assert_eq!(first.as_slice(), [1, 2, 3]);
+        assert_eq!(second.as_slice(), [1, 2, 3]);
+        assert_eq!(latest.as_slice(), [4, 5]);
+        drop(first);
+        drop(second);
+        assert!(old_frame.upgrade().is_none(), "最后一个读者退出后释放旧帧");
     }
 
     #[test]
@@ -329,7 +365,10 @@ mod tests {
         let cache = StateCache::new(&["arm".to_string()]);
         cache.store("arm", vec![1]);
         cache.store("arm", vec![2, 2]);
-        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![2, 2]));
+        assert_eq!(
+            cache.snapshot("arm"),
+            StateLookup::Frame(Arc::new(vec![2, 2]))
+        );
     }
 
     #[test]
@@ -350,7 +389,7 @@ mod tests {
     fn multi_hardware_isolated() {
         let cache = StateCache::new(&["arm".to_string(), "base".to_string()]);
         cache.store("arm", vec![7]);
-        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(vec![7]));
+        assert_eq!(cache.snapshot("arm"), StateLookup::Frame(Arc::new(vec![7])));
         assert_eq!(cache.snapshot("base"), StateLookup::NoFrame);
     }
 }

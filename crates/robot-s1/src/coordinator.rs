@@ -43,7 +43,9 @@ use core::time::Duration;
 
 use flatbuffers::root;
 use robot_core::time::{DurationNs, MonoRawNs, RobotClock};
-use robot_msg::build_helpers::{build_heartbeat, build_joint_command, build_mixed_joint_command};
+use robot_msg::build_helpers::{
+    build_heartbeat, build_joint_command, build_mixed_joint_command_from_iter,
+};
 use robot_msg::markers;
 use robot_msg::msg::{ControlMode, JointState as FbJointState, StaleAction};
 use robot_transport::error::TransportError;
@@ -490,15 +492,17 @@ pub fn build_hardware_hold_command(
     if !hardware.feetech_bus2_mixed_raw {
         return build_hold_command(cfg, layout_id, positions, source_task_id, now_ns);
     }
-    let mut arm_positions = positions.to_vec();
-    for (target, &motor_id) in arm_positions.iter_mut().zip(&hardware.motor_ids) {
-        if motor_id >= 7 {
-            *target = 0.0;
+    // 保留输入快照，编码时清零轮位，不再为掩码创建第二份位置数组。
+    let arm_positions = positions.iter().enumerate().map(|(slot, &position)| {
+        if hardware.motor_ids.get(slot).is_some_and(|&id| id >= 7) {
+            0.0
+        } else {
+            position
         }
-    }
-    build_mixed_joint_command(
+    });
+    build_mixed_joint_command_from_iter(
         layout_id,
-        &arm_positions,
+        arm_positions,
         &[0; 9],
         now_ns.saturating_add(cfg.deadline_offset_ns()),
         cfg.priority,
@@ -2463,6 +2467,56 @@ hold_strategy      = "anchor"
             build_hardware_hold_command(&cfg, &hardware, 0xCAFE, &positions, 42, 100),
             build_hold_command(&cfg, 0xCAFE, &positions, 42, 100),
         );
+    }
+
+    #[test]
+    fn mixed_hold_mask_preserves_input_and_original_zip_semantics() {
+        let mut hardware = mixed_test_hardware();
+        let cfg = CoordinatorConfig::default();
+        let values = [
+            0.1,
+            -0.2,
+            -0.0,
+            f64::NAN,
+            f64::INFINITY,
+            -3.0,
+            f64::NAN,
+            1234.0,
+            -99.0,
+            42.0,
+        ];
+        for reverse in [false, true] {
+            if reverse {
+                hardware.motor_ids.reverse();
+            }
+            for count in [0, 3, 6, 9, 10] {
+                let positions = &values[..count];
+                let before: Vec<_> = positions.iter().map(|v| v.to_bits()).collect();
+                let mut expected = positions.to_vec();
+                for (position, &id) in expected.iter_mut().zip(&hardware.motor_ids) {
+                    if id >= 7 {
+                        *position = 0.0;
+                    }
+                }
+                let bytes =
+                    build_hardware_hold_command(&cfg, &hardware, 42, positions, 123, u64::MAX);
+                assert_eq!(
+                    bytes,
+                    robot_msg::build_helpers::build_mixed_joint_command(
+                        42,
+                        &expected,
+                        &[0; 9],
+                        u64::MAX,
+                        cfg.priority,
+                        123,
+                    )
+                );
+                assert_eq!(
+                    before,
+                    positions.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+            }
+        }
     }
 
     #[test]
