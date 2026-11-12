@@ -1,14 +1,18 @@
 # S0 HAL 当前状态
 
-更新：2026-11-11（America/Los_Angeles；实机验收为 UTC 2026-11-11）。架构以[冻结设计](00_design.md)为准。
+更新：2026-11-11（America/Los_Angeles；本轮正式启动为 UTC 2026-11-12）。架构以[冻结设计](00_design.md)为准。
 
 **通用机器人控制架构的 S0 阶段：首个 XLeRobot 后端已通过受监督 raw 最小闭环。** 默认S0维护入口分别完成：左臂六关节＋头部两关节保持20秒并采头/左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`并采右腕RGB。三路画面和双腕映射已确认，两侧动作观察、断扭、EStop持久化、原STOP51、位置/身份及清场检查均通过，`manual=false`。
 
-**D15 `OPEN/DEFERRED`，`deployable=false`；实时调度与零分配的软件验证已通过，RT候选已安装，43项PLAN_ONLY和启动脚本就绪，正式启动等待当轮现场确认。** 已有实机验收为左右分别执行，不覆盖两总线同时联动、无人值守、深度/IMU或标定后的SI速度。
+**D15 `OPEN/DEFERRED`，`deployable=false`；RT候选已按左、右顺序正式启动各20秒，实际CPU4/5、FIFO70、锁页及停止检查通过。左侧验收通过，右侧因观测工具拒绝合法NaN状态而未通过，尚不能结案发布。** 已有实机验收为左右分别执行，不覆盖两总线同时联动、无人值守、深度/IMU或标定后的SI速度。
 
-当前链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`，使用Rerun 0.43.0；软件验证、六路径备份、安装、reload和只读复核通过。三份旧unit已撤，新三份均为inactive/dead、PID0、disabled；12个保护文件未变，没有启动服务或访问UART。新预检不继承旧handoff完成态。
+当前链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。已安装候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`，使用Rerun 0.43.0；本轮先完成新预检，再逐侧启动，保持`auto_enable=false`和双EStop锁存。左右实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度。三份服务现均inactive/dead、PID0、disabled，进程、相机、UART及锁清场子检查通过。
 
-RT候选的回滚使用`/var/lib/robot/deploy-backup-s0-rt-f9e4b92`及其冻结安装器，不回滚保护状态。准备、软件与安装原件见[当前准备记录](../.verify/s0_rt_prepare_2026-11-12/summary.json)；本轮计划SHA为`7bf0addb…52f0b`，尚未生成GO。旧普通候选的计划不再使用，所需回滚原件保留。
+左侧收到头部301帧、左腕101帧，心跳与关节状态各987条，已逐帧解码并检查首末画面；头部视角变化由用户确认为现场调整。右侧收到右腕101帧、心跳990条，但989条关节状态均被`robot-viz`以NaN/Infinity拒收：混合实例按原合同用NaN表示未标定速度和未测力矩。右侧原报告保持FAIL及`resources_status=UNKNOWN`，其中停止与清场子检查通过，不能把原失败改写为通过。
+
+观测端兼容修复已通过Orin的24项单测、fmt及全workspace Clippy；6项需显式启用的软件集成测试本轮未运行。仅状态速度/力矩允许NaN并标为未知，官方SDK回读保留独立NaN采样；位置、Infinity、命令和结构错误仍拒绝。新产物尚未实机启动，证据见[观测修复验证](../.verify/s0_observer_nan_2026-11-12/summary.json)。
+
+RT候选的回滚使用`/var/lib/robot/deploy-backup-s0-rt-f9e4b92`及其冻结安装器，不回滚保护状态。原件见[本轮汇总](../.verify/s0_rt_prepare_2026-11-12/summary.json)；计划`7bf0addb…52f0b`的三份GO均已消费，本轮看护结束，禁止重放。旧普通候选的计划不再使用，所需回滚原件保留。
 
 ## 已有边界
 
@@ -19,7 +23,7 @@ RT候选的回滚使用`/var/lib/robot/deploy-backup-s0-rt-f9e4b92`及其冻结�
 | 硬件适配器 | 沿既有`ManipulatorAdapter`/`SerialRtAdapter`封装Feetech协议；左总线臂1–6＋头7/8位置分组，右总线臂1–6位置＋三轮raw速度 |
 | RGB | `[[sensor]]`按`hardware_id`归属；左实例采头/左腕，右实例采右腕；独立`SensorAdapter`、BGR帧槽和topic，经SoftRT采集，状态/心跳优先；保留1秒帧龄/失流检查，尚不支持低于1Hz，时间戳为读取完成时刻 |
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
-| 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证通过；实际服务的CPU/FIFO/VmLck仍待正式启动读取，未据此证明硬实时截止保证 |
+| 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证及本轮实际服务前后CPU/FIFO/VmLck读取通过；未据此证明硬实时截止保证 |
 
 轮位唯一来源为[xlerobot-bus2.toml](../configs/xlerobot-bus2.toml)的同下标`joints`/`motor_ids`，当前**前8、左9、右7**，只支持既有ID7/8/9排列；校准数值按物理ID保留。改配置必须重建计划，旧GO失效，不在代码复制映射。
 
@@ -36,12 +40,12 @@ RT候选的回滚使用`/var/lib/robot/deploy-backup-s0-rt-f9e4b92`及其冻结�
 
 - 左1偶发根因仍为`UNKNOWN`；左腕`I=1`、头部`P=32`仅为临时已测候选。
 - 右6单程开合仅限`GP1600/1397`、绝对增量≤256，GP写即动作起点；放宽至±5raw后尚未重做合回动作，不改速度、PID或硬件限位。
-- 新RT配置、产物和unit已冻结安装；实际线程属性与完整服务生命周期尚待现场验收，安装状态不能替代运行证据。
-- 正式服务启动验收、D15硬件fail-safe及下列roadmap尚未完成；历史失败和未观察结果保留在原件，不被新容差或后续通过覆盖。
+- 右侧正式服务生命周期、线程属性及停止已有证据，但状态观测失败；仅修复观测端对速度/力矩NaN的兼容，软件验证后准备新的右侧验收。旧RRD未记录被拒状态，不能离线补成通过。
+- D15硬件fail-safe及下列roadmap尚未完成；历史失败和未观察结果保留在原件，不被新容差或后续通过覆盖。
 
 ## Roadmap
 
-1. **S0结案验收**：使用已准备脚本，按左、右顺序验证正式systemd启动、实际线程属性、状态与图像输出、退出后的停止和资源释放。启动前通知并确认当轮现场条件；保持`auto_enable=false`和EStop锁存，不启用关节或轮子；启动仍会进行UART停止收敛写入。
+1. **S0结案验收**：左侧已通过；`robot-viz`未知状态兼容的软件验证已通过，下一步复用现有入口、绑定新观测产物准备右侧复验。启动前通知并确认当轮现场条件；保持`auto_enable=false`和EStop锁存，不启用关节或轮子；启动仍会进行UART停止收敛写入。既有左侧结果保留，不为观测端修复重复左侧动作。
 2. **结案发布**：上述验收通过后，将根Cargo版本和锁文件中自有包版本从`0.1.2`统一为`0.0.1`；结案提交采用`v0.0.1+<7位提交SHA>`标签发布。配置矩阵打包纳入该版本；当前不提前改版或打tag，D15继续延期。
 3. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 4. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。

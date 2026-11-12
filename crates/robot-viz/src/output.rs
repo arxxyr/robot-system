@@ -535,6 +535,60 @@ mod tests {
     }
 
     #[test]
+    fn official_sdk_preserves_unknown_joint_measurements_as_nan() {
+        let (recording, storage) = rerun::RecordingStreamBuilder::new("unknown-joint-test")
+            .memory()
+            .unwrap();
+        let mut output = Output::from_recording(recording).unwrap();
+        for (seq, value) in [(1, 0.25), (2, f64::NAN), (3, 0.5)] {
+            let mut observation = sample("unknown");
+            observation.seq = seq;
+            observation.body_stamp_ns = seq;
+            observation.header_stamp_ns = seq + 1;
+            observation.received_ns = seq + 2;
+            for field in ["velocity_wire", "effort_wire"] {
+                observation.series.push(crate::decode::Series {
+                    path: vec![field.into(), "joint_a".into()],
+                    value,
+                });
+            }
+            output.log(observation).unwrap();
+        }
+        let mut scalars: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+        for message in storage.take() {
+            if let LogMsg::ArrowMsg(_, message) = message {
+                let chunk = rerun::log::Chunk::from_arrow_msg(&message).unwrap();
+                for descriptor in chunk.component_descriptors() {
+                    if descriptor
+                        .component_type
+                        .map(|value| value.to_string())
+                        .as_deref()
+                        == Some("rerun.components.Scalar")
+                    {
+                        for row in
+                            chunk.iter_component::<rerun::components::Scalar>(descriptor.component)
+                        {
+                            scalars
+                                .entry(chunk.entity_path().to_string())
+                                .or_default()
+                                .extend(row.as_slice().iter().map(|scalar| scalar.0.0));
+                        }
+                    }
+                }
+            }
+        }
+        for field in ["velocity_wire", "effort_wire"] {
+            let path = (root("/test/s0/arm/state") / "instances" / "unknown" / field / "joint_a")
+                .to_string();
+            let values = &scalars[&path];
+            assert_eq!(values.len(), 3, "未知值必须占有自己的采样时刻");
+            assert_eq!(values[0], 0.25);
+            assert!(values[1].is_nan(), "未知值不能补零或沿用上一帧");
+            assert_eq!(values[2], 0.5);
+        }
+    }
+
+    #[test]
     fn bounded_views_keep_both_instances_without_repeated_blueprints() {
         let (recording, storage) = rerun::RecordingStreamBuilder::new("instance-view-test")
             .memory()

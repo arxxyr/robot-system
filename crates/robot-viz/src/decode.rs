@@ -164,22 +164,25 @@ fn decode_state(
         "position_rad",
         &layout.names,
         value.position_rad(),
+        false,
     )?;
-    // 当前 Feetech 驱动这些字段尚含原始寄存器值；明确保留 wire 名义，不宣称 SI。
-    joints(
+    // 保留 wire 名义；未标定速度和未测力矩的 NaN 表示未知，不补零或冒充 SI。
+    let velocity_unknown = joints(
         &mut observation.series,
         "velocity_wire",
         &layout.names,
         value.velocity_rps(),
+        true,
     )?;
-    joints(
+    let effort_unknown = joints(
         &mut observation.series,
         "effort_wire",
         &layout.names,
         value.effort_nm(),
+        true,
     )?;
     observation.status = format!(
-        "layout_id={} mode={:?} link={:?} output={:?} safety={:?} fault={:?}; OBSERVATION_ONLY UNKNOWN_NOT_SAFE",
+        "layout_id={} mode={:?} link={:?} output={:?} safety={:?} fault={:?}; velocity_wire_unknown={velocity_unknown} effort_wire_unknown={effort_unknown} (NaN=未知); OBSERVATION_ONLY UNKNOWN_NOT_SAFE",
         value.layout_id(),
         value.s0_mode(),
         value.s0_control_link(),
@@ -215,6 +218,7 @@ fn decode_command(
         "target",
         &layout.names,
         value.target(),
+        false,
     )?;
     integer(value.deadline_ns(), "command deadline")?;
     observation.status = format!(
@@ -369,19 +373,25 @@ fn joints(
     field: &str,
     names: &[String],
     values: Option<flatbuffers::Vector<'_, f64>>,
-) -> Result<(), VizError> {
+    allow_unknown_nan: bool,
+) -> Result<usize, VizError> {
     let values = values.ok_or_else(|| invalid(format!("缺少 {field}")))?;
     if values.len() != names.len() {
         return Err(invalid(format!("{field} 长度与布局不同")));
     }
+    let mut unknown = 0;
     for (name, value) in names.iter().zip(values) {
-        finite(value)?;
+        if allow_unknown_nan && value.is_nan() {
+            unknown += 1;
+        } else {
+            finite(value)?;
+        }
         series.push(Series {
             path: vec![field.to_owned(), name.clone()],
             value,
         });
     }
-    Ok(())
+    Ok(unknown)
 }
 
 fn blob<'a, M: BodyMarker>(view: &MessageView<'a, M>) -> Result<&'a [u8], VizError> {
@@ -400,16 +410,21 @@ mod tests {
     use robot_transport::traits::{LatestSubscriber, Publisher};
 
     fn state_body(layout_id: u64, stamp: u64) -> Vec<u8> {
+        state_body_values(layout_id, stamp, [Some(&[0.125]); 3])
+    }
+
+    fn state_body_values(layout_id: u64, stamp: u64, values: [Option<&[f64]>; 3]) -> Vec<u8> {
         let mut builder = FlatBufferBuilder::new();
-        let values = builder.create_vector(&[0.125]);
+        let [position, velocity, effort] =
+            values.map(|values| values.map(|values| builder.create_vector(values)));
         let state = msg::JointState::create(
             &mut builder,
             &msg::JointStateArgs {
                 layout_id,
                 stamp_ns: stamp,
-                position_rad: Some(values),
-                velocity_rps: Some(values),
-                effort_nm: Some(values),
+                position_rad: position,
+                velocity_rps: velocity,
+                effort_nm: effort,
                 ..msg::JointStateArgs::default()
             },
         );
@@ -423,7 +438,16 @@ mod tests {
         header_stamp: u64,
         topic: &str,
     ) -> Result<Observation, VizError> {
-        let channel = MockChannel::<markers::JointState>::new();
+        attempt_message::<markers::JointState>(body, seq, header_stamp, topic)
+    }
+
+    fn attempt_message<M: BodyMarker>(
+        body: &[u8],
+        seq: u64,
+        header_stamp: u64,
+        topic: &str,
+    ) -> Result<Observation, VizError> {
+        let channel = MockChannel::<M>::new();
         let mut publisher = channel.publisher();
         let mut subscriber = channel.subscriber();
         let mut writer = publisher.loan(8192).unwrap();
@@ -442,6 +466,120 @@ mod tests {
         drop(lease);
         assert_eq!(channel.active_leases(), 0, "输出对象不能保留共享内存");
         result
+    }
+
+    #[test]
+    fn state_unknown_measurements_preserve_nan_without_losing_position_or_status() {
+        let layout = robot_msg::joint_layout::compute_layout_id("test", "arm", &[("joint", 1)]);
+        for (velocity, effort) in [(f64::NAN, f64::NAN), (0.25, f64::NAN), (f64::NAN, 0.5)] {
+            let body = state_body_values(
+                layout,
+                900,
+                [Some(&[0.125]), Some(&[velocity]), Some(&[effort])],
+            );
+            let observation = attempt(&body, 42, 950, "/test/s0/arm/state").unwrap();
+            assert_eq!(observation.series.len(), 8);
+            assert_eq!(observation.series[0].value, 0.125);
+            for (series, expected) in observation.series[1..3].iter().zip([velocity, effort]) {
+                if expected.is_nan() {
+                    assert!(series.value.is_nan(), "未知值不能补零或丢弃");
+                } else {
+                    assert_eq!(series.value, expected);
+                }
+            }
+            assert!(observation.status.contains(&format!(
+                "velocity_wire_unknown={} effort_wire_unknown={}",
+                usize::from(velocity.is_nan()),
+                usize::from(effort.is_nan())
+            )));
+            assert!(observation.status.contains("NaN=未知"));
+            assert!(observation.status.contains("UNKNOWN_NOT_SAFE"));
+        }
+    }
+
+    #[test]
+    fn state_still_rejects_nonfinite_positions_infinite_measurements_and_bad_shapes() {
+        let layout = robot_msg::joint_layout::compute_layout_id("test", "arm", &[("joint", 1)]);
+        for field in 0..3 {
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                if field != 0 && bad.is_nan() {
+                    continue;
+                }
+                let mut values: [Option<&[f64]>; 3] = [Some(&[0.125]); 3];
+                let invalid_values = [bad];
+                values[field] = Some(&invalid_values);
+                let body = state_body_values(layout, 900, values);
+                assert!(attempt(&body, 42, 950, "/test/s0/arm/state").is_err());
+            }
+            for bad_shape in [
+                None,
+                Some([].as_slice()),
+                Some([0.125, f64::NAN].as_slice()),
+            ] {
+                let mut values: [Option<&[f64]>; 3] = [Some(&[0.125]); 3];
+                values[field] = bad_shape;
+                let body = state_body_values(layout, 900, values);
+                assert!(attempt(&body, 42, 950, "/test/s0/arm/state").is_err());
+            }
+        }
+        assert!(attempt(&[0; 16], 42, 950, "/test/s0/arm/state").is_err());
+    }
+
+    #[test]
+    fn command_and_twist_still_reject_nan_and_infinity() {
+        let layout = robot_msg::joint_layout::compute_layout_id("test", "arm", &[("joint", 1)]);
+        for value in [0.125, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut builder = FlatBufferBuilder::new();
+            let target = builder.create_vector(&[value]);
+            let command = msg::JointCommand::create(
+                &mut builder,
+                &msg::JointCommandArgs {
+                    layout_id: layout,
+                    target: Some(target),
+                    ..msg::JointCommandArgs::default()
+                },
+            );
+            builder.finish(command, None);
+            assert_eq!(
+                attempt_message::<markers::JointCommand>(
+                    builder.finished_data(),
+                    42,
+                    950,
+                    "/test/s1/arm/command"
+                )
+                .is_ok(),
+                value.is_finite()
+            );
+            let mut builder = FlatBufferBuilder::new();
+            let linear = msg::Vec3::create(
+                &mut builder,
+                &msg::Vec3Args {
+                    x: value,
+                    ..msg::Vec3Args::default()
+                },
+            );
+            let angular = msg::Vec3::create(&mut builder, &msg::Vec3Args::default());
+            let twist = msg::Twist::create(
+                &mut builder,
+                &msg::TwistArgs {
+                    stamp_ns: 900,
+                    linear: Some(linear),
+                    angular: Some(angular),
+                    ..msg::TwistArgs::default()
+                },
+            );
+            builder.finish(twist, None);
+            assert_eq!(
+                attempt_message::<markers::Twist>(
+                    builder.finished_data(),
+                    42,
+                    950,
+                    "/test/s1/base/twist"
+                )
+                .is_ok(),
+                value.is_finite()
+            );
+        }
     }
 
     #[test]
