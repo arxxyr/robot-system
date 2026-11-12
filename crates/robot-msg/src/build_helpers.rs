@@ -15,9 +15,9 @@
 //!
 //! ### 返回值
 //!
-//! 所有函数返回 `Vec<u8>`。调用方可以 `SampleWriter::set_body_bytes(&vec)`
-//! 一次 memcpy 到 iceoryx2 loan 内存。如果未来想节省一次拷贝，可以加
-//! `build_into_writer(&mut w, args)` 的变体——但 Step 6 Part 2 scope 内不做。
+//! 所有函数返回 `Vec<u8>`。调用方可用 `SampleWriter::set_body_owned(vec)`
+//! 移交缓冲，或用 `set_body_bytes(&vec)` 保留原缓冲并复制。
+//! 后续完整 wire 构造及写入共享内存仍有复制。
 //!
 //! ### 测试
 //!
@@ -98,17 +98,49 @@ pub fn build_joint_state_with_s0(
     s0_safety_state: S0SafetyState,
     s0_fault_code: S0FaultCode,
 ) -> Vec<u8> {
+    build_joint_state_with_s0_from_iter(
+        layout_id,
+        stamp_ns,
+        positions.iter().copied(),
+        velocities.iter().copied(),
+        torques.iter().copied(),
+        frame_id,
+        s0_mode,
+        s0_control_link,
+        s0_output_mode,
+        s0_safety_state,
+        s0_fault_code,
+    )
+}
+
+/// 直接将关节值迭代器写入原状态格式，允许调用方逐项转换而不创建临时数组。
+/// 空速度/力矩仍省略字段，位置始终保留；本函数仅供非 RT 发布路径调用。
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_joint_state_with_s0_from_iter(
+    layout_id: u64,
+    stamp_ns: u64,
+    positions: impl ExactSizeIterator<Item = f64> + DoubleEndedIterator,
+    velocities: impl ExactSizeIterator<Item = f64> + DoubleEndedIterator,
+    torques: impl ExactSizeIterator<Item = f64> + DoubleEndedIterator,
+    frame_id: &str,
+    s0_mode: S0Mode,
+    s0_control_link: S0ControlLink,
+    s0_output_mode: S0OutputMode,
+    s0_safety_state: S0SafetyState,
+    s0_fault_code: S0FaultCode,
+) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(256);
-    let pos = fbb.create_vector::<f64>(positions);
-    let vel = if velocities.is_empty() {
+    let pos = fbb.create_vector_from_iter(positions);
+    let vel = if velocities.len() == 0 {
         None
     } else {
-        Some(fbb.create_vector::<f64>(velocities))
+        Some(fbb.create_vector_from_iter(velocities))
     };
-    let eff = if torques.is_empty() {
+    let eff = if torques.len() == 0 {
         None
     } else {
-        Some(fbb.create_vector::<f64>(torques))
+        Some(fbb.create_vector_from_iter(torques))
     };
     let frame = if frame_id.is_empty() {
         None
@@ -995,6 +1027,71 @@ pub fn build_clear_error_response_typed(
 mod tests {
     use super::*;
     use flatbuffers::root;
+
+    #[test]
+    fn joint_state_iterator_matches_slice_wire_including_unknown_values() {
+        let values = [
+            0.0_f32,
+            -0.0,
+            1.25,
+            -2.5,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::MIN_POSITIVE,
+        ];
+        for count in [0, 1, 8, 32] {
+            let raw: Vec<f32> = values.into_iter().cycle().take(count).collect();
+            let widened: Vec<f64> = raw.iter().map(|&v| f64::from(v)).collect();
+            for optional_fields in [false, true] {
+                let optional = if optional_fields { raw.as_slice() } else { &[] };
+                let frame_id = if optional_fields { "world" } else { "" };
+                let actual = build_joint_state_with_s0_from_iter(
+                    0xCAFE,
+                    1234,
+                    raw.iter().map(|&v| f64::from(v)),
+                    optional.iter().map(|&v| f64::from(v)),
+                    optional.iter().map(|&v| f64::from(v)),
+                    frame_id,
+                    S0Mode::Safe,
+                    S0ControlLink::Lost,
+                    S0OutputMode::Stop,
+                    S0SafetyState::TorqueOffConfirmed,
+                    S0FaultCode::Unknown,
+                );
+
+                // 沿原切片编码路径构造基准，不调用新的迭代器辅助函数。
+                let mut fbb = FlatBufferBuilder::with_capacity(256);
+                let positions = fbb.create_vector(&widened);
+                let velocities =
+                    (optional_fields && count > 0).then(|| fbb.create_vector(&widened));
+                let torques = (optional_fields && count > 0).then(|| fbb.create_vector(&widened));
+                let frame = optional_fields.then(|| fbb.create_string(frame_id));
+                let state = JointState::create(
+                    &mut fbb,
+                    &JointStateArgs {
+                        layout_id: 0xCAFE,
+                        stamp_ns: 1234,
+                        position_rad: Some(positions),
+                        velocity_rps: velocities,
+                        effort_nm: torques,
+                        frame_id: frame,
+                        s0_mode: S0Mode::Safe,
+                        s0_control_link: S0ControlLink::Lost,
+                        s0_output_mode: S0OutputMode::Stop,
+                        s0_safety_state: S0SafetyState::TorqueOffConfirmed,
+                        s0_fault_code: S0FaultCode::Unknown,
+                    },
+                );
+                fbb.finish(state, None);
+                assert_eq!(
+                    actual,
+                    fbb.finished_data(),
+                    "count={count}, optional={optional_fields}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn joint_state_round_trip() {

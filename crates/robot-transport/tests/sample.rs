@@ -160,7 +160,7 @@ fn writer_drop_without_publish_discards_loan() {
 
     {
         let mut w = publisher.loan(65536).unwrap();
-        w.set_body_bytes(&build_joint_state_body());
+        w.set_body_owned(build_joint_state_body());
         assert_eq!(ch.active_writers(), 1);
         assert_eq!(ch.loans(), 1);
         // drop without publish
@@ -371,7 +371,7 @@ fn typed_mock_receipt_is_stored_and_failure_releases_the_real_writer() {
     let mut subscriber = channel.subscriber();
     let body = build_joint_state_body();
     let mut writer = publisher.loan(1024).unwrap();
-    writer.set_body_bytes(&body);
+    writer.set_body_owned(body.clone());
     writer.set_stamp_ns(123);
     assert_eq!(writer.publish_typed().unwrap(), PublishReceipt::MockStored);
     assert_eq!((channel.publishes(), channel.active_writers()), (1, 0));
@@ -382,7 +382,7 @@ fn typed_mock_receipt_is_stored_and_failure_releases_the_real_writer() {
     drop(lease);
     assert_eq!(channel.active_leases(), 0);
     let mut rejected = publisher.loan(1).unwrap();
-    rejected.set_body_bytes(&body);
+    rejected.set_body_owned(body);
     assert!(matches!(
         rejected.publish_typed(),
         Err(PublishFailure::BeforeHistory(

@@ -128,7 +128,7 @@ pub enum ActionKind {
 ///
 /// 让 `ActionTickOutput::Continue::command` 在类型上明确是 "JointCommand
 /// body"，防 backend 误塞任意 bytes；coordinator 拿到后直接调
-/// `SampleWriter::set_body_bytes(body.as_bytes())`。
+/// `SampleWriter::set_body_owned(body.into_bytes())`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JointCommandBody(Vec<u8>);
 
@@ -141,7 +141,7 @@ impl JointCommandBody {
         Self(bytes)
     }
 
-    /// 借用底层 bytes（`coordinator` publish 路径 zero-copy 调用）。
+    /// 借用底层 bytes；不延长本对象的生命周期。
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0

@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use robot_core::adapter::RtSnapshot;
 use robot_core::time::RobotClock;
-use robot_msg::build_helpers::{build_heartbeat, build_joint_state_with_s0};
+use robot_msg::build_helpers::{build_heartbeat, build_joint_state_with_s0_from_iter};
 use robot_msg::markers;
 use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
 use robot_transport::iceoryx2::Iceoryx2Publisher;
@@ -454,19 +454,6 @@ fn publish_joint_state(
 ) {
     let snap = rt_snap_rdr.load();
     let n = snap.state.joint_count as usize;
-    // 把 f32 数组切片 → f64 Vec（build_joint_state 要求 f64；Part 2 承担一次窄→宽）。
-    let positions: Vec<f64> = snap.state.positions[..n]
-        .iter()
-        .map(|x| f64::from(*x))
-        .collect();
-    let velocities: Vec<f64> = snap.state.velocities[..n]
-        .iter()
-        .map(|x| f64::from(*x))
-        .collect();
-    let torques: Vec<f64> = snap.state.torques[..n]
-        .iter()
-        .map(|x| f64::from(*x))
-        .collect();
     // task-30 v9 pre-2 + M7 阶段 5：从 S0StateSnapshot 抽 4 个状态字段；
     // S0SafetyState 直接从共享 `HardRtCtrlInner.safety_state` 原子读
     // （rt_thread / serial_io_thread 都把当前 OutputSafetyState 写到这里），
@@ -474,12 +461,18 @@ fn publish_joint_state(
     let s0_snap = state_rdr.load();
     let (s0_mode, s0_control_link, s0_output_mode, s0_fault_code) = map_state_to_wire(&s0_snap);
     let s0_safety_state = map_safety_state_to_wire(rt_ctrl.safety_state().to_u8());
-    let body = build_joint_state_with_s0(
+    let body = build_joint_state_with_s0_from_iter(
         cfg.joint_layout_id,
         snap.state.stamp_ns,
-        &positions,
-        &velocities,
-        &torques,
+        snap.state.positions[..n]
+            .iter()
+            .map(|&value| f64::from(value)),
+        snap.state.velocities[..n]
+            .iter()
+            .map(|&value| f64::from(value)),
+        snap.state.torques[..n]
+            .iter()
+            .map(|&value| f64::from(value)),
         "",
         s0_mode,
         s0_control_link,
@@ -493,7 +486,7 @@ fn publish_joint_state(
             w.set_seq(seq);
             w.set_source_id(cfg.s0_source_id);
             w.set_stamp_ns(now_ns);
-            w.set_body_bytes(&body);
+            w.set_body_owned(body);
             match w.publish() {
                 Ok(()) => {
                     metrics
@@ -607,7 +600,7 @@ fn publish_s0_heartbeat(
             w.set_seq(seq);
             w.set_source_id(cfg.s0_source_id);
             w.set_stamp_ns(now_ns);
-            w.set_body_bytes(&body);
+            w.set_body_owned(body);
             match w.publish() {
                 Ok(()) => {
                     metrics.heartbeat_published.fetch_add(1, Ordering::Relaxed);

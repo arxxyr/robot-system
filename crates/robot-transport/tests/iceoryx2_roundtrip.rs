@@ -328,9 +328,13 @@ fn typed_and_legacy_publish_deliver_identical_complete_wire_bytes() {
     publisher.update_connections().unwrap();
     let body = build_joint_state_body(77);
     let mut received = Vec::new();
-    for typed in [false, true] {
+    for (typed, owned) in [(false, false), (false, true), (true, false), (true, true)] {
         let mut writer = publisher.loan(1024).unwrap();
-        writer.set_body_bytes(&body);
+        if owned {
+            writer.set_body_owned(body.clone());
+        } else {
+            writer.set_body_bytes(&body);
+        }
         writer.set_blob_bytes(&[1, 3, 5, 7]);
         writer.set_stamp_ns(77);
         writer.set_seq(8);
@@ -351,12 +355,14 @@ fn typed_and_legacy_publish_deliver_identical_complete_wire_bytes() {
                 .to_vec(),
         );
     }
-    assert_eq!(
-        received[0], received[1],
-        "完整 header、padding、body、blob 字节保持一致"
-    );
+    for wire in &received[1..] {
+        assert_eq!(
+            &received[0], wire,
+            "借用/所有权入口及两种发布方式的完整 wire 一致"
+        );
+    }
     let mut writer = publisher.loan(1).unwrap();
-    writer.set_body_bytes(&body);
+    writer.set_body_owned(body);
     assert!(matches!(
         writer.publish_typed(),
         Err(PublishFailure::BeforeHistory(

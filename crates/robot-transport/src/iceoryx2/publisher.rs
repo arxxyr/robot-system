@@ -166,6 +166,10 @@ impl Iceoryx2SampleWriter<'_> {
         self.body_bytes.extend_from_slice(body);
     }
 
+    pub(crate) fn set_body_owned(&mut self, body: Vec<u8>) {
+        self.body_bytes = body;
+    }
+
     pub(crate) fn set_blob_bytes(&mut self, blob: &[u8]) {
         self.blob_bytes = Some(blob.to_vec());
     }
@@ -329,6 +333,39 @@ mod publish_failure_tests {
     use iceoryx2::port::update_connections::ConnectionFailure;
     use iceoryx2::port::{LoanError, SendError};
     use iceoryx2_cal::zero_copy_connection::ZeroCopyCreationError;
+
+    #[test]
+    fn owned_body_retains_allocation_and_discard_does_not_publish() {
+        use crate::traits::LatestSubscriber;
+        use iceoryx2::prelude::*;
+        let node = NodeBuilder::new().create::<ipc::Service>().unwrap();
+        let topic = format!("/test/owned_body_allocation/{}", std::process::id());
+        let (mut publisher, mut subscriber) = crate::iceoryx2::channel::<
+            robot_msg::markers::JointState,
+        >(
+            &node, &topic, crate::iceoryx2::TopicClass::S0State
+        )
+        .unwrap();
+        let mut writer = Iceoryx2SampleWriter::new_disjoint(
+            &mut publisher.inner,
+            &publisher.observer,
+            robot_msg::markers::JointState::SCHEMA_ID,
+            1024,
+        );
+        for value in [1, 2] {
+            let mut body = Vec::with_capacity(128);
+            body.extend_from_slice(&[value; 16]);
+            let allocation = (body.as_ptr(), body.capacity());
+            writer.set_body_owned(body);
+            assert_eq!(
+                (writer.body_bytes.as_ptr(), writer.body_bytes.capacity()),
+                allocation
+            );
+            assert_eq!(writer.body_bytes, [value; 16]);
+        }
+        drop(writer);
+        assert!(subscriber.latest().unwrap().is_none());
+    }
 
     #[test]
     fn all_send_error_variants_use_the_real_history_boundary() {

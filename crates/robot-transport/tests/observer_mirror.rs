@@ -46,7 +46,7 @@ fn publish(p: &mut Iceoryx2Publisher<markers::Heartbeat>, value: u64) {
     w.set_seq(1);
     w.set_source_id(2);
     w.set_stamp_ns(value * 1000);
-    w.set_body_bytes(&body);
+    w.set_body_owned(body);
     assert_eq!(
         w.publish_typed().unwrap(),
         robot_transport::PublishReceipt::Iceoryx2 { recipients: 1 }

@@ -834,7 +834,7 @@ impl From<TransportError> for TickError {
 /// 共享的 publish helper：一次 `loan` → set header / body → `publish`。
 fn publish_body<T, P>(
     pub_: &mut P,
-    body: &[u8],
+    body: Vec<u8>,
     seq: u64,
     source_id: u32,
     stamp_ns: u64,
@@ -849,7 +849,7 @@ where
     writer.set_seq(seq);
     writer.set_source_id(source_id);
     writer.set_stamp_ns(stamp_ns);
-    writer.set_body_bytes(body);
+    writer.set_body_owned(body);
     writer.publish()
 }
 
@@ -895,7 +895,7 @@ where
         let body = build_hold_command(cfg, layout_id, bias, state.cmd_seq, now_ns);
         publish_body::<markers::JointCommand, _>(
             cmd_pub,
-            &body,
+            body,
             state.cmd_seq,
             cfg.source_id,
             now_ns,
@@ -907,7 +907,7 @@ where
 
     if now_ns.saturating_sub(state.last_hb_ns) >= hb_period_ns {
         let body = build_heartbeat(cfg.source_id, state.hb_seq, cfg.heartbeat_hz, now_ns);
-        publish_body::<markers::Heartbeat, _>(hb_pub, &body, state.hb_seq, cfg.source_id, now_ns)?;
+        publish_body::<markers::Heartbeat, _>(hb_pub, body, state.hb_seq, cfg.source_id, now_ns)?;
         state.hb_seq = state.hb_seq.wrapping_add(1);
         state.last_hb_ns = now_ns;
         out.hb = true;
@@ -1064,7 +1064,7 @@ where
             let body = build_heartbeat(cfg.source_id, state.hb_seq, cfg.heartbeat_hz, now_ns);
             publish_body::<markers::Heartbeat, _>(
                 hb_pub,
-                &body,
+                body,
                 state.hb_seq,
                 cfg.source_id,
                 now_ns,
@@ -1091,7 +1091,7 @@ where
                     let body = coordinator.hold_command(&target, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
-                        &body,
+                        body,
                         state.cmd_seq,
                         cfg.source_id,
                         now_ns,
@@ -1104,7 +1104,7 @@ where
                     let body = coordinator.hold_command(bias, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
-                        &body,
+                        body,
                         state.cmd_seq,
                         cfg.source_id,
                         now_ns,
@@ -1122,7 +1122,7 @@ where
                     if let Some(body_struct) = coordinator.tick_action(clock, state.cmd_seq) {
                         publish_body::<markers::JointCommand, _>(
                             cmd_pub,
-                            body_struct.as_bytes(),
+                            body_struct.into_bytes(),
                             state.cmd_seq,
                             cfg.source_id,
                             now_ns,

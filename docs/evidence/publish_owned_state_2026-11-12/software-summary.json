@@ -1,0 +1,110 @@
+{
+  "base_commit": "3a6d96eabdf739db5bb837d7a6c62cb1dc88c978",
+  "scope": "仅发布缓冲所有权转移与S0状态去临时数组；未安装、未启停服务、未运行实机",
+  "rustc": "rustc 1.102.0-nightly (ac8310ba6 2026-11-09)\nbinary: rustc\ncommit-hash: ac8310ba643a3796cbe77d2e06944d7c8513999f\ncommit-date: 2026-11-09\nhost: aarch64-unknown-linux-gnu\nrelease: 1.102.0-nightly\nLLVM version: 23.1.5",
+  "host": "Orin / aarch64-unknown-linux-gnu",
+  "log_root": "/home/loosqk/robot-checks/publish-owned-state-20261112",
+  "cargo_target_dir": "/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": "cargo fmt --all",
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "clippy",
+      "command": "cargo clippy --all --all-targets -- -D warnings",
+      "exit_code": 0,
+      "log_sha256": "437198e4b1ee3311b25acb8036be37b8740153e8b60960af3c9d3e0f776cef5d"
+    },
+    {
+      "name": "real-clippy",
+      "command": "cargo clippy -p robot-s0 --all-targets --features xlerobot-real,rt_guard -- -D warnings",
+      "exit_code": 0,
+      "log_sha256": "f40bdaf46d037efad3a5c7336a4e60e9abc86d75afbf330a3a88323abf0f5edb"
+    },
+    {
+      "name": "msg",
+      "command": "cargo test --locked -p robot-msg",
+      "exit_code": 0,
+      "log_sha256": "e4c2944b52232cf8b794a6f4642f5e114132680eeba681e8d1151f88c5a36c0b",
+      "passed": 75,
+      "failed": 0,
+      "ignored": 2
+    },
+    {
+      "name": "transport",
+      "command": "cargo test --locked -p robot-transport --lib --test sample --test iceoryx2_roundtrip --test observer_mirror -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "452e0bd66b62a3f3d4cc66f008a5659c67b3a64397e6cd95c593a19ec88301b5",
+      "passed": 99,
+      "failed": 0,
+      "ignored": 1
+    },
+    {
+      "name": "transport-mock",
+      "command": "cargo test --locked -p robot-transport --no-default-features --features mock --lib --test sample",
+      "exit_code": 0,
+      "log_sha256": "d277ebb21b7f054c199ca2c04bc31b2d95897744d5a2d61dab577dae791bda69",
+      "passed": 37,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "transport-no-backend",
+      "command": "cargo check --locked -p robot-transport --no-default-features",
+      "exit_code": 0,
+      "log_sha256": "e7df3617fa694926cf6c6687f134b61d87b2ccd09475a9362d7a96c7510fb852"
+    },
+    {
+      "name": "s0-pub",
+      "command": "cargo test --locked -p robot-s0 --lib pub_thread::tests -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "a0353ad228ceacee2b728a48397fbf9241f577d206840257b7c9bc3908b064d4",
+      "passed": 16,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "s1",
+      "command": "cargo test --locked -p robot-s1 --lib -- --test-threads=1",
+      "exit_code": 0,
+      "log_sha256": "83a22c5819aec54e2650a3f61d5fbea5c76cbe5a28b11247008942a04db88204",
+      "passed": 295,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "patch-check",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "code_sha256": {
+    "crates/robot-msg/src/build_helpers.rs": "43483f2423e81f5daf186aede3915d725c01b6313a3039312e1c47b815dcb266",
+    "crates/robot-s0/src/pub_thread.rs": "f825abf58ac2b30f7f703d6470aaa88bf99d56a4099402a7e760d97b5cc95c18",
+    "crates/robot-s1/src/action.rs": "54c0a80bf1b04ffe3d85567848aa7f882053ee5886d67372e9f8c4e622cca76e",
+    "crates/robot-s1/src/coordinator.rs": "dd34899349e773a2391e4d1a8ec84f03970057bea64bf1d3149227197104c1bb",
+    "crates/robot-transport/src/iceoryx2/publisher.rs": "cacf17d86d8facd134896ac59863eeb185048d71f5000497addcacbe463408c4",
+    "crates/robot-transport/src/mock.rs": "17cd17393ab9fa72218be0bca03b3ac21d0f7b22488628051648e6356586fa0d",
+    "crates/robot-transport/src/writer.rs": "62c98b7e81177e2effa39f258da2cf5d6d8469fb0d22185a02145bb5868d1941",
+    "crates/robot-transport/tests/iceoryx2_roundtrip.rs": "1126caa64638e6ef930bbd02cde6cd4e9ff4e8f2e021a0bc23cc2e91e404362e",
+    "crates/robot-transport/tests/observer_mirror.rs": "2263b9298e8c5294913c0ddd8382614893dbe84ac3a67ca9d033ab47d7d6332c",
+    "crates/robot-transport/tests/sample.rs": "7f25dee61e6fee3294046fa861ff979ad7a626dbdfb0bf9ab4ba83fd756a2e0a"
+  },
+  "coverage": [
+    "mock与iceoryx2接管前后缓冲指针和容量相同；替换、丢弃正常",
+    "借用/接管入口和普通/typed发布的完整wire字节一致；超限仍在BeforeHistory拒绝",
+    "观测镜像继续沿原队列、丢弃和回收语义",
+    "0/1/8/32个关节、空可选字段、NaN及特殊浮点值与原切片编码逐字节一致",
+    "S0发布线程16项与S1库295项回归通过"
+  ],
+  "limits": "未测量吞吐或延迟；完整wire构造和写入共享内存仍有复制；相机与RT命令槽未改动",
+  "initial_failure": {
+    "reason": "新增测试误用不存在的S0OutputMode::Disabled，已改为既有Stop枚举；非生产路径故障",
+    "log": "attempt-1/clippy.log",
+    "log_sha256": "0d2aa685b8fc3e3d1686c280311bcb988e0fbc223a3b077cec25bf45f9e6a52f"
+  }
+}

@@ -130,6 +130,21 @@ impl<'a, T: BodyMarker> SampleWriter<'a, T> {
         }
     }
 
+    /// 接管完整 body 缓冲，不复制其字节；重复设置会替换并释放上一缓冲。
+    /// 发布、大小检查与丢弃语义沿用借用入口。
+    pub fn set_body_owned(&mut self, body: Vec<u8>) {
+        #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
+        let _ = body;
+        match &mut self.inner {
+            #[cfg(feature = "mock")]
+            SampleWriterInner::Mock(m, _) => m.set_body_owned(body),
+            #[cfg(feature = "iceoryx2")]
+            SampleWriterInner::Iceoryx2(w) => w.set_body_owned(body),
+            #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]
+            SampleWriterInner::Unavailable(never, _) => match *never {},
+        }
+    }
+
     /// 写入 blob 字节（raw payload；由调用方保证 alignment / dtype / size 一致）。
     pub fn set_blob_bytes(&mut self, blob: &[u8]) {
         #[cfg(not(any(feature = "mock", feature = "iceoryx2")))]

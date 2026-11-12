@@ -233,6 +233,10 @@ impl MockSampleWriter {
         self.body_bytes.extend_from_slice(body);
     }
 
+    pub(crate) fn set_body_owned(&mut self, body: Vec<u8>) {
+        self.body_bytes = body;
+    }
+
     pub(crate) fn set_blob_bytes(&mut self, blob: &[u8]) {
         self.blob_bytes = Some(blob.to_vec());
     }
@@ -395,5 +399,30 @@ impl MockSampleLease {
 impl Drop for MockSampleLease {
     fn drop(&mut self) {
         self.channel.active_leases.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owned_body_retains_allocation_and_discard_releases_writer() {
+        let channel = MockChannel::<robot_msg::markers::JointState>::new();
+        let mut publisher = channel.publisher();
+        let mut writer = publisher.mock_loan(1024).unwrap();
+        for value in [1, 2] {
+            let mut body = Vec::with_capacity(128);
+            body.extend_from_slice(&[value; 16]);
+            let allocation = (body.as_ptr(), body.capacity());
+            writer.set_body_owned(body);
+            assert_eq!(
+                (writer.body_bytes.as_ptr(), writer.body_bytes.capacity()),
+                allocation
+            );
+            assert_eq!(writer.body_bytes, [value; 16]);
+        }
+        drop(writer);
+        assert_eq!((channel.active_writers(), channel.publishes()), (0, 0));
     }
 }
