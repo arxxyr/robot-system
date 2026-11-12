@@ -3048,6 +3048,7 @@ mod tests {
                     "--exact",
                     "tests::late_real_snapshot_failure_cannot_make_empty_executor_exit_clean",
                     "--nocapture",
+                    "--test-threads=1",
                 ])
                 .env(CHILD, "1")
                 .stdout(log.try_clone().unwrap())
@@ -3149,7 +3150,8 @@ mod tests {
         assert_eq!(metrics.snapshot_publish_errors(), 1);
         assert!(!executor_exit_clean(original.as_ref(), Some(&metrics)));
         assert!(!executor_exit_clean(original.as_ref(), None));
-        eprintln!("late_snapshot_real_join_verified");
+        // 单线程 libtest 的测试名前缀未换行；证据标记必须独占新行。
+        eprintln!("\nlate_snapshot_real_join_verified");
         std::process::exit(0);
     }
 

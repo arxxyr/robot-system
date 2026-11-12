@@ -1,11 +1,10 @@
 //! 真实 tick / 工作线程、控制权及 raw adapter 的离线交叉验证；串口使用内存回包。
 
 use super::*;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
     atomic::{AtomicBool, AtomicU8},
-    mpsc,
 };
 use std::time::Duration;
 
@@ -36,7 +35,36 @@ const ARMS: [u8; 6] = [1, 2, 3, 4, 5, 6];
 const WHEELS: [u8; 3] = [8, 9, 7];
 const ANCHOR: [u16; 6] = [2010, 2020, 2030, 2040, 2050, 2060];
 
-type Exchanges = Arc<Mutex<VecDeque<(Vec<u8>, Vec<u8>)>>>;
+type Exchanges = Arc<Mutex<ScriptedExchanges>>;
+
+/// 在RT启动前初始化内存串口的缓冲容量及内部锁。
+fn prepared_mock_transport() -> (MockTransport, MockHandle) {
+    let (mut inner, handle) = MockTransport::new();
+    // 完整场景的累计TX超过默认256字节；启动前扩容并清空，RT内不再扩容。
+    inner.write_all(&[0; 4096]).unwrap();
+    let _ = handle.drain_tx();
+    handle.push_rx(&[]);
+    (inner, handle)
+}
+
+#[derive(Default)]
+struct ScriptedExchanges {
+    frames: Vec<(Vec<u8>, Vec<u8>)>,
+    consumed: usize,
+}
+
+impl ScriptedExchanges {
+    fn response(&mut self, request: &[u8]) -> &[u8] {
+        let (expected, response) = self
+            .frames
+            .get(self.consumed)
+            .expect("不得追加未安排的写入、普通读或重试");
+        assert_eq!(request, expected, "必须保持原请求顺序、ID分组和字节值");
+        self.consumed += 1;
+        // RT线程只借用帧；请求和响应的堆内存由断言线程统一回收。
+        response
+    }
+}
 
 /// 只在匹配的请求写入后投递原帧，避免确认阶段的输入清场提前消费未来响应。
 struct Port {
@@ -49,24 +77,12 @@ struct Port {
     clock: Arc<MockClock>,
 }
 
-impl Port {
-    fn response(&self, request: &[u8]) -> Vec<u8> {
-        let (expected, response) = self
-            .exchanges
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("不得追加未安排的写入、普通读或重试");
-        assert_eq!(request, expected, "必须保持原请求顺序、ID分组和字节值");
-        response
-    }
-}
-
 impl SerialTransport for Port {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), FeetechError> {
-        let response = self.response(buf);
+        let mut exchanges = self.exchanges.lock().unwrap();
+        let response = exchanges.response(buf);
         self.inner.write_all(buf)?;
-        self.handle.push_rx(&response);
+        self.handle.push_rx(response);
         let address = self.estop_after_request.load(Ordering::Acquire);
         if address != 0 && buf.get(4..6) == Some([0x82, address].as_slice()) {
             self.estop_after_request.store(0, Ordering::Release);
@@ -80,9 +96,10 @@ impl SerialTransport for Port {
         buf: &[u8],
         deadline: SourceWriteDeadline<'_>,
     ) -> Result<(), FeetechError> {
-        let response = self.response(buf);
+        let mut exchanges = self.exchanges.lock().unwrap();
+        let response = exchanges.response(buf);
         self.inner.write_all_until(buf, deadline)?;
-        self.handle.push_rx(&response);
+        self.handle.push_rx(response);
         if self.expire_after_write.swap(false, Ordering::AcqRel) {
             // 首个GV已完整提交；第二帧必须由原bus/probe截止检查拒绝。
             self.clock.set(deadline.source_deadline().as_mono_raw_ns());
@@ -202,10 +219,10 @@ impl Fixture {
         let ctrl = Arc::new(SerialIoCtrlInner::new_serial(test_authority(true)));
         let probe = Arc::new(SerialPreemptProbe::new(clock.clone(), ctrl.clone()));
         let diag = Arc::new(SerialDiagRing::new());
-        let exchanges = Arc::new(Mutex::new(VecDeque::new()));
+        let exchanges = Arc::new(Mutex::new(ScriptedExchanges::default()));
         let expire_after_write = Arc::new(AtomicBool::new(false));
         let estop_after_request = Arc::new(AtomicU8::new(0));
-        let (inner, handle) = MockTransport::new();
+        let (inner, handle) = prepared_mock_transport();
         let bus = FeetechBus::new(
             Port {
                 inner,
@@ -273,7 +290,8 @@ impl Fixture {
         self.exchanges
             .lock()
             .unwrap()
-            .push_back((request, response));
+            .frames
+            .push((request, response));
     }
 
     fn read(&self, id: u8, address: u8, response: &[u8]) {
@@ -335,10 +353,14 @@ impl Fixture {
     }
 
     fn assert_consumed(&self) {
-        assert!(
-            self.exchanges.lock().unwrap().is_empty(),
+        let mut exchanges = self.exchanges.lock().unwrap();
+        assert_eq!(
+            exchanges.consumed,
+            exchanges.frames.len(),
             "预定调用必须完整执行"
         );
+        exchanges.frames.clear();
+        exchanges.consumed = 0;
     }
 
     fn enqueue_boot(&self) {
@@ -561,9 +583,28 @@ fn raw_zero_observation_fault_or_estop_uses_original_full_bus_convergence() {
 /// 有界超时仅防测试挂死，测试结果依据握手和快照，不测墙钟调度速度。
 struct WorkerClock {
     inner: Arc<MockClock>,
-    parked: mpsc::SyncSender<Deadline>,
-    release: Mutex<mpsc::Receiver<()>>,
+    gate: Arc<WorkerGate>,
     stop: Arc<AtomicBool>,
+}
+
+/// 条件变量和状态在启动前构造，避免阻塞通道在RT线程懒分配上下文。
+#[derive(Default)]
+struct WorkerGate {
+    state: Mutex<WorkerGateState>,
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct WorkerGateState {
+    parked: Option<Deadline>,
+    released: bool,
+}
+
+impl WorkerGate {
+    fn release(&self) {
+        self.state.lock().unwrap().released = true;
+        self.changed.notify_all();
+    }
 }
 
 impl RobotClock for WorkerClock {
@@ -572,17 +613,20 @@ impl RobotClock for WorkerClock {
     }
 
     fn sleep_until(&self, deadline: Deadline) {
-        if self.parked.send(deadline).is_err()
-            || self
-                .release
-                .lock()
-                .unwrap()
-                .recv_timeout(Duration::from_secs(10))
-                .is_err()
-        {
+        let mut state = self.gate.state.lock().unwrap();
+        state.parked = Some(deadline);
+        self.gate.changed.notify_all();
+        let (mut state, _) = self
+            .gate
+            .changed
+            .wait_timeout_while(state, Duration::from_secs(10), |state| !state.released)
+            .unwrap();
+        if !state.released {
             self.stop.store(true, Ordering::Release);
             return;
         }
+        state.released = false;
+        drop(state);
         self.inner.sleep_until(deadline);
     }
 
@@ -594,8 +638,7 @@ impl RobotClock for WorkerClock {
 /// 测试断言 panic 时也请求退出并唤醒周期门，避免遗留串口工作线程。
 struct Worker {
     handle: Option<SerialIoThreadHandle>,
-    release: mpsc::SyncSender<()>,
-    parked: mpsc::Receiver<Deadline>,
+    gate: Arc<WorkerGate>,
     next_deadline: Deadline,
     snapshot: RtSnapshotReader<RtSnapshot>,
     commands: robot_transport::LatestCommandWriter<JointCommandBuf>,
@@ -605,12 +648,13 @@ struct Worker {
 impl Worker {
     fn spawn(fixture: &mut Fixture) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
-        let (parked_tx, parked) = mpsc::sync_channel(1);
-        let (release, release_rx) = mpsc::sync_channel(1);
+        let gate = Arc::new(WorkerGate::default());
+        // pthread实现可能懒分配底层对象，首轮锁定和通知必须在RT启动前完成。
+        drop(gate.state.lock().unwrap());
+        gate.changed.notify_all();
         let clock = Arc::new(WorkerClock {
             inner: fixture.clock.clone(),
-            parked: parked_tx,
-            release: Mutex::new(release_rx),
+            gate: gate.clone(),
             stop: stop.clone(),
         });
         let boot = Arc::new(crate::boot_supervisor::BootShared::new(clock.now()));
@@ -633,8 +677,7 @@ impl Worker {
         let mut worker = Self {
             metrics: handle.metrics().clone(),
             handle: Some(handle),
-            release,
-            parked,
+            gate,
             next_deadline: Deadline(fixture.clock.now()),
             snapshot,
             commands,
@@ -649,16 +692,24 @@ impl Worker {
     }
 
     fn await_parked(&mut self) {
-        self.next_deadline = self
+        let state = self.gate.state.lock().unwrap();
+        let (mut state, _) = self
+            .gate
+            .changed
+            .wait_timeout_while(state, Duration::from_secs(10), |state| {
+                state.parked.is_none()
+            })
+            .unwrap();
+        self.next_deadline = state
             .parked
-            .recv_timeout(Duration::from_secs(10))
+            .take()
             .expect("真实工作线程必须到达下一个周期门");
     }
 
     fn step(&mut self) -> RtSnapshot {
         let expected_seq = self.snapshot.load().tick_seq + 1;
         let expected_deadline = self.next_deadline;
-        self.release.send(()).unwrap();
+        self.gate.release();
         // 原 loop 在发布快照之后才进入下一次 sleep，因此握手也确认发布已完成。
         self.await_parked();
         let snapshot = self.snapshot.load();
@@ -669,7 +720,7 @@ impl Worker {
 
     fn finish(&mut self) {
         self.handle.as_ref().unwrap().request_stop();
-        self.release.try_send(()).unwrap();
+        self.gate.release();
         let handle = self.handle.take().unwrap();
         let exit = handle.join().unwrap();
         assert!(!exit.has_pending_enable());
@@ -680,7 +731,7 @@ impl Drop for Worker {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.request_stop();
-            let _ = self.release.try_send(());
+            self.gate.release();
             // 异常清理不覆盖最初的失败；正常路径由 finish 检查退出结果。
             let _ = handle.join();
         }

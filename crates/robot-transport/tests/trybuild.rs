@@ -24,7 +24,12 @@ fn compile_failures() {
         // Cargo 1.100 会为其未使用条目报清单警告。仅在隔离子进程解除汇总拒绝，
         // 父进程继续拒绝其它警告；正式 workspace 的编译及 Clippy 门禁不变。
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "compile_failures", "--nocapture"])
+            .args([
+                "--exact",
+                "compile_failures",
+                "--nocapture",
+                "--test-threads=1",
+            ])
             .env(CHILD, "1")
             .env("CARGO_BUILD_WARNINGS", "warn")
             .env("CARGO_TERM_COLOR", "never")
@@ -85,5 +90,5 @@ fn compile_failures() {
     t.compile_fail("tests/ui/snapshot_dynamic_words_rejected.rs");
     // trybuild 在析构时才真正运行，必须在成功完成之后发布标记。
     drop(t);
-    println!("{DONE}");
+    println!("\n{DONE}");
 }

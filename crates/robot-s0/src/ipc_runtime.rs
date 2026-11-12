@@ -1771,7 +1771,7 @@ mod owned_tick_tests {
         let log = std::fs::File::create(&path).unwrap();
         let exact = format!("ipc_runtime::owned_tick_tests::{name}");
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", &exact, "--nocapture"])
+            .args(["--exact", &exact, "--nocapture", "--test-threads=1"])
             .env(CHILD, name)
             .env("TMPDIR", directory.path())
             .stdout(log.try_clone().unwrap())
@@ -1809,9 +1809,10 @@ mod owned_tick_tests {
         );
         true
     }
+    // stdout/stderr 合并时，先换行隔开单线程 libtest 的测试名前缀。
     macro_rules! case {($name:ident,$body:block)=>{
         #[test] fn $name(){let name=stringify!($name);if supervised(name){return;} $body
-            eprintln!("owned_tick_verified={name}");std::process::exit(0);
+            eprintln!("\nowned_tick_verified={name}");std::process::exit(0);
         }
     };}
 

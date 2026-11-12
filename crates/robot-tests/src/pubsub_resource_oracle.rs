@@ -165,7 +165,10 @@ mod tests {
     fn empty_nodes_count_and_other_process_nodes_do_not_interfere() {
         const CHILD: &str = "ROBOT_TEST_NODE_ORACLE_CHILD";
         if std::env::var_os(CHILD).is_some() {
-            println!("node_oracle_id={}", UniqueSystemId::new().unwrap().value());
+            println!(
+                "\nnode_oracle_id={}",
+                UniqueSystemId::new().unwrap().value()
+            );
             return;
         }
         // 让另一个真实进程通过上游 API 生成身份，不伪造 Node ID 位布局。
@@ -174,6 +177,7 @@ mod tests {
                 "--exact",
                 "resource_oracle::tests::empty_nodes_count_and_other_process_nodes_do_not_interfere",
                 "--nocapture",
+                "--test-threads=1",
             ])
             .env(CHILD, "1")
             .output()
