@@ -9,13 +9,11 @@
 //! 真向 iceoryx2 申请 shm**，而是：
 //!
 //! 1. `loan(size)` 只构造 writer，记录 `max_sample_size` 作为 publish 上限。
-//! 2. `publish()` 时按 §2.2 wire 格式合成完整字节 → 检查 ≤ `max_sample_size`
-//!    → 调 `publisher.loan_slice_uninit(exact_size)` → `write_from_slice` 拷
-//!    一次 → `send()`。
+//! 2. `publish()` 时生成帧头、核对完整长度 → 检查 ≤ `max_sample_size`
+//!    → 调 `publisher.loan_slice_uninit(exact_size)` → 分段拷入 → `send()`。
 //!
-//! 代价：publish 时一次内存到 shm 的拷贝（`write_from_slice`）。Step 5 MVP
-//! 可接受；Step 9+ 性能调优时再评估"直接写 uninit slice + 预留 header"的
-//! 零拷贝路径。
+//! 不另建完整 wire 数组。主发送成功后，原有分段缓冲移交观测队列；镜像
+//! 线程自行写入独立 SHM，不持有主 sample，也不在主发布路径等待镜像。
 //!
 //! ### Borrow 语义
 //!
@@ -25,6 +23,7 @@
 //! 制但我们借此保证 Publisher trait 的语义统一。
 
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 
 use flatbuffers::FlatBufferBuilder;
 use iceoryx2::port::publisher::Publisher as IxPublisher;
@@ -38,6 +37,66 @@ use crate::writer::PublishFailure;
 
 /// iceoryx2 payload 统一用 `[u8]`（变长切片）+ `UserHeader = ()`。
 pub(crate) type IxPubSubPublisher = IxPublisher<IxService, [u8], ()>;
+
+/// 已定长的 wire 分段；正文缓冲从 writer 移入，不重新组装整包。
+pub(super) struct WireParts {
+    header_size: [u8; 4],
+    header: Vec<u8>,
+    body: Vec<u8>,
+    blob: Option<Vec<u8>>,
+}
+
+impl WireParts {
+    pub(super) fn len(&self) -> usize {
+        4 + self.header.len() + self.body.len() + self.blob.as_ref().map_or(0, Vec::len)
+    }
+
+    /// 队列持有原缓冲的容量，不能只按有效长度预约内存预算。
+    pub(super) fn retained_bytes(&self) -> usize {
+        4_usize
+            .saturating_add(self.header.capacity())
+            .saturating_add(self.body.capacity())
+            .saturating_add(self.blob.as_ref().map_or(0, Vec::capacity))
+    }
+
+    pub(super) fn write_sample(
+        &self,
+        mut sample: iceoryx2::sample_mut_uninit::SampleMutUninit<IxService, [MaybeUninit<u8>], ()>,
+        prefix: &[u8],
+    ) -> iceoryx2::sample_mut::SampleMut<IxService, [u8], ()> {
+        let mut remaining = sample.payload_mut();
+        for part in [
+            prefix,
+            &self.header_size,
+            &self.header,
+            &self.body,
+            self.blob.as_deref().unwrap_or_default(),
+        ] {
+            let (target, tail) = remaining.split_at_mut(part.len());
+            target.write_copy_of_slice(part);
+            remaining = tail;
+        }
+        assert!(remaining.is_empty(), "SHM loan 长度必须与分段总长一致");
+        // SAFETY: 各段覆盖且初始化了整个 payload；长度不符会在此前退出，
+        // 不会把未初始化的字节交给 send。此函数只用于非 RT 发布线程。
+        unsafe { sample.assume_init() }
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_body(body: Vec<u8>) -> Self {
+        Self {
+            header_size: [0; 4],
+            header: Vec::new(),
+            body,
+            blob: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_body_ptr(&self) -> *const u8 {
+        self.body.as_ptr()
+    }
+}
 
 /// 真后端发布者，按 `BodyMarker` 泛型化。
 ///
@@ -107,8 +166,8 @@ impl<T: BodyMarker> Iceoryx2Publisher<T> {
 
 /// 发布侧的 sample writer。`'a` 来自 `&'a mut Iceoryx2Publisher` 的 borrow。
 ///
-/// body / blob / metadata 先暂存在 `Vec<u8>`，publish 时一次性合成并拷入
-/// iceoryx2 loan。drop without publish = 不调 iceoryx2（buffer 丢弃即可）。
+/// body / blob 先暂存在 `Vec<u8>`，publish 时连同帧头分段拷入 iceoryx2
+/// loan。drop without publish = 不调 iceoryx2（buffer 丢弃即可）。
 pub struct Iceoryx2SampleWriter<'a> {
     publisher: &'a mut IxPubSubPublisher,
     observer: &'a super::observer::ObserverDispatcher,
@@ -199,9 +258,9 @@ impl Iceoryx2SampleWriter<'_> {
                 "iceoryx2 loan_slice_uninit: {e:?}"
             )))
         })?;
-        let sample = sample.write_from_slice(&wire);
+        let sample = wire.write_sample(sample, &[]);
         let recipients = sample.send().map_err(classify_send_error)?;
-        // 主发送已成功；这里只 move owned wire + try_send，不做镜像 IPC 或等待。
+        // 主发送已成功；这里只移交分段缓冲并 try_send，不做镜像 IPC 或等待。
         self.observer.enqueue(wire);
         self.consumed = true;
         Ok(recipients)
@@ -212,7 +271,7 @@ impl Iceoryx2SampleWriter<'_> {
     /// `memory/flatc_25_pitfalls.md` 坑 4）。重复实现而非抽公用是因为 mock
     /// 内部 `schema_id` 字段绑定、本路径 `schema_version` 字段绑定；Step 5
     /// 之后若抽公用可考虑 `wire::encode` 独立 mod。
-    fn build_sample(&self) -> Result<Vec<u8>, TransportError> {
+    fn build_sample(&mut self) -> Result<WireParts, TransportError> {
         const PLACEHOLDER_NONZERO: u32 = 0x0101_0101;
 
         let body_size = u32::try_from(self.body_bytes.len())
@@ -282,16 +341,12 @@ impl Iceoryx2SampleWriter<'_> {
                 real.len()
             )));
         }
-        let mut out = Vec::with_capacity(
-            4 + real.len() + self.body_bytes.len() + self.blob_bytes.as_ref().map_or(0, Vec::len),
-        );
-        out.extend_from_slice(&h.to_le_bytes());
-        out.extend_from_slice(&real);
-        out.extend_from_slice(&self.body_bytes);
-        if let Some(b) = &self.blob_bytes {
-            out.extend_from_slice(b);
-        }
-        Ok(out)
+        Ok(WireParts {
+            header_size: h.to_le_bytes(),
+            header: real,
+            body: core::mem::take(&mut self.body_bytes),
+            blob: self.blob_bytes.take(),
+        })
     }
 }
 
@@ -333,6 +388,98 @@ mod publish_failure_tests {
     use iceoryx2::port::update_connections::ConnectionFailure;
     use iceoryx2::port::{LoanError, SendError};
     use iceoryx2_cal::zero_copy_connection::ZeroCopyCreationError;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn segmented_wire_matches_existing_mock_encoding_and_retains_body() {
+        use crate::traits::Publisher;
+        use iceoryx2::prelude::*;
+        use robot_msg::build_helpers::{build_heartbeat, build_joint_command, build_joint_state};
+        use robot_msg::markers;
+        use robot_msg::msg::{ControlMode, StaleAction};
+
+        fn check<T: BodyMarker>(body: &[u8]) {
+            let node = NodeBuilder::new().create::<ipc::Service>().unwrap();
+            let topic = format!(
+                "/test/segmented_wire/{}/{}",
+                std::process::id(),
+                T::SCHEMA_ID
+            );
+            let mut publisher = crate::iceoryx2::publisher::<T>(
+                &node,
+                &topic,
+                crate::iceoryx2::TopicClass::SafetyEvent,
+            )
+            .unwrap();
+            let mock = crate::mock::MockChannel::<T>::new();
+            let mut reference_publisher = mock.publisher();
+            let mut reference_reader = mock.subscriber();
+            for blob in [None, Some(Vec::new()), Some(vec![3; 19])] {
+                for (stamp, source, seq) in [(0, 0, 0), (79, 2, 13), (u64::MAX, u32::MAX, u64::MAX)]
+                {
+                    let mut reference = reference_publisher.loan(4096).unwrap();
+                    reference.set_body_bytes(body);
+                    reference.set_stamp_ns(stamp);
+                    reference.set_source_id(source);
+                    reference.set_seq(seq);
+                    if let Some(blob) = &blob {
+                        reference.set_blob_bytes(blob);
+                    }
+                    reference.publish().unwrap();
+                    let expected = reference_reader.mock_latest().unwrap().unwrap();
+
+                    let mut writer = Iceoryx2SampleWriter::new_disjoint(
+                        &mut publisher.inner,
+                        &publisher.observer,
+                        T::SCHEMA_ID,
+                        4096,
+                    );
+                    let mut owned_body = Vec::with_capacity(body.len() + 128);
+                    owned_body.extend_from_slice(body);
+                    let allocation = (owned_body.as_ptr(), owned_body.capacity());
+                    writer.set_body_owned(owned_body);
+                    writer.stamp_ns = stamp;
+                    writer.source_id = source;
+                    writer.seq = seq;
+                    if let Some(blob) = &blob {
+                        writer.set_blob_bytes(blob);
+                    }
+                    let wire = writer.build_sample().unwrap();
+                    drop(writer);
+                    assert_eq!((wire.body.as_ptr(), wire.body.capacity()), allocation);
+                    assert_eq!(wire.len(), expected.bytes().len());
+                    for prefix in [&[][..], &[0xAB; 48][..]] {
+                        let sample = publisher
+                            .inner
+                            .loan_slice_uninit(prefix.len() + wire.len())
+                            .unwrap();
+                        let sample = wire.write_sample(sample, prefix);
+                        assert_eq!(&sample.payload()[..prefix.len()], prefix);
+                        assert_eq!(&sample.payload()[prefix.len()..], expected.bytes());
+                    }
+                }
+            }
+        }
+
+        check::<markers::JointState>(&build_joint_state(
+            42,
+            79,
+            &[0.0, -1.0, f64::NAN],
+            &[1.0, 2.0, 3.0],
+            &[],
+            "arm",
+        ));
+        check::<markers::JointCommand>(&build_joint_command(
+            42,
+            ControlMode::Position,
+            &[0.0, -1.0],
+            99,
+            2,
+            StaleAction::Hold,
+            7,
+        ));
+        check::<markers::Heartbeat>(&build_heartbeat(2, 13, 50.0, 79));
+    }
 
     #[test]
     fn owned_body_retains_allocation_and_discard_does_not_publish() {

@@ -1,11 +1,11 @@
-//! 独立观测镜像：主发布成功后仅把 owned wire 放入有界队列。
+//! 独立观测镜像：主发布成功后仅把自有 wire 分段放入有界队列。
 //!
 //! 镜像节点、连接、发送全部由普通线程拥有；不借用主 sample，不改变主服务
 //! QoS、发送结果或 recipients。镜像失败只影响观测计数。Drop 请求停止并真实
 //! join；该收尾不进入 publish 路径。50 ms 是 SDK 创建预算，不是任意内核故障
 //! 下的绝对线程退出保证。
 //! publisher 构造与 publish 仅用于非 RT 线程（队列含 Arc/mpsc 操作）。
-//! owned wire 全进程预算 32 MiB；镜像 SHM 单独按固定八个样本估算预约，
+//! 分段缓冲按容量计入全进程 32 MiB 预算；镜像 SHM 单独按固定八个样本估算预约，
 //! 活跃 worker 的预约总量最多 512 MiB。该估算含头/管理余量，不是 OS 映射
 //! 字节的精确计量；接收者仍持有的旧 loan 可以延后底层映射释放。
 
@@ -28,7 +28,7 @@ use iceoryx2::service::attribute::AttributeSet;
 use iceoryx2::service::ipc::Service as IxService;
 use robot_msg::markers::BodyMarker;
 
-use super::publisher::IxPubSubPublisher;
+use super::publisher::{IxPubSubPublisher, WireParts};
 use super::subscriber::{Iceoryx2SampleLease, IxPubSubSubscriber};
 use super::{schema_attribute_verifier, topic_to_service_name};
 use crate::{MessageView, SampleLease, TransportError};
@@ -366,7 +366,7 @@ fn reserve(counter: &AtomicUsize, size: usize, limit: usize) -> bool {
 }
 
 struct QueuedFrame {
-    wire: Vec<u8>,
+    wire: WireParts,
     seq: u64,
     counters: Arc<Counters>,
     delivered: bool,
@@ -379,8 +379,8 @@ impl Drop for QueuedFrame {
         }
         self.counters
             .pending_bytes
-            .fetch_sub(self.wire.len(), Ordering::AcqRel);
-        QUEUED_BYTES.fetch_sub(self.wire.len(), Ordering::AcqRel);
+            .fetch_sub(self.wire.retained_bytes(), Ordering::AcqRel);
+        QUEUED_BYTES.fetch_sub(self.wire.retained_bytes(), Ordering::AcqRel);
         self.counters.pending_frames.fetch_sub(1, Ordering::AcqRel);
     }
 }
@@ -459,7 +459,7 @@ impl ObserverDispatcher {
         ObserverMonitor(self.counters.clone())
     }
 
-    pub(crate) fn enqueue(&self, wire: Vec<u8>) {
+    pub(super) fn enqueue(&self, wire: WireParts) {
         let Some(seq) = self
             .next_seq
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
@@ -473,7 +473,7 @@ impl ObserverDispatcher {
             self.counters.dropped_frames.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        let size = wire.len();
+        let size = wire.retained_bytes();
         if !reserve(&QUEUED_BYTES, size, GLOBAL_BYTE_LIMIT) {
             self.counters.dropped_frames.fetch_add(1, Ordering::Relaxed);
             return;
@@ -659,14 +659,9 @@ fn send_frame(
     prefix[24..32].copy_from_slice(&frame.seq.to_le_bytes());
     prefix[32..40].copy_from_slice(&dropped.to_le_bytes());
     prefix[40..48].copy_from_slice(&(frame.wire.len() as u64).to_le_bytes());
-    sample
-        .write_from_fn(|index| {
-            if index < PREFIX_SIZE {
-                prefix[index]
-            } else {
-                frame.wire[index - PREFIX_SIZE]
-            }
-        })
+    frame
+        .wire
+        .write_sample(sample, &prefix)
         .send()
         .map(|_| ())
         .map_err(|_| ())
@@ -690,6 +685,10 @@ mod tests {
             },
             receiver,
         )
+    }
+
+    fn test_wire(size: usize) -> WireParts {
+        WireParts::test_body(vec![1; size - 4])
     }
 
     #[test]
@@ -737,7 +736,7 @@ mod tests {
     fn queue_full_and_disconnected_release_all_byte_reservations() {
         let (d, r) = unserved(1024);
         for _ in 0..9 {
-            d.enqueue(vec![1; 16]);
+            d.enqueue(test_wire(16));
         }
         let s = d.monitor().snapshot();
         assert_eq!(
@@ -750,7 +749,7 @@ mod tests {
             (s.pending_frames, s.pending_bytes, s.dropped_frames),
             (0, 0, 9)
         );
-        d.enqueue(vec![1; 16]);
+        d.enqueue(test_wire(16));
         let s = d.monitor().snapshot();
         assert_eq!(
             (s.pending_frames, s.pending_bytes, s.dropped_frames),
@@ -761,8 +760,8 @@ mod tests {
     #[test]
     fn byte_limit_is_independent_of_queue_count_and_sequence_records_gap() {
         let (d, r) = unserved(16);
-        d.enqueue(vec![1; 17]);
-        d.enqueue(vec![1; 16]);
+        d.enqueue(test_wire(17));
+        d.enqueue(test_wire(16));
         let f = r.try_recv().unwrap();
         assert_eq!(f.seq, 2);
         assert_eq!(d.monitor().snapshot().dropped_frames, 1);
@@ -774,7 +773,7 @@ mod tests {
     #[test]
     fn panic_unwind_releases_owned_frame_budget() {
         let (d, r) = unserved(1024);
-        d.enqueue(vec![1; 16]);
+        d.enqueue(test_wire(16));
         let f = r.try_recv().unwrap();
         let result = std::panic::catch_unwind(move || {
             let _held = f;
@@ -803,7 +802,7 @@ mod tests {
             .create()
             .unwrap();
         let (d, r) = unserved(1024);
-        d.enqueue(vec![0; 100]);
+        d.enqueue(test_wire(100));
         let frame = r.try_recv().unwrap();
         assert!(send_frame(&publisher, &frame, [1; 16], 0).is_err());
         drop(frame);
@@ -821,5 +820,31 @@ mod tests {
         bytes[40..48].copy_from_slice(&1_u64.to_le_bytes());
         assert_eq!(decode_prefix(&bytes).unwrap().observer_seq, 1);
         assert!(observer_topic("/_robot_observe/v1/r/a").is_err());
+    }
+
+    #[test]
+    fn spare_capacity_is_budgeted_and_released_without_copying_body() {
+        let (d, r) = unserved(1024);
+        let mut body = Vec::with_capacity(1024);
+        body.push(7);
+        d.enqueue(WireParts::test_body(body));
+        assert!(r.try_recv().is_err(), "有效载荷虽小，实际持有容量已超预算");
+        assert_eq!(d.monitor().snapshot().pending_bytes, 0);
+        assert_eq!(d.monitor().snapshot().dropped_frames, 1);
+
+        let mut body = Vec::with_capacity(128);
+        body.push(9);
+        let pointer = body.as_ptr();
+        let reserved = 4 + body.capacity();
+        d.enqueue(WireParts::test_body(body));
+        let frame = r.try_recv().unwrap();
+        assert_eq!(frame.wire.len(), 5);
+        assert_eq!(frame.wire.retained_bytes(), reserved);
+        assert_eq!(d.monitor().snapshot().pending_bytes, reserved);
+        // 移交后地址不变，队列没有复制正文。
+        assert_eq!(frame.wire.test_body_ptr(), pointer);
+        drop(frame);
+        assert_eq!(d.monitor().snapshot().pending_bytes, 0);
+        assert_eq!(d.monitor().snapshot().pending_frames, 0);
     }
 }
