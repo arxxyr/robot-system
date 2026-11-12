@@ -50,5 +50,6 @@ Rust 机器人运行时；S0/S1/S2、iceoryx2 与 FlatBuffers 沿既有设计。
 ## Git 收尾
 
 - 长期只留 `master`、`dev`；开发使用 `feat/*` 或 `fix/*`，保护 `master`。提交为 emoji + Conventional Commits 中文说明，不带 scope 括号或 Co-Authored-By。
-- 已授权开发通过适用检查后，成果合入 `dev` 和 `master`，同步 `origin`、`github`，核对远程 SHA 后回收已合并临时分支；不强推覆盖他人提交。
+- 日常开发通过适用检查后，仅合入并推送 `dev`，同步 `origin`、`github`；`master` 只在正式发布时更新，并在已验证的发布提交创建对应 SemVer 标签。发布前先在 `dev` 完成验证与打包，包内提交、`master` 发布提交与标签必须一致。
+- 核对两个远程的对应分支和发布标签 SHA 后，回收本次已合并临时分支；不强推覆盖他人提交。
 - 保留无关修改和未完成工作树；分支回收不能丢草稿或将未验证内容合入。Git 完成不代表硬件验收完成。

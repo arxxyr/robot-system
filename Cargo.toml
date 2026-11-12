@@ -33,7 +33,7 @@ exclude = [
 ]
 
 [workspace.package]
-version      = "0.1.2"
+version      = "0.0.1"
 edition      = "2024"
 # 不写 rust-version：随 nightly 自动走最新；需要复现特定日期构建时用
 # rust-toolchain.toml 的 `channel = "nightly-YYYY-MM-DD"`，而非 rust-version。

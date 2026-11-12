@@ -1,12 +1,7 @@
 # CI 严格串行（`docs/10_verification.md` §10.2），全程 nightly。
 #
-# 矩阵：ubuntu-latest (x86_64) + macos-latest (arm64)。两平台都跑前 5 步，
-# 因为 Step 0–5 的交付目标是 "macOS 可跑"（详 docs/00_design.md §11.3
-# 构建假设）。
-# Step 6+ 的 Linux-only 工作（SCHED_FIFO / mlockall / sd_notify）用后续独立
-# workflow 或 matrix 过滤，本文件不先配。
-# robot-viz 的跨平台纯软件门独立运行；旧 test job 的根 Clippy 平台限制
-# 仍保留，不让该既有问题阻止本轮观测桥检查。
+# 完整 workspace 包含 S0 的 Linux API，仅在 Ubuntu 验证；
+# robot-viz 与 transport 的纯软件门保留 Ubuntu/macOS 两平台。
 #
 # sccache：.cargo/config.toml 默认 rustc-wrapper = "sccache"，CI 必须装，
 # 否则第一次 cargo 命令直接失败。用官方 action 注入。
@@ -65,9 +60,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+
+      - name: 安装 Linux 真串口构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libudev-dev pkg-config
 
       - name: Install Rust toolchain (from rust-toolchain.toml)
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -125,7 +125,7 @@ jobs:
     name: robot-viz software (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    # 无 needs: test；旧根 job 的 Linux API 限制仍是独立未解决问题。
+    # 观测工具的跨平台检查独立于完整 workspace 的 Linux 检查。
     strategy:
       fail-fast: false
       matrix:
