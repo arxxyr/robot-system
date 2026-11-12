@@ -1,10 +1,11 @@
-# 09 · 通用机器人框架设计（v0.1.2 冻结版）
+# 00 · 通用机器人框架设计（v0.1.2 冻结版）
 
-> **代号**：`robot-core`（暂定，后续可改）
+> **项目**：`robot-system`；`robot-core`是定义统一契约的crate。
 > **目标**：为多种机器人（XLeRobot、Piper、移动底盘、未来四足/人形）提供统一的 Rust 内核。S0/S1/S2 三层分离、iceoryx2 + FlatBuffers 传输、RPC 作为对外边界。
 > **适用平台**：Linux x86_64 / Linux arm64（Jetson）；Windows 只做 S2 客户端。
-> **状态**：v0.1.2 **已冻结**。合并了 v0.1.1 + v0.1.2 修订 + 评审补充 3 条（`SampleWriter` 生命周期、`frame_header_size ≤ 4096`、RtSnapshot 内存序）。进入 v0.2 实现阶段，架构语义不再改动。
-> **变更历程**：v0 → v0.1（附录 C）→ v0.1.1（附录 D）→ v0.1.2（附录 E）。历史快照见 [`archive/framework_history/09_robot_framework_v0.md`](../archive/framework_history/09_robot_framework_v0.md) 与 [`archive/framework_history/11_robot_framework_v0_1_2.md`](../archive/framework_history/11_robot_framework_v0_1_2.md)。
+> **状态**：设计版本v0.1.2 **已冻结**；它不是当前软件发布版本0.0.1。合并了 v0.1.1 + v0.1.2 修订 + 评审补充 3 条（`SampleWriter` 生命周期、`frame_header_size ≤ 4096`、RtSnapshot 内存序）。实际完成范围与下一步见 [当前状态](s0_hal_status.md)。
+> **变更历程**：v0 → v0.1（附录 C）→ v0.1.1（附录 D）→ v0.1.2（附录 E）。旧快照已退出工作树，按Git历史查阅，不恢复archive目录。
+> **阅读边界**：正文的接口、目标和阶段编号属于冻结设计；未实现组件、性能目标及原阶段计划不能当作当前能力。当前首个后端为XLeRobot，SerialRT和RGB路径已落地；本次整理只对齐名称、入口和已登记的构建方式，不新增设计。
 
 ---
 
@@ -610,7 +611,7 @@ robot-rpc/           # 对外 RPC 网关
 
 robot-viz/           # Rerun / Foxglove 桥
 robot-recorder/      # record/replay 独立进程
-robot-cli/           # robotctl 工具
+robot-cli/           # robot-ctl 工具
 robot-tests/         # 端到端冒烟 + soak + crash/restart
 ```
 
@@ -915,7 +916,7 @@ message ReloadCalibrationCommand  { CommandMeta meta = 1; }
 message SetPolicyCommand          { CommandMeta meta = 1; string policy_name = 2; bytes policy_config = 3; }
 ```
 
-gateway 把 `CommandMeta.timeout_ms` 转为本机 monotonic deadline（`now() + timeout_ms * 1_000_000`），写入 iceoryx2 request header。权限校验由 gateway 先把 `AuthContext.token` / 未来 mTLS fingerprint 解析为 role，再按 RPC 类型 × role 查 `configs/rpc_roles.toml`；S0 端不做授权决策。
+gateway 把 `CommandMeta.timeout_ms` 转为本机 monotonic deadline（`now() + timeout_ms * 1_000_000`），写入 iceoryx2 request header。权限校验由 gateway 先把 `AuthContext.token` / 未来 mTLS fingerprint 解析为 role，再按 RPC 类型 × role 查 `configs/rpc-roles.toml`；S0 端不做授权决策。
 
 **字段语义消歧**：
 - `CommandMeta.audit_reason`：审计日志用，记录 "谁、为什么调"（human context）。
@@ -966,11 +967,11 @@ capabilities:
     shutdown            (admin)
 ```
 
-role → capabilities 表放 `configs/rpc_roles.toml`。v0.1.2 可接受 fake token，但 AuthContext 字段必须到位；mTLS / OIDC 推到 v0.5+。
+role → capabilities 表放 `configs/rpc-roles.toml`。v0.1.2 可接受 fake token，但 AuthContext 字段必须到位；mTLS / OIDC 推到 v0.5+。
 
 ### 5.5 网关实现
 
-`robot-rpc-gateway`：独立进程，崩了不影响机器人运行。订阅 iceoryx2 只读 topic 做状态聚合；普通 task / policy / config 写接口转成 iceoryx2 request-response 发给 S1；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到 S0 action handler，S1 不参与授权或清 latch。
+`robot-gateway`：独立进程，崩了不影响机器人运行。订阅 iceoryx2 只读 topic 做状态聚合；普通 task / policy / config 写接口转成 iceoryx2 request-response 发给 S1；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到 S0 action handler，S1 不参与授权或清 latch。
 
 ### 5.6 S2 bridge 两种模式
 
@@ -981,7 +982,7 @@ embedded/local 高性能模式（pyo3 + iceoryx2 直连）：
     默认不对普通 Python 脚本开放（避免 shared memory 权限、库版本、schema 漂移等问题）。
 
 remote/client 模式（默认推荐）：
-    所有脚本、UI、开发工具统一走 robot-rpc-gateway。
+    所有脚本、UI、开发工具统一走 robot-gateway。
     跨机 / 沙箱 / 非 venv 用户、以及普通调试脚本一律走这条路。
 ```
 
@@ -1075,7 +1076,7 @@ WatchdogSec=5s
 ```
 
 ```ini
-# robot-rpc-gateway.service / robot-viz.service / robot-recorder.service
+# robot-gateway.service / robot-viz.service / robot-recorder.service
 [Service]
 Type=notify
 Restart=on-failure
@@ -1159,9 +1160,9 @@ EStop latch 持久化到 /var/lib/robot/<robot_id>/estop_latch：
 
 ### 6.6.3 RPC gateway routing / auth 术语澄清（errata）
 
-§5.2 旧版文字写 "按 RPC 类型 × `AuthContext.role` 查 `configs/rpc_roles.toml`"；§5.5 旧版文字写"写接口转成 iceoryx2 request-response 发给 S1"。这两句会误导 A1 / Phase B 实现，澄清如下：
+§5.2 旧版文字写 "按 RPC 类型 × `AuthContext.role` 查 `configs/rpc-roles.toml`"；§5.5 旧版文字写"写接口转成 iceoryx2 request-response 发给 S1"。这两句会误导 A1 / Phase B 实现，澄清如下：
 
-- `AuthContext` 不携带 `role` 字段。gateway 必须先从 `AuthContext.token` / 未来 mTLS fingerprint 解析出 role，再按 RPC 类型 × role 查 `configs/rpc_roles.toml`；S0 端不做授权决策。
+- `AuthContext` 不携带 `role` 字段。gateway 必须先从 `AuthContext.token` / 未来 mTLS fingerprint 解析出 role，再按 RPC 类型 × role 查 `configs/rpc-roles.toml`；S0 端不做授权决策。
 - 普通 task / policy / config 写接口走 S1 coordinator；`EStop` / `ClearEStop` 等 safety-critical control action 直接落到 S0 action handler，不经 S1。
 - `ClearEStop` 的安全语义仍以 §6.6.1 为准：同一 action handler、同一套 maintainer+ / confirmation / idempotency / `TorqueOffConfirmed` / fsync / audit guard。
 
@@ -1270,7 +1271,7 @@ record 文件头必须保存完整 `ConfigIdentity`；回放时据此校验或�
 
   1. **结构化字段，不拼字符串**：`tracing::info!(motor_id = 6, adapter = "feetech_sts3215", "built adapter")`。禁用 `info!("motor {} failed", id)` 这类 format-arg message 拼接（运行期分配 + 不可机读）。
   2. **错误用 Debug 捕获结构**：`error!(?err, "connect failed")`，保留 `thiserror` 枚举层次；不要 `{err}` 拍扁成 string。
-  3. **格式双模式 + 时间戳双栈**：默认 human（带 ANSI；TTY 自动检测，`NO_COLOR=1` 强关），`ROBOT_LOG_FORMAT=json` 切 JSON Lines（journald / Loki / Elastic）。两种模式的时间戳字段都同时给 **wall clock RFC3339 UTC** + `[+秒.纳秒s]` **monotonic 自进程启动**：前者用于跨机器对齐，后者用于回放算时延（NTP 跳 / 闰秒无感）。
+  3. **格式双模式 + 时间戳双栈**：默认 human（带 ANSI；TTY 自动检测，`NO_COLOR=1` 强关），`ROBOT_LOG_FORMAT=json` 切 JSON Lines（journald / Loki / Elastic）。两种模式的时间戳字段都同时给 **wall clock RFC3339 UTC** + `[+秒.纳秒s]` **日志初始化后的monotonic时长**：起点为日志格式器创建时的`Instant`，不是OS进程启动时刻；前者用于跨机器对齐，后者用于同进程日志时差，不能替代业务`RobotClock`或跨进程共同时基。
   4. **过滤走 `RUST_LOG`**：`tracing-subscriber::EnvFilter` 标准语法。**默认值** `info,robot=debug`（项目 crate 走 `debug`，外部依赖走 `info`）—— 权威实现在 `crates/robot-logging/src/lib.rs::init`，详见 [`docs/logging.md`](logging.md)；改默认值必须三处同步（代码 + logging.md + 本节）。
   5. **bin 自动 init**：bin crate 依赖 `robot-logging` 即装上 subscriber（`#[ctor::ctor]`），不要在 main 里手撸 init。lib crate **只**依赖 `tracing` macros，不依赖 `robot-logging`。
   6. **RT thread 内禁 `tracing::*!`**（呼应 §0 / §4.9 RT 铁律）：哪怕 literal message 也禁用 —— `tracing::Event` 内部仍可能分配字段元数据 + 与 subscriber 打交道。RT 调试期改走 atomic counter / lock-free ring buffer，由 non-RT 线程定期采样 → `tracing::info!`。
@@ -1288,25 +1289,24 @@ record 文件头必须保存完整 `ConfigIdentity`；回放时据此校验或�
 - 核心 crate（`robot-core` / `robot-msg` / `robot-transport` / `robot-s0` / `robot-s1`）默认不依赖 nightly-only `#![feature(...)]`；若确需启用，必须在 crate 顶部注释单独列出并过 review —— 目的是**避免 nightly 升级引入破坏性变更**，不是为了回切 stable。
 - 工具类 crate（`robot-cli` / `robot-viz` / `robot-rpc` / `robot-s2-bridge` / `robot-tests` / `robot-recorder`）可自由使用 nightly feature。
 - S0 / S1 不得依赖 `mimalloc`（§0 Allocator 策略不因 nightly 工具链改变）。
-- Cargo workspace profile：
+- Cargo workspace profile沿已登记实现如下；Cargo不支持per-package `panic`覆盖，权威配置见根`Cargo.toml`：
 
 ```toml
 [profile.release]
 lto = "fat"
 codegen-units = 1
-# 默认保留 unwind，利于 CLI / 工具诊断
-
-# S0 / S1 二进制必须 abort（避免 RT 路径 panic unwind）
-[profile.release.package.robot-s0]
+# 现有workspace release统一abort，S0/S1不展开RT栈。
 panic = "abort"
 
-[profile.release.package.robot-s1]
-panic = "abort"
+# 独立观测工具沿已登记的profile保留unwind。
+[profile.release-tools]
+inherits = "release"
+panic = "unwind"
 ```
 
 - FlatBuffers 通过 `build.rs` 调 `flatc` 生成代码；`flatc` 由 `3rd-party/` vendor，不依赖系统。
 - iceoryx2 走 crates.io；如需本地 patch，`[patch.crates-io]` 指向 vendor 路径。
-- CI 顺序（严格串行，失败即终止；全程仅 nightly）：
+- CI仅由`v`前缀SemVer标签触发，普通分支与PR不触发；实际jobs与参数以 [ci.yml](../.github/workflows/ci.yml) 为准。以下为冻结检查顺序及目标，全程仅nightly：
   1. `cargo fmt --all --check`
   2. `cargo clippy --all --all-targets -- -D warnings`
   3. `cargo test --all`
@@ -1314,11 +1314,13 @@ panic = "abort"
   5. `cargo deny check`
   6. 额外：allocation-guard 测试（release + debug）、FlatBuffers schema 兼容性、1 h soak（夜间 job）、`kill -9 s0` fail-safe 验证（v0.2+）
 - nightly 回归风险缓解：CI 支持 pin 具体 nightly 日期（`rust-toolchain.toml` 写 `channel = "nightly-YYYY-MM-DD"`），周期性手动升级 + 观察；若新日期破坏核心 crate 则原地回滚到上一已验证日期，**不回切 stable**。
-- 二进制发布命名遵照全局 CLAUDE.md §9 模板：`robot-s0-v${version}+${git_sha7}-linux-arm64.tar.gz`，例如 `robot-s0-v0.1.2+abc1234-linux-arm64.tar.gz`。
+- 发布沿 [AGENTS.md](../AGENTS.md) 与 [配置矩阵](../configs/package-matrix.toml)：`robot-system-v${version}+${git_sha7}-${package_id}.tar.gz`。当前软件版本0.0.1、矩阵项`xlerobot-orin-s0`；包内提交、master和新增SemVer标签须一致，旧标签不覆盖。
 
 ---
 
-## 10. 验证与测试（v0.2 开工前必须产出 `docs/10_robot_framework_verification.md`）
+## 10. 验证与测试
+
+当前验证合同和入口见 [10_verification.md](10_verification.md)。下面的指标为设计要求，不表示当前实机已全部达标。
 
 ### 10.1 硬指标
 
@@ -1422,7 +1424,9 @@ robot_id remap
 
 ---
 
-## 11. 演进路线
+## 11. 原设计阶段划分（历史规划）
+
+本节保留冻结时的阶段定义，不作为软件0.0.1的当前完成清单或排期；实际下一步只看 [当前状态](s0_hal_status.md)。
 
 ### 11.1 版本与交付
 
@@ -1522,7 +1526,7 @@ mock S1 command → iceoryx2 → s0_ipc_thread
 | LCM messages | FlatBuffers schema in `robot-msg` | schema 驱动 + 版本化 + 4B size prefix |
 | LCM transport | iceoryx2（机内）+ Zenoh（跨机，v0.6+） | 零拷贝 + `SampleLease<T>` |
 | `.pth` hook | `inventory::submit!` | 编译期静态注册 |
-| `RPCClient` / `RPCServer` | `robot-rpc-gateway` (gRPC) | 对外专用，`CommandMeta` + 强类型 Command |
+| `RPCClient` / `RPCServer` | `robot-gateway` (gRPC) | 对外专用，`CommandMeta` + 强类型 Command |
 | `rerun_bridge` | `robot-viz` | 独立进程，订阅全 topic |
 | Blueprint | 配置 TOML + S0 / S1 启动参数 | 不做声明式 DSL |
 | 进程间通信（dimos 通过 `spawn`） | systemd tree + iceoryx2 | 崩溃隔离 |

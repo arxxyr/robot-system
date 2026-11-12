@@ -3,8 +3,8 @@
 > ⚠️ **源码快照文档（snapshot）**
 > - 本文是上游 `atom01_deploy` commit `d983373` 的**逆向工程笔记**，所有行号引用（`L164-167` 之类）精确到该 commit；
 > - **不是 spec、不是契约**。真 spec / 契约去 [`atom01.md`](atom01.md) §2《训练 / 部署契约》；
-> - **不在上游升版时 in-place 改**。上游动过 → 重新扫一遍 → 在同目录新建 `atom01_inference_node_<newcommit7>.md`，保留本文件作为旧快照；
-> - 迁移完成后本文件可删除，CHANGELOG 里登记"归档 `atom01_inference_node_d983373.md`"即可，不影响 spec。
+> - **正文固定于该提交**。本次0.0.1文档整理不改写上游代码、参数或行号；未来有真实适配需求时再核对目标版本，不自动累积新的快照文档；
+> - ATOM01后端尚未接入；本文件是源码参考，不是测试结果、当前上游状态或本项目实现清单。退出使用时核对引用后删除，不另建归档。
 >
 > 上游代码位置：https://github.com/Roboparty/atom01_deploy.git （commit `d983373`）。
 > 本地仓库位置：`~/repo/robot/atom01_deploy/src/inference/`。

@@ -459,17 +459,8 @@ impl<T: SerialTransport> FeetechBus<T> {
         lease.write(&mut self.transport, &tx[..n])
     }
 
-    // ── by-id hot-path API（Step 7 task 27c follow-up：消除 HashMap String compare）──
-    //
-    // 火焰图（docs/perf/2026-04-24_task27c_feetech_baseline）显示 `sync_write`
-    // 的 hot frame 之一是 `__memcmp_evex_movbe` —— 来自 `motor_id(name)` 查
-    // `HashMap<String, Motor>` 时的 hash + string compare。`FeetechAdapter`
-    // 在 `connect()` 一次性把 `joint_names → joint_ids: Vec<u8>` 缓存后，
-    // hot path 调下面这两个 by-id API，**完全跳过 HashMap lookup**，零
-    // string compare。
-    //
-    // 现有 by-name `sync_read` / `sync_write` API 保留，给 calibration / 离线
-    // 工具用（这些路径不在 hot path）。
+    // 适配器在 connect() 缓存关节 ID；运行期按 ID 读写，避免名称查表。
+    // 按名称访问的接口供校准及离线工具使用。
 
     /// by-id 版 [`sync_read`](FeetechBus::sync_read)：结果按 `ids` 顺序写入
     /// `out`，避免 HashMap 分配 + String hash 计算。

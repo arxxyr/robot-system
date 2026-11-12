@@ -1,1 +1,0 @@
-{"result": "PASS", "candidate_files": 6, "elf_binaries": 2, "calibrations": 4, "cameras": 3, "protected_files": 12, "config_same_path_checks": 2, "installed": false, "hardware_started": false, "manifest": "/home/loosqk/robot-checks/s0-dev-full-20261112/candidate/manifest.json"}

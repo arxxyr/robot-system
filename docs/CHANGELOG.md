@@ -12,6 +12,12 @@
 
 ---
 
+## 2026-11-12 · 0.0.1正式发布基线与验收资料清理
+
+根版本保持`0.0.1`，发布标签采用`v0.0.1+<7位SHA>`；发布包、master与新标签统一绑定最终发布提交，同步origin、github，已有标签保持原提交。沿现有配置矩阵在Orin打包并核对包内清单，不替换已验安装件、不追加实机动作。D15仍为`OPEN/DEFERRED`、`deployable=false`，本轮不扩大已验范围。
+
+按用户要求，`docs/evidence`和`docs/perf`退出Git当前树，不再维护仓库内验收、性能或测试结果资料；原始记录仅留在既有本地或Orin位置，测试源码、CI及仍在使用的夹具保留，当前状态保留必要结论与未闭环边界。逐一核对docs文档，更新现状、命名、工具链说明、日志格式和架构图，保留冻结设计及目标合同语义。发布保留必要的manifest、提交身份及校验信息；删除资料目录不改变历史失败事实或实机保护合同。
+
 ## 2026-11-12 · 相机候选安装及左右启动复验通过
 
 按当次现场确认，沿原入口停止旧实例并完成STOP51，备份换入`3a6d96e`相机候选，再左后右各首次启动观察20秒。两侧均零重启，保持不上扭及Fault/RX/EStop锁存；头部301、左腕101、右腕102帧及现场无自行移动回执通过，原停止检查和清场通过。三服务自启保留，两侧已停止且保留Dirty退出码1，未重启Orin。本次未出现相机失流WARN，恢复分支仍以软件回归为证，不宣称USB根因或长时稳定性解决。仅dev记录结果，master及发布标签不变。
@@ -26,7 +32,7 @@
 
 ## 2026-11-12 · 发布树移出临时验收内容
 
-`.verify`的26,245个文件（592,328,743字节）退出Git跟踪，本地原件逐SHA核对未变，Git历史和Orin冻结工具保留。当前状态所需报告、两次重启原始命令输出及相关日志、首末图共1,357份数据（6,628,702字节）收录到`docs/evidence`；当前链接同步更新，选集明确不含完整RRD、源码或运行包。版本保持0.0.1，最终包与新SemVer标签绑定同一提交，既有标签不覆盖。
+`.verify`的26,245个文件（592,328,743字节）退出Git跟踪，本地原件逐SHA核对未变，Git历史和Orin冻结工具保留。当时将所需报告、两次重启原始命令输出及相关日志、首末图共1,357份数据（6,628,702字节）收录到`docs/evidence`，不含完整RRD、源码或运行包；该历史选集已在后续正式发布清理中移出Git当前树。版本保持0.0.1，最终包与新SemVer标签绑定同一提交，既有标签不覆盖。
 
 ## 2026-11-12 · S0 开机自启实机复验通过
 
@@ -152,7 +158,7 @@ Feetech 混合实例通过 `new_bus2_mixed` 显式构造，复用既有三轮 pr
 
 ReadyHold/HoldCurrent/ZeroCommand 的混合输出使用最近成功读回的位置和三轮零速，反馈需维度匹配、时间不在未来、年龄不超过原200毫秒读预算且臂位置有限；缺失、过期或非法反馈走原整总线停止。该输出使用独立50毫秒预算，不续用过期主动目标。混合实例在任何 I/O 前拒绝旧 `hold_current_position` 辅助调用，避免只保持臂而保留非零轮速；普通实例保持原行为。真实串口绝对截止实现未改，内存传输测试不替代实际线缆时序测量；状态读取也保留既有 raw 速度反馈，不宣称已经换算为实测 SI 单位。参考本地 Orin 源码副本的 `bus2_arm.py`、`bus2_base.py` 与共享连接调用链，保留按寄存器和目标ID分派；不照搬其隐式模式写入、异常吞没或里程计假设。
 
-本轮限软件接口、真实协议编码的 MockTransport 测试及 S0 内部执行验证；实机动作前须另行通知。本轮结果见[验证记录](../.verify/s0_bus2_mixed_2026-10-23_r1/summary.json)，不替代现场固件、三轮联动或真实停止验收；D15 `OPEN/DEFERRED`、`deployable=false` 保持。
+本轮限软件接口、真实协议编码的 MockTransport 测试及 S0 内部执行验证；实机动作前须另行通知。本轮结果见验证记录（历史路径：`../.verify/s0_bus2_mixed_2026-10-23_r1/summary.json`），不替代现场固件、三轮联动或真实停止验收；D15 `OPEN/DEFERRED`、`deployable=false` 保持。
 
 ## 2026-10-22 · S0 内部 Position 分组命令（兼容性合同增量）
 
@@ -160,13 +166,13 @@ ReadyHold/HoldCurrent/ZeroCommand 的混合输出使用最近成功读回的位�
 
 Feetech 按选中槽位发送 ID，校准仍取原完整槽位；未选中电机不补写目标。读取、模式设置、使能、急停与停止确认保持整总线范围。每条总线仍只有一个命令流、控制权和停止域，选择范围不构成独立组级会话、超时或使能。`XleRobotBus1Layout` 只处理左臂含夹爪1..6与头部7/8，核对配置名称/ID对应关系并允许配置重排；构型映射与通用选择类型分开。参考路径是本地 Orin 源码副本 `xlerobot-dimos 0.1.0` 的共享连接和按ID写入；官方 XLeRobot 0.2.0 的软件目录尚未提供该驱动，不能混称版本。
 
-本轮交付为可送入原 S0 命令槽和 SerialTick 的内部软件接口；没有为 daemon 增加分组 wire 入口，也没有部署或执行硬件动作。右侧 Position/Velocity 混合总线、相机和 CAN-FD 驱动仍是后续工作，不以本轮软件结果替代实机验收。软件检查、原失败日志及源码定位见[本轮验证记录](../.verify/s0_grouped_position_2026-10-22_r1/summary.json)。D15 `OPEN/DEFERRED`、`deployable=false` 保持。审阅：实施代理、独立评审与 root。
+本轮交付为可送入原 S0 命令槽和 SerialTick 的内部软件接口；没有为 daemon 增加分组 wire 入口，也没有部署或执行硬件动作。右侧 Position/Velocity 混合总线、相机和 CAN-FD 驱动仍是后续工作，不以本轮软件结果替代实机验收。软件检查、原失败日志及源码定位见本轮验证记录（历史路径：`../.verify/s0_grouped_position_2026-10-22_r1/summary.json`）。D15 `OPEN/DEFERRED`、`deployable=false` 保持。审阅：实施代理、独立评审与 root。
 
 ## 2026-10-08 · Feetech 固定缓冲原始读回（软件验收）
 
 新增`sync_read_by_id_raw_into`及私有测试模块。ID、宽度和调用方三个缓冲容量在租约/IO前验证；MAX32固定`u32`暂存，沿原单租约与状态帧校验，完整组合法后才提交输出，保留原始无符号word及尾槽。旧读写接口不改；当前具名表仅1/2B，4B测试调用同生产私有执行核心，未新增虚构寄存器。此读接口沿旧transport调用预算，不承诺来源绝对READ截止或USB/固件认证，未改冻结架构。
 
-Mac与Orin各通过230个不同方法，13新增为完整lib213子集，两特性同213不重复累计；本机首轮编译FAIL与r2PASS保留。主树597项输入聚合`5c8c4c049ba57874f550f4dad7a60c47d9c00df4514310c8f980979d3969ec9f`及实际fmt绑定本轮Orin fmt→两根Clippy；各平台回执与allocator观测边界见[本件验收入口](../.verify/feetech_wheel_raw_read_2026-10-08/summary.json)。未接S0/S1、真实轮速TX或Enable链，无新UART/硬件、完整workspace/release/RT/H2、安装、部署或push；旧硬件FAIL、D15 OPEN/DEFERRED及deployable=false保持。
+Mac与Orin各通过230个不同方法，13新增为完整lib213子集，两特性同213不重复累计；本机首轮编译FAIL与r2PASS保留。主树597项输入聚合`5c8c4c049ba57874f550f4dad7a60c47d9c00df4514310c8f980979d3969ec9f`及实际fmt绑定本轮Orin fmt→两根Clippy；各平台回执与allocator观测边界见本件验收入口（历史路径：`../.verify/feetech_wheel_raw_read_2026-10-08/summary.json`）。未接S0/S1、真实轮速TX或Enable链，无新UART/硬件、完整workspace/release/RT/H2、安装、部署或push；旧硬件FAIL、D15 OPEN/DEFERRED及deployable=false保持。
 
 ## 2026-10-08 · Feetech 来源绝对期限写入（软件验收）
 
@@ -176,7 +182,7 @@ Mac与Orin分别通过217个不同方法：完整库200加集成12/5，0failed/i
 
 本lib真实allocator已复验新路径和旧热路径；Mock捕获`drain_tx`在guard外保留容量，接口自身仍分配，foreign backend自行构造String错误的分配未由fixture证明零分配。clock回退检测限于core观测窗，call预算从transport start计；native timeout不能撤回已发字节。本件未接S0/S1、新鲜度事件桥、真实轮速TX或Enable授权，无完整workspace/release/H2六配方、新硬件动作、正式安装、部署或push，无syscalltrace。头1回程+8、右9停止字段-50、左腕和右H2原FAIL保持；用户已人工切两个电机电源并保持手臂支撑，未核独立电源遥测且无新GO。现场Firmware未读、Phase12未改，D15 OPEN/DEFERRED、deployable=false保持。
 
-[准确名单、两批原件与主树质量绑定](../.verify/feetech_absolute_write_2026-10-08/summary.json)。
+准确名单、两批原件与主树质量绑定（历史路径：`../.verify/feetech_absolute_write_2026-10-08/summary.json`）。
 
 ## 2026-10-08 · 底盘来源、轮速参数与新鲜度组件（软件验收）
 
@@ -186,7 +192,7 @@ Orin独立596项编译输入聚合`b919cd320dd81693ae49612dcd0778b98e6ee97191d23
 
 本件未接入生产IPC/RPC、实际连接代次、唯一writer或Enable链；FeetechAdapter Velocity仍无TX。下一件已定案为来源绝对期限写入的首字节/partial-write检查，当前仅函数方案，不是实现。无完整workspace/release/H2六配方或真实RT/硬件验收，无正式安装、服务激活或push。人工断电收尾已独立确认，此后没有UART/新动作；现场Firmware尚未读、Phase12未改，底盘动作DEFERRED，左腕/头1/右H2原FAIL、D15 OPEN/DEFERRED及deployable=false保持。
 
-[原件、准确名单与整合验收入口](../.verify/b1_ingress_components_2026-10-08/summary.json)。
+原件、准确名单与整合验收入口（历史路径：`../.verify/b1_ingress_components_2026-10-08/summary.json`）。
 
 ## 2026-10-08 · 固件只读保护、轮速合同与人工断电收尾
 
@@ -196,7 +202,7 @@ Orin独立591项源码输入聚合`ddad9513566f51fecf915ac7f39e0cccc66b8ae937328
 
 现场用户随后确认“两个电机电源已切断，机械臂保持支撑”，root于2026-10-08 06:35:40UTC记录收到回复；实际断电时刻与独立电源遥测未测。此新收尾确认结束本轮看护，不修改上一轮head1位置FAIL、right9停止FAIL或原NEEDS_MANUAL_POWER_CUT，不构成新硬件GO；确认后未执行UART/动作。现场固件版本未读、Phase12未改，旧左腕与右H2仍FAIL，D15 OPEN/DEFERRED、deployable=false保持。下一步只推进发布者身份/显式轮速配置/新鲜度状态机软件候选，真实执行链与硬件门另验。
 
-[原件、准确名单及软件验收入口](../.verify/feetech_firmware_contract_2026-10-08/summary.json)。
+原件、准确名单及软件验收入口（历史路径：`../.verify/feetech_firmware_contract_2026-10-08/summary.json`）。
 
 ## 2026-10-08 · 固定目标维护与头部回程/停止字段失败
 
@@ -206,7 +212,7 @@ root逐项审核具体计划与当次GO后，仅运行一次右5→左7→左8�
 
 人工断电确认**PENDING**，已通知现场切两个电机电源，禁止后续UART/动作/自动重试；不推定右9读值的来源、单位或实际轮转动。厂家STS内存表（门户version=181）定义Phase bit3=1时零目标为最高速度，现场Phase12包含该位；现场固件主/次版本未读取，厂家文档版本不是现场版本。本轮无Phase/Lock/PID/模式或EEPROM写；后续仅继续固件READ保护/typed profile等独立纯软件小件，真实硬件门另验。左腕历史FAIL、右H2整体FAIL、D15 OPEN/DEFERRED、deployable=false保持。
 
-[本轮原件、分类及逐SHA索引](../.verify/hardware_selected_targets_2026-10-08/summary.json)；准备封装参数失败、漏fixture的6ERROR及原硬件失败完整保留，不回填PASS。只读分诊关联head1稳定+8的原样本和right9命令339的实际设备/ID/PID/stdout SHA；UART原始帧未捕获，工具输出字节不当作寄存器原字节。
+本轮原件、分类及逐SHA索引（历史路径：`../.verify/hardware_selected_targets_2026-10-08/summary.json`）；准备封装参数失败、漏fixture的6ERROR及原硬件失败完整保留，不回填PASS。只读分诊关联head1稳定+8的原样本和right9命令339的实际设备/ID/PID/stdout SHA；UART原始帧未捕获，工具输出字节不当作寄存器原字节。
 
 ## 2026-10-08 · Velocity 入站与 SerialTick 归零基础（Orin 软件门通过）
 
@@ -214,53 +220,53 @@ Velocity 使用独立解码路径，严格校验数量、有限值/f32范围、�
 
 六源按590编译输入聚合`43b9d67550d885549f18cc43e5afd748a587f3d57a8800a61ab6f216dcff46c3`绑定，Orin为独立导出快照，来源`8fb17b`加六处dirty，`native_git_head=null`。实际更新最新浮动nightly至`1d81eb4ad`，fmt/默认及组合特性根Clippy、串行S0默认lib641/guard+hook lib734/serial_rt_e2e5均通过，0failed/ignored；库去重734加独立e2e5为739，24新增为库子集不累计。原RR测试仅等待真实tick/心跳/pending就绪，原3秒预算与生产不改；最新lint仅修两处文档标识及两个既有test模块移EOF。
 
-[阶段证据](../.verify/xlerobot_velocity_foundation_2026-10-08/summary.json)保存七轮原生包及本机原件，打包前后648份固定输入身份一致；独审与root软件验收通过，提交前主树fmt→Orin同源根Clippy通过。前六轮FAIL/NOT_RUN、网络255、r5更新超原300秒预算与工具链窗口错误均保留；旧RR具体归因仍UNCONFIRMED，旧ELF单项PASS及keep-going诊断不计739。r7远端13条原命令exit0/真实reap通过，旧本机owner/SSH已缺失但无真实wait回执，保持UNKNOWN；远端PASS不回填本机回收。旧ELF仅保留历史身份及实际执行回执，未封存其字节；追加质量包95份原件可逐项解出，封包器的历史完整stat名册未持久化，不冒称该列表可独核。
+阶段证据（历史路径：`../.verify/xlerobot_velocity_foundation_2026-10-08/summary.json`）保存七轮原生包及本机原件，打包前后648份固定输入身份一致；独审与root软件验收通过，提交前主树fmt→Orin同源根Clippy通过。前六轮FAIL/NOT_RUN、网络255、r5更新超原300秒预算与工具链窗口错误均保留；旧RR具体归因仍UNCONFIRMED，旧ELF单项PASS及keep-going诊断不计739。r7远端13条原命令exit0/真实reap通过，旧本机owner/SSH已缺失但无真实wait回执，保持UNKNOWN；远端PASS不回填本机回收。旧ELF仅保留历史身份及实际执行回执，未封存其字节；追加质量包95份原件可逐项解出，封包器的历史完整stat名册未持久化，不冒称该列表可独核。
 
 P1A发布者身份/P1B轮速配置仅孤立Mac软件候选、未整合，不作为本阶段已验收实现。用户已重新确认电源/USB复位、支撑及持续看护，本软件阶段未下发新硬件GO或执行硬件动作；不回填旧NEEDS/FAIL。未正式安装、服务激活、完整workspace测试、release或push；右H2/左腕FAIL、D15 OPEN/DEFERRED和deployable=false保持。
 
 ## 2026-09-30 · Feetech 底盘诊断元数据（B0，原生软件门通过）
 
 新增Phase18/CW_Dead_Zone26/CCW_Dead_Zone27，均按1字节原始无符号值读取；厂家EEPROM分类与本项目只读策略分开。四具名bus写API在查表、租约及IO前共享拒写门，poke仅三诊断write在打开串口前拒绝，其他参数及原do_read/do_write行为保持。
-五源已格式化整合，590编译输入聚合3d8491ee；首Orin Clippy实际E0004/101保留，后续NOT_RUN。诊断分类补入既有参数错误及编码(8,1,0)，原literal方法增加三名断言，不增18方法数；第二轮四条测试lint/101保留，仅调整结果消耗和空TX断言。Orin最新nightly5c、fmt/两根Clippy、完整库160+例子5及release通过，18新方法为165子集；九次NX拒写真实exit2/回收，源码与编译器前后一致；[归档及独审/root软件验收](../.verify/feetech_diagnostic_metadata_2026-09-30/summary.json)通过。旧r1 CLI普通坏参数时序改变的scope失败保留；无UART/安装/push，实际Phase/速度单位、S0/S1底盘执行链和底盘动作仍未验证。
+五源已格式化整合，590编译输入聚合3d8491ee；首Orin Clippy实际E0004/101保留，后续NOT_RUN。诊断分类补入既有参数错误及编码(8,1,0)，原literal方法增加三名断言，不增18方法数；第二轮四条测试lint/101保留，仅调整结果消耗和空TX断言。Orin最新nightly5c、fmt/两根Clippy、完整库160+例子5及release通过，18新方法为165子集；九次NX拒写真实exit2/回收，源码与编译器前后一致；归档及独审/root软件验收（历史路径：`../.verify/feetech_diagnostic_metadata_2026-09-30/summary.json`）通过。旧r1 CLI普通坏参数时序改变的scope失败保留；无UART/安装/push，实际Phase/速度单位、S0/S1底盘执行链和底盘动作仍未验证。
 
 ## 2026-09-30 · XLeRobot 三轮SI运动学
 
-新增 `robot-kinematics-xlerobot::base`：前8/左7/右9正逆运动学、显式几何和轮速上限、同比缩放及保守舍入修复；异常数值和轮序拒绝，原手臂IK不改。Orin最新浮动nightly5c、fmt/根Clippy与crate30（21新底盘+9原手臂）通过，首Clippy101/测试NOT_RUN保留；[软件证据](../.verify/xlerobot_base_kinematics_2026-09-30/summary.json)按590输入0e580bd9绑定。
+新增 `robot-kinematics-xlerobot::base`：前8/左7/右9正逆运动学、显式几何和轮速上限、同比缩放及保守舍入修复；异常数值和轮序拒绝，原手臂IK不改。Orin最新浮动nightly5c、fmt/根Clippy与crate30（21新底盘+9原手臂）通过，首Clippy101/测试NOT_RUN保留；软件证据（历史路径：`../.verify/xlerobot_base_kinematics_2026-09-30/summary.json`）按590输入0e580bd9绑定。
 运动学供后续S1使用，raw/Phase合同、S0/S1速度执行链和实际底盘动作仍待闭环；无安装/push/新GO。人工断电PENDING，原硬件FAIL、D15 OPEN/DEFERRED及deployable=false保持。
 
 ## 2026-09-30 · 独立维护的精度/停止证据分类与新原生冻结
 
 维护软件将精度、完整停止字段和逐项身份后验分开，安全收尾失败粘性不被最终零值覆盖；原步幅/±4/800ms不扩，新V2绑定显式维护根目录且拒旧GO。两端同35与默认零动作入口通过，r4未执行轮漂移漏项修复并保留原件。底盘固件合同未知，live入口固定三轮DEFERRED，快照允许READ但不WRITE/enable；旧硬件NEEDS/回程FAIL不改。
-固定1c5758的Orin新V2六配方/七件、589同源/最新nightly5c、fmt/根Clippy、既有71Python、7help/mock4×2/tonic6+9/12owner子集通过，不冒称194或全仓/硬件。提交前质量门再次通过，正式安装、服务及保护保持。无安装/部署/push/新动作；物理断电PENDING，H2FAIL、D15 OPEN/DEFERRED及deployable=false保持。[原件与软件验收入口](../.verify/hardware_maintenance_classification_2026-09-30/summary.json)保留旧FAIL；独审/root通过，两份Orin原包不回填。
+固定1c5758的Orin新V2六配方/七件、589同源/最新nightly5c、fmt/根Clippy、既有71Python、7help/mock4×2/tonic6+9/12owner子集通过，不冒称194或全仓/硬件。提交前质量门再次通过，正式安装、服务及保护保持。无安装/部署/push/新动作；物理断电PENDING，H2FAIL、D15 OPEN/DEFERRED及deployable=false保持。原件与软件验收入口（历史路径：`../.verify/hardware_maintenance_classification_2026-09-30/summary.json`）保留旧FAIL；独审/root通过，两份Orin原包不回填。
 
 ## 2026-09-30 · XLeRobot 映射的独立硬件维护与回程失败
 
 底盘沿现场上游前8/左7/右9与既有速度模式1；本次不写模式/EEPROM，不改变冻结架构或正式双臂执行面。裸wire维护脚本两端同19项测试/仅计划与独审通过。
 新run仅左腕947→967→953，回程误差6超过原±4/800ms门，整体FAIL，原NEEDS_MANUAL_POWER_CUT及通知保留；其余动作NOT_RUN。最后断扭ACK、17电机三个停止寄存器均0；独立无UART后验确认ca14/产物/保护不变、服务与进程停稳。uv入口误拒和fuser后验合同误拒原FAIL保留，未放宽动作门或重试。
-[本轮证据](../.verify/hardware_maintenance_2026-09-30_r2/summary.json)。物理断电确认待答，供电UNKNOWN；不关闭右H2/D15，不宣称头部/底盘运行时或整车运动学通过，无部署/安装/push。
+本轮证据（历史路径：`../.verify/hardware_maintenance_2026-09-30_r2/summary.json`）。物理断电确认待答，供电UNKNOWN；不关闭右H2/D15，不宣称头部/底盘运行时或整车运动学通过，无部署/安装/push。
 
 ## 2026-09-30 · H2 非 RT 证据工具的整次归属与完整 CAS 派生
 
 真实 Arm/Ready 的 sample_seq owner 保留至两个 child 回收后一次尾 drain，原始批次/capture/spool 不覆盖；新 run 按 epoch 稳定排序并重算完整 CAS，原统计另存。未知/故障/错代次/重复成功仍 FAIL，原 RT/authority、采样群体、SLA A/B 与 Python 严格门不变。
 登记新增共享工具容量门：44,000 owner、单 epoch 8,192 事件/256 bytes 行、每组每类 8,192 retry bins；有界读取与 checked 计数，溢出留原件且硬拒，适用于 SoftwareProbe/SoftwareLoad，不冒称旧长载已重验。
-隔离 Linux 最新 nightly5c 的 fmt/根及 feature Clippy、194 默认并行（含12新oracle）、4,401/4,000合成合同与5反例、短mock4×2及提交前uv合同复验通过；两轮lint与准备/独审原FAIL保留。[软件证据](../.verify/h2_trace_owner_2026-09-30/summary.json)。未部署/安装/push或关闭原硬件H2/D15。
+隔离 Linux 最新 nightly5c 的 fmt/根及 feature Clippy、194 默认并行（含12新oracle）、4,401/4,000合成合同与5反例、短mock4×2及提交前uv合同复验通过；两轮lint与准备/独审原FAIL保留。软件证据（历史路径：`../.verify/h2_trace_owner_2026-09-30/summary.json`）。未部署/安装/push或关闭原硬件H2/D15。
 
 ## 2026-09-30 · S1 事件测试的连接就绪与资源回收
 
 只修 cfg(test) 夹具，独立 Node/端口 RAII、发送前刷新订阅连接，并用同帧双订阅者验证实际投递和未连接遗漏；生产代码、20ms/2s与默认并行不变。
-Mac定向15、隔离Linux根fmt/Clippy与S1完整默认并行287通过，原FAIL/历史归因边界保留。[证据入口](../.verify/s1_parallel_events_2026-09-30/summary.json)。未改正式安装或复测硬件。
+Mac定向15、隔离Linux根fmt/Clippy与S1完整默认并行287通过，原FAIL/历史归因边界保留。证据入口（历史路径：`../.verify/s1_parallel_events_2026-09-30/summary.json`）。未改正式安装或复测硬件。
 
 ## 2026-09-30 · 右 H2 本次硬件复测与独立读回
 
 新 V2 冻结件完成一次右 H2：四组原 SLA 门和最终 Disable Ack/Disarm/真实回收通过，但 driver 严格轨迹核验拒绝 3 条 IpcClaim 跨轮标签，**整体 FAIL 保留**。
 随后独立清场、双臂/头部/底盘共 17 电机 34 项零扭矩使能/零速度读回及最终双总线门通过，值守已解除；头部/底盘主动运动未测。
-[证据与完整交接](../.verify/right_h2_2026-09-30/summary.json)。无正式安装/部署/push；D15 OPEN/DEFERRED、deployable=false 不变，不改原 trace 或历史 FAIL。
+证据与完整交接（历史路径：`../.verify/right_h2_2026-09-30/summary.json`）。无正式安装/部署/push；D15 OPEN/DEFERRED、deployable=false 不变，不改原 trace 或历史 FAIL。
 
 ## 2026-09-30 · 周期恢复补丁的新 H2 V2 原生软件准备
 
 `b01603b` 快进整合后完成 Orin 新 V2 六配方七冻结件；更新 nightly 仍为 `5c543b0b8`，589 输入聚合 `c0388807`。
 本轮 fmt / 根 Clippy、71 Python、七 help、冻结 mock 四组各 2 样本、同源 tonic 6 测试 / 9 场景通过；710+5 仅引用已验同源原件。
-release/post 独审与 root 软件验收通过；[证据入口](../.verify/h2_serial_recovery_2026-09-30/summary.json)与[完整 SHA / 交接](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
+release/post 独审与 root 软件验收通过；证据入口（历史路径：`../.verify/h2_serial_recovery_2026-09-30/summary.json`）与[完整 SHA / 交接](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.HANDOFF.md)。
 正式四件和服务/进程只读比较一致；本轮非完整 workspace，未部署、未 push 或执行硬件。
 下一步阶段提交后远端快进对齐、新 alignment、当次现场事实与独立 GO。
 右 H2 历史整体 FAIL、D15 OPEN/DEFERRED 及 `deployable=false` 保持，原失败原件保留。
@@ -799,8 +805,8 @@ fresh 与正式产物门通过。两端各四个无测试 hook 正式产物已�
 用户已授权更新 Orin 原仓库、停止六项开发服务，调试 / RT 需要权限时直接 `sudo`；
 真实串口与物理 SLA 未由软件门代验。复现命令与函数级约束见
 [PLAN](https://github.com/arxxyr/robot-system/blob/37b6f26ff8d895ed78f9cd352649985c5d7decee/team-swe/specs/post_e_comm_fault_hardening.PLAN.md) P.6。
-当前证据只维护 [C5.json](../.verify/post_e_comm_fault_hardening/C5.json) 与
-[C5_evidence.tar.gz](../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz)；
+当前证据只维护 C5.json（历史路径：`../.verify/post_e_comm_fault_hardening/C5.json`） 与
+C5_evidence.tar.gz（历史路径：`../.verify/post_e_comm_fault_hardening/C5_evidence.tar.gz`）；
 旧轮次日志、源码快照、重复产物和历史归档按用户授权清除。
 
 ## 2026-09-08 · 全 workspace Cargo 依赖升级（状态：分包实现与独立验收通过）
@@ -4001,7 +4007,7 @@ reviewer（用户）— 要求将 `ClearEStop control action` 写入 design erra
   cap-deadlock **留 v0.3**" 改成 "**全套已锁**"。
 - `crates/robot-s0/src/systemd_notify.rs`（历史文件路径，现职责见 [robot-health/systemd.rs](../crates/robot-health/src/systemd.rs)）
   模块 doc "Liveness-gated" 段补 "v0.3 已端到端验证" 引用 + 证据链路。
-- 模板 [`scripts/systemd/xlerobot-s0-freeze-test.service`](../scripts/systemd/xlerobot-s0-freeze-test.service)
+- 当时模板 `scripts/systemd/xlerobot-s0-freeze-test.service`（历史名称，现为 `scripts/systemd/robot-s0-freeze-test.service`）
   L49 字面残留 `state=Safe` 改成 `state=Ready` 跟 smoke 实际硬断言对齐
   （reviewer A2-3 round 1 留的非阻断 doc 残留）。
 

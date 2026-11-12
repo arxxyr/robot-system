@@ -1,9 +1,8 @@
 # 日志规范
 
-> robot-system 所有 bin / lib 的日志统一到 **`tracing`**（Rust 生态 de-facto
-> 标准，相当于 C++ spdlog）。本文档是字段命名 + 使用约定的权威。
+robot-system使用`tracing`结构化日志；初始化实现在 [robot-logging](../crates/robot-logging/src/lib.rs)，本文维护字段与使用约定。日志及测试结果留在既有本地或Orin位置，不提交Git。
 
-## TL;DR
+## 使用要点
 
 1. **bin 不用写 init 代码**：只要 `Cargo.toml` 依赖 `robot-logging`，
    `#[ctor::ctor]` 会在 `main` 运行前自动装上 tracing subscriber。
@@ -12,7 +11,7 @@
 3. **错误打印**：`tracing::error!(?err, "feetech connect failed")` —— 保留
    `thiserror` 的结构。
 4. **环境变量控制**：`RUST_LOG=debug ./robot-s0` / `ROBOT_LOG_FORMAT=json ./robot-s0`。
-5. **RT thread 内禁用** 带 format arg 的 `tracing::*!`（heap alloc，违反 §4.9）。
+5. **RT线程内禁用所有日志调用**；通过既有定长诊断环或原子计数，由非实时线程输出。
 
 ## 格式
 
@@ -22,11 +21,9 @@
 2026-04-25T23:45:12.123456Z [+12345.678901234s]  INFO  robot_s0: feetech factory built adapter motor_id=6 address="/dev/..."
 ```
 
-- **wall clock RFC3339 UTC** + **monotonic `[+秒.纳秒s]`**（自进程启动）
+- **wall clock RFC3339 UTC** + **monotonic `[+秒.纳秒s]`**（从日志初始化开始累计）
   - wall clock 方便跨机器对齐绝对时间（NTP 下）
-  - monotonic 方便后期日志回放算事件时延（NTP 跳 / 闰秒无感）
-- 级别 5 字符对齐：`INFO ` / `WARN ` / `ERROR` / `DEBUG` / `TRACE`
-- ANSI 彩色 on（TTY 自动检测，非 TTY 关；`NO_COLOR=1` 强制关）
+  - monotonic由`std::time::Instant`产生，仅为日志相对时间，不能直接与业务`CLOCK_MONOTONIC_RAW`的绝对纳秒值相减
 - `target` = 模块路径（`robot_s0`），便于定位
 - 结构化字段 `k=v` 紧随 message
 
@@ -36,7 +33,7 @@
 采集：
 
 ```json
-{"timestamp":"2026-04-25T23:45:12.123456Z [+12345.678901234s]","level":"INFO","target":"robot_s0","fields":{"message":"feetech factory built adapter","motor_id":6,"address":"/dev/..."}}
+{"timestamp":"2026-04-25T23:45:12.123456Z [+12345.678901234s]","level":"INFO","target":"robot_s0","message":"feetech factory built adapter","motor_id":6,"address":"/dev/..."}
 ```
 
 ## 字段命名约定（词汇表）
@@ -45,8 +42,8 @@
 
 | Key            | 类型             | 示例                             | 含义                                                                 |
 | -------------- | ---------------- | -------------------------------- | -------------------------------------------------------------------- |
-| `robot_id`     | `&str`           | `"xlerobot_task29"`              | TOML `[robot] id`                                                    |
-| `hardware_id`  | `&str`           | `"left_arm_single"`              | TOML `[[hardware]] id`                                               |
+| `robot_id`     | `&str`           | `"xlerobot_bus1_full"`           | TOML `[robot] id`                                                    |
+| `hardware_id`  | `&str`           | `"left_arm_full_with_head"`      | TOML `[[hardware]] id`                                               |
 | `motor_id`     | `u8`             | `6`                              | Feetech motor ID                                                     |
 | `joint`        | `&str`           | `"left_arm_gripper"`             | 关节名                                                               |
 | `adapter`      | `&str`           | `"feetech_sts3215"`              | factory 名                                                           |
@@ -85,8 +82,7 @@
 不依赖诊断是否送达。`site=5` 表示 adapter 周期 `write_command`，不能当成
 Enable 自身的写操作；其他站点仍按产生该事件的函数解释。
 
-2026-09-29 起，Feetech `record_error` 先将 `FeetechError` 穷尽匹配为明确的
-诊断类型，再统一编码；新增错误变体必须显式选择类别，不以 Unknown 兜底：
+Feetech `record_error`按 [diagnostic.rs](../crates/robot-adapters/feetech/src/diagnostic.rs) 穷尽匹配`FeetechError`，再统一编码；新增错误变体必须显式分类，不以Unknown兜底：
 
 | `kind` | `a` | `b / seq` | 含义 |
 | --- | --- | --- | --- |
@@ -102,6 +98,8 @@ Enable 自身的写操作；其他站点仍按产生该事件的函数解释。
 | 8 | 5 | 0 / 0 | 电机型号不匹配 |
 | 8 | 6 | 0 / 0 | 当前位追平后的目标读回不一致 |
 | 8 | 7 | 0 / 0 | 重复连接 |
+| 8 | 3 | 电机ID / 有符号raw位模式 | 校准锚点改变；与普通校准参数错误区分 |
+| 9 | `AbsoluteWriteReason`编码 | 写入进度编码 / 0 | 绝对截止写失败；具体编码见`error.rs` |
 
 既有 `kind=6` 扭矩使能失败附加摘要不变，仍可能保留原 Unknown；其后完整错误
 记录使用上述分类。所有事件保留 WARN 和原有计数，返回的
@@ -180,21 +178,11 @@ RUST_LOG=robot_adapter_feetech=debug  # 仅 feetech adapter 走 debug
 
 ## 测试
 
-测试进程**不走 ctor 自动 init**（`#[cfg(not(test))]`），避免 subscriber 污染
-测试输出。需要在测试里看 log 的用 `tracing-test` crate（本项目暂未引入，有
-需求再加）。
+`robot-logging`自身单元测试构建由`#[cfg(not(test))]`关闭ctor；作为普通依赖被集成测试链接时，不能据此假定ctor关闭。需要捕获事件时复用已有`tracing::subscriber::with_default`局部subscriber，不为日志断言新增依赖。
 
 ## RT 铁律
 
-| 调用                                           | RT thread 允许？                                    |
-| ---------------------------------------------- | --------------------------------------------------- |
-| `tracing::info!(x = 1, "literal")`             | ❌（虽然 literal message 不 alloc，但 tracing 内部 Event 构造可能分配字段） |
-| `tracing::info!("literal only, no fields")`    | ❌（同上，保守禁用）                                |
-| `tracing::info!("x = {}", x)`                  | ❌❌（format arg 构造 String，必 alloc）            |
-| `eprintln!("...")`                             | ❌（stderr IO + 内部缓冲可能 alloc）                |
-
-**RT thread 内不 log**。调试期需要日志走 metrics（atomic counter + 定期
-non-RT 线程采样）或 lock-free ring buffer（v0.3+）。
+RT线程禁止`tracing::*!`、格式化、`eprintln!`及文件/网络IO，不以字面量消息或日志级别关闭推定安全。现有 [SerialDiagRing](../crates/robot-s0/src/diag.rs)容量256，传递16字节`DiagEvent`；满或同侧竞争时丢弃新事件并计数，不等待消费者。非实时 [pub线程](../crates/robot-s0/src/pub_thread.rs)有界消费并输出，安全判断不依赖日志送达。
 
 ## 参考
 

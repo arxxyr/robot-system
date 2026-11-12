@@ -2,7 +2,7 @@
 
 > 上游参考实现：https://github.com/Roboparty/atom01_deploy.git （ROS 2 Humble + C++17）
 > 本地仓库位置：`~/repo/robot/atom01_deploy`
-> 目的：验证 `robot-system` 能承载**端到端 RL 策略（joint-space）** 这类部署场景，并作为首个人形机器人目标。
+> 用途：后续构型研究与训练／部署合同参考。当前0.0.1没有ATOM01硬件适配或实机验收；下文上游能力及拟议crate不是本项目已交付能力。
 
 ---
 
@@ -20,7 +20,7 @@
 | §6 风险与门槛 | 工程风险清单 | PR 直接改 |
 | §7 参考 | 外部链接 | PR 直接改 |
 
-**当前工作顺序**：见 [Roadmap](../s0_hal_status.md#roadmap)；本目标合同不表示已完成 ATOM01 接入或验收。
+**当前工作顺序**：见 [当前状态与下一步](../s0_hal_status.md)；本目标合同不表示已完成 ATOM01 接入或验收。
 **源码级 walkthrough（commit-pinned 快照）**：见 [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md)。
 
 ---
@@ -324,7 +324,9 @@ main() → mlockall(MCL_CURRENT|MCL_FUTURE) → SCHED_FIFO prio=50
 
 ---
 
-## 4. 在 robot-system 中的映射
+## 4. 拟议映射（未实施）
+
+以下为早期适配研究，保留供实际接入时核对；当前不新建所列crate、服务或线程组织。
 
 ### 4.1 框架提供（robot-system 本体）
 
@@ -385,7 +387,7 @@ robot-app-atom01/
 
 ---
 
-## 5. 新增 adapter / crate 需求
+## 5. 后续适配参考（未实施）
 
 ### 5.1 `robot-adapters/damiao`
 
@@ -479,12 +481,12 @@ loop {
 
 ### 从"风险"降级为"验收项"
 
-下列此前列为风险，已在 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2 明确为**工程参数可调，架构无未知**，跟踪改走 [`../10_verification.md`](../10_verification.md)：
+以下保留2026-04-24的研究目标，不表示已有测量或验收。适用判据以 [验证约定](../10_verification.md) 为准；其中≥50Hz的旧IPC阈值已撤销，不能继续作放行门。
 
 | 项 | 收口条件 | 验收 Step |
 |---|---|---|
 | policy_host 调度抖动 vs inline | `SCHED_FIFO 70 + A76 pinning + mlockall` 下 p99 推理延迟差 < 1 ms | Step 6 iceoryx2 RT baseline + v0.5 ATOM01 policy_host 落地对拍 |
-| iceoryx2 pub/sub RT 行为 | 50 Hz publish、10 min、receive 时刻 p99 < 100 µs、p999 < 500 µs（RT 内核 + SCHED_FIFO 70） | **Step 6 必产**（提前到最小闭环）|
+| iceoryx2 pub/sub RT 行为 | 旧50Hz阈值已撤销；新门槛须另行确定，见验证约定 | 不作为当前放行门|
 | ORT 稳态 0 alloc | warmup 2 次后第 3 次及之后 Run 经 `assert-no-alloc` 守卫不触发 | v0.5 `robot-policy-host` 落地 |
 | 双 shm round-trip (obs + action) | p99 < 50 µs | v0.5 policy_host 接入 iceoryx2 |
 
@@ -497,7 +499,7 @@ loop {
 | 原上游仓库 | https://github.com/Roboparty/atom01_deploy.git |
 | 本地仓库位置 | `~/repo/robot/atom01_deploy` |
 | 源码快照文档（commit `d983373`） | [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md) |
-| 当前工作顺序 | [Roadmap](../s0_hal_status.md#roadmap) |
+| 当前工作顺序 | [当前状态与下一步](../s0_hal_status.md) |
 | inference_node 主逻辑 | `atom01_deploy/src/inference/src/inference_node.{hpp,cpp}` |
 | 启动脚本 / Fast DDS profile | `atom01_deploy/tools/start_robot.sh`、`assets/rt_fastdds_profile.xml` |
 | `RobotInterface`（硬件封装） | `atom01_deploy/src/inference/src/robot_interface.{cpp,hpp}` |
@@ -510,4 +512,4 @@ loop {
 
 ---
 
-**最后更新**：2026-04-24（按 targets/README.md 新骨架重组：契约 / 参考分离 + 路线图拆出 + 源码快照重命名 `atom01_inference_node_d983373.md`）。
+**文档整理**：2026-11-12。§2合同及指定上游快照未变；旧阶段编号保留为研究背景，不代表当前发布排期。

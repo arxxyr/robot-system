@@ -1,6 +1,0 @@
-{
-  "result": "BACKUP_PASS",
-  "files": 3,
-  "backup_directory": "/var/lib/robot/deploy-backup-s0-dev-dcd781e",
-  "changed_units": 0
-}

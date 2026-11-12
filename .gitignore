@@ -57,10 +57,11 @@ venv/
 *.mcap
 *.robotrec
 
-# perf record 产出（GB 级，跑 flamegraph 时本地生成；SVG 入 docs/perf/，
-# 原始 perf.data 不进版本控制）
+# 性能采样和测试结果仅在本地生成，不进版本控制。
 perf*.data
 perf*.data.old
+/docs/perf/
+/docs/evidence/
 
 # 测试 / smoke 运行期生成的 workdir（latch / config / iter 临时文件）
 # 比如 freeze_systemd_smoke 在 logs/freeze_smoke/<iter>/ 写 latch + cfg

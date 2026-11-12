@@ -30,7 +30,7 @@ cargo fmt --all
 CARGO_TARGET_DIR=target/verify-current cargo clippy --all --all-targets -- -D warnings
 ```
 
-完整 CI 的 feature、平台、release 实件和环境变量以 [.github/workflows/ci.yml](../.github/workflows/ci.yml) 为准。CI 的 fmt、Clippy、测试和构建按既有顺序执行，不用本页重复一份可能漂移的流水线。macOS 只能证明适用的纯软件路径；Linux 调度、systemd 与 S0 Linux 路径需在现有 Linux 环境验证。
+完整 CI 的 feature、平台、release 实件和环境变量以 [.github/workflows/ci.yml](../.github/workflows/ci.yml) 为准，仅推送`v`前缀SemVer标签触发；普通分支及PR不触发。CI 的 fmt、Clippy、测试和构建按既有顺序执行。当前workflow不自动创建Release或上传安装包，标签推送成功也不代表CI通过。macOS 只能证明适用的纯软件路径；Linux 调度、systemd 与 S0 Linux 路径需在现有 Linux 环境验证。
 
 | 任务 | 实际入口 |
 |---|---|
@@ -45,17 +45,18 @@ CARGO_TARGET_DIR=target/verify-current cargo clippy --all --all-targets -- -D wa
 | 通信故障与持久化反例 | [comm_fault_e2e.rs](../crates/robot-tests/src/bin/comm_fault_e2e.rs)、[comm_fault](../crates/robot-tests/src/comm_fault/)、[final_stop_transport.rs](../crates/robot-tests/tests/final_stop_transport.rs) |
 | H2 原件完整性与报告 | [artifact_checks.py](../scripts/artifact_checks.py)、[comm_fault_report.py](../scripts/comm_fault_report.py)、[scripts/tests](../scripts/tests/) |
 | 安装、服务验收与回滚 | [systemd 维护说明](../scripts/systemd/README.md)；文件存在、已安装、服务运行和物理验收分别记录 |
+| 配置矩阵打包 | [build_package.py](../scripts/build_package.py)、[package-matrix.toml](../configs/package-matrix.toml)；原生目标平台、隔离缓存、包内提交及SHA核对 |
 
 各 smoke 的 feature 守门和 binary 名以 [robot-tests/Cargo.toml](../crates/robot-tests/Cargo.toml) 为准。已发送的 effectful 请求必须取得真实完成或退休结果；不得以取消 future 伪造控制动作已退休。
 
-## 10.3 证据与复现
+## 10.3 验证记录与复现
 
 - 记录源码提交、输入清单及 SHA、产物 SHA、工具链、features/profile、实际命令、退出码、配置及校准身份。测试数去重，子集不累加，ignored 与未运行项独立列出。
 - 延迟比较使用同一测量边界和可比环境：机器、内核、CPU governor、调度类/优先级、每线程亲和性、iceoryx2 版本及实际时钟。`MONOTONIC` 与 `MONOTONIC_RAW` 不混算；host write、t0、t1、ACK 与物理终点分别留戳。
 - 每轮使用新 run 和独占目录，保留原日志、原帧、读回、失败和现场回执。摘要只能引用原件，不能改写 FAIL、UNKNOWN、NOT_OBSERVED 或 NOT_RUN。
 - 硬件前先备齐产物、固定解释器、脚本、进程检查与 PLAN_ONLY，再确认当轮现场条件。动作前通知；过期或已消费 GO 不复用，不以历史现场授权为当前事实。
 - 停止必须有真实读回、持久化、子进程退出与锁归还证据；“进程退出”或“串口不可达”不能单独证明电机安全。未知结果不自动重试。
-- `.verify` 中独有原始证据保留；当前追溯入口见状态页。历史测试流水账、交接与旧计划通过 Git 查询，不再维护第二份状态。
+- 日志、原帧、性能报告和测试结果留在既有本地或Orin位置，不提交Git，不再维护evidence/perf资料目录。当前状态仅保留结论与边界；发布保留必要manifest、提交身份和校验值，历史流水账通过Git查询。
 
 录制/回放的冻结字段、时钟与互操作要求见设计 §10.3；它们是实现约束，不代表已有 Recorder、MCAP 或 LeRobotDataset 导出能力，本轮不增加实现或排期。
 
@@ -79,6 +80,6 @@ H2 必须保留真实 t0 在途分类、完整事务边界、原样本数、原 
 
 ## 10.5 调度与硬件安全
 
-SerialRT 默认普通优先级；XLeRobot unit 的 FIFO 为显式 opt-in。验证时按实际进程逐 TID 核调度类、优先级、精确 CPU 亲和性和稳定线程集合；不能凭 root、Orin 主机名或 unit 参数存在宣称已生效。操作和回滚沿 [systemd 维护说明](../scripts/systemd/README.md)，不从历史 unit 快照恢复保护状态。
+SerialRT未配置时使用普通优先级；当前XLeRobot两份总线TOML显式要求CPU4/5、FIFO70和锁页，unit提供相应权限。验证时按实际进程逐TID核调度类、优先级、精确CPU亲和性和稳定线程集合，不能凭配置存在宣称已生效。操作和回滚沿 [systemd维护说明](../scripts/systemd/README.md)，不从历史unit快照恢复保护状态。
 
 D15 与受监督例外的现行边界见 [XLeRobot §2.4](targets/xlerobot.md#24-feetech-sts3215-寄存器序列契约)。systemd 重启、同进程 watchdog、启动 preflight 和软件停止均依赖仍存活的主机/通信链，不能替代 S0 死亡后的独立硬件安全输出。D15 保持 OPEN/DEFERRED，`deployable=false`。

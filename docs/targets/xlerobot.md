@@ -1,59 +1,28 @@
-# 部署目标：XLeRobot 双臂 + 全向底盘
+# 部署目标：XLeRobot 双臂、头部与三轮底盘
 
-> 上游参考实现：https://github.com/dimos-robotics/dimos.git （Python + dimos 框架）
-> 本地仓库位置：`~/repo/robot/dimos`
-> 框架阶段：v0.4（`robot-system` 首个 adapter 落地目标；完成后 dimos 项目切换成调用 robot-system 的二进制 + RPC / iceoryx2 客户端）
-> 状态：**骨架**（2026-04-24 建立；§2 契约大量 TBD，v0.4 开工时逐条填实并走 [`../CHANGELOG.md`](../CHANGELOG.md) 登记）
+当前软件版本为 **0.0.1**；XLeRobot 是首个已验证后端。完成范围及下一步只维护在 [S0 HAL 当前状态](../s0_hal_status.md)，本文件保留硬件对应关系、目标合同和实现入口。
 
----
+实际调用链参考现有 XLeRobot Python 实现及本项目适配器；历史 dimos 路径仅用于追溯，不作为当前安装路径或自动迁移计划。整理本页不改变 §2 的安全与训练／部署合同。
 
-## 文档骨架说明
+## 1. 当前硬件与配置
 
-本文件按 [`targets/README.md`](README.md) 约定的 6 节骨架组织：
+| 部分 | 当前配置 |
+|---|---|
+| 主机 | NVIDIA Jetson Orin，Linux aarch64 |
+| 左总线 | 左臂含夹爪 ID1–6，头部 ID7/8，共8电机，位置模式 |
+| 右总线 | 右臂含夹爪 ID1–6；机器人自身右轮 ID7、前轮 ID8、左轮 ID9，共9电机，Position/Velocity 混合模式 |
+| 相机 | 头部 D435i 的RGB接口；左腕、右腕USB彩色相机。深度和IMU尚未接入 |
+| 运行组织 | 两个S0实例各管一条串口总线；相机由所属实例的SoftRT路径独立采集 |
+| 调度 | 总线TOML分别指定CPU4/5、FIFO70；默认不上扭，保护保持锁存 |
 
-| 节 | 性质 | 改动流程 |
-|---|---|---|
-| §1 硬件清单 | 事实（跟随上游硬件变更） | PR 直接改 |
-| §2 训练 / 部署契约 | **★ target spec · 硬契约 ★** | **必经 [`../CHANGELOG.md`](../CHANGELOG.md)**（第 3 类：target-contract） |
-| §3 上游实现参考 | 非 spec，供 Rust 侧实现时回查 | PR 直接改 |
-| §4 在 robot-system 中的映射 | 设计映射（跟随框架演进） | PR 直接改 |
-| §5 新增 adapter / crate 需求 | 工程规划 | PR 直接改 |
-| §6 风险与门槛 | 工程风险清单 | PR 直接改 |
-| §7 参考 | 外部链接 | PR 直接改 |
+共17个电机：双臂含夹爪12、头部2、底盘3。轮位以机器人自身左右为准，唯一来源为 [右总线配置](../../configs/xlerobot-bus2.toml) 的 `joints`/`motor_ids` 配对，不在文档或代码中建立第二份配置表。
 
-**迁移路线图**：待 v0.4 开工前按需建立 `xlerobot_migration.md`。
-**源码级 walkthrough**：按需建立 `xlerobot_<subsystem>_<commit7>.md`（dimos 是 Python，优先读代码而非建快照文档）。
-
----
-
-## 1. 硬件清单
-
-| 项 | 型号 / 规格 | 接口 | 备注 |
-|---|---|---|---|
-| 控制器 | NVIDIA Jetson Orin（dimos 项目默认；兼容 Orange Pi / 其他 aarch64 Linux） | Linux aarch64 | v0.4 部署目标机 |
-| 手臂电机 | Feetech STS3215 × 5 × 2 = 10 | 2 × USB-RS485（每臂一条总线） | 位置模式 + PID；无已文档化、可配置的 command watchdog，失联断扭保证仍缺失（D15 OPEN） |
-| 底盘电机 | Feetech STS3215 × 3（三轮全向） | USB-RS485（可与一条手臂共总线或独立，TBD） | 速度模式 |
-| 夹爪 / Gripper | TBD（取决于具体装机，dimos 支持可选 2 × Feetech） | 同手臂总线 | |
-| 视觉传感器 | Intel RealSense（具体型号 TBD，典型 D435i / D435）× 1 | USB-3.0 | RGB + depth + IMU |
-| 辅助相机 | USB Webcam × N（可选） | USB-2.0 | |
-| 实时内核 | Linux 主线内核；内核/调度要求与硬件 fail-safe 分别验证 | — | 原“STS3215 自带 command timeout”的 RT 豁免依据不成立；硬件边界按候选 E D15 / D15-R |
-
-**DoF 布局（v0.4 起以此为准；具体编号 TBD）**：
-- 左臂 5 DoF（肩 3 + 肘 1 + 腕 1，或类似，TBD 从 URDF 导出）
-- 右臂 5 DoF
-- 底盘 3 个轮子（各自独立位置 / 速度控制，运动学合成为 (vx, vy, wz)）
-- 可选 gripper × 2
-
-合计最小 13 DoF（10 臂 + 3 轮），含 gripper 时 15 DoF。
-
-**总线拓扑**：见 `~/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/`。Feetech 通信单总线串行；多电机读写要 pipeline，不能每电机独立 RTT。
-
----
+左总线及头／左腕RGB见 [xlerobot-bus1.toml](../../configs/xlerobot-bus1.toml)，右总线及右腕RGB见 [xlerobot-bus2.toml](../../configs/xlerobot-bus2.toml)。设备路径、外部校准文件、分辨率和帧率直接读取配置；变更须重新生成计划，旧GO失效。
 
 ## 2. 训练 / 部署契约（★ target spec · 硬契约 ★）
 
 > **本节每一条都是 spec**：改动必经 [`../CHANGELOG.md`](../CHANGELOG.md) 第 3 类条目（target-contract）登记。
-> **当前大量标 TBD**：v0.4 开工时从 dimos 源码逐条摘取，每填一条走一次 CHANGELOG。
+> 下列保留已登记的 target spec；TBD 表示尚未冻结的训练／部署参数，不代表当前 raw 后端未实现。补全或修改须登记 CHANGELOG，不用本次文档整理改变合同。
 
 ### 2.1 关节角度编码契约
 
@@ -149,179 +118,38 @@
 
 ---
 
-## 3. 上游实现参考（非 spec，供 Rust 侧实现时回查）
+## 3. 上游与当前入口
 
-> 本节**不是** spec，是 dimos 源码的导航图。
+实现及排查先核对原版实际调用链、初始化、单位、编码、连接复用与停止顺序，不凭旧阶段规划推定当前能力。参考包括 XLeRobot 和历史 dimos 的 Feetech、校准、机械臂及底盘逻辑；现有 raw 经验合同仅覆盖当前状态页记录的固件、Phase与命令。
 
-### 3.1 dimos 项目目录速写
+| 职责 | 本仓库实际入口 |
+|---|---|
+| Feetech协议、校准与适配 | [robot-adapters/feetech](../../crates/robot-adapters/feetech/) |
+| 总线执行与分组 | [serial_tick.rs](../../crates/robot-s0/src/serial_tick.rs)、[grouped_position.rs](../../crates/robot-s0/src/grouped_position.rs) |
+| RGB采集与帧槽 | [camera.rs](../../crates/robot-s0/src/camera.rs)、[camera_capture.py](../../scripts/camera_capture.py)；复用V4L2/OpenCV入口，无独立相机crate |
+| 运动学 | [robot-kinematics-xlerobot](../../crates/robot-kinematics-xlerobot/)；手臂IK和三轮SI数学模型已有软件实现，实机轮速仍以raw合同为准 |
+| 观测 | [robot-viz](../../crates/robot-viz/)；读取状态与RGB镜像，不参与执行器控制 |
+| 维护与部署 | [维护入口](../../scripts/run_hardware_maintenance.py)、[systemd说明](../../scripts/systemd/README.md) |
 
-```
-~/repo/robot/dimos/
-├─ src/xlerobot_dimos/
-│  ├─ common/
-│  │  ├─ feetech_io/            # Python STS3215 驱动（Rust 移植源）
-│  │  └─ units.py               # 弧度↔raw + 三轮全向运动学矩阵
-│  ├─ <其他 xlerobot 子模块>     # 控制器 / 任务 / 策略等
-├─ assets/xlerobot/              # URDF + STL（v0.4 后 IK / 3D 渲染用）
-├─ calibration/                  # 每机器人一份 JSON（§2.2 契约来源）
-├─ docs/
-│  ├─ 06_lerobot_replace_spec.md # Feetech STS3215 寄存器序列（§2.4 契约来源）
-│  ├─ 07_phase6_openpi_rl.md     # OpenPI π0.5 + RL 集成（§2.8 契约来源）
-│  └─ 09_robot_framework.md      # robot-system 设计文档的**源版本**
-```
+## 4. 在通用架构中的位置
 
-> **dimos docs/09_robot_framework.md** 是本仓库 `docs/00_design.md` 的源版本。本仓库只读快照（v0.1.2 冻结）；改动回写流程见 `00_design.md` 附录 E + `docs/CHANGELOG.md`。
+`S1 → S0 HAL → 硬件适配器 → 设备`。`robot-core`定义契约，`robot-s0`负责设备组织、分组执行和生命周期；协议留在Feetech适配器，相机走独立SoftRT路径。RPC网关属于上层，不是S0启动依赖。
 
-### 3.2 dimos 控制流（高层）
+当前每条总线保留唯一串口所有者、SerialRT writer、命令流、控制权与停止域；右臂和底盘共用总线，分组不产生第二个所有者。实际入口及服务名以配置与部署说明为准，不另建 `robot-app-xlerobot`、相机crate或迁移框架。
 
-- Python 进程，主循环 ~50 Hz（TBD 具体数值）
-- `ControlCoordinator` → `ManipulatorAdapter` / `TwistBaseAdapter` → Feetech IO
-- LCM 作进程间通信（robot-system 侧用 iceoryx2 取代；映射见 `00_design.md` 附录 B）
-- 策略接入通过独立 Python 模块，同进程调用
+## 5. 后续范围
 
-### 3.3 RealSense + webcam 接入
+后续先沿现有S1 scripted入口验证控制权取得、原位保持和停止释放。硬件fail-safe、SI底盘标定、深度／IMU及策略接入按实际需求单独推进，不将旧v0.4/v0.5阶段编号作为当前排期。
 
-- dimos 侧走 `pyrealsense2` + OpenCV
-- v0.4 起由 `robot-system` 侧 `robot-adapters/realsense` + `robot-adapters/webcam` 接管
-- SoftRT class，挂 `s0_io_thread`（见 `00_design.md` §4.6）
+## 6. 未闭环边界
 
-### 3.4 性能 / 延迟数据（dimos 现栈）
-
-- TBD：dimos 侧实测 p99 控制延迟（需要录一次现役运行数据）
-- 初步目标（`robot-system` 侧）：手臂控制 ≤ 50 Hz，底盘 ≤ 50 Hz，RealSense 30 fps（SoftRT）
-
----
-
-## 4. 在 robot-system 中的映射
-
-### 4.1 框架提供（robot-system 本体）
-
-| 职责 | 对应 robot-system 组件 | 需要新做什么 |
-|---|---|---|
-| Feetech STS3215 驱动（手臂 + 底盘） | `robot-adapters/feetech`（v0.2 Step 10 已规划） | v0.4 扩展到多总线 + 底盘速度模式 |
-| 三轮全向运动学 | `robot-kinematics-xlerobot`（`00_design.md` §4.1 / §11.3 定） | `BaseKinematics` trait 的 `XLeRobotBase` 实现；数值从 dimos `units.py` 复刻 |
-| IK（双臂） | `robot-kinematics-xlerobot`（`ArmIkSolver` trait） | v0.4 落地；从 dimos kinematics 模块移植 |
-| RealSense | `robot-adapters/realsense`（**新 crate**） | v0.4 新做，SoftRT 挂 s0_io_thread |
-| Webcam | `robot-adapters/webcam`（**新 crate**） | v0.4 新做 |
-| 视觉桥 | `robot-viz`（Rerun） | v0.4 对齐 dimos `rerun_bridge` 能力 |
-| 外部 RPC | `robot-rpc` | 映射 dimos 的 RPC 接口到 gRPC |
-
-### 4.2 XLeRobot 特定应用层
-
-- v0.4 起：`robot-app-xlerobot`（**新 crate**，暂无）承载业务逻辑
-  - 策略切换 / 任务分派（对齐 dimos 的 task manager）
-  - 校准 JSON 加载（§2.2）
-  - 校准持久化（上电读、下电或 `/set_zeros` 服务写）
-- S0 / S1 不感知"XLeRobot"，只跑通用 trait
-
-### 4.3 和 dimos 的关系
-
-- v0.4 完成 = dimos 项目切换成调用 `robot-system` 二进制 + RPC / iceoryx2 客户端
-- dimos 保留 Python 策略 / 任务层；`robot-system` 接管运行时 + 硬件 adapter
-- 迁移是**可逆的 A/B**：每个硬件 / 功能切换可通过 systemd unit 或 RPC 端点开关回退
-- 映射关系见 `docs/00_design.md` 附录 B
-
----
-
-## 5. 新增 adapter / crate 需求
-
-### 5.1 `robot-adapters/feetech`（v0.2 Step 10 起规划，v0.4 扩展）
-
-**线程拓扑（方案 B，见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "S0 `s0_rt_thread` 多 bus 语义澄清"）**
-
-XLeRobot 有 2–3 路 USB-RS485 → 在 `robot-s0` 内实例化 **M 个 rt_thread，每 bus 一个**（M=2 或 3 看装机）。每个 rt_thread 的 tick 闭环与 ATOM01 CAN 方向一致：
-
-```
-loop {
-    clock.sleep_until(deadline); deadline += tick_period;
-    bus.drain_rx();                            // non-blocking 到 EAGAIN
-    cmd = target_slot.load_latest();
-    if fault = safety_check(&state, &cmd) { bus.safe_output(); continue; }
-    bus.write_frames_serial(&cmd, &state);     // 每 bus N 电机 pipeline
-    snapshot.write_bus_slice(bus.id, &state);
-}
-```
-
-RS485 是半双工，单 bus 不能同时 read+write，所以 "pipeline 读写" 指一次发 N 请求后连续 drain 回应（而非并行 I/O）。这与方案 B 的 tick 闭环天然吻合。
-
-**必须实现**：
-- v0.2 Step 10：单总线单关节验证（M=1）
-- v0.4 扩展到 M=2–3：
-  - 每 USB-RS485 独立 `termios` / file descriptor
-  - 底盘速度模式（位置模式之外的模式枚举）
-  - Pipeline 读写（总线内多电机请求 → 连续响应 drain）
-  - CPU affinity：每 rt_thread 独占一核
-
-**RT 约束**：
-- 位置 / 速度命令在 rt_thread 路径调用，禁止分配（预分配帧缓冲复用）
-- 无 spdlog / format / log；`AtomicU64::fetch_add` 计数，dump 由 pub_thread 完成
-- 跨线程状态只走 seqlock / atomic / SampleLease
-
-**参考**：
-- 寄存器序列：dimos `~/repo/robot/dimos/docs/06_lerobot_replace_spec.md`
-- 硬件 fail-safe：沿 §2.4 的 D15 / D15-R；不得把未核实的 watchdog 寄存器作为 adapter 初始化要求，独立保护与 AC-E25 仍待闭环
-
-### 5.2 `robot-adapters/realsense`（**新 crate**，v0.4）
-
-- 依赖 `realsense-rust` crate
-- 发布：RGB + depth + IMU（若型号支持）
-- SoftRT，挂 s0_io_thread
-- 需要考虑：启动时 enumeration 可能慢 / 断电重连策略
-
-### 5.3 `robot-adapters/webcam`（**新 crate**，v0.4）
-
-- V4L2 backend（Linux）
-- 发布：RGB
-- SoftRT
-
-### 5.4 `robot-kinematics-xlerobot`（v0.4）
-
-- 实现：
-  - `BaseKinematics::XLeRobotBase`（三轮全向）
-  - `ArmIkSolver` × 2（左右臂，5 DoF 每臂，简单解析解或数值解 TBD）
-- 数值从 dimos `units.py` + URDF 复刻
-- 零 runtime 依赖（`00_design.md` §4.1）
-
-### 5.5 `robot-app-xlerobot`（v0.4）
-
-- 业务层 crate，组织 app 启动 / 任务 / 策略切换
-- 校准 JSON 加载（§2.2）
-- 不进框架（与 ATOM01 一致）
-
----
-
-## 6. 风险与门槛
-
-| 风险 | 影响 | 缓解 |
-|---|---|---|
-| Feetech 多总线 pipeline 复杂度 | 总线时序错 → 状态读取延迟 / 漏读 | 先在 bench 上单总线跑稳，再扩两路；每 bus 一个 rt_thread（[`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 1）|
-| 校准 offset 文件路径 / schema 漂移 | 不同机器人间校准文件不兼容 | §2.2 schema 冻结；所有字段走 target-contract 登记 |
-| 三轮全向运动学数值差异 | 机器人漂移 / 方向错 | §2.3 从 dimos `units.py` 逐行复刻；单元测试对拍 |
-| RealSense 启动时 enumeration 慢 | 启动期 s0 超 `sd_notify` 超时 | adapter 内部独立线程 + 状态机，initial 阶段不阻塞 ready |
-| 底盘 + 手臂共总线时带宽不够 | 控制延迟抖动 | 默认分离总线；共总线仅作降级选项 |
-| 视觉外参漂移 | 策略看到的相对位置错 | §2.7 外参走 target-contract 登记；改装前必须重新标定 |
-| dimos 侧策略继续演进 | robot-system 侧 adapter 契约追不上 | v0.4 先切换 adapter 层；策略切换滞后到 v0.5（OpenPI 接入时） |
-| v0.4 开工时 §2 大量 TBD 未填 | adapter 写出来可能和 dimos 不对齐 | 第一件事：从 dimos 源码批量导出 §2 TBD 项，补完整走 CHANGELOG 登记 |
-| **policy_host 调度抖动** —— XLeRobot 默认 Jetson Orin **非 RT 内核** | `SCHED_OTHER` 下 policy_host 推理延迟 p99 可能飘到 30 ms+ | v0.4 立项时决定是否装 RT 内核；若不装，用 `InProcessPolicyHost`（设计 §4.7 分支）绑进 s1；装 RT 则按 ATOM01 同套配置（`SCHED_FIFO 70` + CPU pinning + `mlockall`）—— 见 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 条 2。**2026-04-24 更新**：v0.4 立项决议直接 *不装 RT 内核*，走 `InProcessPolicyHost`，详 [`../CHANGELOG.md`](../CHANGELOG.md) 2026-04-24 "Step 6.5 RT 调优搁置" |
-
----
+- D15仍为`OPEN/DEFERRED`、`deployable=false`；软件停止、systemd重启和受监督测试不替代独立硬件失活保护。
+- 三轮raw `0/+500`和±50静止复核不能推导SI速度、里程计或任意速度范围已验。
+- 相机RGB已接入；启动恢复分支的软件通过不能证明USB失流根因或长期稳定性解决。
+- 两侧分别验收不代表双总线同时动作通过；无现场确认不追加动作。
 
 ## 7. 参考
 
-| 资源 | 位置 |
-|---|---|
-| 上游仓库（dimos） | https://github.com/dimos-robotics/dimos.git |
-| 本地仓库位置 | `~/repo/robot/dimos` |
-| robot-system 设计文档源版本 | `~/repo/robot/dimos/docs/09_robot_framework.md`（对应本仓库 `docs/00_design.md`，冻结版） |
-| Feetech STS3215 寄存器序列 spec | `~/repo/robot/dimos/docs/06_lerobot_replace_spec.md` |
-| Phase 6 OpenPI + RL 集成 | `~/repo/robot/dimos/docs/07_phase6_openpi_rl.md` |
-| 自研 Python STS3215 驱动（Rust 移植源） | `~/repo/robot/dimos/src/xlerobot_dimos/common/feetech_io/` |
-| 弧度 ↔ raw / 三轮全向运动学（§2.1 / §2.3 契约源） | `~/repo/robot/dimos/src/xlerobot_dimos/common/units.py` |
-| 校准 JSON 示例（§2.2 契约源） | `~/repo/robot/dimos/calibration/` |
-| URDF + STL（IK / 可视化） | `~/repo/robot/dimos/assets/xlerobot/` |
-| dimos 全局工作约定 | `~/repo/robot/dimos/CLAUDE.md` |
-| robot-system ↔ dimos 术语对应 | 本仓库 `docs/00_design.md` 附录 B |
-
----
-
-**最后更新**：2026-04-24（建立骨架；§2 契约大量 TBD，v0.4 开工时逐条填实并走 CHANGELOG 第 3 类登记）。
+- [冻结架构设计](../00_design.md)、[当前状态](../s0_hal_status.md)、[目标合同登记规则](README.md)。
+- [XLeRobot上游仓库](https://github.com/Vector-Wangel/XLeRobot)、[dimos上游仓库](https://github.com/dimos-robotics/dimos)。本次仅整理已有实现与参考，不声称核验最新上游版本。
+- §2中的本地dimos路径保留其历史合同来源含义；当前真实配置和安装路径以本仓库配置及systemd说明为准。

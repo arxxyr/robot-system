@@ -1,8 +1,0 @@
-{
-  "schema": "S0_FIELD_OBSERVATION_V1",
-  "source": "用户本轮回执 call_268feb4a857c4d8f81356feb2c56fb94",
-  "answer": "全程正常，没有自行移动，结束后整机静止",
-  "scope": "本轮左后右各20秒默认不上扭、故障锁存的systemd启动复验",
-  "new_actions_authorized": false,
-  "field_watch_finished": true
-}

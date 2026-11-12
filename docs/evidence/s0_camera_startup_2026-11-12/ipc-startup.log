@@ -1,8 +1,0 @@
-    Finished `test` profile [optimized + debuginfo] target(s) in 0.24s
-     Running tests/comm_fault_startup.rs (/home/loosqk/robot-checks/xlerobot-velocity-foundation-20261008-r7/build/debug/build/robot-s0/ed1cfadea0458d8f/out/comm_fault_startup-ed1cfadea0458d8f)
-
-running 1 test
-test ipc_ready_pause_returns_original_residual_before_cp2 ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 11.66s
-

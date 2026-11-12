@@ -1,10 +1,10 @@
 # 硬件目标与参考
 
-当前进度及 roadmap 只看 [S0 HAL 状态](../s0_hal_status.md)。本目录保存设备合同和上游参考，不另行维护阶段进度表。
+当前进度及 roadmap 只看 [S0 HAL 状态](../s0_hal_status.md)。本目录保存设备合同和上游参考，不另行维护阶段进度表。软件版本为0.0.1，设计版本v0.1.2是冻结合同编号。
 
 | 平台 | 用途与边界 |
 |---|---|
-| [XLeRobot](xlerobot.md) | 当前首个硬件后端；实际映射与参数以两份 full TOML 为准，验收范围见当前状态 |
+| [XLeRobot](xlerobot.md) | 当前首个硬件后端；实际映射与参数以 `xlerobot-bus1.toml` / `xlerobot-bus2.toml` 为准，验收范围见当前状态 |
 | [ATOM01](atom01.md) | 后续构型的合同与研究参考，尚未接入；[推理节点分析](atom01_inference_node_d983373.md)绑定指定上游提交，不代表当前上游或本项目已实现 |
 
 ## 合同登记
