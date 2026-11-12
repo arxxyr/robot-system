@@ -568,7 +568,7 @@ mod tests {
         let stdout = tempfile::tempfile().unwrap();
         let stderr = tempfile::tempfile().unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", NAME, "--nocapture"])
+            .args(["--exact", NAME, "--nocapture", "--test-threads=1"])
             .env(CHILD, "1")
             .stdout(stdout.try_clone().unwrap())
             .stderr(stderr.try_clone().unwrap())
@@ -754,8 +754,9 @@ mod tests {
         assert!(!exit.responsibilities_empty());
         assert!(!owned.ledger.lock().unwrap().responsibilities_empty());
         assert_eq!(metrics.orphan_drops_on_shutdown.load(Ordering::Acquire), 0);
+        // 单线程 libtest 先输出未换行的测试名；证据标记必须独占新行。
         println!(
-            "estop_continuous_owned_verified consumed={published} attempts_after_stop={} queued_before_stop=64 queued_at_join={pending} worker_joined=true producer_joined=true",
+            "\nestop_continuous_owned_verified consumed={published} attempts_after_stop={} queued_before_stop=64 queued_at_join={pending} worker_joined=true producer_joined=true",
             counts.after_stop.load(Ordering::Acquire)
         );
         // 不从 exit.queued 取出/析构原载荷，也不清账本；原聚合由进程退出收尾。
