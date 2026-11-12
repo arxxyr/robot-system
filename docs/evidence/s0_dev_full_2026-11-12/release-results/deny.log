@@ -1,0 +1,1892 @@
+warning[duplicate]: found 2 duplicate entries for crate 'base64'
+   ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:38:1
+   │  
+38 │ ╭ base64 0.22.1 registry+https://github.com/rust-lang/crates.io-index
+39 │ │ base64 0.23.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ base64 v0.22.1
+     ├── arrow-cast v58.4.1
+     │   ├── arrow v58.4.1
+     │   │   ├── quiver_types v0.6.2
+     │   │   │   └── quiver v0.6.2
+     │   │   │       ├── re_chunk_index v0.43.0
+     │   │   │       │   ├── re_chunk_store v0.43.0
+     │   │   │       │   │   ├── re_entity_db v0.43.0
+     │   │   │       │   │   │   └── rerun v0.43.0
+     │   │   │       │   │   │       └── robot-viz v0.0.1
+     │   │   │       │   │   ├── re_query v0.43.0
+     │   │   │       │   │   │   └── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   ├── re_log_channel v0.43.0
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0
+     │   │   │       │   │   │   └── re_sdk v0.43.0
+     │   │   │       │   │   │       └── rerun v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0
+     │   │   │       │   │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_log_encoding v0.43.0
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   ├── rerun v0.43.0 (*)
+     │   │   │       │   │   └── (dev) robot-viz v0.0.1 (*)
+     │   │   │       │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   └── rerun v0.43.0 (*)
+     │   │   │       ├── re_log_encoding v0.43.0 (*)
+     │   │   │       ├── re_log_types v0.43.0
+     │   │   │       │   ├── re_chunk v0.43.0
+     │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_lenses_core v0.43.0
+     │   │   │       │   │   │   ├── re_lenses v0.43.0
+     │   │   │       │   │   │   │   └── re_sdk v0.43.0 (*)
+     │   │   │       │   │   │   └── re_sdk v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   ├── re_protos v0.43.0
+     │   │   │       │   │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   │   ├── rerun v0.43.0 (*)
+     │   │   │       │   │   │   └── (dev) robot-viz v0.0.1 (*)
+     │   │   │       │   │   ├── re_query v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │       │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   ├── re_lenses v0.43.0 (*)
+     │   │   │       │   ├── re_lenses_core v0.43.0 (*)
+     │   │   │       │   ├── re_log_channel v0.43.0 (*)
+     │   │   │       │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   ├── re_log_msg v0.43.0
+     │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   ├── re_query v0.43.0 (*)
+     │   │   │       │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   ├── re_sdk_types v0.43.0
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+     │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_sorbet v0.43.0
+     │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_msg v0.43.0 (*)
+     │   │   │       │   │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_uri v0.43.0
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   └── rerun v0.43.0 (*)
+     │   │   │       ├── re_protos v0.43.0 (*)
+     │   │   │       ├── re_redap_client v0.43.0 (*)
+     │   │   │       ├── re_sorbet v0.43.0 (*)
+     │   │   │       ├── re_tuid v0.43.0
+     │   │   │       │   ├── re_arrow_util v0.43.0
+     │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+     │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   ├── re_log_types v0.43.0 (*)
+     │   │   │       │   │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   ├── re_sdk_types v0.43.0 (*)
+     │   │   │       │   │   ├── re_sorbet v0.43.0 (*)
+     │   │   │       │   │   ├── re_types_core v0.43.0
+     │   │   │       │   │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_log_types v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_query v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_sdk_types v0.43.0 (*)
+     │   │   │       │   │   │   ├── re_sorbet v0.43.0 (*)
+     │   │   │       │   │   │   └── re_uri v0.43.0 (*)
+     │   │   │       │   │   └── rerun v0.43.0 (*)
+     │   │   │       │   ├── re_grpc_headers v0.43.0
+     │   │   │       │   │   └── re_protos v0.43.0 (*)
+     │   │   │       │   ├── re_log_msg v0.43.0 (*)
+     │   │   │       │   ├── re_log_types v0.43.0 (*)
+     │   │   │       │   ├── re_protos v0.43.0 (*)
+     │   │   │       │   ├── re_sorbet v0.43.0 (*)
+     │   │   │       │   ├── re_types_core v0.43.0 (*)
+     │   │   │       │   └── re_uri v0.43.0 (*)
+     │   │   │       └── re_types_core v0.43.0 (*)
+     │   │   ├── re_arrow_util v0.43.0 (*)
+     │   │   ├── re_byte_size v0.43.0
+     │   │   │   ├── re_auth v0.43.0
+     │   │   │   │   └── re_redap_client v0.43.0 (*)
+     │   │   │   ├── re_build_info v0.43.0
+     │   │   │   │   ├── re_analytics v0.43.0
+     │   │   │   │   │   ├── re_auth v0.43.0 (*)
+     │   │   │   │   │   └── rerun v0.43.0 (*)
+     │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │   │   ├── re_log_msg v0.43.0 (*)
+     │   │   │   │   ├── re_protos v0.43.0 (*)
+     │   │   │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │   │   └── rerun v0.43.0 (*)
+     │   │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │   ├── re_lenses_core v0.43.0 (*)
+     │   │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │   ├── re_log_msg v0.43.0 (*)
+     │   │   │   ├── re_log_types v0.43.0 (*)
+     │   │   │   ├── re_mutex v0.43.0
+     │   │   │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   │   │   └── re_redap_client v0.43.0 (*)
+     │   │   │   ├── re_protos v0.43.0 (*)
+     │   │   │   ├── re_query v0.43.0 (*)
+     │   │   │   ├── re_quota_channel v0.43.0
+     │   │   │   │   ├── re_analytics v0.43.0 (*)
+     │   │   │   │   ├── re_chunk v0.43.0 (*)
+     │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+     │   │   │   │   ├── re_log_channel v0.43.0 (*)
+     │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   │   │   ├── re_memory v0.43.0
+     │   │   │   │   │   └── rerun v0.43.0 (*)
+     │   │   │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │   │   └── rerun v0.43.0 (*)
+     │   │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   │   ├── re_sdk v0.43.0 (*)
+     │   │   │   ├── re_sdk_types v0.43.0 (*)
+     │   │   │   ├── re_sorbet v0.43.0 (*)
+     │   │   │   ├── re_string_interner v0.43.0
+     │   │   │   │   ├── re_log_types v0.43.0 (*)
+     │   │   │   │   └── re_types_core v0.43.0 (*)
+     │   │   │   ├── re_tuid v0.43.0 (*)
+     │   │   │   ├── re_types_core v0.43.0 (*)
+     │   │   │   ├── re_uri v0.43.0 (*)
+     │   │   │   └── rerun v0.43.0 (*)
+     │   │   ├── re_chunk v0.43.0 (*)
+     │   │   ├── re_chunk_index v0.43.0 (*)
+     │   │   ├── re_chunk_store v0.43.0 (*)
+     │   │   ├── re_entity_db v0.43.0 (*)
+     │   │   ├── re_lenses v0.43.0 (*)
+     │   │   ├── re_lenses_core v0.43.0 (*)
+     │   │   ├── re_log_encoding v0.43.0 (*)
+     │   │   ├── re_log_msg v0.43.0 (*)
+     │   │   ├── re_log_types v0.43.0 (*)
+     │   │   ├── re_protos v0.43.0 (*)
+     │   │   ├── re_query v0.43.0 (*)
+     │   │   ├── re_redap_client v0.43.0 (*)
+     │   │   ├── re_sdk_types v0.43.0 (*)
+     │   │   ├── re_sorbet v0.43.0 (*)
+     │   │   ├── re_types_core v0.43.0 (*)
+     │   │   └── rerun v0.43.0 (*)
+     │   └── arrow-json v58.4.1
+     │       └── arrow v58.4.1 (*)
+     ├── hdrhistogram v7.6.0
+     │   └── robot-tests v0.0.1
+     ├── jsonwebtoken v10.4.0
+     │   └── re_auth v0.43.0 (*)
+     ├── prost-reflect v0.16.5
+     │   └── re_protos v0.43.0 (*)
+     ├── rerun-tonic-web-wasm-client v0.8.3
+     │   ├── re_grpc_client v0.43.0 (*)
+     │   └── re_redap_client v0.43.0 (*)
+     └── tonic v0.14.9
+         ├── re_auth v0.43.0 (*)
+         ├── re_grpc_client v0.43.0 (*)
+         ├── re_grpc_headers v0.43.0 (*)
+         ├── re_protos v0.43.0 (*)
+         ├── re_redap_client v0.43.0 (*)
+         ├── rerun-tonic-web-wasm-client v0.8.3 (*)
+         ├── robot-cli v0.0.1
+         ├── robot-rpc v0.0.1
+         │   ├── robot-cli v0.0.1 (*)
+         │   └── robot-tests v0.0.1 (*)
+         ├── robot-tests v0.0.1 (*)
+         ├── tonic-prost v0.14.9
+         │   ├── re_protos v0.43.0 (*)
+         │   ├── re_redap_client v0.43.0 (*)
+         │   ├── robot-rpc v0.0.1 (*)
+         │   └── tonic-reflection v0.14.9
+         │       └── re_protos v0.43.0 (*)
+         ├── tonic-reflection v0.14.9 (*)
+         └── tonic-types v0.14.9
+             └── re_protos v0.43.0 (*)
+   ├ base64 v0.23.1
+     ├── re_auth v0.43.0
+     │   └── re_redap_client v0.43.0
+     │       └── rerun v0.43.0
+     │           └── robot-viz v0.0.1
+     ├── ureq v3.5.1
+     │   └── ehttp v0.7.3
+     │       ├── re_analytics v0.43.0
+     │       │   ├── re_auth v0.43.0 (*)
+     │       │   └── rerun v0.43.0 (*)
+     │       ├── re_auth v0.43.0 (*)
+     │       └── re_redap_client v0.43.0 (*)
+     └── ureq-proto v0.7.1
+         └── ureq v3.5.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'console'
+   ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:72:1
+   │  
+72 │ ╭ console 0.15.11 registry+https://github.com/rust-lang/crates.io-index
+73 │ │ console 0.16.6 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ console v0.15.11
+     └── similar-asserts v1.7.0
+         └── rerun v0.43.0
+             └── robot-viz v0.0.1
+   ├ console v0.16.6
+     └── indicatif v0.18.6
+         └── rerun v0.43.0
+             └── robot-viz v0.0.1
+
+warning[duplicate]: found 2 duplicate entries for crate 'cpufeatures'
+   ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:82:1
+   │  
+82 │ ╭ cpufeatures 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+83 │ │ cpufeatures 0.3.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ cpufeatures v0.2.17
+     └── sha2 v0.10.9
+         ├── re_analytics v0.43.0
+         │   ├── re_auth v0.43.0
+         │   │   └── re_redap_client v0.43.0
+         │   │       └── rerun v0.43.0
+         │   │           └── robot-viz v0.0.1
+         │   └── rerun v0.43.0 (*)
+         ├── re_auth v0.43.0 (*)
+         ├── re_build_tools v0.43.0
+         │   ├── (build) re_sdk v0.43.0
+         │   │   └── rerun v0.43.0 (*)
+         │   └── (build) rerun v0.43.0 (*)
+         ├── re_chunk_index v0.43.0
+         │   ├── re_chunk_store v0.43.0
+         │   │   ├── re_entity_db v0.43.0
+         │   │   │   └── rerun v0.43.0 (*)
+         │   │   ├── re_query v0.43.0
+         │   │   │   └── re_entity_db v0.43.0 (*)
+         │   │   └── rerun v0.43.0 (*)
+         │   ├── re_entity_db v0.43.0 (*)
+         │   ├── re_log_channel v0.43.0
+         │   │   ├── re_entity_db v0.43.0 (*)
+         │   │   ├── re_grpc_client v0.43.0
+         │   │   │   └── re_sdk v0.43.0 (*)
+         │   │   ├── re_redap_client v0.43.0 (*)
+         │   │   └── rerun v0.43.0 (*)
+         │   ├── re_log_encoding v0.43.0
+         │   │   ├── re_chunk_store v0.43.0 (*)
+         │   │   ├── re_entity_db v0.43.0 (*)
+         │   │   ├── re_grpc_client v0.43.0 (*)
+         │   │   ├── re_redap_client v0.43.0 (*)
+         │   │   ├── re_sdk v0.43.0 (*)
+         │   │   ├── rerun v0.43.0 (*)
+         │   │   └── (dev) robot-viz v0.0.1 (*)
+         │   ├── re_redap_client v0.43.0 (*)
+         │   └── rerun v0.43.0 (*)
+         └── re_log_encoding v0.43.0 (*)
+   ├ cpufeatures v0.3.1
+     └── blake3 v1.8.7
+         ├── robot-msg v0.0.1
+         │   ├── robot-cli v0.0.1
+         │   ├── robot-rpc v0.0.1
+         │   │   ├── robot-cli v0.0.1 (*)
+         │   │   └── robot-tests v0.0.1
+         │   ├── robot-s0 v0.0.1
+         │   │   └── robot-tests v0.0.1 (*)
+         │   ├── robot-s1 v0.0.1
+         │   │   └── robot-tests v0.0.1 (*)
+         │   ├── robot-tests v0.0.1 (*)
+         │   ├── robot-transport v0.0.1
+         │   │   ├── robot-cli v0.0.1 (*)
+         │   │   ├── robot-rpc v0.0.1 (*)
+         │   │   ├── robot-s0 v0.0.1 (*)
+         │   │   ├── robot-s1 v0.0.1 (*)
+         │   │   ├── robot-tests v0.0.1 (*)
+         │   │   └── robot-viz v0.0.1
+         │   └── robot-viz v0.0.1 (*)
+         ├── robot-rpc v0.0.1 (*)
+         ├── robot-s0 v0.0.1 (*)
+         └── robot-tests v0.0.1 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'getrandom'
+    ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:134:1
+    │  
+134 │ ╭ getrandom 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+135 │ │ getrandom 0.3.4 registry+https://github.com/rust-lang/crates.io-index
+136 │ │ getrandom 0.4.3 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ getrandom v0.2.17
+      ├── const-random-macro v0.1.16
+      │   └── const-random v0.1.18
+      │       └── ahash v0.8.12
+      │           ├── arrow-array v58.4.1
+      │           │   ├── arrow v58.4.1
+      │           │   │   ├── quiver_types v0.6.2
+      │           │   │   │   └── quiver v0.6.2
+      │           │   │   │       ├── re_chunk_index v0.43.0
+      │           │   │   │       │   ├── re_chunk_store v0.43.0
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0
+      │           │   │   │       │   │   │   └── rerun v0.43.0
+      │           │   │   │       │   │   │       └── robot-viz v0.0.1
+      │           │   │   │       │   │   ├── re_query v0.43.0
+      │           │   │   │       │   │   │   └── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_channel v0.43.0
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0
+      │           │   │   │       │   │   │   └── re_sdk v0.43.0
+      │           │   │   │       │   │   │       └── rerun v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0
+      │           │   │   │       │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_encoding v0.43.0
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   ├── rerun v0.43.0 (*)
+      │           │   │   │       │   │   └── (dev) robot-viz v0.0.1 (*)
+      │           │   │   │       │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   └── rerun v0.43.0 (*)
+      │           │   │   │       ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       ├── re_log_types v0.43.0
+      │           │   │   │       │   ├── re_chunk v0.43.0
+      │           │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_lenses_core v0.43.0
+      │           │   │   │       │   │   │   ├── re_lenses v0.43.0
+      │           │   │   │       │   │   │   │   └── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   │   └── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_protos v0.43.0
+      │           │   │   │       │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── rerun v0.43.0 (*)
+      │           │   │   │       │   │   │   └── (dev) robot-viz v0.0.1 (*)
+      │           │   │   │       │   │   ├── re_query v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │       │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   ├── re_lenses v0.43.0 (*)
+      │           │   │   │       │   ├── re_lenses_core v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_msg v0.43.0
+      │           │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   ├── re_query v0.43.0 (*)
+      │           │   │   │       │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   ├── re_sdk_types v0.43.0
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_sorbet v0.43.0
+      │           │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_msg v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_uri v0.43.0
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   └── rerun v0.43.0 (*)
+      │           │   │   │       ├── re_protos v0.43.0 (*)
+      │           │   │   │       ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       ├── re_sorbet v0.43.0 (*)
+      │           │   │   │       ├── re_tuid v0.43.0
+      │           │   │   │       │   ├── re_arrow_util v0.43.0
+      │           │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_log_types v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sdk_types v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_sorbet v0.43.0 (*)
+      │           │   │   │       │   │   ├── re_types_core v0.43.0
+      │           │   │   │       │   │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_log_types v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_query v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_sdk_types v0.43.0 (*)
+      │           │   │   │       │   │   │   ├── re_sorbet v0.43.0 (*)
+      │           │   │   │       │   │   │   └── re_uri v0.43.0 (*)
+      │           │   │   │       │   │   └── rerun v0.43.0 (*)
+      │           │   │   │       │   ├── re_grpc_headers v0.43.0
+      │           │   │   │       │   │   └── re_protos v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_msg v0.43.0 (*)
+      │           │   │   │       │   ├── re_log_types v0.43.0 (*)
+      │           │   │   │       │   ├── re_protos v0.43.0 (*)
+      │           │   │   │       │   ├── re_sorbet v0.43.0 (*)
+      │           │   │   │       │   ├── re_types_core v0.43.0 (*)
+      │           │   │   │       │   └── re_uri v0.43.0 (*)
+      │           │   │   │       └── re_types_core v0.43.0 (*)
+      │           │   │   ├── re_arrow_util v0.43.0 (*)
+      │           │   │   ├── re_byte_size v0.43.0
+      │           │   │   │   ├── re_auth v0.43.0
+      │           │   │   │   │   └── re_redap_client v0.43.0 (*)
+      │           │   │   │   ├── re_build_info v0.43.0
+      │           │   │   │   │   ├── re_analytics v0.43.0
+      │           │   │   │   │   │   ├── re_auth v0.43.0 (*)
+      │           │   │   │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │   │   ├── re_log_msg v0.43.0 (*)
+      │           │   │   │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │   ├── re_lenses_core v0.43.0 (*)
+      │           │   │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │   ├── re_log_msg v0.43.0 (*)
+      │           │   │   │   ├── re_log_types v0.43.0 (*)
+      │           │   │   │   ├── re_mutex v0.43.0
+      │           │   │   │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   │   │   └── re_redap_client v0.43.0 (*)
+      │           │   │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   │   ├── re_query v0.43.0 (*)
+      │           │   │   │   ├── re_quota_channel v0.43.0
+      │           │   │   │   │   ├── re_analytics v0.43.0 (*)
+      │           │   │   │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │           │   │   │   │   ├── re_log_channel v0.43.0 (*)
+      │           │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   │   │   ├── re_memory v0.43.0
+      │           │   │   │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   │   ├── re_sdk v0.43.0 (*)
+      │           │   │   │   ├── re_sdk_types v0.43.0 (*)
+      │           │   │   │   ├── re_sorbet v0.43.0 (*)
+      │           │   │   │   ├── re_string_interner v0.43.0
+      │           │   │   │   │   ├── re_log_types v0.43.0 (*)
+      │           │   │   │   │   └── re_types_core v0.43.0 (*)
+      │           │   │   │   ├── re_tuid v0.43.0 (*)
+      │           │   │   │   ├── re_types_core v0.43.0 (*)
+      │           │   │   │   ├── re_uri v0.43.0 (*)
+      │           │   │   │   └── rerun v0.43.0 (*)
+      │           │   │   ├── re_chunk v0.43.0 (*)
+      │           │   │   ├── re_chunk_index v0.43.0 (*)
+      │           │   │   ├── re_chunk_store v0.43.0 (*)
+      │           │   │   ├── re_entity_db v0.43.0 (*)
+      │           │   │   ├── re_lenses v0.43.0 (*)
+      │           │   │   ├── re_lenses_core v0.43.0 (*)
+      │           │   │   ├── re_log_encoding v0.43.0 (*)
+      │           │   │   ├── re_log_msg v0.43.0 (*)
+      │           │   │   ├── re_log_types v0.43.0 (*)
+      │           │   │   ├── re_protos v0.43.0 (*)
+      │           │   │   ├── re_query v0.43.0 (*)
+      │           │   │   ├── re_redap_client v0.43.0 (*)
+      │           │   │   ├── re_sdk_types v0.43.0 (*)
+      │           │   │   ├── re_sorbet v0.43.0 (*)
+      │           │   │   ├── re_types_core v0.43.0 (*)
+      │           │   │   └── rerun v0.43.0 (*)
+      │           │   ├── arrow-arith v58.4.1
+      │           │   │   └── arrow v58.4.1 (*)
+      │           │   ├── arrow-cast v58.4.1
+      │           │   │   ├── arrow v58.4.1 (*)
+      │           │   │   └── arrow-json v58.4.1
+      │           │   │       └── arrow v58.4.1 (*)
+      │           │   ├── arrow-ipc v58.4.1
+      │           │   │   └── arrow v58.4.1 (*)
+      │           │   ├── arrow-json v58.4.1 (*)
+      │           │   ├── arrow-ord v58.4.1
+      │           │   │   ├── arrow v58.4.1 (*)
+      │           │   │   ├── arrow-cast v58.4.1 (*)
+      │           │   │   └── arrow-json v58.4.1 (*)
+      │           │   ├── arrow-row v58.4.1
+      │           │   │   └── arrow v58.4.1 (*)
+      │           │   ├── arrow-select v58.4.1
+      │           │   │   ├── arrow v58.4.1 (*)
+      │           │   │   ├── arrow-cast v58.4.1 (*)
+      │           │   │   ├── arrow-ipc v58.4.1 (*)
+      │           │   │   ├── arrow-json v58.4.1 (*)
+      │           │   │   ├── arrow-ord v58.4.1 (*)
+      │           │   │   └── arrow-string v58.4.1
+      │           │   │       └── arrow v58.4.1 (*)
+      │           │   └── arrow-string v58.4.1 (*)
+      │           ├── arrow-select v58.4.1 (*)
+      │           ├── re_chunk v0.43.0 (*)
+      │           ├── re_chunk_index v0.43.0 (*)
+      │           ├── re_chunk_store v0.43.0 (*)
+      │           ├── re_entity_db v0.43.0 (*)
+      │           ├── re_lenses_core v0.43.0 (*)
+      │           ├── re_log_types v0.43.0 (*)
+      │           ├── re_memory v0.43.0 (*)
+      │           ├── re_query v0.43.0 (*)
+      │           ├── re_redap_client v0.43.0 (*)
+      │           ├── re_sdk v0.43.0 (*)
+      │           ├── re_sorbet v0.43.0 (*)
+      │           ├── re_string_interner v0.43.0 (*)
+      │           └── rerun v0.43.0 (*)
+      ├── jsonwebtoken v10.4.0
+      │   └── re_auth v0.43.0 (*)
+      ├── re_auth v0.43.0 (*)
+      └── ring v0.17.14
+          ├── re_auth v0.43.0 (*)
+          ├── rustls v0.23.46
+          │   ├── rustls-platform-verifier v0.7.1
+          │   │   └── ureq v3.5.1
+          │   │       └── ehttp v0.7.3
+          │   │           ├── re_analytics v0.43.0 (*)
+          │   │           ├── re_auth v0.43.0 (*)
+          │   │           └── re_redap_client v0.43.0 (*)
+          │   ├── tokio-rustls v0.26.6
+          │   │   └── tonic v0.14.9
+          │   │       ├── re_auth v0.43.0 (*)
+          │   │       ├── re_grpc_client v0.43.0 (*)
+          │   │       ├── re_grpc_headers v0.43.0 (*)
+          │   │       ├── re_protos v0.43.0 (*)
+          │   │       ├── re_redap_client v0.43.0 (*)
+          │   │       ├── rerun-tonic-web-wasm-client v0.8.3
+          │   │       │   ├── re_grpc_client v0.43.0 (*)
+          │   │       │   └── re_redap_client v0.43.0 (*)
+          │   │       ├── robot-cli v0.0.1
+          │   │       ├── robot-rpc v0.0.1
+          │   │       │   ├── robot-cli v0.0.1 (*)
+          │   │       │   └── robot-tests v0.0.1
+          │   │       ├── robot-tests v0.0.1 (*)
+          │   │       ├── tonic-prost v0.14.9
+          │   │       │   ├── re_protos v0.43.0 (*)
+          │   │       │   ├── re_redap_client v0.43.0 (*)
+          │   │       │   ├── robot-rpc v0.0.1 (*)
+          │   │       │   └── tonic-reflection v0.14.9
+          │   │       │       └── re_protos v0.43.0 (*)
+          │   │       ├── tonic-reflection v0.14.9 (*)
+          │   │       └── tonic-types v0.14.9
+          │   │           └── re_protos v0.43.0 (*)
+          │   └── ureq v3.5.1 (*)
+          └── rustls-webpki v0.103.16
+              ├── rustls v0.23.46 (*)
+              └── rustls-platform-verifier v0.7.1 (*)
+    ├ getrandom v0.3.4
+      ├── ahash v0.8.12
+      │   ├── arrow-array v58.4.1
+      │   │   ├── arrow v58.4.1
+      │   │   │   ├── quiver_types v0.6.2
+      │   │   │   │   └── quiver v0.6.2
+      │   │   │   │       ├── re_chunk_index v0.43.0
+      │   │   │   │       │   ├── re_chunk_store v0.43.0
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0
+      │   │   │   │       │   │   │   └── rerun v0.43.0
+      │   │   │   │       │   │   │       └── robot-viz v0.0.1
+      │   │   │   │       │   │   ├── re_query v0.43.0
+      │   │   │   │       │   │   │   └── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_channel v0.43.0
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0
+      │   │   │   │       │   │   │   └── re_sdk v0.43.0
+      │   │   │   │       │   │   │       └── rerun v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0
+      │   │   │   │       │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_encoding v0.43.0
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   ├── rerun v0.43.0 (*)
+      │   │   │   │       │   │   └── (dev) robot-viz v0.0.1 (*)
+      │   │   │   │       │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   └── rerun v0.43.0 (*)
+      │   │   │   │       ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       ├── re_log_types v0.43.0
+      │   │   │   │       │   ├── re_chunk v0.43.0
+      │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_lenses_core v0.43.0
+      │   │   │   │       │   │   │   ├── re_lenses v0.43.0
+      │   │   │   │       │   │   │   │   └── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   │   └── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_protos v0.43.0
+      │   │   │   │       │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── rerun v0.43.0 (*)
+      │   │   │   │       │   │   │   └── (dev) robot-viz v0.0.1 (*)
+      │   │   │   │       │   │   ├── re_query v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │       │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   ├── re_lenses v0.43.0 (*)
+      │   │   │   │       │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_msg v0.43.0
+      │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   ├── re_query v0.43.0 (*)
+      │   │   │   │       │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   ├── re_sdk_types v0.43.0
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_sorbet v0.43.0
+      │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_uri v0.43.0
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   └── rerun v0.43.0 (*)
+      │   │   │   │       ├── re_protos v0.43.0 (*)
+      │   │   │   │       ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       ├── re_sorbet v0.43.0 (*)
+      │   │   │   │       ├── re_tuid v0.43.0
+      │   │   │   │       │   ├── re_arrow_util v0.43.0
+      │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_log_types v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sdk_types v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_sorbet v0.43.0 (*)
+      │   │   │   │       │   │   ├── re_types_core v0.43.0
+      │   │   │   │       │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_log_types v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_query v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_sdk_types v0.43.0 (*)
+      │   │   │   │       │   │   │   ├── re_sorbet v0.43.0 (*)
+      │   │   │   │       │   │   │   └── re_uri v0.43.0 (*)
+      │   │   │   │       │   │   └── rerun v0.43.0 (*)
+      │   │   │   │       │   ├── re_grpc_headers v0.43.0
+      │   │   │   │       │   │   └── re_protos v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   │       │   ├── re_log_types v0.43.0 (*)
+      │   │   │   │       │   ├── re_protos v0.43.0 (*)
+      │   │   │   │       │   ├── re_sorbet v0.43.0 (*)
+      │   │   │   │       │   ├── re_types_core v0.43.0 (*)
+      │   │   │   │       │   └── re_uri v0.43.0 (*)
+      │   │   │   │       └── re_types_core v0.43.0 (*)
+      │   │   │   ├── re_arrow_util v0.43.0 (*)
+      │   │   │   ├── re_byte_size v0.43.0
+      │   │   │   │   ├── re_auth v0.43.0
+      │   │   │   │   │   └── re_redap_client v0.43.0 (*)
+      │   │   │   │   ├── re_build_info v0.43.0
+      │   │   │   │   │   ├── re_analytics v0.43.0
+      │   │   │   │   │   │   ├── re_auth v0.43.0 (*)
+      │   │   │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │   │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   │   ├── re_log_types v0.43.0 (*)
+      │   │   │   │   ├── re_mutex v0.43.0
+      │   │   │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │   │   └── re_redap_client v0.43.0 (*)
+      │   │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   │   ├── re_query v0.43.0 (*)
+      │   │   │   │   ├── re_quota_channel v0.43.0
+      │   │   │   │   │   ├── re_analytics v0.43.0 (*)
+      │   │   │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   │   │   ├── re_memory v0.43.0
+      │   │   │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │   ├── re_sdk_types v0.43.0 (*)
+      │   │   │   │   ├── re_sorbet v0.43.0 (*)
+      │   │   │   │   ├── re_string_interner v0.43.0
+      │   │   │   │   │   ├── re_log_types v0.43.0 (*)
+      │   │   │   │   │   └── re_types_core v0.43.0 (*)
+      │   │   │   │   ├── re_tuid v0.43.0 (*)
+      │   │   │   │   ├── re_types_core v0.43.0 (*)
+      │   │   │   │   ├── re_uri v0.43.0 (*)
+      │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   ├── re_lenses v0.43.0 (*)
+      │   │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   ├── re_log_types v0.43.0 (*)
+      │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   ├── re_query v0.43.0 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   ├── re_sdk_types v0.43.0 (*)
+      │   │   │   ├── re_sorbet v0.43.0 (*)
+      │   │   │   ├── re_types_core v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── arrow-arith v58.4.1
+      │   │   │   └── arrow v58.4.1 (*)
+      │   │   ├── arrow-cast v58.4.1
+      │   │   │   ├── arrow v58.4.1 (*)
+      │   │   │   └── arrow-json v58.4.1
+      │   │   │       └── arrow v58.4.1 (*)
+      │   │   ├── arrow-ipc v58.4.1
+      │   │   │   └── arrow v58.4.1 (*)
+      │   │   ├── arrow-json v58.4.1 (*)
+      │   │   ├── arrow-ord v58.4.1
+      │   │   │   ├── arrow v58.4.1 (*)
+      │   │   │   ├── arrow-cast v58.4.1 (*)
+      │   │   │   └── arrow-json v58.4.1 (*)
+      │   │   ├── arrow-row v58.4.1
+      │   │   │   └── arrow v58.4.1 (*)
+      │   │   ├── arrow-select v58.4.1
+      │   │   │   ├── arrow v58.4.1 (*)
+      │   │   │   ├── arrow-cast v58.4.1 (*)
+      │   │   │   ├── arrow-ipc v58.4.1 (*)
+      │   │   │   ├── arrow-json v58.4.1 (*)
+      │   │   │   ├── arrow-ord v58.4.1 (*)
+      │   │   │   └── arrow-string v58.4.1
+      │   │   │       └── arrow v58.4.1 (*)
+      │   │   └── arrow-string v58.4.1 (*)
+      │   ├── arrow-select v58.4.1 (*)
+      │   ├── re_chunk v0.43.0 (*)
+      │   ├── re_chunk_index v0.43.0 (*)
+      │   ├── re_chunk_store v0.43.0 (*)
+      │   ├── re_entity_db v0.43.0 (*)
+      │   ├── re_lenses_core v0.43.0 (*)
+      │   ├── re_log_types v0.43.0 (*)
+      │   ├── re_memory v0.43.0 (*)
+      │   ├── re_query v0.43.0 (*)
+      │   ├── re_redap_client v0.43.0 (*)
+      │   ├── re_sdk v0.43.0 (*)
+      │   ├── re_sorbet v0.43.0 (*)
+      │   ├── re_string_interner v0.43.0 (*)
+      │   └── rerun v0.43.0 (*)
+      ├── rand_core v0.9.5
+      │   ├── rand v0.9.5
+      │   │   ├── opentelemetry_sdk v0.32.1
+      │   │   │   └── opentelemetry-proto v0.32.0
+      │   │   │       └── re_redap_client v0.43.0 (*)
+      │   │   ├── re_auth v0.43.0 (*)
+      │   │   ├── re_backoff v0.43.0
+      │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   └── re_redap_client v0.43.0 (*)
+      │   │   └── re_chunk v0.43.0 (*)
+      │   └── rand_chacha v0.9.0
+      │       └── rand v0.9.5 (*)
+      ├── re_auth v0.43.0 (*)
+      ├── re_backoff v0.43.0 (*)
+      └── re_tuid v0.43.0 (*)
+    ├ getrandom v0.4.3
+      ├── tempfile v3.27.0
+      │   ├── prost-build v0.14.4
+      │   │   └── tonic-prost-build v0.14.9
+      │   │       └── (build) robot-rpc v0.0.1
+      │   │           ├── robot-cli v0.0.1
+      │   │           └── robot-tests v0.0.1
+      │   ├── (dev) robot-adapter-feetech v0.0.1
+      │   │   ├── robot-s0 v0.0.1
+      │   │   │   └── robot-tests v0.0.1 (*)
+      │   │   └── robot-tests v0.0.1 (*)
+      │   ├── (dev) robot-health v0.0.1
+      │   │   ├── robot-rpc v0.0.1 (*)
+      │   │   ├── robot-s0 v0.0.1 (*)
+      │   │   └── robot-s1 v0.0.1
+      │   │       └── robot-tests v0.0.1 (*)
+      │   ├── (dev) robot-rpc v0.0.1 (*)
+      │   ├── (dev) robot-s0 v0.0.1 (*)
+      │   ├── (dev) robot-tests v0.0.1 (*)
+      │   ├── (dev) robot-viz v0.0.1
+      │   └── tonic-prost-build v0.14.9 (*)
+      └── uuid v1.29.2
+          ├── cfb v0.14.0
+          │   └── infer v0.22.0
+          │       └── re_sdk_types v0.43.0
+          │           ├── re_chunk_store v0.43.0
+          │           │   ├── re_entity_db v0.43.0
+          │           │   │   └── rerun v0.43.0
+          │           │   │       └── robot-viz v0.0.1 (*)
+          │           │   ├── re_query v0.43.0
+          │           │   │   └── re_entity_db v0.43.0 (*)
+          │           │   └── rerun v0.43.0 (*)
+          │           ├── re_lenses v0.43.0
+          │           │   └── re_sdk v0.43.0
+          │           │       └── rerun v0.43.0 (*)
+          │           ├── re_lenses_core v0.43.0
+          │           │   ├── re_lenses v0.43.0 (*)
+          │           │   └── re_sdk v0.43.0 (*)
+          │           ├── re_sdk v0.43.0 (*)
+          │           └── rerun v0.43.0 (*)
+          ├── re_analytics v0.43.0
+          │   ├── re_auth v0.43.0
+          │   │   └── re_redap_client v0.43.0
+          │   │       └── rerun v0.43.0 (*)
+          │   └── rerun v0.43.0 (*)
+          ├── re_auth v0.43.0 (*)
+          ├── re_log_types v0.43.0
+          │   ├── re_chunk v0.43.0
+          │   │   ├── re_chunk_index v0.43.0
+          │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   ├── re_log_channel v0.43.0
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_grpc_client v0.43.0
+          │   │   │   │   │   └── re_sdk v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   ├── rerun v0.43.0 (*)
+          │   │   │   │   └── (dev) robot-viz v0.0.1 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   └── rerun v0.43.0 (*)
+          │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   ├── re_protos v0.43.0
+          │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   ├── rerun v0.43.0 (*)
+          │   │   │   └── (dev) robot-viz v0.0.1 (*)
+          │   │   ├── re_query v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_sdk v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_chunk_index v0.43.0 (*)
+          │   ├── re_chunk_store v0.43.0 (*)
+          │   ├── re_entity_db v0.43.0 (*)
+          │   ├── re_lenses v0.43.0 (*)
+          │   ├── re_lenses_core v0.43.0 (*)
+          │   ├── re_log_channel v0.43.0 (*)
+          │   ├── re_log_encoding v0.43.0 (*)
+          │   ├── re_log_msg v0.43.0
+          │   │   ├── re_chunk v0.43.0 (*)
+          │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   ├── re_protos v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_sdk v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_protos v0.43.0 (*)
+          │   ├── re_query v0.43.0 (*)
+          │   ├── re_redap_client v0.43.0 (*)
+          │   ├── re_sdk v0.43.0 (*)
+          │   ├── re_sdk_types v0.43.0 (*)
+          │   ├── re_sorbet v0.43.0
+          │   │   ├── re_chunk v0.43.0 (*)
+          │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   ├── re_protos v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_sdk v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_uri v0.43.0
+          │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_sdk v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   └── rerun v0.43.0 (*)
+          ├── re_sdk v0.43.0 (*)
+          ├── re_sdk_types v0.43.0 (*)
+          ├── robot-cli v0.0.1 (*)
+          ├── robot-rpc v0.0.1 (*)
+          └── robot-s1 v0.0.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'itertools'
+    ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:194:1
+    │  
+194 │ ╭ itertools 0.14.0 registry+https://github.com/rust-lang/crates.io-index
+195 │ │ itertools 0.15.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰──────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ itertools v0.14.0
+      ├── prost-build v0.14.4
+      │   └── tonic-prost-build v0.14.9
+      │       └── (build) robot-rpc v0.0.1
+      │           ├── robot-cli v0.0.1
+      │           └── robot-tests v0.0.1
+      ├── prost-derive v0.14.4
+      │   └── prost v0.14.4
+      │       ├── opentelemetry-proto v0.32.0
+      │       │   └── re_redap_client v0.43.0
+      │       │       └── rerun v0.43.0
+      │       │           └── robot-viz v0.0.1
+      │       ├── prost-build v0.14.4 (*)
+      │       ├── prost-reflect v0.16.5
+      │       │   └── re_protos v0.43.0
+      │       │       ├── re_grpc_client v0.43.0
+      │       │       │   └── re_sdk v0.43.0
+      │       │       │       └── rerun v0.43.0 (*)
+      │       │       ├── re_log_channel v0.43.0
+      │       │       │   ├── re_entity_db v0.43.0
+      │       │       │   │   └── rerun v0.43.0 (*)
+      │       │       │   ├── re_grpc_client v0.43.0 (*)
+      │       │       │   ├── re_redap_client v0.43.0 (*)
+      │       │       │   └── rerun v0.43.0 (*)
+      │       │       ├── re_log_encoding v0.43.0
+      │       │       │   ├── re_chunk_store v0.43.0
+      │       │       │   │   ├── re_entity_db v0.43.0 (*)
+      │       │       │   │   ├── re_query v0.43.0
+      │       │       │   │   │   └── re_entity_db v0.43.0 (*)
+      │       │       │   │   └── rerun v0.43.0 (*)
+      │       │       │   ├── re_entity_db v0.43.0 (*)
+      │       │       │   ├── re_grpc_client v0.43.0 (*)
+      │       │       │   ├── re_redap_client v0.43.0 (*)
+      │       │       │   ├── re_sdk v0.43.0 (*)
+      │       │       │   ├── rerun v0.43.0 (*)
+      │       │       │   └── (dev) robot-viz v0.0.1 (*)
+      │       │       ├── re_redap_client v0.43.0 (*)
+      │       │       ├── rerun v0.43.0 (*)
+      │       │       └── (dev) robot-viz v0.0.1 (*)
+      │       ├── prost-types v0.14.4
+      │       │   ├── prost-build v0.14.4 (*)
+      │       │   ├── prost-reflect v0.16.5 (*)
+      │       │   ├── re_protos v0.43.0 (*)
+      │       │   ├── tonic-prost-build v0.14.9 (*)
+      │       │   ├── tonic-reflection v0.14.9
+      │       │   │   └── re_protos v0.43.0 (*)
+      │       │   └── tonic-types v0.14.9
+      │       │       └── re_protos v0.43.0 (*)
+      │       ├── re_protos v0.43.0 (*)
+      │       ├── robot-rpc v0.0.1 (*)
+      │       ├── tonic-prost v0.14.9
+      │       │   ├── re_protos v0.43.0 (*)
+      │       │   ├── re_redap_client v0.43.0 (*)
+      │       │   ├── robot-rpc v0.0.1 (*)
+      │       │   └── tonic-reflection v0.14.9 (*)
+      │       ├── tonic-reflection v0.14.9 (*)
+      │       └── tonic-types v0.14.9 (*)
+      └── puffin v0.20.0
+          ├── re_tracing v0.43.0
+          │   ├── re_arrow_util v0.43.0
+          │   │   ├── re_chunk v0.43.0
+          │   │   │   ├── re_chunk_index v0.43.0
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   ├── re_lenses_core v0.43.0
+          │   │   │   │   ├── re_lenses v0.43.0
+          │   │   │   │   │   └── re_sdk v0.43.0 (*)
+          │   │   │   │   └── re_sdk v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   └── rerun v0.43.0 (*)
+          │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   ├── re_lenses v0.43.0 (*)
+          │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   ├── re_log_types v0.43.0
+          │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   ├── re_lenses v0.43.0 (*)
+          │   │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   ├── re_log_msg v0.43.0
+          │   │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   ├── re_sdk_types v0.43.0
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_lenses v0.43.0 (*)
+          │   │   │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_sorbet v0.43.0
+          │   │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_uri v0.43.0
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   └── rerun v0.43.0 (*)
+          │   │   ├── re_protos v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   ├── re_types_core v0.43.0
+          │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   └── re_uri v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_async v0.43.0
+          │   │   ├── re_backoff v0.43.0
+          │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   └── re_redap_client v0.43.0 (*)
+          │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   ├── re_web v0.43.0
+          │   │   │   └── re_auth v0.43.0
+          │   │   │       └── re_redap_client v0.43.0 (*)
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_chunk v0.43.0 (*)
+          │   ├── re_chunk_index v0.43.0 (*)
+          │   ├── re_chunk_store v0.43.0 (*)
+          │   ├── re_entity_db v0.43.0 (*)
+          │   ├── re_grpc_client v0.43.0 (*)
+          │   ├── re_lenses v0.43.0 (*)
+          │   ├── re_log_channel v0.43.0 (*)
+          │   ├── re_log_encoding v0.43.0 (*)
+          │   ├── re_log_types v0.43.0 (*)
+          │   ├── re_memory v0.43.0
+          │   │   └── rerun v0.43.0 (*)
+          │   ├── re_protos v0.43.0 (*)
+          │   ├── re_query v0.43.0 (*)
+          │   ├── re_redap_client v0.43.0 (*)
+          │   ├── re_sdk v0.43.0 (*)
+          │   ├── re_sdk_types v0.43.0 (*)
+          │   ├── re_sorbet v0.43.0 (*)
+          │   ├── re_types_core v0.43.0 (*)
+          │   └── rerun v0.43.0 (*)
+          └── rerun v0.43.0 (*)
+    ├ itertools v0.15.0
+      ├── re_arrow_util v0.43.0
+      │   ├── re_chunk v0.43.0
+      │   │   ├── re_chunk_index v0.43.0
+      │   │   │   ├── re_chunk_store v0.43.0
+      │   │   │   │   ├── re_entity_db v0.43.0
+      │   │   │   │   │   └── rerun v0.43.0
+      │   │   │   │   │       └── robot-viz v0.0.1
+      │   │   │   │   ├── re_query v0.43.0
+      │   │   │   │   │   └── re_entity_db v0.43.0 (*)
+      │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   ├── re_log_channel v0.43.0
+      │   │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │   ├── re_grpc_client v0.43.0
+      │   │   │   │   │   └── re_sdk v0.43.0
+      │   │   │   │   │       └── rerun v0.43.0 (*)
+      │   │   │   │   ├── re_redap_client v0.43.0
+      │   │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   │   └── rerun v0.43.0 (*)
+      │   │   │   ├── re_log_encoding v0.43.0
+      │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   │   ├── rerun v0.43.0 (*)
+      │   │   │   │   └── (dev) robot-viz v0.0.1 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   ├── re_lenses_core v0.43.0
+      │   │   │   ├── re_lenses v0.43.0
+      │   │   │   │   └── re_sdk v0.43.0 (*)
+      │   │   │   └── re_sdk v0.43.0 (*)
+      │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   ├── re_protos v0.43.0
+      │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   ├── rerun v0.43.0 (*)
+      │   │   │   └── (dev) robot-viz v0.0.1 (*)
+      │   │   ├── re_query v0.43.0 (*)
+      │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   ├── re_sdk v0.43.0 (*)
+      │   │   └── rerun v0.43.0 (*)
+      │   ├── re_chunk_index v0.43.0 (*)
+      │   ├── re_chunk_store v0.43.0 (*)
+      │   ├── re_entity_db v0.43.0 (*)
+      │   ├── re_lenses v0.43.0 (*)
+      │   ├── re_lenses_core v0.43.0 (*)
+      │   ├── re_log_encoding v0.43.0 (*)
+      │   ├── re_log_types v0.43.0
+      │   │   ├── re_chunk v0.43.0 (*)
+      │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   ├── re_lenses v0.43.0 (*)
+      │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   ├── re_log_msg v0.43.0
+      │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── re_protos v0.43.0 (*)
+      │   │   ├── re_query v0.43.0 (*)
+      │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   ├── re_sdk v0.43.0 (*)
+      │   │   ├── re_sdk_types v0.43.0
+      │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   ├── re_lenses v0.43.0 (*)
+      │   │   │   ├── re_lenses_core v0.43.0 (*)
+      │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── re_sorbet v0.43.0
+      │   │   │   ├── re_chunk v0.43.0 (*)
+      │   │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   │   ├── re_log_msg v0.43.0 (*)
+      │   │   │   ├── re_protos v0.43.0 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── re_uri v0.43.0
+      │   │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   │   ├── re_sdk v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   └── rerun v0.43.0 (*)
+      │   ├── re_protos v0.43.0 (*)
+      │   ├── re_redap_client v0.43.0 (*)
+      │   ├── re_sdk_types v0.43.0 (*)
+      │   ├── re_sorbet v0.43.0 (*)
+      │   ├── re_types_core v0.43.0
+      │   │   ├── re_chunk v0.43.0 (*)
+      │   │   ├── re_chunk_index v0.43.0 (*)
+      │   │   ├── re_chunk_store v0.43.0 (*)
+      │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   ├── re_log_types v0.43.0 (*)
+      │   │   ├── re_protos v0.43.0 (*)
+      │   │   ├── re_query v0.43.0 (*)
+      │   │   ├── re_redap_client v0.43.0 (*)
+      │   │   ├── re_sdk_types v0.43.0 (*)
+      │   │   ├── re_sorbet v0.43.0 (*)
+      │   │   └── re_uri v0.43.0 (*)
+      │   └── rerun v0.43.0 (*)
+      ├── re_chunk v0.43.0 (*)
+      ├── re_chunk_index v0.43.0 (*)
+      ├── re_chunk_store v0.43.0 (*)
+      ├── re_entity_db v0.43.0 (*)
+      ├── re_format v0.43.0
+      │   ├── re_chunk v0.43.0 (*)
+      │   ├── re_chunk_store v0.43.0 (*)
+      │   ├── re_entity_db v0.43.0 (*)
+      │   ├── re_log_types v0.43.0 (*)
+      │   ├── re_memory v0.43.0
+      │   │   └── rerun v0.43.0 (*)
+      │   ├── re_query v0.43.0 (*)
+      │   ├── re_quota_channel v0.43.0
+      │   │   ├── re_analytics v0.43.0
+      │   │   │   ├── re_auth v0.43.0
+      │   │   │   │   └── re_redap_client v0.43.0 (*)
+      │   │   │   └── rerun v0.43.0 (*)
+      │   │   ├── re_chunk v0.43.0 (*)
+      │   │   ├── re_grpc_client v0.43.0 (*)
+      │   │   ├── re_log_channel v0.43.0 (*)
+      │   │   ├── re_log_encoding v0.43.0 (*)
+      │   │   ├── re_memory v0.43.0 (*)
+      │   │   ├── re_sdk v0.43.0 (*)
+      │   │   └── rerun v0.43.0 (*)
+      │   ├── re_redap_client v0.43.0 (*)
+      │   ├── re_sdk_types v0.43.0 (*)
+      │   └── rerun v0.43.0 (*)
+      ├── re_lenses v0.43.0 (*)
+      ├── re_log_encoding v0.43.0 (*)
+      ├── re_log_types v0.43.0 (*)
+      ├── re_memory v0.43.0 (*)
+      ├── re_protos v0.43.0 (*)
+      ├── re_query v0.43.0 (*)
+      ├── re_redap_client v0.43.0 (*)
+      ├── re_sdk v0.43.0 (*)
+      ├── re_sdk_types v0.43.0 (*)
+      ├── re_sorbet v0.43.0 (*)
+      ├── re_types_core v0.43.0 (*)
+      └── rerun v0.43.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'r-efi'
+    ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:315:1
+    │  
+315 │ ╭ r-efi 5.3.0 registry+https://github.com/rust-lang/crates.io-index
+316 │ │ r-efi 6.0.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ r-efi v5.3.0
+      └── getrandom v0.3.4
+          ├── ahash v0.8.12
+          │   ├── arrow-array v58.4.1
+          │   │   ├── arrow v58.4.1
+          │   │   │   ├── quiver_types v0.6.2
+          │   │   │   │   └── quiver v0.6.2
+          │   │   │   │       ├── re_chunk_index v0.43.0
+          │   │   │   │       │   ├── re_chunk_store v0.43.0
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0
+          │   │   │   │       │   │   │   └── rerun v0.43.0
+          │   │   │   │       │   │   │       └── robot-viz v0.0.1
+          │   │   │   │       │   │   ├── re_query v0.43.0
+          │   │   │   │       │   │   │   └── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_channel v0.43.0
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0
+          │   │   │   │       │   │   │   └── re_sdk v0.43.0
+          │   │   │   │       │   │   │       └── rerun v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0
+          │   │   │   │       │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_encoding v0.43.0
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   ├── rerun v0.43.0 (*)
+          │   │   │   │       │   │   └── (dev) robot-viz v0.0.1 (*)
+          │   │   │   │       │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   └── rerun v0.43.0 (*)
+          │   │   │   │       ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       ├── re_log_types v0.43.0
+          │   │   │   │       │   ├── re_chunk v0.43.0
+          │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_lenses_core v0.43.0
+          │   │   │   │       │   │   │   ├── re_lenses v0.43.0
+          │   │   │   │       │   │   │   │   └── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   │   └── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_protos v0.43.0
+          │   │   │   │       │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── rerun v0.43.0 (*)
+          │   │   │   │       │   │   │   └── (dev) robot-viz v0.0.1 (*)
+          │   │   │   │       │   │   ├── re_query v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │       │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   ├── re_lenses v0.43.0 (*)
+          │   │   │   │       │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_msg v0.43.0
+          │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   ├── re_query v0.43.0 (*)
+          │   │   │   │       │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   ├── re_sdk_types v0.43.0
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_sorbet v0.43.0
+          │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_uri v0.43.0
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   └── rerun v0.43.0 (*)
+          │   │   │   │       ├── re_protos v0.43.0 (*)
+          │   │   │   │       ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       ├── re_sorbet v0.43.0 (*)
+          │   │   │   │       ├── re_tuid v0.43.0
+          │   │   │   │       │   ├── re_arrow_util v0.43.0
+          │   │   │   │       │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_lenses v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   │       │   │   ├── re_types_core v0.43.0
+          │   │   │   │       │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   │   │       │   │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   │       │   │   │   └── re_uri v0.43.0 (*)
+          │   │   │   │       │   │   └── rerun v0.43.0 (*)
+          │   │   │   │       │   ├── re_grpc_headers v0.43.0
+          │   │   │   │       │   │   └── re_protos v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   │       │   ├── re_log_types v0.43.0 (*)
+          │   │   │   │       │   ├── re_protos v0.43.0 (*)
+          │   │   │   │       │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   │       │   ├── re_types_core v0.43.0 (*)
+          │   │   │   │       │   └── re_uri v0.43.0 (*)
+          │   │   │   │       └── re_types_core v0.43.0 (*)
+          │   │   │   ├── re_arrow_util v0.43.0 (*)
+          │   │   │   ├── re_byte_size v0.43.0
+          │   │   │   │   ├── re_auth v0.43.0
+          │   │   │   │   │   └── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_build_info v0.43.0
+          │   │   │   │   │   ├── re_analytics v0.43.0
+          │   │   │   │   │   │   ├── re_auth v0.43.0 (*)
+          │   │   │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   │   ├── re_mutex v0.43.0
+          │   │   │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   │   │   └── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   │   ├── re_quota_channel v0.43.0
+          │   │   │   │   │   ├── re_analytics v0.43.0 (*)
+          │   │   │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   │   │   ├── re_log_channel v0.43.0 (*)
+          │   │   │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   │   │   ├── re_memory v0.43.0
+          │   │   │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   │   ├── re_sdk v0.43.0 (*)
+          │   │   │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   │   ├── re_string_interner v0.43.0
+          │   │   │   │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   │   │   └── re_types_core v0.43.0 (*)
+          │   │   │   │   ├── re_tuid v0.43.0 (*)
+          │   │   │   │   ├── re_types_core v0.43.0 (*)
+          │   │   │   │   ├── re_uri v0.43.0 (*)
+          │   │   │   │   └── rerun v0.43.0 (*)
+          │   │   │   ├── re_chunk v0.43.0 (*)
+          │   │   │   ├── re_chunk_index v0.43.0 (*)
+          │   │   │   ├── re_chunk_store v0.43.0 (*)
+          │   │   │   ├── re_entity_db v0.43.0 (*)
+          │   │   │   ├── re_lenses v0.43.0 (*)
+          │   │   │   ├── re_lenses_core v0.43.0 (*)
+          │   │   │   ├── re_log_encoding v0.43.0 (*)
+          │   │   │   ├── re_log_msg v0.43.0 (*)
+          │   │   │   ├── re_log_types v0.43.0 (*)
+          │   │   │   ├── re_protos v0.43.0 (*)
+          │   │   │   ├── re_query v0.43.0 (*)
+          │   │   │   ├── re_redap_client v0.43.0 (*)
+          │   │   │   ├── re_sdk_types v0.43.0 (*)
+          │   │   │   ├── re_sorbet v0.43.0 (*)
+          │   │   │   ├── re_types_core v0.43.0 (*)
+          │   │   │   └── rerun v0.43.0 (*)
+          │   │   ├── arrow-arith v58.4.1
+          │   │   │   └── arrow v58.4.1 (*)
+          │   │   ├── arrow-cast v58.4.1
+          │   │   │   ├── arrow v58.4.1 (*)
+          │   │   │   └── arrow-json v58.4.1
+          │   │   │       └── arrow v58.4.1 (*)
+          │   │   ├── arrow-ipc v58.4.1
+          │   │   │   └── arrow v58.4.1 (*)
+          │   │   ├── arrow-json v58.4.1 (*)
+          │   │   ├── arrow-ord v58.4.1
+          │   │   │   ├── arrow v58.4.1 (*)
+          │   │   │   ├── arrow-cast v58.4.1 (*)
+          │   │   │   └── arrow-json v58.4.1 (*)
+          │   │   ├── arrow-row v58.4.1
+          │   │   │   └── arrow v58.4.1 (*)
+          │   │   ├── arrow-select v58.4.1
+          │   │   │   ├── arrow v58.4.1 (*)
+          │   │   │   ├── arrow-cast v58.4.1 (*)
+          │   │   │   ├── arrow-ipc v58.4.1 (*)
+          │   │   │   ├── arrow-json v58.4.1 (*)
+          │   │   │   ├── arrow-ord v58.4.1 (*)
+          │   │   │   └── arrow-string v58.4.1
+          │   │   │       └── arrow v58.4.1 (*)
+          │   │   └── arrow-string v58.4.1 (*)
+          │   ├── arrow-select v58.4.1 (*)
+          │   ├── re_chunk v0.43.0 (*)
+          │   ├── re_chunk_index v0.43.0 (*)
+          │   ├── re_chunk_store v0.43.0 (*)
+          │   ├── re_entity_db v0.43.0 (*)
+          │   ├── re_lenses_core v0.43.0 (*)
+          │   ├── re_log_types v0.43.0 (*)
+          │   ├── re_memory v0.43.0 (*)
+          │   ├── re_query v0.43.0 (*)
+          │   ├── re_redap_client v0.43.0 (*)
+          │   ├── re_sdk v0.43.0 (*)
+          │   ├── re_sorbet v0.43.0 (*)
+          │   ├── re_string_interner v0.43.0 (*)
+          │   └── rerun v0.43.0 (*)
+          ├── rand_core v0.9.5
+          │   ├── rand v0.9.5
+          │   │   ├── opentelemetry_sdk v0.32.1
+          │   │   │   └── opentelemetry-proto v0.32.0
+          │   │   │       └── re_redap_client v0.43.0 (*)
+          │   │   ├── re_auth v0.43.0 (*)
+          │   │   ├── re_backoff v0.43.0
+          │   │   │   ├── re_grpc_client v0.43.0 (*)
+          │   │   │   └── re_redap_client v0.43.0 (*)
+          │   │   └── re_chunk v0.43.0 (*)
+          │   └── rand_chacha v0.9.0
+          │       └── rand v0.9.5 (*)
+          ├── re_auth v0.43.0 (*)
+          ├── re_backoff v0.43.0 (*)
+          └── re_tuid v0.43.0 (*)
+    ├ r-efi v6.0.0
+      └── getrandom v0.4.3
+          ├── tempfile v3.27.0
+          │   ├── prost-build v0.14.4
+          │   │   └── tonic-prost-build v0.14.9
+          │   │       └── (build) robot-rpc v0.0.1
+          │   │           ├── robot-cli v0.0.1
+          │   │           └── robot-tests v0.0.1
+          │   ├── (dev) robot-adapter-feetech v0.0.1
+          │   │   ├── robot-s0 v0.0.1
+          │   │   │   └── robot-tests v0.0.1 (*)
+          │   │   └── robot-tests v0.0.1 (*)
+          │   ├── (dev) robot-health v0.0.1
+          │   │   ├── robot-rpc v0.0.1 (*)
+          │   │   ├── robot-s0 v0.0.1 (*)
+          │   │   └── robot-s1 v0.0.1
+          │   │       └── robot-tests v0.0.1 (*)
+          │   ├── (dev) robot-rpc v0.0.1 (*)
+          │   ├── (dev) robot-s0 v0.0.1 (*)
+          │   ├── (dev) robot-tests v0.0.1 (*)
+          │   ├── (dev) robot-viz v0.0.1
+          │   └── tonic-prost-build v0.14.9 (*)
+          └── uuid v1.29.2
+              ├── cfb v0.14.0
+              │   └── infer v0.22.0
+              │       └── re_sdk_types v0.43.0
+              │           ├── re_chunk_store v0.43.0
+              │           │   ├── re_entity_db v0.43.0
+              │           │   │   └── rerun v0.43.0
+              │           │   │       └── robot-viz v0.0.1 (*)
+              │           │   ├── re_query v0.43.0
+              │           │   │   └── re_entity_db v0.43.0 (*)
+              │           │   └── rerun v0.43.0 (*)
+              │           ├── re_lenses v0.43.0
+              │           │   └── re_sdk v0.43.0
+              │           │       └── rerun v0.43.0 (*)
+              │           ├── re_lenses_core v0.43.0
+              │           │   ├── re_lenses v0.43.0 (*)
+              │           │   └── re_sdk v0.43.0 (*)
+              │           ├── re_sdk v0.43.0 (*)
+              │           └── rerun v0.43.0 (*)
+              ├── re_analytics v0.43.0
+              │   ├── re_auth v0.43.0
+              │   │   └── re_redap_client v0.43.0
+              │   │       └── rerun v0.43.0 (*)
+              │   └── rerun v0.43.0 (*)
+              ├── re_auth v0.43.0 (*)
+              ├── re_log_types v0.43.0
+              │   ├── re_chunk v0.43.0
+              │   │   ├── re_chunk_index v0.43.0
+              │   │   │   ├── re_chunk_store v0.43.0 (*)
+              │   │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   │   ├── re_log_channel v0.43.0
+              │   │   │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   │   │   ├── re_grpc_client v0.43.0
+              │   │   │   │   │   └── re_sdk v0.43.0 (*)
+              │   │   │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   │   │   └── rerun v0.43.0 (*)
+              │   │   │   ├── re_log_encoding v0.43.0
+              │   │   │   │   ├── re_chunk_store v0.43.0 (*)
+              │   │   │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   │   │   ├── re_sdk v0.43.0 (*)
+              │   │   │   │   ├── rerun v0.43.0 (*)
+              │   │   │   │   └── (dev) robot-viz v0.0.1 (*)
+              │   │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   │   └── rerun v0.43.0 (*)
+              │   │   ├── re_chunk_store v0.43.0 (*)
+              │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   ├── re_lenses_core v0.43.0 (*)
+              │   │   ├── re_log_encoding v0.43.0 (*)
+              │   │   ├── re_protos v0.43.0
+              │   │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   │   ├── re_log_channel v0.43.0 (*)
+              │   │   │   ├── re_log_encoding v0.43.0 (*)
+              │   │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   │   ├── rerun v0.43.0 (*)
+              │   │   │   └── (dev) robot-viz v0.0.1 (*)
+              │   │   ├── re_query v0.43.0 (*)
+              │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   ├── re_sdk v0.43.0 (*)
+              │   │   └── rerun v0.43.0 (*)
+              │   ├── re_chunk_index v0.43.0 (*)
+              │   ├── re_chunk_store v0.43.0 (*)
+              │   ├── re_entity_db v0.43.0 (*)
+              │   ├── re_lenses v0.43.0 (*)
+              │   ├── re_lenses_core v0.43.0 (*)
+              │   ├── re_log_channel v0.43.0 (*)
+              │   ├── re_log_encoding v0.43.0 (*)
+              │   ├── re_log_msg v0.43.0
+              │   │   ├── re_chunk v0.43.0 (*)
+              │   │   ├── re_chunk_store v0.43.0 (*)
+              │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   ├── re_log_channel v0.43.0 (*)
+              │   │   ├── re_log_encoding v0.43.0 (*)
+              │   │   ├── re_protos v0.43.0 (*)
+              │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   ├── re_sdk v0.43.0 (*)
+              │   │   └── rerun v0.43.0 (*)
+              │   ├── re_protos v0.43.0 (*)
+              │   ├── re_query v0.43.0 (*)
+              │   ├── re_redap_client v0.43.0 (*)
+              │   ├── re_sdk v0.43.0 (*)
+              │   ├── re_sdk_types v0.43.0 (*)
+              │   ├── re_sorbet v0.43.0
+              │   │   ├── re_chunk v0.43.0 (*)
+              │   │   ├── re_chunk_index v0.43.0 (*)
+              │   │   ├── re_chunk_store v0.43.0 (*)
+              │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   ├── re_log_channel v0.43.0 (*)
+              │   │   ├── re_log_encoding v0.43.0 (*)
+              │   │   ├── re_log_msg v0.43.0 (*)
+              │   │   ├── re_protos v0.43.0 (*)
+              │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   ├── re_sdk v0.43.0 (*)
+              │   │   └── rerun v0.43.0 (*)
+              │   ├── re_uri v0.43.0
+              │   │   ├── re_entity_db v0.43.0 (*)
+              │   │   ├── re_grpc_client v0.43.0 (*)
+              │   │   ├── re_log_channel v0.43.0 (*)
+              │   │   ├── re_redap_client v0.43.0 (*)
+              │   │   ├── re_sdk v0.43.0 (*)
+              │   │   └── rerun v0.43.0 (*)
+              │   └── rerun v0.43.0 (*)
+              ├── re_sdk v0.43.0 (*)
+              ├── re_sdk_types v0.43.0 (*)
+              ├── robot-cli v0.0.1 (*)
+              ├── robot-rpc v0.0.1 (*)
+              └── robot-s1 v0.0.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows-sys'
+    ┌─ /home/loosqk/robot-checks/s0-dev-full-20261112/src/Cargo.lock:542:1
+    │  
+542 │ ╭ windows-sys 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+543 │ │ windows-sys 0.59.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows-sys v0.52.0
+      ├── memory-stats v1.2.0
+      │   └── re_memory v0.43.0
+      │       └── rerun v0.43.0
+      │           └── robot-viz v0.0.1
+      ├── ring v0.17.14
+      │   ├── re_auth v0.43.0
+      │   │   └── re_redap_client v0.43.0
+      │   │       └── rerun v0.43.0 (*)
+      │   ├── rustls v0.23.46
+      │   │   ├── rustls-platform-verifier v0.7.1
+      │   │   │   └── ureq v3.5.1
+      │   │   │       └── ehttp v0.7.3
+      │   │   │           ├── re_analytics v0.43.0
+      │   │   │           │   ├── re_auth v0.43.0 (*)
+      │   │   │           │   └── rerun v0.43.0 (*)
+      │   │   │           ├── re_auth v0.43.0 (*)
+      │   │   │           └── re_redap_client v0.43.0 (*)
+      │   │   ├── tokio-rustls v0.26.6
+      │   │   │   └── tonic v0.14.9
+      │   │   │       ├── re_auth v0.43.0 (*)
+      │   │   │       ├── re_grpc_client v0.43.0
+      │   │   │       │   └── re_sdk v0.43.0
+      │   │   │       │       └── rerun v0.43.0 (*)
+      │   │   │       ├── re_grpc_headers v0.43.0
+      │   │   │       │   └── re_protos v0.43.0
+      │   │   │       │       ├── re_grpc_client v0.43.0 (*)
+      │   │   │       │       ├── re_log_channel v0.43.0
+      │   │   │       │       │   ├── re_entity_db v0.43.0
+      │   │   │       │       │   │   └── rerun v0.43.0 (*)
+      │   │   │       │       │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │       │       │   ├── re_redap_client v0.43.0 (*)
+      │   │   │       │       │   └── rerun v0.43.0 (*)
+      │   │   │       │       ├── re_log_encoding v0.43.0
+      │   │   │       │       │   ├── re_chunk_store v0.43.0
+      │   │   │       │       │   │   ├── re_entity_db v0.43.0 (*)
+      │   │   │       │       │   │   ├── re_query v0.43.0
+      │   │   │       │       │   │   │   └── re_entity_db v0.43.0 (*)
+      │   │   │       │       │   │   └── rerun v0.43.0 (*)
+      │   │   │       │       │   ├── re_entity_db v0.43.0 (*)
+      │   │   │       │       │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │       │       │   ├── re_redap_client v0.43.0 (*)
+      │   │   │       │       │   ├── re_sdk v0.43.0 (*)
+      │   │   │       │       │   ├── rerun v0.43.0 (*)
+      │   │   │       │       │   └── (dev) robot-viz v0.0.1 (*)
+      │   │   │       │       ├── re_redap_client v0.43.0 (*)
+      │   │   │       │       ├── rerun v0.43.0 (*)
+      │   │   │       │       └── (dev) robot-viz v0.0.1 (*)
+      │   │   │       ├── re_protos v0.43.0 (*)
+      │   │   │       ├── re_redap_client v0.43.0 (*)
+      │   │   │       ├── rerun-tonic-web-wasm-client v0.8.3
+      │   │   │       │   ├── re_grpc_client v0.43.0 (*)
+      │   │   │       │   └── re_redap_client v0.43.0 (*)
+      │   │   │       ├── robot-cli v0.0.1
+      │   │   │       ├── robot-rpc v0.0.1
+      │   │   │       │   ├── robot-cli v0.0.1 (*)
+      │   │   │       │   └── robot-tests v0.0.1
+      │   │   │       ├── robot-tests v0.0.1 (*)
+      │   │   │       ├── tonic-prost v0.14.9
+      │   │   │       │   ├── re_protos v0.43.0 (*)
+      │   │   │       │   ├── re_redap_client v0.43.0 (*)
+      │   │   │       │   ├── robot-rpc v0.0.1 (*)
+      │   │   │       │   └── tonic-reflection v0.14.9
+      │   │   │       │       └── re_protos v0.43.0 (*)
+      │   │   │       ├── tonic-reflection v0.14.9 (*)
+      │   │   │       └── tonic-types v0.14.9
+      │   │   │           └── re_protos v0.43.0 (*)
+      │   │   └── ureq v3.5.1 (*)
+      │   └── rustls-webpki v0.103.16
+      │       ├── rustls v0.23.46 (*)
+      │       └── rustls-platform-verifier v0.7.1 (*)
+      └── serialport v4.10.1
+          └── robot-adapter-feetech v0.0.1
+              ├── robot-s0 v0.0.1
+              │   └── robot-tests v0.0.1 (*)
+              └── robot-tests v0.0.1 (*)
+    ├ windows-sys v0.59.0
+      └── console v0.15.11
+          └── similar-asserts v1.7.0
+              └── rerun v0.43.0
+                  └── robot-viz v0.0.1
+
+advisories ok, bans ok, licenses ok, sources ok

@@ -1,0 +1,5 @@
+   Compiling num-traits v0.2.19
+   Compiling nom v8.0.0
+   Compiling hdrhistogram v7.6.0
+   Compiling robot-tests v0.0.1 (/home/loosqk/robot-checks/s0-dev-full-20261112/src/crates/robot-tests)
+    Finished `release` profile [optimized] target(s) in 55.56s

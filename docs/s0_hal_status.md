@@ -10,6 +10,8 @@
 
 启动短暂失流按WARN清槽并保留采集器恢复，原启动期限与运行期失流合同不变；[43项软件测试和旧版负控](evidence/s0_camera_startup_2026-11-12/software-summary.json)已验证恢复分支。本次实机没有触发失流WARN，因此只证明首次启动成功，不能宣称USB `-71`根因或长时稳定性已解决。[原失败事件](evidence/s0_camera_startup_2026-11-12/index.json)及[安装准备证据](evidence/s0_camera_candidate_2026-11-12/summary.json)保留。
 
+**最新代码候选`dcd781e`已通过Orin全量软件及打包验证，尚未安装或实机复验。** 全workspace/all-features为3059通过、23 ignored；另行补测停止传输6项、观测器6项、RT soak 1项通过，剩余10项为文档示例、诊断及子进程夹具。三组构建矩阵、release、依赖检查、453项Python测试（零跳过）和独立包校验通过。测试修复仅涉及子进程证据标记及RT夹具预分配；伪终端补测使用同源ELF独立副本，未放宽原单链接检查。原失败保留在[软件与候选证据](evidence/s0_dev_full_2026-11-12/summary.json)。包为`v0.0.1+dcd781e`候选，不是新发布标签；正式发布仍需完成本轮左后右启动复验，包、发布提交与标签一致，不能沿用旧ELF的实机结论。
+
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
 | 既有手动启动验收 | 状态/心跳 | RGB | 停止与清场 |
@@ -57,6 +59,8 @@ S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0�
 1. **S0当前安装与收尾**：已安装根为`/home/loosqk/robot-checks/s0-camera-candidate-20261112`，本次升级备份为`/var/lib/robot/deploy-backup-s0-camera-3a6d96e`。三服务保持enabled；两侧S0已停止、PID0，保留Dirty停止的`failed/exit-code 1`，preflight保持`active/exited`。双份RX/EStop均为1，进程、UART、相机和四锁均已清场，旧GO已消费、看护已结束。本次未重启Orin；此前`df6c1bb`的[真实重启验收](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)与本次新候选首次启动分别记账。
 
    保留原升级及自启备份，不回滚保护状态。USB断帧根因与长期稳定性仍待实际复现诊断；不为此自动重测。原[启动失败](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)、日志与原帧保留在[证据选集](evidence/README.md)及Orin原路径。日常仅同步dev；正式发布时包内提交、master与新SemVer标签一致，既有标签不覆盖。
+
+   最新`dcd781e`候选已在`/home/loosqk/robot-checks/s0-dev-full-20261112`准备，43项入口假测试及67项只读预检通过，未安装、未启动或打开设备。下一步待本轮现场确认后，复核原STOP51并沿既有安装器备份安装，左后右各20秒保护待机复验；保持不上扭、故障锁存和原停止检查，不重跑handoff或重启Orin。回滚脚本仍引用上一安装件，备份目标为`/var/lib/robot/deploy-backup-s0-dev-dcd781e`，该备份尚未创建。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 3. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。
 
