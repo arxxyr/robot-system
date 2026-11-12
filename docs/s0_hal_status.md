@@ -39,7 +39,9 @@
 
 ## 安装、发布与下一步
 
-当前正式安装根为`/home/loosqk/robot-checks/s0-release-0.0.1-20261112-r3`，提交`ad04d8d`，本批备份为`/var/lib/robot/deploy-backup-s0-release-ad04d8d`。原安装根和备份保留；本次沿既有安装器完成check、backup、install，仅daemon-reload，未启动服务。三服务保持enabled；两侧S0仍为PID0、Dirty的`failed/exit-code 1`，preflight为`active/exited`，双份RX/EStop为1。左右启动脚本及只读预检已准备，等待本轮现场状态后按左→右启动并保持运行，不启用电机。
+当前正式安装根为`/home/loosqk/robot-checks/s0-release-0.0.1-20261112-r3`，提交`ad04d8d`，本批备份为`/var/lib/robot/deploy-backup-s0-release-ad04d8d`。原安装根和备份保留；沿既有安装器完成check、backup、install，收到本轮现场确认后按左→右启动。两侧S0均为`active/running`、零重启，串口通讯线程分别运行在CPU4/5、FIFO70，锁页生效；三服务保持enabled，preflight为`active/exited`。
+
+按用户要求，两侧服务保持运行，`auto_enable=false`，双份RX/EStop仍为1；运行状态为`Fault(CommFault)`、`AdapterUncertain`，存活计数持续推进，输出受抑制。本次只完成正式版保护待机启动，未解除锁存、未下发电机动作；运行检查不等于新一轮物理停止确认。
 
 正式版 [v0.0.1+ad04d8d](https://github.com/arxxyr/robot-system/releases/tag/v0.0.1%2Bad04d8d) 已从最终提交在Orin按 [配置矩阵](../configs/package-matrix.toml) 重新打包并发布；包内`commit`、两个远程master与标签均为`ad04d8d7057264eb8445944196baf60ed3d32d3f`，附件校验值见Release。所有旧标签保留；GitHub Actions因账户付款或额度限制未启动步骤，不能记作CI通过，本次依据Orin验证。部署状态更新仅进dev，不改变发布提交或标签。
 
