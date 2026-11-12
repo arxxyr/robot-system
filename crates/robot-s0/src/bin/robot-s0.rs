@@ -41,7 +41,7 @@ use robot_s0::clear_estop_transaction::{ClearTxnStore, StageError};
 use robot_s0::config_loader::{
     LoadedConfig, load_robot_config, resolve_hardware_section, validate_hardware_section,
 };
-use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner};
+use robot_s0::hard_rt_ctrl::{HardRtCtrlClient, HardRtCtrlInner, SerialBootProgress};
 use robot_s0::io_thread::{
     CameraAdapter, CameraFrames, CameraInput, IoThreadConfig, spawn_io_thread_with_cameras,
 };
@@ -2281,6 +2281,36 @@ fn wait_initial_hook(
         ));
     }
 }
+fn startup_wait_deadline(
+    now: u64,
+    absolute: u64,
+    progress: SerialBootProgress,
+    physical_ack_completed: &mut bool,
+) -> Option<u64> {
+    if now >= absolute {
+        return None;
+    }
+    if progress.outcome == 0 || !progress.fault_acknowledged {
+        *physical_ack_completed = false;
+    }
+    if *physical_ack_completed {
+        return Some(absolute);
+    }
+    let deadline = progress.first_exit.map_or(absolute, |exit| {
+        absolute.min(exit.0.saturating_add(STARTUP_ACK_BUDGET.0))
+    });
+    if now >= deadline {
+        return None;
+    }
+    // 只记截止前实际观察到的物理出口与 ACK，迟到完成不能事后补认。
+    if progress.outcome != 0 && progress.fault_acknowledged {
+        *physical_ack_completed = true;
+        Some(absolute)
+    } else {
+        Some(deadline)
+    }
+}
+
 fn wait_startup(
     args: &ResolvedArgs,
     supervisor: &BootSupervisor,
@@ -2296,16 +2326,18 @@ fn wait_startup(
     let physical = spawned_at
         .0
         .saturating_add(boot_budget(usize::from(args.joint_count)).0);
+    let mut physical_ack_completed = !res.serial;
     loop {
         let mut all_ready = true;
-        for kind in [
-            HandleKind::Ipc,
-            HandleKind::ClearRr,
-            HandleKind::SetRr,
-            HandleKind::Publisher,
-        ] {
-            match workers.slots.poll_ready(kind) {
-                ReadyProbe::Ready => {}
+        let mut worker_ready = [
+            (HandleKind::Ipc, false),
+            (HandleKind::ClearRr, false),
+            (HandleKind::SetRr, false),
+            (HandleKind::Publisher, false),
+        ];
+        for (kind, ready) in &mut worker_ready {
+            match workers.slots.poll_ready(*kind) {
+                ReadyProbe::Ready => *ready = true,
                 ReadyProbe::Pending => all_ready = false,
                 failure => {
                     tracing::error!(?kind, ?failure, "worker 初始化失败，句柄仍在原 CP2 集合");
@@ -2327,17 +2359,28 @@ fn wait_startup(
         }
         let progress = res.ctrl.serial_boot_progress();
         let now = res.clock.now().0;
-        let deadline = progress.first_exit.map_or(absolute, |exit| {
-            absolute.min(exit.0.saturating_add(STARTUP_ACK_BUDGET.0))
-        });
-        if now >= deadline {
-            tracing::error!(?progress, "启动物理/ACK 截止失败");
+        let Some(deadline) =
+            startup_wait_deadline(now, absolute, progress, &mut physical_ack_completed)
+        else {
+            let io = workers.meta.io.as_ref();
+            tracing::error!(
+                ?progress,
+                ?worker_ready,
+                physical_ack_completed,
+                io_ready = ?io.map(|io| io.ready.load(Ordering::Acquire)),
+                io_startup_failed = ?io.map(|io| io.startup_failed.load(Ordering::Acquire)),
+                camera_frames = ?io.map(|io| io.frames.load(Ordering::Acquire)),
+                camera_errors = ?io.map(|io| io.camera_errors.load(Ordering::Acquire)),
+                io_ticks = ?io.map(|io| io.tick_count.load(Ordering::Acquire)),
+                camera_last_frame_ns = ?io.map(|io| io.last_frame_ns.load(Ordering::Acquire)),
+                "启动物理/ACK 截止失败"
+            );
             return Err(1);
-        }
+        };
         if all_ready && (!res.serial || (progress.outcome != 0 && progress.fault_acknowledged)) {
             return Ok(());
         }
-        if res.serial && now >= physical {
+        if res.serial && !physical_ack_completed && now >= physical {
             res.ctrl.expire_serial_boot();
         }
         thread::sleep(Duration::from_nanos(
@@ -2780,6 +2823,116 @@ fn export_r4c_exit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_deadline_keeps_timely_ack_while_other_workers_are_pending() {
+        let first_exit = 1_000;
+        let ack_deadline = first_exit + STARTUP_ACK_BUDGET.0;
+        let absolute = ack_deadline + 5_000_000_000;
+        let progress = SerialBootProgress {
+            outcome: 2,
+            first_exit: Some(MonoRawNs(first_exit)),
+            fault_acknowledged: true,
+        };
+        let mut completed = false;
+        assert_eq!(
+            startup_wait_deadline(ack_deadline - 1, absolute, progress, &mut completed),
+            Some(absolute)
+        );
+        assert!(completed);
+        assert_eq!(
+            startup_wait_deadline(ack_deadline + 1, absolute, progress, &mut completed),
+            Some(absolute)
+        );
+        assert_eq!(
+            startup_wait_deadline(absolute, absolute, progress, &mut completed),
+            None,
+            "及时 ACK 不得延长整体 worker 的绝对截止"
+        );
+    }
+
+    #[test]
+    fn startup_deadline_rejects_missing_or_late_physical_ack() {
+        let first_exit = 1_000;
+        let ack_deadline = first_exit + STARTUP_ACK_BUDGET.0;
+        let absolute = ack_deadline + 5_000_000_000;
+        for (outcome, fault_acknowledged) in [(0, true), (2, false), (2, true)] {
+            let progress = SerialBootProgress {
+                outcome,
+                first_exit: Some(MonoRawNs(first_exit)),
+                fault_acknowledged,
+            };
+            let mut completed = false;
+            if outcome == 0 || !fault_acknowledged {
+                assert_eq!(
+                    startup_wait_deadline(ack_deadline - 1, absolute, progress, &mut completed),
+                    Some(ack_deadline)
+                );
+                assert!(!completed);
+            }
+            assert_eq!(
+                startup_wait_deadline(ack_deadline, absolute, progress, &mut completed),
+                None,
+                "截止时才观察到 ACK 不能补认：{progress:?}"
+            );
+            assert!(!completed);
+        }
+        let pending = SerialBootProgress {
+            outcome: 0,
+            first_exit: None,
+            fault_acknowledged: true,
+        };
+        let mut completed = false;
+        assert_eq!(
+            startup_wait_deadline(absolute - 1, absolute, pending, &mut completed),
+            Some(absolute)
+        );
+        assert_eq!(
+            startup_wait_deadline(absolute, absolute, pending, &mut completed),
+            None
+        );
+        assert!(!completed);
+    }
+
+    #[test]
+    fn startup_deadline_does_not_renew_ack_after_observed_progress_regresses() {
+        let first_exit = 1_000;
+        let ack_deadline = first_exit + STARTUP_ACK_BUDGET.0;
+        let absolute = ack_deadline + 5_000_000_000;
+        for (outcome, fault_acknowledged) in [(0, true), (2, false)] {
+            let acknowledged = SerialBootProgress {
+                outcome: 2,
+                first_exit: Some(MonoRawNs(first_exit)),
+                fault_acknowledged: true,
+            };
+            let pending = SerialBootProgress {
+                outcome,
+                fault_acknowledged,
+                ..acknowledged
+            };
+            let mut completed = false;
+            assert_eq!(
+                startup_wait_deadline(first_exit + 1, absolute, acknowledged, &mut completed),
+                Some(absolute)
+            );
+            assert!(completed);
+            assert_eq!(
+                startup_wait_deadline(ack_deadline - 1, absolute, pending, &mut completed),
+                Some(ack_deadline)
+            );
+            assert!(!completed);
+            assert_eq!(
+                startup_wait_deadline(ack_deadline, absolute, pending, &mut completed),
+                None
+            );
+            assert_eq!(
+                startup_wait_deadline(ack_deadline + 1, absolute, acknowledged, &mut completed),
+                None,
+                "新未确认故障不能刷新 first_exit 或补认迟到 ACK"
+            );
+            assert!(!completed);
+        }
+    }
 
     /// 验证当前正式binary的allocator接线，禁止把空guard当作无分配证据。
     #[cfg(feature = "rt_guard")]

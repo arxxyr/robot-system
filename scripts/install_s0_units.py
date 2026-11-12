@@ -33,7 +33,7 @@ BUSINESS_UNITS = tuple(f"{prefix}-{role}-{side}{'-arm' if role == 's0' else ''}.
     *UNIT_NAMES[1:], *OLD_UNIT_NAMES[1:],
 )
 SYSTEMD_PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "UnitFileState",
-                      "FragmentPath", "DropInPaths", "Job")
+                      "FragmentPath", "DropInPaths", "Job", "Result")
 PROTECTION_NAMES = ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak",
                     "rx_trust.lock", "estop_latch.lock")
 CANDIDATE_FILES = {"camera_capture.py", "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml",
@@ -132,7 +132,7 @@ class S0UnitInstaller:
                 "命令失败或出现未知诊断：" + repr(dict(argv=argv, exit_code=row.returncode, stderr=row.stderr)))
         return row.stdout
 
-    def _services(self):
+    def _services(self, *, allow_failed_units=False):
         result = {}
         for name in (*BUSINESS_UNITS, *PREFLIGHT_UNITS):
             raw = self._command(["systemctl", "show", name, "--all", "--property=" + ",".join(SYSTEMD_PROPERTIES)])
@@ -145,12 +145,18 @@ class S0UnitInstaller:
             require(set(fields) == set(SYSTEMD_PROPERTIES) and fields["Id"] == name, "systemctl 属性缺失或身份错误")
             require(fields["Job"] == "", "服务存在待执行 Job：" + name)
             require(fields["MainPID"] == "0", "服务仍有主进程：" + name)
-            if name in PREFLIGHT_UNITS:
+            # 仅撤销自启可接受本批三 unit 已退出的失败终态；不清除 Result。
+            failed_current = (allow_failed_units and name in UNIT_NAMES and fields["LoadState"] == "loaded"
+                              and (fields["ActiveState"], fields["SubState"]) == ("failed", "failed"))
+            if failed_current:
+                pass
+            elif name in PREFLIGHT_UNITS:
                 require(fields["LoadState"] in ("loaded", "not-found") and (fields["ActiveState"], fields["SubState"])
                         in (("active", "exited"), ("inactive", "dead")), "preflight 既有完成态变化：" + name)
             else:
-                require(fields["LoadState"] in ("loaded", "not-found") and fields["ActiveState"] == "inactive"
-                        and fields["SubState"] == "dead", "业务服务未停稳：" + name)
+                stopped = (fields["LoadState"] in ("loaded", "not-found")
+                           and (fields["ActiveState"], fields["SubState"]) == ("inactive", "dead"))
+                require(stopped, "业务服务未停稳：" + name)
             result[name] = fields
         return result
 
@@ -240,11 +246,11 @@ class S0UnitInstaller:
             prefix = [] if os.geteuid() == 0 else ["sudo", "-n"]
             require(not self._command(prefix + ["fuser", str(path)], allowed=(1,)).strip(), "设备存在持有者")
 
-    def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True):
+    def _check(self, *, rollback_record=None, autostart=False, verify_runtime=True, allow_failed_units=False):
         # 回滚及撤销自启仍固定清单；撤销自启不要求运行产物与设备就绪。
         document = self._manifest(verify_runtime=rollback_record is None and verify_runtime)
         protection = self._protection(document)
-        services = self._services()
+        services = self._services(allow_failed_units=allow_failed_units)
         targets = self._targets(services, rollback_record=rollback_record, autostart=autostart)
         if rollback_record is None:
             unit_owner = self.unit_directory.stat()
@@ -258,8 +264,8 @@ class S0UnitInstaller:
         require(self._protection(document) == protection, "检查期间保护状态变化")
         return dict(document=document, protection=protection, services=services, targets=targets)
 
-    def _autostart_check(self, *, require_estop=True, verify_runtime=True):
-        state = self._check(autostart=True, verify_runtime=verify_runtime)
+    def _autostart_check(self, *, require_estop=True, verify_runtime=True, allow_failed_units=False):
+        state = self._check(autostart=True, verify_runtime=verify_runtime, allow_failed_units=allow_failed_units)
         require(all(state["targets"][name]["exists"] for name in UNIT_NAMES)
                 and all(not state["targets"][name]["exists"] for name in OLD_UNIT_NAMES), "自启要求本批新三 unit 已完整安装且旧三路径已撤除")
         if verify_runtime:
@@ -311,19 +317,21 @@ class S0UnitInstaller:
             try:
                 require(all(record["originals"][name]["exists"] and record["services"][name]["UnitFileState"] == "disabled"
                             for name in UNIT_NAMES), "自启备份必须在新三 unit 已安装且全部 disabled 时生成")
-                state = self._autostart_check(require_estop=enable, verify_runtime=enable)
+                state = self._autostart_check(require_estop=enable, verify_runtime=enable, allow_failed_units=not enable)
                 for name, expected in record["new_units"].items():
                     source = state["document"]["candidate_files"]["systemd/" + name]
                     require(all(expected[key] == source[key] for key in ("path", "bytes", "sha256"))
                             and same_content(state["targets"][name], expected)
                             and state["targets"][name] == record["originals"][name], "自启目标不属于本批已备份候选：" + name)
                 receipt["before"] = {name: state["services"][name]["UnitFileState"] for name in UNIT_NAMES}
+                receipt["services_before"] = state["services"]
                 receipt["protection_before"] = state["protection"]
                 if enable:
                     require(all(value == "disabled" for value in receipt["before"].values()), "开启前新三 unit 必须全部 disabled")
                 self._command(["systemctl", "enable" if enable else "disable", *UNIT_NAMES])
-                after = self._autostart_check(require_estop=enable, verify_runtime=enable)
+                after = self._autostart_check(require_estop=enable, verify_runtime=enable, allow_failed_units=not enable)
                 receipt["after"] = {name: after["services"][name]["UnitFileState"] for name in UNIT_NAMES}
+                receipt["services_after"] = after["services"]
                 receipt["protection_after"] = after["protection"]
                 require(all(value == ("enabled" if enable else "disabled") for value in receipt["after"].values()), "自启状态未达到目标")
                 require(after["targets"] == state["targets"] and after["protection"] == state["protection"], "自启操作期间 unit 或保护文件变化")
@@ -335,7 +343,7 @@ class S0UnitInstaller:
                 receipt.update(status="FAIL", error=repr(error))
                 if state is not None:
                     try:
-                        receipt["services_after_failure"] = self._services()
+                        receipt["services_after_failure"] = self._services(allow_failed_units=not enable)
                         receipt["protection_unchanged"] = self._protection(state["document"]) == state["protection"]
                     except BaseException as observation_error:
                         receipt["observation_error"] = repr(observation_error)

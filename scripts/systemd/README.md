@@ -34,7 +34,7 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 - `enable-autostart`：按新备份核对身份后，仅对固定三个服务执行 `systemctl enable`，不带 `--now`，不启动服务。
 - `disable-autostart`：沿同份备份关闭三个服务的自启，可处理前次 enable 部分成功；撤销不要求运行产物完好或重启前的设备节点身份，但仍核对 unit、服务停止状态和保护文件。不停止进程、不修改保护文件；文件回滚仍须先停稳并关闭自启，再走原 `rollback`。
 
-自启不代表控制授权。RX 一次性授权消费后的 Dirty 保持；没有有效授权时，即使启动停止读回成功，仍进入 `CommFault/BootUntrusted + AdapterUncertain`，不能宣称可信断扭。该路径不产生正常关节采样；现有故障退出也不能正常完成停止收尾。因此当前仅准备自启工具和备份，实际 enable 与重启暂缓；不得把故障待机或预期拒帧改成正常验收通过。
+自启不代表控制授权。RX 一次性授权消费后的 Dirty 保持；没有有效授权时，即使启动停止读回成功，仍进入 `CommFault/BootUntrusted + AdapterUncertain`。该路径可保持Disabled并常驻，满足默认保护待机；它不产生正常关节采样，也不能宣称可信断扭。停止时保留原有界退出码1及未完成责任证据，再独立执行原STOP51确认物理停止；不得把故障待机、预期拒帧或非正常退出改成healthy Safe或断扭通过。
 
 默认不上扭，故障及 EStop 不因启动而清除。不增加 S0 对外 Boot/Init 状态：进程初始化沿现有启动流程和 systemd `activating`；S1 已有 `Booting` 保留。后续真实开机验收须独立核对新 boot ID、服务状态、保护状态、心跳/RGB及原停止收尾，不能只检查 enabled 或 active。
 

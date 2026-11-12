@@ -9,7 +9,9 @@ use robot_transport::iceoryx2::{
 };
 use robot_transport::traits::{LatestSubscriber, Publisher};
 
-use super::{CameraFixture, Duration, Process, RobotClock, SystemClock};
+use super::{
+    CameraFixture, Duration, HandleKind, Process, RUNTIME_EXIT_TIMEOUT_MS, RobotClock, SystemClock,
+};
 
 const A: [f64; 8] = [0.125, -0.25, 0.375, -0.5, 0.625, -0.75, 0.875, -1.0];
 const B: [f64; 8] = [1.0, -0.875, 0.75, -0.625, 0.5, -0.375, 0.25, -0.125];
@@ -86,6 +88,102 @@ fn assert_settled(bytes: &[u8], request_id: &str) {
     assert_eq!(response.domain(), msg::SetEnabledStatus::Ok);
     assert_eq!(response.effect(), msg::SideEffect::Committed);
     assert!(response.retired());
+}
+
+#[test]
+fn dirty_boot_with_delayed_camera_keeps_timely_ack_until_absolute_deadline() {
+    let mut process = Process::spawn_inner(
+        6,
+        &["--rx-trust-policy", "marker"],
+        None,
+        None,
+        false,
+        &[],
+        &[CameraFixture::Frames],
+    );
+    let node = NodeBuilder::new().create::<Service>().unwrap();
+    let mut state = subscriber::<markers::JointState>(
+        &node,
+        &format!("/{}/s0/arm/state", process.robot_id),
+        TopicClass::S0State,
+    )
+    .unwrap();
+    process.wait_camera_started();
+    let first_exit_deadline = SystemClock.now().0 + 5_000_000_000;
+    let first_exit = loop {
+        assert!(
+            process.child.try_wait().unwrap().is_none(),
+            "{}",
+            process.log()
+        );
+        let observed = process.page.snapshot();
+        assert!(!observed.ready_reached, "无首帧不能 READY：{observed:?}");
+        if observed.first_exit_ns != 0 {
+            break observed.first_exit_ns;
+        }
+        assert!(
+            SystemClock.now().0 < first_exit_deadline,
+            "{}",
+            process.log()
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    // 真实 Dirty 物理出口已经发生；首帧晚于原 ACK 窗口，但没有重开绝对预算。
+    let release_frame_at =
+        first_exit + robot_s0::boot_supervisor::STARTUP_ACK_BUDGET.0 + 200_000_000;
+    while SystemClock.now().0 < release_frame_at {
+        assert!(
+            process.child.try_wait().unwrap().is_none(),
+            "{}",
+            process.log()
+        );
+        assert!(!process.page.snapshot().ready_reached);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let directory = process.directory.as_ref().unwrap().path();
+    for name in ["latch", "latch.bak"] {
+        assert_eq!(std::fs::read(directory.join(name)).unwrap(), b"0\n");
+    }
+    std::fs::write(process.camera_file("camera-go"), b"go").unwrap();
+    let ready = process.wait_ready(5000);
+    let frame_ns: u64 = std::fs::read_to_string(process.camera_file("camera-first-frame"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(ready.ready_ns >= frame_ns && frame_ns >= release_frame_at);
+    assert!(
+        ready.ready_ns < ready.main_start_ns + robot_s0::boot_supervisor::absolute_boot_budget(6).0
+    );
+    assert_ne!(ready.disabled_ns, 0, "Dirty 启动必须保持 Disabled");
+    wait(&mut process, "锁存的 CommFault 状态", || {
+        let Some(lease) = state.latest().unwrap() else {
+            return false;
+        };
+        let view = lease.view().unwrap();
+        let joint: msg::JointState = view.body.get();
+        joint.s0_mode() == msg::S0Mode::Fault
+            && joint.s0_fault_code() == msg::S0FaultCode::CommFault
+            && joint.s0_safety_state() == msg::S0SafetyState::AdapterUncertain
+    });
+    let pid = i32::try_from(process.child.id()).unwrap();
+    // SAFETY：pid 属于本测试仍持有且已确认存活的独立 mock 子进程。
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    assert_eq!(
+        process.wait_exit(RUNTIME_EXIT_TIMEOUT_MS),
+        1,
+        "Dirty 退出不能冒充健康停止"
+    );
+    let stopped = process.page.snapshot();
+    // 沿既有 AC21 Dirty 收尾合同保留未退休责任，不要求 exit1 等同清场。
+    let protected = HandleKind::Executor.bit()
+        | HandleKind::Ipc.bit()
+        | HandleKind::Watchdog.bit()
+        | HandleKind::LatchWriter.bit();
+    assert_eq!(stopped.stop_bitmap, 0x66);
+    assert_eq!(stopped.residual_bitmap, u64::from(protected));
+    assert_eq!(stopped.exit_residual_bitmap, u64::from(protected));
+    assert_eq!(stopped.fired_checkpoint, 0);
+    process.assert_camera_reaped();
 }
 
 #[test]

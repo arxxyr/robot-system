@@ -161,6 +161,7 @@ class FakeCommands:
                 "ActiveState": "active" if unit == OLD_UNIT_NAMES[0] else "inactive",
                 "SubState": "exited" if unit == OLD_UNIT_NAMES[0] else "dead",
                 "MainPID": "0",
+                "Result": "success",
                 "Job": "",
                 "ExecMainPID": "0",
                 "ControlPID": "0",
@@ -587,6 +588,42 @@ class UnitInstallerTests(unittest.TestCase):
                 self.assertEqual(result["status"], "PASS")
                 self.assertEqual(result["protection_before"], result["protection_after"])
                 self.assertEqual(set(fixture.commands.autostart.values()), {"disabled"})
+
+    def test_disable_accepts_stopped_failed_current_units_without_clearing_failure(self):
+        subject = self.prepare_autostart()
+        subject.enable_autostart(self.fixture.backup_dir)
+        failed = {"ActiveState": "failed", "SubState": "failed", "MainPID": "0", "Job": "", "Result": "exit-code"}
+        self.fixture.commands.overrides = {name: failed.copy() for name in UNIT_NAMES}
+        for operation in (subject.check, subject.autostart_check,
+                          lambda: subject.enable_autostart(self.fixture.backup_dir)):
+            with self.assertRaisesRegex(ValueError, "未停稳"):
+                operation()
+        self.fixture.commands.calls.clear()
+        result = subject.disable_autostart(self.fixture.backup_dir)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["protection_before"], result["protection_after"])
+        for name in UNIT_NAMES:
+            for phase in ("services_before", "services_after"):
+                self.assertEqual({key: result[phase][name][key] for key in failed}, failed)
+        self.assertEqual(self.fixture.commands.overrides, {name: failed for name in UNIT_NAMES})
+        changes = [call for call in self.fixture.commands.calls if call[:2] != ["systemctl", "show"]]
+        self.assertEqual(changes, [["systemctl", "disable", *UNIT_NAMES]])
+
+    def test_disable_failed_exception_does_not_allow_other_units_live_pid_or_job(self):
+        subject = self.prepare_autostart()
+        subject.enable_autostart(self.fixture.backup_dir)
+        failed = {"ActiveState": "failed", "SubState": "failed", "Result": "exit-code"}
+        invalid = [(name, failed) for name in (*OLD_UNIT_NAMES, installer.BUSINESS_UNITS[0])]
+        invalid += [(name, {**failed, **change}) for name in UNIT_NAMES for change in (
+            {"MainPID": "123"}, {"Job": "123 /job/123"}, {"SubState": "auto-restart"},
+        )]
+        self.fixture.commands.calls.clear()
+        for name, fields in invalid:
+            with self.subTest(name=name, fields=fields):
+                self.fixture.commands.overrides = {name: fields}
+                with self.assertRaises(ValueError):
+                    subject.disable_autostart(self.fixture.backup_dir)
+        self.assert_no_autostart_changes(self.fixture.commands)
 
     def test_command_allowlist_accepts_only_exact_autostart_group_and_rejects_dangerous_commands(self):
         allowed = [["systemctl", operation, *UNIT_NAMES] for operation in ("enable", "disable")]
