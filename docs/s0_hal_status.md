@@ -6,11 +6,13 @@
 
 **S0受监督功能、systemd手动启停及真实重启后的双侧保护待机自启均已通过，软件版本为0.0.1。D15为`OPEN/DEFERRED`、`deployable=false`。** 动作验收仍为左右分别执行；此前重启验收中的双侧同时启动仅为不上扭故障待机，不覆盖两总线同时动作、无人值守、深度/IMU或标定后的SI速度。
 
-**相机修复候选`3a6d96e`已安装并通过左后右首次启动复验。** 两侧各观察20秒、`NRestarts=0`，头部301帧、左腕101帧、右腕102帧，像素、时间推进及首末画面核对通过；实际通讯线程CPU4/5、FIFO70、锁页保持。旧实例停止、左右复验收尾的17电机STOP51与三轮位置复核均通过；现场确认无自行移动、结束静止。原件见[本轮验收](evidence/s0_camera_candidate_2026-11-12/acceptance/summary.json)。
+此前相机修复候选`3a6d96e`的首次启动已通过，原件见[相机修复验收](evidence/s0_camera_candidate_2026-11-12/acceptance/summary.json)；当前安装件及最新验收如下。
 
 启动短暂失流按WARN清槽并保留采集器恢复，原启动期限与运行期失流合同不变；[43项软件测试和旧版负控](evidence/s0_camera_startup_2026-11-12/software-summary.json)已验证恢复分支。本次实机没有触发失流WARN，因此只证明首次启动成功，不能宣称USB `-71`根因或长时稳定性已解决。[原失败事件](evidence/s0_camera_startup_2026-11-12/index.json)及[安装准备证据](evidence/s0_camera_candidate_2026-11-12/summary.json)保留。
 
-**最新代码候选`dcd781e`已通过Orin全量软件及打包验证，尚未安装或实机复验。** 全workspace/all-features为3059通过、23 ignored；另行补测停止传输6项、观测器6项、RT soak 1项通过，剩余10项为文档示例、诊断及子进程夹具。三组构建矩阵、release、依赖检查、453项Python测试（零跳过）和独立包校验通过。测试修复仅涉及子进程证据标记及RT夹具预分配；伪终端补测使用同源ELF独立副本，未放宽原单链接检查。原失败保留在[软件与候选证据](evidence/s0_dev_full_2026-11-12/summary.json)。包为`v0.0.1+dcd781e`候选，不是新发布标签；正式发布仍需完成本轮左后右启动复验，包、发布提交与标签一致，不能沿用旧ELF的实机结论。
+**最新代码候选`dcd781e`已通过Orin全量软件、打包及左后右实机启动复验。** 全workspace/all-features为3059通过、23 ignored；另行补测停止传输6项、观测器6项、RT soak 1项通过，剩余10项为文档示例、诊断及子进程夹具。三组构建矩阵、release、依赖检查、453项Python测试（零跳过）和独立包校验通过。测试修复仅涉及子进程证据标记及RT夹具预分配；伪终端补测使用同源ELF独立副本，未放宽原单链接检查。原失败保留在[软件与实机证据](evidence/s0_dev_full_2026-11-12/summary.json)。包为`v0.0.1+dcd781e`候选，不是新发布标签；正式发布仍需将包内提交、master发布提交与新标签对齐，不能将文档收尾提交冒充已打包提交。
+
+本轮先完成安装前停止检查、备份及安装，再按左→右各观察20秒：心跳988/989条，头部301、左腕102、右腕102帧；首末图像已解码核对。实际通讯线程CPU4/5、FIFO70、锁页保持，`NRestarts=0`。三次原STOP51及三轮位置复核、两侧清场均通过；现场确认全程无自行移动，结束静止。全程不上扭、故障锁存，Dirty状态下关节消息因位置数组与布局长度不同被拒收（左988、右989条），本轮不证明健康关节采样。安装外层退出码文件写入异常，原件保留；三条安装器子命令退出码0、备份和安装件独立核对通过，未重试安装。
 
 正式链路为`robot-s0-preflight → guard → robot-s0`，两侧服务为`robot-s0-bus1/bus2`，配置为`xlerobot-bus1/bus2.toml`。此前实机验收候选从`f9e4b92`构建，启用`xlerobot-real,rt_guard`；左侧保持原验收，右侧仅替换为`776692a`的观测器后复验通过。两侧各观察20秒，保持`auto_enable=false`和双EStop锁存；实际通讯线程分别CPU4/5、FIFO70，其余线程CPU0–3、普通调度，进程锁页已核对。
 
@@ -34,7 +36,7 @@
 | 状态 | 保留`JointState`/`Heartbeat`；未标定速度和未测力矩为NaN，原寄存器值用于诊断及停止，NaN不作为静止证据 |
 | 调度与内存 | 两份总线TOML分别配置CPU4/5、FIFO70，配置即要求严格绑核、锁页和`rt_guard`；命令槽有界取定长值，通讯帧缓冲复用，SerialRT首次停止、连接、周期及错误路径覆盖分配守卫。Orin软件验证及本轮实际服务前后CPU/FIFO/VmLck读取通过；未据此证明硬实时截止保证 |
 
-S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0去掉三个临时数组，S1混合保持在编码时清零轮位，Scripted驻留复用目标，试算帧头只取长度；通用发布层将帧头、正文直接分段写入SHM，不再分配完整wire数组。观测队列接管原缓冲、按容量计预算，镜像仍写入独立SHM。原消息字节、失败边界、跨锁目标快照和独立状态缓存保留；未宣称端到端零拷贝或时延提升。见[小复制收尾验证](evidence/publish_small_copies_2026-11-12/software-summary.json)、[分段发布验证](evidence/publish_wire_parts_2026-11-11/software-summary.json)及[状态/发布验证](evidence/publish_owned_state_2026-11-12/software-summary.json)。RPC缓存共享快照属于旁路，保留[原验证](evidence/s1_rpc_copy_2026-11-12/software-summary.json)；本轮未修改RPC、相机或RT命令槽代码，未安装或启动实机。
+S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0去掉三个临时数组，S1混合保持在编码时清零轮位，Scripted驻留复用目标，试算帧头只取长度；通用发布层将帧头、正文直接分段写入SHM，不再分配完整wire数组。观测队列接管原缓冲、按容量计预算，镜像仍写入独立SHM。原消息字节、失败边界、跨锁目标快照和独立状态缓存保留；未宣称端到端零拷贝或时延提升。见[小复制收尾验证](evidence/publish_small_copies_2026-11-12/software-summary.json)、[分段发布验证](evidence/publish_wire_parts_2026-11-11/software-summary.json)及[状态/发布验证](evidence/publish_owned_state_2026-11-12/software-summary.json)。RPC缓存共享快照属于旁路，保留[原验证](evidence/s1_rpc_copy_2026-11-12/software-summary.json)；这些专项软件检查不替代实机验收。
 
 轮位唯一来源为[xlerobot-bus2.toml](../configs/xlerobot-bus2.toml)的同下标`joints`/`motor_ids`，当前**前8、左9、右7**，只支持既有ID7/8/9排列；校准数值按物理ID保留。改配置必须重建计划，旧GO失效，不在代码复制映射。
 
@@ -56,11 +58,11 @@ S0↔S1主线发布已完成软件优化：状态/命令/心跳移交body，S0�
 
 ## Roadmap
 
-1. **S0当前安装与收尾**：已安装根为`/home/loosqk/robot-checks/s0-camera-candidate-20261112`，本次升级备份为`/var/lib/robot/deploy-backup-s0-camera-3a6d96e`。三服务保持enabled；两侧S0已停止、PID0，保留Dirty停止的`failed/exit-code 1`，preflight保持`active/exited`。双份RX/EStop均为1，进程、UART、相机和四锁均已清场，旧GO已消费、看护已结束。本次未重启Orin；此前`df6c1bb`的[真实重启验收](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)与本次新候选首次启动分别记账。
+1. **S0当前安装与发布收尾**：已安装根为`/home/loosqk/robot-checks/s0-dev-full-20261112`，本次升级备份为`/var/lib/robot/deploy-backup-s0-dev-dcd781e`，备份及新安装件均已核验。三服务保持enabled；两侧S0已停止、PID0，保留Dirty停止的`failed/exit-code 1`，preflight保持`active/exited`。双份RX/EStop均为1，进程、UART、相机和四锁均已清场，本轮三个GO已消费、看护已结束。本次未重启Orin；此前`df6c1bb`的[真实重启验收](evidence/s0_startup_deadline_2026-11-12/reboot-observe/report.json)与本次新候选顺序启动分别记账。
 
    保留原升级及自启备份，不回滚保护状态。USB断帧根因与长期稳定性仍待实际复现诊断；不为此自动重测。原[启动失败](evidence/s0_autostart_2026-11-12_r2/reboot-observe/report.json)、日志与原帧保留在[证据选集](evidence/README.md)及Orin原路径。日常仅同步dev；正式发布时包内提交、master与新SemVer标签一致，既有标签不覆盖。
 
-   最新`dcd781e`候选已在`/home/loosqk/robot-checks/s0-dev-full-20261112`准备，43项入口假测试及67项只读预检通过，未安装、未启动或打开设备。下一步待本轮现场确认后，复核原STOP51并沿既有安装器备份安装，左后右各20秒保护待机复验；保持不上扭、故障锁存和原停止检查，不重跑handoff或重启Orin。回滚脚本仍引用上一安装件，备份目标为`/var/lib/robot/deploy-backup-s0-dev-dcd781e`，该备份尚未创建。
+   本轮43项入口假测试、67项只读预检及其后安装、左右实机复验均已完成，无待执行GO。回滚沿既有安装器和本轮备份，上一安装件仍保留；未执行回滚。下一步仅为获准后的正式发布收尾，本轮只同步dev，不更新master或已发布标签。
 2. **下一阶段S1 scripted**：取得控制权→原位保持→停止释放，轮raw0；这条服务链的实机验收另行开展，不再追加为S0结案条件。
 3. **后续按实际需求推进**：硬件fail-safe、底盘SI标定、深度/IMU及第二种硬件后端；分别立验证目标，不提前扩展RPC、插件或新框架。
 

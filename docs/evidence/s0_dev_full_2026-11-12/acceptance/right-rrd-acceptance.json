@@ -1,0 +1,15 @@
+{
+  "schema": "S0_SYSTEMD_RRD_ACCEPTANCE_V1",
+  "side": "right",
+  "result": "PASS",
+  "rrd_sha256": "a99cf187d158510cfdeda5dd21b4ea2c423d770692804aecd66c24946c932895",
+  "startup_verified": true,
+  "camera_ids": [
+    "right_wrist_color"
+  ],
+  "source": "本轮RrdReader解码及助手目视两张首末原图；右腕画面偏暗但可辨，无明显视角变化，不替代现场整机观察。",
+  "camera_frames": {
+    "right_wrist_color": 102
+  },
+  "heartbeat_frames": 989
+}

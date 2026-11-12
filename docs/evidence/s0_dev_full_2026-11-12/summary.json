@@ -6,7 +6,7 @@
     "c0dc0c53e1c0bbb9d60452f636ae1aea19021c9a",
     "dcd781e633936352f36b0d3f6fe5915dcdf71ed2"
   ],
-  "scope": "仅软件与候选包验证；未安装、未启停正式服务、未做现场动作或物理停止验收",
+  "scope": "Orin全量软件与候选包验证、备份安装及本轮左后右各20秒保护待机启动复验；不上扭、故障锁存，包含原STOP51和现场静止回执，不包含新动作或重启",
   "source_binding": {
     "tracked_snapshot_files": 2126,
     "manifest": {
@@ -717,15 +717,16 @@
   "boundaries": {
     "D15": "OPEN/DEFERRED",
     "deployable": false,
-    "installed": false,
-    "hardware_started": false,
-    "field_authorization_obtained": false,
+    "installed": true,
+    "hardware_started": true,
+    "field_authorization_obtained": true,
     "formal_publication_verified": false
   },
   "counting_limit": "全量、矩阵、不同feature配置、显式补测和重跑分别记账，不相加成独立功能总数。",
-  "result": "SOFTWARE_AND_PACKAGE_PASS_HARDWARE_NOT_RUN",
+  "result": "SOFTWARE_PACKAGE_AND_SUPERVISED_STARTUP_PASS",
   "original_root": "/home/loosqk/robot-checks/s0-dev-full-20261112",
   "preparation": {
+    "phase_note": "以下为授权前准备阶段快照；所列计划现已执行，结果见acceptance，不是当前待执行项。",
     "result": "PLAN_ONLY_STOPPED_INSTANCES_BOUND",
     "checks": 67,
     "plan_sha256": "636467a38fdc927a885584731a084da05654966d3e6006f807e3df56b8b89a7c",
@@ -821,5 +822,181 @@
     "clippy_command": "cargo clippy --locked --all --all-targets -- -D warnings",
     "exit_code": 0,
     "scope": "同源Orin源码；随后仅整理验证证据和状态文档。"
+  },
+  "acceptance": {
+    "result": "PASS",
+    "candidate_source_commit": "dcd781e633936352f36b0d3f6fe5915dcdf71ed2",
+    "installed_root": "/home/loosqk/robot-checks/s0-dev-full-20261112",
+    "backup": "/var/lib/robot/deploy-backup-s0-dev-dcd781e",
+    "installation": {
+      "result": "INSTALL_PASS",
+      "stop": "PASS",
+      "resources": "PASS",
+      "child_commands_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "outer_exit_code": null,
+      "outer_exit_record": "installation-run.exit-code",
+      "note": "外层tmux打印退出码时转义错误，原件为字面字符串，不能记外层exit0；未重试安装。子安装器check/backup/install均exit0且reaped，备份、正式unit及安装后独立prepare均核对通过。"
+    },
+    "sides": {
+      "left": {
+        "service_exit": "1",
+        "wrapper_exit": 0,
+        "NRestarts": "0",
+        "rt": {
+          "rt_before": {
+            "locked_kib": 2997080,
+            "serial": [
+              {
+                "tid": 129882,
+                "name": "s0_serial_io_th",
+                "start_ticks": 2375848,
+                "policy": 1,
+                "fifo_priority": 70,
+                "cpus": [
+                  4
+                ]
+              }
+            ]
+          },
+          "rt_after": {
+            "locked_kib": 2997080,
+            "serial": [
+              {
+                "tid": 129882,
+                "name": "s0_serial_io_th",
+                "start_ticks": 2375848,
+                "policy": 1,
+                "fifo_priority": 70,
+                "cpus": [
+                  4
+                ]
+              }
+            ]
+          }
+        },
+        "standby": {
+          "state": "Fault(CommFault)",
+          "safety": "AdapterUncertain",
+          "liveness_before": 498,
+          "liveness_after": 4500,
+          "disabled_basis": "BootUntrusted/CommFault输出抑制诊断；不等于停止确认"
+        },
+        "heartbeat_frames": 988,
+        "camera_frames": {
+          "head_color": 301,
+          "left_wrist_color": 102
+        },
+        "state_messages_rejected": 988,
+        "state_rejection_reason": [
+          "消息不符合观测约定：position_rad 长度与布局不同"
+        ],
+        "stop": "PASS",
+        "resources": "PASS",
+        "resource_check_count": 32,
+        "rrd": {
+          "path": "/home/loosqk/robot-checks/s0-dev-full-20261112/left/observation.rrd",
+          "sha256": "f3ddd19806937687798d048ad622a69d401e2b032553bdd0fad51fde1b077f98",
+          "bytes": 311747911,
+          "uid": 1000,
+          "gid": 1000,
+          "mode": 436,
+          "device": 66305,
+          "inode": 14844977,
+          "mtime_ns": 1794484233990308758,
+          "ctime_ns": 1794484233990308758,
+          "nlink": 1,
+          "symlink": false
+        },
+        "visual_receipt": "left-rrd-acceptance.json"
+      },
+      "right": {
+        "service_exit": "1",
+        "wrapper_exit": 0,
+        "NRestarts": "0",
+        "rt": {
+          "rt_before": {
+            "locked_kib": 1946364,
+            "serial": [
+              {
+                "tid": 130604,
+                "name": "s0_serial_io_th",
+                "start_ticks": 2393380,
+                "policy": 1,
+                "fifo_priority": 70,
+                "cpus": [
+                  5
+                ]
+              }
+            ]
+          },
+          "rt_after": {
+            "locked_kib": 1946364,
+            "serial": [
+              {
+                "tid": 130604,
+                "name": "s0_serial_io_th",
+                "start_ticks": 2393380,
+                "policy": 1,
+                "fifo_priority": 70,
+                "cpus": [
+                  5
+                ]
+              }
+            ]
+          }
+        },
+        "standby": {
+          "state": "Fault(CommFault)",
+          "safety": "AdapterUncertain",
+          "liveness_before": 420,
+          "liveness_after": 4622,
+          "disabled_basis": "BootUntrusted/CommFault输出抑制诊断；不等于停止确认"
+        },
+        "heartbeat_frames": 989,
+        "camera_frames": {
+          "right_wrist_color": 102
+        },
+        "state_messages_rejected": 989,
+        "state_rejection_reason": [
+          "消息不符合观测约定：position_rad 长度与布局不同"
+        ],
+        "stop": "PASS",
+        "resources": "PASS",
+        "resource_check_count": 32,
+        "rrd": {
+          "path": "/home/loosqk/robot-checks/s0-dev-full-20261112/right/observation.rrd",
+          "sha256": "a99cf187d158510cfdeda5dd21b4ea2c423d770692804aecd66c24946c932895",
+          "bytes": 16107271,
+          "uid": 1000,
+          "gid": 1000,
+          "mode": 436,
+          "device": 66305,
+          "inode": 14845706,
+          "mtime_ns": 1794484409142010633,
+          "ctime_ns": 1794484409142010633,
+          "nlink": 1,
+          "symlink": false
+        },
+        "visual_receipt": "right-rrd-acceptance.json"
+      }
+    },
+    "field_observation": {
+      "schema": "S0_FIELD_OBSERVATION_V1",
+      "source": "用户本轮回执 call_268feb4a857c4d8f81356feb2c56fb94",
+      "answer": "全程正常，没有自行移动，结束后整机静止",
+      "scope": "本轮左后右各20秒默认不上扭、故障锁存的systemd启动复验",
+      "new_actions_authorized": false,
+      "field_watch_finished": true
+    },
+    "confirmed_at_ns": 1794484112781740704,
+    "expires_at_ns": 1794484712781740704,
+    "go_consumed": 3,
+    "go_renewed": false,
+    "final_state": "三service保持enabled；两侧PID0、failed/exit1为原Dirty收尾，preflight active/exited；无本轮控制、相机或观测进程，停止/串口/锁清场PASS。",
+    "scope_limit": "仅左右顺序保护待机；auto_enable=false、双RX/双EStop保持1。RGB/心跳通过，不将Dirty空关节状态拒收写成健康状态采样；未重启、未启用关节、未追加动作、未验证失流恢复或长期稳定性。D15 OPEN/DEFERRED，deployable=false。"
   }
 }
