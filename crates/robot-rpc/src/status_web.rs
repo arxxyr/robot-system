@@ -1,6 +1,7 @@
 //! 本机gRPC状态与RGB镜像的只读Web视图；配置派生布局，源时钟判断新鲜度。
 //!
 //! 固定轮询任务拥有连接，只保留最新快照；浏览器连接不产生额外RPC。
+//! 整机procfs资源由独立普通线程共享采样缓存，HTTP查询不触发文件IO。
 //! 本模块没有控制RPC、UART或systemd调用，不把服务可达当作电机状态。
 
 use std::collections::HashSet;
@@ -30,6 +31,8 @@ use crate::proto::{
 
 #[path = "status_camera.rs"]
 mod camera;
+#[path = "status_resources.rs"]
+mod resources;
 
 const MAX_SOURCES: usize = 2;
 const MAX_STREAMS: usize = 8;
@@ -480,6 +483,7 @@ struct WebState {
     shutdown: watch::Receiver<bool>,
     clock: Arc<dyn RobotClock>,
     cameras: camera::CameraState,
+    resources: resources::ResourcesState,
 }
 
 struct WsConnection {
@@ -617,6 +621,7 @@ async fn manage_connections(
 
 fn router(state: WebState) -> Router {
     let cameras = camera::router(state.cameras.clone());
+    let resources = resources::router(state.resources.clone());
     Router::new()
         .route(
             "/",
@@ -626,6 +631,7 @@ fn router(state: WebState) -> Router {
         .route("/api/ws", axum::routing::get(state_socket))
         .with_state(state)
         .merge(cameras)
+        .merge(resources)
         .layer(axum::middleware::from_fn(
             |request: axum::extract::Request, next: axum::middleware::Next| async {
                 let mut response = next.run(request).await;
@@ -675,6 +681,23 @@ pub async fn serve(
     } else {
         None
     };
+    let resources = resources::ResourcesState::new(Arc::clone(&clock));
+    let resource_worker = match resources.start(shutdown_rx.clone()) {
+        Ok(worker) => worker,
+        Err(error) => {
+            let _ = shutdown_tx.send(true);
+            if let Some(worker) = camera_worker {
+                tokio::task::spawn_blocking(move || {
+                    worker
+                        .join()
+                        .map_err(|_| "相机预览线程异常退出".to_owned())?
+                })
+                .await
+                .map_err(|error| format!("相机预览线程回收异常：{error}"))??;
+            }
+            return Err(format!("资源采样线程启动失败：{error}"));
+        }
+    };
     let state = WebState {
         latest: latest_rx,
         streams: Arc::new(Semaphore::new(MAX_STREAMS)),
@@ -682,6 +705,7 @@ pub async fn serve(
         shutdown: shutdown_rx.clone(),
         clock: Arc::clone(&clock),
         cameras,
+        resources,
     };
     let poll = tokio::spawn(poll_sources(config, latest_tx, clock, shutdown_rx));
     let connections = tokio::spawn(manage_connections(connections_rx, state.clone()));
@@ -694,7 +718,8 @@ pub async fn serve(
         .into_future();
     let result = finish_http(server, http_shutdown).await;
     let _ = shutdown_tx.send(true);
-    // 先回收轮询、连接和相机线程，再传播错误。
+    resource_worker.thread().unpark();
+    // 先回收轮询、连接、相机和资源采样线程，再传播错误。
     let camera_join = async move {
         match camera_worker {
             Some(worker) => tokio::task::spawn_blocking(move || {
@@ -707,10 +732,17 @@ pub async fn serve(
             None => Ok(()),
         }
     };
-    let (poll, connections, camera) = tokio::join!(poll, connections, camera_join);
+    let resource_join = tokio::task::spawn_blocking(move || {
+        resource_worker
+            .join()
+            .map_err(|_| "资源采样线程异常退出".to_owned())?
+    });
+    let (poll, connections, camera, resources) =
+        tokio::join!(poll, connections, camera_join, resource_join);
     poll.map_err(|error| format!("状态轮询任务异常：{error}"))??;
     connections.map_err(|error| format!("状态连接管理任务异常：{error}"))??;
     camera?;
+    resources.map_err(|error| format!("资源采样线程回收异常：{error}"))??;
     result
 }
 

@@ -393,6 +393,7 @@ pub(super) fn web_state() -> (
             shutdown: stopped,
             clock: Arc::new(MockClock::new(MonoRawNs(1))),
             cameras: camera::CameraState::new(camera::Config::default(), Vec::new()),
+            resources: resources::ResourcesState::new(Arc::new(MockClock::new(MonoRawNs(1)))),
         },
         tx,
         stop,

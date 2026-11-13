@@ -8,6 +8,7 @@
   <style>
     :root { --ink: #19334b; --muted: #62758a; --line: #dce5ec; --paper: #fff; --bg: #f4f7fa; --blue: #205b90; --green: #246d51; --amber: #946000; --red: #a63d39; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
     button { font: inherit; }
     button { border: 1px solid transparent; border-radius: 7px; padding: 9px 17px; cursor: pointer; font-weight: 600; white-space: nowrap; }
@@ -76,6 +77,21 @@
     .position small { display: block; font-size: 11px; color: var(--muted); }
     .bus[data-fresh="false"] .position { color: var(--muted); }
     .bus-foot { padding: 10px 22px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .resources { margin-bottom: 26px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); }
+    .resource-heading { display: flex; align-items: center; gap: 12px; }
+    .resource-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 24px; margin: 0; }
+    .resource-grid dt { margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+    .resource-grid dd { margin: 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .resource-detail { margin: 4px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .resource-note { margin: 13px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .resources[data-state="stale"] .resource-grid dd, .resources[data-state="paused"] .resource-grid dd { color: var(--muted); }
+    .resource-networks-heading { margin: 20px 0 10px; padding-top: 15px; border-top: 1px solid var(--line); font-size: 13px; }
+    .resource-networks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .resource-network { padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
+    .resource-network h3 { margin: 0 0 7px; font-size: 13px; overflow-wrap: anywhere; }
+    .resource-network dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 14px; margin: 0; }
+    .resource-network dt { color: var(--muted); font-size: 11px; }
+    .resource-network dd { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .camera-section { margin-top: 28px; }
     .camera-actions { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
     .camera-actions p { margin: 0; color: var(--muted); font-size: 12px; }
@@ -92,8 +108,8 @@
     #camera-notice:empty { display: none; }
     footer { margin-top: 23px; color: var(--muted); font-size: 12px; }
     footer p { margin: 4px 0; }
-    @media (max-width: 900px) { .buses { grid-template-columns: 1fr; } .cameras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 560px) { .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
+    @media (max-width: 900px) { .resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .buses { grid-template-columns: 1fr; } .cameras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .resources { padding: 16px; } .resource-networks { grid-template-columns: 1fr; } .resource-heading { flex-wrap: wrap; gap: 6px; } .resource-grid { gap: 16px 12px; } .resource-grid dd { font-size: 14px; } .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
     @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } .connection-actions { flex-wrap: wrap; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
   </style>
 </head>
@@ -112,6 +128,22 @@
       <p class="access-note">连接后持续接收状态；断开查看不会改变机器人状态。</p>
       <p id="notice" role="alert"></p>
     </section>
+    <section id="resources" class="resources" aria-label="整机资源占用" data-state="paused">
+      <div class="section-row"><div class="resource-heading"><h2>整机资源</h2><span id="resource-status" class="badge" data-tone="neutral">尚未连接</span></div><span id="resource-age">每 2 秒更新</span></div>
+      <dl class="resource-grid">
+        <div><dt>CPU 利用率 / 总量</dt><dd id="resource-cpu">—</dd><p id="resource-load" class="resource-detail">负载：—</p></div>
+        <div><dt>内存已用 / 总量</dt><dd id="resource-memory">—</dd><p id="resource-available" class="resource-detail">可用：—</p></div>
+        <div><dt>交换空间已用 / 总量</dt><dd id="resource-swap">—</dd><p class="resource-detail">独立于物理内存</p></div>
+        <div><dt>系统线程（运行中 / 总数）</dt><dd id="resource-tasks">—</dd><p class="resource-detail">整机任务统计，包含各进程的线程</p></div>
+        <div><dt>整机上下文切换</dt><dd id="resource-context-rate">—</dd><p id="resource-context-total" class="resource-detail">累计：—</p></div>
+        <div><dt>Web 进程线程 / 常驻内存</dt><dd id="resource-web">—</dd><p class="resource-detail">仅当前 Web 服务，不是整机总量</p></div>
+      </dl>
+      <p id="resource-notice" class="resource-note">连接查看后读取资源采样。</p>
+      <h3 class="resource-networks-heading">网络接口 · 速率与累计流量</h3>
+      <div id="resource-networks" class="resource-networks"></div>
+      <p id="resource-network-notice" class="resource-note">等待网络接口采样。</p>
+      <p class="resource-note">各接口单独统计；物理接口与隧道接口的流量可能重复，不合并计算。</p>
+    </section>
     <section aria-label="总线状态">
       <div class="section-row"><h2>总线与关节</h2><span id="summary">等待状态数据</span></div>
       <div id="buses" class="buses"><div class="empty"><strong>尚未连接状态源</strong><p>连接后，按当前机器人配置显示设备及反馈。没有反馈时保留“未知”。</p></div></div>
@@ -122,17 +154,17 @@
       <p id="camera-notice" role="status">点击“查看画面”读取当前配置的相机。</p>
       <div id="cameras" class="cameras"></div>
     </section>
-    <footer><p>总线级扭矩状态不等于逐电机独立确认；服务在线或软件处于 Safe 均不代表已经断扭。</p><p>“陈旧”表示最后一次反馈，仅供参考；此页面不提供使能、运动或急停操作。</p></footer>
+    <footer><p>总线级扭矩状态不等于逐电机独立确认；服务在线或软件处于 Safe 均不代表已经断扭。</p><p>“超时”表示未及时收到新数据，最后一次反馈仅供参考；此页面不提供使能、运动或急停操作。</p></footer>
   </main>
   <script>
     (() => {
       'use strict';
-      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras'].map(id => [id, document.getElementById(id)]));
+      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras', 'resources', 'resource-status', 'resource-age', 'resource-cpu', 'resource-load', 'resource-memory', 'resource-available', 'resource-swap', 'resource-tasks', 'resource-context-rate', 'resource-context-total', 'resource-web', 'resource-notice', 'resource-networks', 'resource-network-notice'].map(id => [id, document.getElementById(id)]));
       const modeText = { Safe: 'Safe · 安全态', Ready: 'Ready · 就绪', Enabled: 'Enabled · 已使能', Fault: 'Fault · 故障', Stopping: 'Stopping · 停止中' };
       const linkText = { Ok: '正常', Lost: '已丢失' };
       const outputText = { Active: '执行输出', Hold: '保持', Zero: '零输出', Stop: '停止输出' };
       const safetyText = { TorqueUnknown: '扭矩未知', TorqueOn: '总线上扭', StopCommanded: '已请求停止', TorqueOffConfirmed: '已确认断扭', StopFailed: '停止失败', AdapterUncertain: '未确认' };
-      const statusText = { fresh: '反馈新鲜', stale: '反馈陈旧', unavailable: '无可用反馈', invalid: '反馈不匹配' };
+      const statusText = { fresh: '反馈正常', stale: '反馈超时', unavailable: '无可用反馈', invalid: '反馈不匹配' };
       const jointLabels = { shoulder_pan: '肩部旋转', shoulder_lift: '肩部抬升', elbow_flex: '肘关节', wrist_flex: '腕部俯仰', wrist_roll: '腕部旋转', gripper: '夹爪', head_motor_1: '头部关节 1', head_motor_2: '头部关节 2', base_left_wheel: '左轮', base_front_wheel: '前轮', base_right_wheel: '右轮' };
       let activeSession = null;
       let snapshot = null;
@@ -140,6 +172,17 @@
       let connected = false;
       let preview = null;
       let cameraCards = [];
+      const busCards = new Map();
+      let busOrder = [];
+      const networkCards = new Map();
+      let networkOrder = [];
+      let resourceSnapshot = null;
+      let resourceReceivedAt = 0;
+      let resourceAgeMs = 0;
+      let resourceSession = null;
+      let resourceError = null;
+      let resourceTimedOut = false;
+      let connectionView = { text: '尚未连接', tone: 'neutral' };
 
       function node(tag, className, value) {
         const result = document.createElement(tag);
@@ -167,19 +210,46 @@
       }
       function ageText(age) {
         if (age === null) return '未知';
-        return age < 1000 ? `${Math.round(age)} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
+        return age < 1000 ? '不足 1 s' : `${Math.floor(age / 1000)} s 前`;
+      }
+      function setText(element, value) {
+        const text = String(value);
+        if (element.textContent === text) return;
+        if (element.childNodes.length === 1 && element.firstChild.nodeType === 3) element.firstChild.data = text;
+        else element.textContent = text;
+      }
+      function setAttribute(element, name, value) {
+        if (value === null || value === undefined) {
+          if (element.hasAttribute(name)) element.removeAttribute(name);
+        } else if (element.getAttribute(name) !== String(value)) element.setAttribute(name, String(value));
+      }
+      function setProperty(element, name, value) {
+        if (element[name] !== value) element[name] = value;
+      }
+      function syncChildren(parent, children) {
+        for (let index = 0; index < children.length; index++) {
+          if (parent.children[index] !== children[index]) parent.insertBefore(children[index], parent.children[index] || null);
+        }
+        while (parent.children.length > children.length) parent.lastElementChild.remove();
       }
       function setConnection(text, tone) {
-        elements['connection-text'].textContent = text;
-        elements.connection.dataset.tone = tone;
+        connectionView = { text, tone };
+        if (document.hidden) return;
+        setText(elements['connection-text'], text);
+        setAttribute(elements.connection, 'data-tone', tone);
       }
-      function metric(parent, label, value, tone) {
+      function makeMetric(parent, label) {
         const item = node('div', 'metric');
-        item.append(node('dt', '', label));
-        const content = node('dd', '', value);
-        if (tone) content.dataset.tone = tone;
-        item.append(content);
+        const title = node('dt', '', label);
+        const value = node('dd', '', '未知');
+        item.append(title, value);
         parent.append(item);
+        return { title, value };
+      }
+      function updateMetric(metric, label, value, tone) {
+        setText(metric.title, label);
+        setText(metric.value, value);
+        setAttribute(metric.value, 'data-tone', tone);
       }
       function stateTone(bus, status) {
         if (bus.mode === 'Fault' || bus.safety_state === 'StopFailed') return 'bad';
@@ -187,31 +257,65 @@
         if (bus.safety_state === 'TorqueUnknown' || bus.safety_state === 'AdapterUncertain' || !Object.hasOwn(safetyText, bus.safety_state)) return 'warn';
         return undefined;
       }
-      function renderBus(bus) {
-        const status = statusOf(bus);
-        const age = ageOf(bus);
+      function busKey(bus) { return JSON.stringify([bus.id, bus.robot_id, bus.hardware_id, bus.layout_id]); }
+      function jointKey(joint) { return JSON.stringify([joint.motor_id, joint.name]); }
+      function makeJoint(joint) {
+        const row = node('tr');
+        const name = node('td');
+        const title = node('span', 'joint-name', jointLabel(joint.name));
+        const key = node('span', 'joint-key', joint.name);
+        name.append(title, key);
+        const mode = node('td');
+        const position = node('td', 'position');
+        const value = node('span');
+        const detail = node('small');
+        position.append(value, detail);
+        row.append(name, node('td', 'motor-id', String(joint.motor_id)), mode, position);
+        return { row, mode, value, detail };
+      }
+      // 设备与关节身份不变时复用节点，周期检查只写实际变化的文本或属性。
+      function makeBus(bus) {
         const article = node('article', 'bus');
-        article.dataset.fresh = String(status === 'fresh');
         const heading = node('div', 'bus-heading');
         const titleRow = node('div', 'bus-title-row');
-        titleRow.append(node('h3', '', bus.label || bus.id));
-        const badge = node('span', 'badge', statusText[status]);
-        badge.dataset.tone = status === 'fresh' ? 'good' : status === 'invalid' ? 'bad' : 'warn';
-        titleRow.append(badge);
+        const title = node('h3', '', bus.label || bus.id);
+        const badge = node('span', 'badge');
+        titleRow.append(title, badge);
         heading.append(titleRow, node('p', 'bus-id', `${bus.id} · ${bus.robot_id}`));
-        article.append(heading);
-
         const metrics = node('dl', 'metrics');
+        const fields = Object.fromEntries(['软件状态', '扭矩确认', '控制链路', '输出模式', '故障码', '位置数据年龄'].map(label => [label, makeMetric(metrics, label)]));
+        const note = node('p', 'state-note');
+        note.hidden = true;
+        const wrap = node('div', 'table-wrap');
+        const table = node('table');
+        table.setAttribute('aria-label', `${bus.label || bus.id}关节位置`);
+        const head = node('thead');
+        const headRow = node('tr');
+        for (const label of ['关节', 'ID', '模式']) headRow.append(node('th', '', label));
+        const positionHeading = node('th', '', '位置');
+        headRow.append(positionHeading);
+        head.append(headRow);
+        const body = node('tbody');
+        table.append(head, body);
+        wrap.append(table);
+        article.append(heading, metrics, note, wrap, node('div', 'bus-foot', `${bus.hardware_id} · 布局 ${bus.layout_id}`));
+        return { article, title, badge, fields, note, table, positionHeading, body, joints: new Map(), jointOrder: [] };
+      }
+      function updateBus(card, bus) {
+        const status = statusOf(bus);
+        setAttribute(card.article, 'data-fresh', status === 'fresh');
+        setText(card.title, bus.label || bus.id);
+        setAttribute(card.table, 'aria-label', `${bus.label || bus.id}关节位置`);
+        setText(card.badge, statusText[status]);
+        setAttribute(card.badge, 'data-tone', status === 'fresh' ? 'good' : status === 'invalid' ? 'bad' : 'warn');
         const hasReportedState = [bus.mode, bus.safety_state, bus.control_link, bus.output_mode, bus.fault_code].some(value => value !== null && value !== undefined);
         const old = status !== 'fresh' && hasReportedState ? '（最后报告）' : '';
-        metric(metrics, `软件状态${old}`, valueText(bus.mode, modeText), stateTone(bus, status));
-        metric(metrics, `扭矩确认${old}`, valueText(bus.safety_state, safetyText), stateTone(bus, status));
-        metric(metrics, `控制链路${old}`, valueText(bus.control_link, linkText), bus.control_link === 'Lost' ? 'warn' : undefined);
-        metric(metrics, `输出模式${old}`, valueText(bus.output_mode, outputText));
-        metric(metrics, `故障码${old}`, Number.isInteger(bus.fault_code) ? String(bus.fault_code) : '未知', bus.fault_code > 0 ? 'bad' : undefined);
-        metric(metrics, '位置数据年龄', ageText(age));
-        article.append(metrics);
-
+        updateMetric(card.fields['软件状态'], `软件状态${old}`, valueText(bus.mode, modeText), stateTone(bus, status));
+        updateMetric(card.fields['扭矩确认'], `扭矩确认${old}`, valueText(bus.safety_state, safetyText), stateTone(bus, status));
+        updateMetric(card.fields['控制链路'], `控制链路${old}`, valueText(bus.control_link, linkText), bus.control_link === 'Lost' ? 'warn' : undefined);
+        updateMetric(card.fields['输出模式'], `输出模式${old}`, valueText(bus.output_mode, outputText));
+        updateMetric(card.fields['故障码'], `故障码${old}`, Number.isInteger(bus.fault_code) ? String(bus.fault_code) : '未知', bus.fault_code > 0 ? 'bad' : undefined);
+        updateMetric(card.fields['位置数据年龄'], '位置数据年龄', ageText(ageOf(bus)));
         let note = '';
         if (bus.error) note = String(bus.error);
         else if (!connected) note = activeSession ? '等待有效状态反馈，以下旧数据仅供参考。' : '状态流已断开，以下内容为最后一次反馈。';
@@ -219,49 +323,46 @@
         else if (status === 'unavailable') note = '尚无有效状态样本，不能判断设备是否上扭。';
         else if (status === 'invalid') note = '状态身份、布局或数据校验未通过。';
         else if (bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown') note = '数据正在更新，但电机扭矩状态仍未确认。';
-        if (status !== 'fresh' && hasReportedState) note += ' 软件与保护状态为最后报告，不代表已有新鲜位置或确认当前扭矩。';
-        if (note) {
-          const detail = node('p', 'state-note', note);
-          detail.dataset.tone = status === 'invalid' ? 'bad' : status !== 'fresh' || bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown' ? 'warn' : 'neutral';
-          article.append(detail);
-        }
-
-        const wrap = node('div', 'table-wrap');
-        const table = node('table');
-        table.setAttribute('aria-label', `${bus.label || bus.id}关节位置`);
-        const head = node('thead');
-        const headRow = node('tr');
-        for (const title of ['关节', 'ID', '模式', status === 'fresh' ? '位置' : '最后位置']) headRow.append(node('th', '', title));
-        head.append(headRow);
-        const body = node('tbody');
+        if (status !== 'fresh' && hasReportedState) note += ' 软件与保护状态为最后报告，不代表已有及时的位置反馈或确认当前扭矩。';
+        setText(card.note, note);
+        setProperty(card.note, 'hidden', !note);
+        setAttribute(card.note, 'data-tone', status === 'invalid' ? 'bad' : status !== 'fresh' || bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown' ? 'warn' : 'neutral');
+        setText(card.positionHeading, status === 'fresh' ? '位置' : '最后位置');
+        const order = bus.joints.map(jointKey);
         for (const joint of bus.joints) {
-          const row = node('tr');
-          const name = node('td');
-          name.append(node('span', 'joint-name', jointLabel(joint.name)), node('span', 'joint-key', joint.name));
-          const mode = joint.mode === 'position' ? '位置' : joint.mode === 'velocity_raw' ? '原始速度' : '未知';
-          const position = node('td', 'position');
-          if (joint.mode === 'position' && Number.isFinite(joint.position_rad)) {
-            position.append(node('span', '', `${joint.position_rad.toFixed(3)} rad`), node('small', '', `${(joint.position_rad * 180 / Math.PI).toFixed(1)}°`));
-          } else {
-            position.append(node('span', '', '—'));
-            if (joint.mode === 'velocity_raw') position.append(node('small', '', '速度模式'));
-          }
-          row.append(name, node('td', 'motor-id', String(joint.motor_id)), node('td', '', mode), position);
-          body.append(row);
+          const key = jointKey(joint);
+          let item = card.joints.get(key);
+          if (!item) { item = makeJoint(joint); card.joints.set(key, item); }
+          const position = joint.mode === 'position' && Number.isFinite(joint.position_rad);
+          const velocity = joint.mode === 'velocity_raw';
+          setText(item.mode, joint.mode === 'position' ? '位置' : velocity ? '原始速度' : '未知');
+          setText(item.value, position ? `${joint.position_rad.toFixed(3)} rad` : '—');
+          setText(item.detail, position ? `${(joint.position_rad * 180 / Math.PI).toFixed(1)}°` : velocity ? '速度模式' : '');
+          setProperty(item.detail, 'hidden', !position && !velocity);
         }
-        table.append(head, body);
-        wrap.append(table);
-        article.append(wrap, node('div', 'bus-foot', `${bus.hardware_id} · 布局 ${bus.layout_id}`));
-        return article;
+        if (JSON.stringify(order) !== JSON.stringify(card.jointOrder)) {
+          syncChildren(card.body, order.map(key => card.joints.get(key).row));
+          for (const key of card.joints.keys()) if (!order.includes(key)) card.joints.delete(key);
+          card.jointOrder = order;
+        }
       }
       function render() {
-        if (!snapshot) return;
-        const fragment = document.createDocumentFragment();
-        for (const bus of snapshot.buses) fragment.append(renderBus(bus));
-        elements.buses.replaceChildren(fragment);
+        if (document.hidden || !snapshot) return;
+        const order = snapshot.buses.map(busKey);
+        for (const bus of snapshot.buses) {
+          const key = busKey(bus);
+          let card = busCards.get(key);
+          if (!card) { card = makeBus(bus); busCards.set(key, card); }
+          updateBus(card, bus);
+        }
+        if (JSON.stringify(order) !== JSON.stringify(busOrder)) {
+          syncChildren(elements.buses, order.map(key => busCards.get(key).article));
+          for (const key of busCards.keys()) if (!order.includes(key)) busCards.delete(key);
+          busOrder = order;
+        }
         const joints = snapshot.buses.reduce((count, bus) => count + bus.joints.length, 0);
         const fresh = snapshot.buses.filter(bus => statusOf(bus) === 'fresh').length;
-        elements.summary.textContent = `${snapshot.buses.length} 条总线 · ${joints} 个电机 · ${fresh} 条反馈新鲜`;
+        setText(elements.summary, `${snapshot.buses.length} 条总线 · ${joints} 个电机 · ${fresh} 条反馈正常`);
       }
       function receiveSnapshot(value) {
         if (!value || !Array.isArray(value.buses) || value.buses.length > 2 || !Number.isFinite(value.stale_after_ms) || value.stale_after_ms <= 0) throw new Error('状态数据格式无效。');
@@ -279,28 +380,174 @@
         snapshot = value;
         receivedAt = performance.now();
       }
+      function finiteNonnegative(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
+      function countText(value) {
+        if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value).toLocaleString('zh-CN');
+        return Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString('zh-CN') : '—';
+      }
+      function bytesText(value) {
+        if (typeof value === 'string' && /^\d+$/.test(value)) value = Number(BigInt(value));
+        if (!finiteNonnegative(value)) return '—';
+        const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+        let unit = 0;
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+        return `${value.toLocaleString('zh-CN', { maximumFractionDigits: unit ? 1 : 0 })} ${units[unit]}`;
+      }
+      function rateText(value, bytes = false) {
+        if (value === null) return '采样中';
+        if (!finiteNonnegative(value)) return '—';
+        return bytes ? `${bytesText(value)}/s` : `${value.toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 次/s`;
+      }
+      function makeNetwork(name) {
+        const article = node('article', 'resource-network');
+        article.append(node('h3', '', name));
+        const values = node('dl');
+        const fields = Object.fromEntries(['接收速率', '发送速率', '累计接收', '累计发送'].map(label => {
+          const item = node('div');
+          const value = node('dd', '', '—');
+          item.append(node('dt', '', label), value);
+          values.append(item);
+          return [label, value];
+        }));
+        article.append(values);
+        return { article, fields };
+      }
+      function renderResourcesData() {
+        if (document.hidden || !resourceSnapshot) return;
+        const { cpu, memory, tasks, context_switches: context, networks, web_process: web } = resourceSnapshot;
+        const usage = finiteNonnegative(cpu?.usage_percent) && cpu.usage_percent <= 100 ? `${cpu.usage_percent.toFixed(1)}%` : cpu?.usage_percent === null ? '采样中' : '—';
+        const cores = Number.isSafeInteger(cpu?.logical_cores) && cpu.logical_cores > 0 ? `${cpu.logical_cores} 逻辑核` : '总量未知';
+        setText(elements['resource-cpu'], cpu ? `${usage} / ${cores}` : '—');
+        const load = Array.isArray(cpu?.load_average) && cpu.load_average.length === 3 && cpu.load_average.every(finiteNonnegative) ? cpu.load_average.map(value => value.toFixed(2)).join(' / ') : '—';
+        setText(elements['resource-load'], `负载：${load}（1 / 5 / 15 分钟）`);
+        const validMemory = memory && finiteNonnegative(memory.total_bytes) && finiteNonnegative(memory.used_bytes) && memory.used_bytes <= memory.total_bytes && finiteNonnegative(memory.available_bytes) && memory.available_bytes <= memory.total_bytes;
+        setText(elements['resource-memory'], validMemory ? `${bytesText(memory.used_bytes)} / ${bytesText(memory.total_bytes)}` : '—');
+        setText(elements['resource-available'], `可用：${validMemory ? bytesText(memory.available_bytes) : '—'}`);
+        const validSwap = memory && finiteNonnegative(memory.swap_total_bytes) && finiteNonnegative(memory.swap_used_bytes) && memory.swap_used_bytes <= memory.swap_total_bytes;
+        setText(elements['resource-swap'], validSwap ? `${bytesText(memory.swap_used_bytes)} / ${bytesText(memory.swap_total_bytes)}` : '—');
+        setText(elements['resource-tasks'], tasks ? `${countText(tasks.running)} / ${countText(tasks.total)}` : '—');
+        setText(elements['resource-context-rate'], context ? rateText(context.per_second) : '—');
+        setText(elements['resource-context-total'], `累计：${context ? countText(context.total) : '—'} 次`);
+        setText(elements['resource-web'], web ? `${countText(web.threads)} 线程 / ${bytesText(web.resident_bytes)}` : '—');
+        const available = Array.isArray(networks);
+        setProperty(elements['resource-networks'], 'hidden', !available || networks.length === 0);
+        setText(elements['resource-network-notice'], !available ? '网络统计不可用。' : !networks.length ? '当前未报告网络接口。' : '');
+        if (!available) return;
+        const order = networks.map(network => network.name);
+        for (const network of networks) {
+          let card = networkCards.get(network.name);
+          if (!card) { card = makeNetwork(network.name); networkCards.set(network.name, card); }
+          setText(card.fields['接收速率'], rateText(network.rx_bytes_per_second, true));
+          setText(card.fields['发送速率'], rateText(network.tx_bytes_per_second, true));
+          setText(card.fields['累计接收'], typeof network.rx_bytes === 'string' && /^\d+$/.test(network.rx_bytes) ? bytesText(network.rx_bytes) : '—');
+          setText(card.fields['累计发送'], typeof network.tx_bytes === 'string' && /^\d+$/.test(network.tx_bytes) ? bytesText(network.tx_bytes) : '—');
+          setAttribute(card.fields['累计接收'], 'title', typeof network.rx_bytes === 'string' && /^\d+$/.test(network.rx_bytes) ? `${network.rx_bytes} 字节` : null);
+          setAttribute(card.fields['累计发送'], 'title', typeof network.tx_bytes === 'string' && /^\d+$/.test(network.tx_bytes) ? `${network.tx_bytes} 字节` : null);
+        }
+        if (JSON.stringify(order) !== JSON.stringify(networkOrder)) {
+          syncChildren(elements['resource-networks'], order.map(name => networkCards.get(name).article));
+          for (const name of networkCards.keys()) if (!order.includes(name)) networkCards.delete(name);
+          networkOrder = order;
+        }
+      }
+      function currentResourceAge() {
+        return resourceSnapshot ? resourceAgeMs + Math.max(0, performance.now() - resourceReceivedAt) : null;
+      }
+      function renderResourcesStatus() {
+        if (document.hidden) return;
+        const age = currentResourceAge();
+        const paused = !resourceSession;
+        const timedOut = resourceTimedOut || (resourceSnapshot && age > resourceSnapshot.stale_after_ms);
+        const text = paused ? activeSession ? '资源已暂停' : resourceSnapshot ? '已暂停' : '尚未连接' : timedOut ? '资源超时' : resourceError ? '资源不可用' : resourceSnapshot ? '资源正常' : '等待采样';
+        setText(elements['resource-status'], text);
+        setAttribute(elements['resource-status'], 'data-tone', !paused && !resourceError && !timedOut && resourceSnapshot ? 'good' : paused ? 'neutral' : 'warn');
+        setAttribute(elements.resources, 'data-state', paused ? 'paused' : resourceError || timedOut ? 'stale' : 'normal');
+        setText(elements['resource-age'], age === null ? '每 2 秒更新' : `采样年龄：${ageText(age)}`);
+        let note = resourceError || (paused ? activeSession ? '资源采样已暂停。' : '连接查看后读取资源采样。' : timedOut ? '资源采样未及时推进。' : resourceSnapshot ? '显示整机资源；速率取相邻采样差值，首个样本需等待下一次采样。' : '正在等待首个资源样本。');
+        if ((paused || resourceError || timedOut) && resourceSnapshot) note += ' 以下保留最后一次采样，仅供参考。';
+        setText(elements['resource-notice'], note);
+      }
+      function stopResources(message = null) {
+        const previous = resourceSession;
+        resourceSession = null;
+        if (previous) { clearTimeout(previous.timer); previous.controller?.abort(); }
+        resourceError = message;
+        renderResourcesStatus();
+      }
+      function startResources(owner) {
+        if (document.hidden || activeSession !== owner || resourceSession?.owner === owner) return;
+        stopResources();
+        const session = { owner, controller: null, timer: null };
+        resourceSession = session;
+        resourceError = null;
+        resourceTimedOut = false;
+        renderResourcesStatus();
+        void readResources(session);
+      }
+      async function readResources(session) {
+        if (resourceSession !== session || document.hidden || activeSession !== session.owner) return;
+        const controller = new AbortController();
+        session.controller = controller;
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const startedAt = performance.now();
+        try {
+          const response = await fetch('/api/resources', { cache: 'no-store', signal: controller.signal });
+          if (!response.ok) throw new Error(`资源读取失败（HTTP ${response.status}）。`);
+          const body = await response.text();
+          if (body.length > 65536) throw new Error('资源数据超出页面容量。');
+          const value = JSON.parse(body);
+          if (!value || !['ok', 'unavailable'].includes(value.status) || value.interval_ms !== 2000 || value.stale_after_ms !== 6000) throw new Error('资源数据格式无效。');
+          if (resourceSession !== session || document.hidden) return;
+          if (value.status === 'unavailable') {
+            resourceTimedOut = finiteNonnegative(value.age_ms) && value.age_ms > value.stale_after_ms;
+            throw new Error(typeof value.error === 'string' ? value.error : '整机资源暂不可用。');
+          }
+          if (typeof value.stamp_ns !== 'string' || !/^[1-9]\d*$/.test(value.stamp_ns) || !finiteNonnegative(value.age_ms)) throw new Error('资源采样时间无效。');
+          if (resourceSnapshot && BigInt(value.stamp_ns) < BigInt(resourceSnapshot.stamp_ns)) throw new Error('资源采样时间回退。');
+          if (value.networks !== null && (!Array.isArray(value.networks) || value.networks.length > 64 || value.networks.some(network => !network || typeof network.name !== 'string' || !network.name || network.name.length > 256) || new Set(value.networks.map(network => network.name)).size !== value.networks.length)) throw new Error('网络接口数据格式无效。');
+          if (resourceSession !== session || document.hidden) return;
+          const receivedAge = value.age_ms + Math.max(0, performance.now() - startedAt);
+          resourceAgeMs = resourceSnapshot?.stamp_ns === value.stamp_ns ? Math.max(currentResourceAge(), receivedAge) : receivedAge;
+          resourceReceivedAt = performance.now();
+          resourceSnapshot = value;
+          resourceError = null;
+          resourceTimedOut = false;
+          renderResourcesData();
+        } catch (error) {
+          if (resourceSession !== session) return;
+          resourceError = controller.signal.aborted ? '资源读取超时，等待下一次采样。' : error.message || '资源暂不可用。';
+        } finally {
+          clearTimeout(timeout);
+          if (session.controller === controller) session.controller = null;
+          if (resourceSession === session) {
+            renderResourcesStatus();
+            session.timer = setTimeout(() => readResources(session), Math.max(0, 2000 - (performance.now() - startedAt)));
+          }
+        }
+      }
       function closeSession() {
         const previous = activeSession;
         activeSession = null;
         connected = false;
+        stopResources();
         if (previous && previous.socket.readyState < WebSocket.CLOSING) {
           previous.socket.close(1000, '停止查看');
         }
-        elements.connect.disabled = false;
-        elements.disconnect.disabled = true;
+        setProperty(elements.connect, 'disabled', false);
+        setProperty(elements.disconnect, 'disabled', true);
         render();
       }
       function failSession(session, message) {
         if (activeSession !== session) return;
         closeSession();
         setConnection('连接已中断', 'bad');
-        elements.notice.textContent = message;
+        setText(elements.notice, message);
       }
       elements.connect.addEventListener('click', () => {
         closeSession();
-        elements.notice.textContent = '';
-        elements.connect.disabled = true;
-        elements.disconnect.disabled = false;
+        setText(elements.notice, '');
+        setProperty(elements.connect, 'disabled', true);
+        setProperty(elements.disconnect, 'disabled', false);
         setConnection('正在连接状态服务', 'warn');
         try {
           const url = new URL('/api/ws', window.location.href);
@@ -310,6 +557,7 @@
           session.socket.onopen = () => {
             if (activeSession !== session) return;
             setConnection('已连接，等待状态数据', 'warn');
+            startResources(session);
           };
           session.socket.onmessage = event => {
             if (activeSession !== session) return;
@@ -329,17 +577,17 @@
         } catch (error) {
           closeSession();
           setConnection('连接已中断', 'bad');
-          elements.notice.textContent = error.message || '无法连接状态服务。';
+          setText(elements.notice, error.message || '无法连接状态服务。');
         }
       });
       elements.disconnect.addEventListener('click', () => {
         closeSession();
-        elements.notice.textContent = '';
+        setText(elements.notice, '');
         setConnection('已断开查看', 'neutral');
       });
       function clearCameraImage(camera) {
-        camera.image.hidden = true;
-        camera.image.removeAttribute('src');
+        setProperty(camera.image, 'hidden', true);
+        setAttribute(camera.image, 'src', null);
         if (camera.url) URL.revokeObjectURL(camera.url);
         if (camera.pendingUrl) URL.revokeObjectURL(camera.pendingUrl);
         camera.url = null;
@@ -349,14 +597,15 @@
         return camera.stamp ? camera.age + Math.max(0, performance.now() - camera.receivedAt) : null;
       }
       function renderCameraAge(camera) {
+        if (document.hidden) return;
         const age = cameraAge(camera);
         const fresh = preview && !camera.error && age !== null && age <= preview.config?.stale_after_ms && camera.url;
-        camera.badge.textContent = fresh ? '画面新鲜' : camera.error ? '无可用画面' : age !== null ? '画面陈旧' : '等待画面';
-        camera.badge.dataset.tone = fresh ? 'good' : 'warn';
-        camera.image.hidden = !fresh;
-        camera.placeholder.hidden = Boolean(fresh);
-        camera.placeholder.textContent = camera.error || (age !== null ? '画面已陈旧，等待新的图像。' : '等待首帧');
-        camera.meta.textContent = camera.stamp ? `${camera.width} × ${camera.height} · ${ageText(age)} · 源时间 ${camera.stamp}` : '尚无有效图像';
+        setText(camera.badge, fresh ? '画面正常' : camera.error ? '无可用画面' : age !== null ? '画面超时' : '等待画面');
+        setAttribute(camera.badge, 'data-tone', fresh ? 'good' : 'warn');
+        setProperty(camera.image, 'hidden', !fresh);
+        setProperty(camera.placeholder, 'hidden', Boolean(fresh));
+        setText(camera.placeholder, camera.error || (age !== null ? '画面已超时，等待新的图像。' : '等待首帧'));
+        setText(camera.meta, camera.stamp ? `${camera.width} × ${camera.height} · ${ageText(age)} · 源时间 ${camera.stamp}` : '尚无有效图像');
       }
       function stopPreview(message) {
         const previous = preview;
@@ -369,9 +618,9 @@
           camera.error = '画面已暂停';
           renderCameraAge(camera);
         }
-        elements['camera-toggle'].textContent = '查看画面';
-        elements['camera-toggle'].setAttribute('aria-pressed', 'false');
-        elements['camera-notice'].textContent = message;
+        setText(elements['camera-toggle'], '查看画面');
+        setAttribute(elements['camera-toggle'], 'aria-pressed', 'false');
+        setText(elements['camera-notice'], message);
       }
       function makeCamera(definition) {
         const article = node('article', 'camera');
@@ -418,7 +667,13 @@
           const receivedAge = age + Math.max(0, downloadedAt - startedAt);
           const previousAge = cameraAge(camera);
           const frameAge = stamp === camera.stamp && previousAge !== null ? Math.max(receivedAge, previousAge) : receivedAge;
-          if (frameAge > session.config.stale_after_ms) throw new Error('图像已陈旧，等待新的图像。');
+          if (frameAge > session.config.stale_after_ms) throw new Error('图像已超时，等待新的图像。');
+          if (stamp === camera.stamp && camera.url && camera.width === width && camera.height === height) {
+            camera.age = frameAge;
+            camera.receivedAt = performance.now();
+            camera.error = null;
+            return;
+          }
           camera.pendingUrl = URL.createObjectURL(blob);
           const decoded = new Image();
           decoded.src = camera.pendingUrl;
@@ -453,9 +708,9 @@
         if (document.hidden) return;
         const session = { controller: new AbortController(), config: null };
         preview = session;
-        elements['camera-toggle'].textContent = '暂停画面';
-        elements['camera-toggle'].setAttribute('aria-pressed', 'true');
-        elements['camera-notice'].textContent = '正在读取相机配置…';
+        setText(elements['camera-toggle'], '暂停画面');
+        setAttribute(elements['camera-toggle'], 'aria-pressed', 'true');
+        setText(elements['camera-notice'], '正在读取相机配置…');
         const timeout = setTimeout(() => session.controller.abort(), 3000);
         try {
           const response = await fetch('/api/cameras', { cache: 'no-store', signal: session.controller.signal });
@@ -472,8 +727,8 @@
           session.config = config;
           elements.cameras.replaceChildren();
           cameraCards = config.cameras.map(makeCamera);
-          elements['camera-summary'].textContent = `${cameraCards.length} 路 · 最快每 ${(config.interval_ms / 1000).toLocaleString('zh-CN')} 秒更新`;
-          elements['camera-notice'].textContent = '';
+          setText(elements['camera-summary'], `${cameraCards.length} 路 · 最快每 ${(config.interval_ms / 1000).toLocaleString('zh-CN')} 秒更新`);
+          setText(elements['camera-notice'], '');
           for (const camera of cameraCards) void readCamera(session, camera);
         } catch (error) {
           if (preview === session) stopPreview(session.controller.signal.aborted ? '相机配置读取超时，请重新查看。' : error.message || '无法读取相机配置。');
@@ -486,10 +741,21 @@
         else void startPreview();
       });
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden && preview) stopPreview('页面已切到后台，画面暂停；返回后可重新查看。');
+        if (document.hidden) {
+          stopResources('页面在后台，资源读取已暂停。');
+          if (preview) stopPreview('页面已切到后台，画面暂停；返回后可重新查看。');
+        } else {
+          setConnection(connectionView.text, connectionView.tone);
+          setProperty(elements.connect, 'disabled', Boolean(activeSession));
+          setProperty(elements.disconnect, 'disabled', !activeSession);
+          if (activeSession?.socket.readyState === WebSocket.OPEN) startResources(activeSession);
+          render();
+          renderResourcesStatus();
+          for (const camera of cameraCards) renderCameraAge(camera);
+        }
       });
       // 仅推进展示年龄，不把页面计时或重复收包当成新的设备采样。
-      const ageTimer = setInterval(() => { render(); for (const camera of cameraCards) renderCameraAge(camera); }, 500);
+      const ageTimer = setInterval(() => { if (document.hidden) return; render(); renderResourcesStatus(); for (const camera of cameraCards) renderCameraAge(camera); }, 500);
       window.addEventListener('pagehide', () => { clearInterval(ageTimer); closeSession(); stopPreview('画面已暂停。'); });
     })();
   </script>
