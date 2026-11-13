@@ -18,7 +18,7 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 `robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`运行只读HTTP/SSE页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
 
-这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET接口、只调用`GetState`，不能将原网关本身称为禁写服务。构建、认证和查看方式见[状态页入口](../../docs/control_plan.md#只读状态页软件入口)。
+这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET接口、只调用`GetState`，不能将原网关本身称为禁写服务。当前构建方式见[HTTP/SSE软件基线](../../docs/control_plan.md#当前只读软件基线httpsse)；后续WebSocket、Orin部署和外部接入管理按同文档的目标方案实施，当前unit及代码尚未迁移。
 
 ## 安装与回滚
 
