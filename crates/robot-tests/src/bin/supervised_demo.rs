@@ -28,10 +28,11 @@
 //!   `anchor+offset ∓ 容差`、**回程**回落 anchor ± 容差；容差有硬上限且
 //!   `offset ≥ 2.5×容差`（两判据阈值不相交，卡死在中间点不可能双过）。
 //!   证据不足同样走 `EStop` 收尾并 FAIL。
-//! - **数值硬 gate（AC-E12 ③）**：offset ∈ (0, 0.087]、**wire 实际斜率**
+//! - **原探针硬 gate（AC-E12 ③）**：offset ∈ (0, 0.087]、**wire 实际斜率**
 //!   ≤ 0.14 rad/s——段时长按 ms **向上取整**并对量化后的值复核（round 1
 //!   P1-1：转换器四舍五入到 ms，浮点秒上的校验会被量化绕过）。超限拒绝
 //!   提交，不 clamp。
+//!   单关节入口缺省沿原幅度；显式计划可给出不超过30°的独立预算，范围与速率门保持。
 //!
 //! ## phase（各自独立调用 = operator 显式；`all` 串行，一步 FAIL 即中止）
 //!
@@ -86,6 +87,8 @@ mod supervised_mixed;
 
 /// 探针偏移上限：|target − anchor| ≤ 0.087 rad（≈ 5°，round 8 P1-2 定值）。
 const MAX_PROBE_OFFSET_RAD: f64 = 0.087;
+/// 仅显式单关节计划可用；不改变原探针或缺省幅度。
+const MAX_SINGLE_JOINT_OFFSET_RAD: f64 = std::f64::consts::FRAC_PI_6;
 /// 轨迹最大斜率上限（rad/s）——按 **wire 量化后**的段时长复核。
 const MAX_SLOPE_RAD_PER_S: f64 = 0.14;
 /// 缺省探针偏移（≤ 上限，留余量）。
@@ -173,6 +176,7 @@ AC-E12 安全边界五条（全部满足才允许上扭 phase）：
   1. 机械隔离、工作区无人、无负载；操作者全程在场且可立即切断总电源；
   2. auto_enable=false 已生效；每次上扭均为本 bin 的显式 SetEnabled(true)；
   3. 先单臂低速/小幅（|target−anchor| ≤ 0.087 rad、斜率 ≤ 0.14 rad/s）再双臂；
+     single-joint缺省沿原幅度；显式计划例外按 --single-joint-max-offset-rad（最大30°）核对；
      单侧异常立即 cancel 双侧并双发 EStop（dual phase 由协议模块保证）；
   4. 旧栈保留可恢复启动路径（stop-only，未 disable / 未删除）；
   5. Enabled 期间任一进程（S0/S1/gateway/本 bin）死亡或挂起 → 立即人工切断
@@ -266,6 +270,7 @@ struct Args {
     duration_ms: Option<u32>,
     task_timeout_ms: Option<u64>,
     cancel_after_ms: Option<u32>,
+    single_joint_max_offset_rad: Option<f64>,
     ack_safety_checklist: bool,
 }
 
@@ -305,6 +310,7 @@ impl Args {
             duration_ms: None,
             task_timeout_ms: None,
             cancel_after_ms: None,
+            single_joint_max_offset_rad: None,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
@@ -402,6 +408,16 @@ impl Args {
                             .map_err(|e| format!("--cancel-after-ms: {e}"))?,
                     );
                 }
+                "--single-joint-max-offset-rad" => {
+                    if args.single_joint_max_offset_rad.is_some() {
+                        return Err("--single-joint-max-offset-rad 不得重复".into());
+                    }
+                    let budget = value(raw, &mut i, "--single-joint-max-offset-rad")?
+                        .parse::<f64>()
+                        .map_err(|error| format!("--single-joint-max-offset-rad: {error}"))?;
+                    validate_single_joint_budget(budget)?;
+                    args.single_joint_max_offset_rad = Some(budget);
+                }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown option {other:?}")),
@@ -457,6 +473,7 @@ impl Args {
                 || args.target_offset_raw.is_some()
                 || args.duration_ms.is_some()
                 || args.cancel_after_ms.is_some()
+                || args.single_joint_max_offset_rad.is_some()
                 || args.task_timeout_ms.is_some())
         {
             return Err("单关节目标与时长参数仅用于 single-joint".into());
@@ -464,6 +481,13 @@ impl Args {
         validate_probe_geometry(args.probe_offset_rad, args.settle_tolerance_rad)?;
         Ok(args)
     }
+}
+
+fn validate_single_joint_budget(budget: f64) -> Result<(), String> {
+    if !budget.is_finite() || budget <= 0.0 || budget > MAX_SINGLE_JOINT_OFFSET_RAD {
+        return Err("单关节显式幅度预算必须为(0,π/6]内的有限rad值".into());
+    }
+    Ok(())
 }
 
 /// `host:port` → `http://host:port`（tonic endpoint 需要 scheme）。
@@ -508,6 +532,7 @@ OPTIONS:
   --duration-ms <MS>            single-joint必填，正整数运动时长
   --task-timeout-ms <MS>        single-joint必填，覆盖运动、到位超时和请求余量
   --cancel-after-ms <MS>        single-joint可选；任务中途仅取消一次，验证最后发布目标保持后断扭
+  --single-joint-max-offset-rad <RAD>  仅single-joint显式计划幅度预算，默认0.087；最大π/6（30°）
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
   --settle-tolerance-rad <F>     回落容差（默认 {DEFAULT_SETTLE_TOLERANCE_RAD}；上限 {MAX_SETTLE_TOLERANCE_RAD} 且 offset ≥ {TOLERANCE_SEPARATION}×容差）
@@ -853,9 +878,11 @@ struct SingleJointPlan {
     duration_ms: u32,
     task_timeout_ms: u64,
     cancel_after_ms: Option<u32>,
+    max_offset_rad: f64,
     settle_ms: u32,
     stable_ms: u32,
     expected_raw: Vec<i32>,
+    expected_positions: Vec<f64>,
     limits: Vec<SingleJointLimit>,
 }
 
@@ -865,6 +892,7 @@ struct SingleJointLimit {
     min: f64,
     max: f64,
     velocity: f64,
+    tolerance_rad: f64,
 }
 
 #[cfg(feature = "supervised-s0")]
@@ -974,7 +1002,12 @@ fn motion_config(
         if min >= max || velocity <= 0.0 || tolerance < 0.0 {
             return Err(format!("{name} 的范围、速率或容差无效"));
         }
-        limits.push(SingleJointLimit { min, max, velocity });
+        limits.push(SingleJointLimit {
+            min,
+            max,
+            velocity,
+            tolerance_rad: tolerance,
+        });
     }
     Ok((limits, max_duration, settle, stable))
 }
@@ -1036,12 +1069,14 @@ impl SingleJointPlan {
         if task_timeout_ms <= required_ms {
             return Err("task-timeout-ms 必须大于运动时长与到位超时之和，预留请求开销".into());
         }
-        check_single_joint_motion(anchor[joint_idx], target, duration_ms)?;
+        let max_offset_rad = args
+            .single_joint_max_offset_rad
+            .unwrap_or(MAX_PROBE_OFFSET_RAD);
+        check_single_joint_motion(anchor[joint_idx], target, duration_ms, max_offset_rad)?;
         let mut expected_raw = anchor_raw.clone();
         expected_raw[joint_idx] = HoldCheck::raw_positions(&[target])?[0];
-        if (expected_raw[joint_idx] - anchor_raw[joint_idx]).abs() <= 8 {
-            return Err("初末位置的±4raw验收区间相交，不能证明定位动作".into());
-        }
+        let mut expected_positions: Vec<_> = anchor.iter().copied().map(position_for_s0).collect();
+        expected_positions[joint_idx] = position_for_s0(target);
         let plan = Self {
             hardware_id: args.left_hardware_id.clone(),
             joint_name: joint_name.into(),
@@ -1050,9 +1085,11 @@ impl SingleJointPlan {
             duration_ms,
             task_timeout_ms,
             cancel_after_ms: args.cancel_after_ms,
+            max_offset_rad,
             settle_ms,
             stable_ms,
             expected_raw,
+            expected_positions,
             limits,
         };
         plan.check_start(anchor)?;
@@ -1069,10 +1106,20 @@ impl SingleJointPlan {
         target[self.joint_idx] = self.target_position_rad;
         check_single_joint_limits(&self.limits, &target)?;
         let start = positions[self.joint_idx];
-        check_single_joint_motion(start, self.target_position_rad, self.duration_ms)?;
+        check_single_joint_motion(
+            start,
+            self.target_position_rad,
+            self.duration_ms,
+            self.max_offset_rad,
+        )?;
         let distance = (self.target_position_rad - start)
             .abs()
             .max((f64::from(self.target_position_rad as f32) - f64::from(start as f32)).abs());
+        if (position_for_s0(self.target_position_rad) - position_for_s0(start)).abs()
+            <= 2.0 * self.limits[self.joint_idx].tolerance_rad
+        {
+            return Err("初末位置的配置容差区间相交，不能证明定位动作".into());
+        }
         if distance / (f64::from(self.duration_ms) / 1000.0) > self.limits[self.joint_idx].velocity
         {
             return Err("单关节所需速率超过候选S1配置".into());
@@ -1106,9 +1153,42 @@ impl SingleJointPlan {
 #[cfg(feature = "supervised-s0")]
 #[allow(
     clippy::cast_possible_truncation,
+    reason = "起点和目标已通过有限范围检查，与S1使用同一S0编码"
+)]
+fn position_for_s0(position: f64) -> f64 {
+    f64::from(position as f32)
+}
+
+/// 到位只按配置rad差值判断，不把raw四舍五入或额外epsilon变成隐含容差。
+#[cfg(feature = "supervised-s0")]
+fn positions_within_tolerances(actual: &[f64], targets: &[f64], tolerances: &[f64]) -> bool {
+    actual.len() == targets.len()
+        && actual.len() == tolerances.len()
+        && actual
+            .iter()
+            .zip(targets)
+            .zip(tolerances)
+            .all(|((&actual, &target), &tolerance)| {
+                actual.is_finite()
+                    && target.is_finite()
+                    && tolerance.is_finite()
+                    && tolerance >= 0.0
+                    && (actual - target).abs() <= tolerance
+            })
+}
+
+#[cfg(feature = "supervised-s0")]
+#[allow(
+    clippy::cast_possible_truncation,
     reason = "与 S0 实际 f32 位置编码一致，先校验有限值"
 )]
-fn check_single_joint_motion(start: f64, target: f64, duration_ms: u32) -> Result<(), String> {
+fn check_single_joint_motion(
+    start: f64,
+    target: f64,
+    duration_ms: u32,
+    max_offset_rad: f64,
+) -> Result<(), String> {
+    validate_single_joint_budget(max_offset_rad)?;
     if duration_ms == 0
         || !start.is_finite()
         || !target.is_finite()
@@ -1122,21 +1202,25 @@ fn check_single_joint_motion(start: f64, target: f64, duration_ms: u32) -> Resul
     let distance = (target - start)
         .abs()
         .max((encoded_target - encoded_start).abs());
-    if distance > MAX_PROBE_OFFSET_RAD
+    if distance > max_offset_rad
         || distance / (f64::from(duration_ms) / 1000.0) > MAX_SLOPE_RAD_PER_S
     {
-        return Err("单关节目标超出原0.087rad幅度或0.14rad/s速率硬限制".into());
+        return Err(format!(
+            "单关节目标超出本次{max_offset_rad}rad幅度预算或原0.14rad/s速率硬限制"
+        ));
     }
     Ok(())
 }
 
-/// 每个执行期样本都必须推进；所有位置观测沿原±4raw，不扩大容差。
+/// 每个执行期样本都必须推进；单关节轨迹走廊及到位沿各关节配置容差。
 #[cfg(feature = "supervised-s0")]
 struct SingleJointCheck {
     source: HoldCheck,
     layout_id: u64,
     joint_idx: usize,
     expected_raw: Vec<i32>,
+    expected_positions: Vec<f64>,
+    tolerances_rad: Vec<f64>,
 }
 
 #[cfg(feature = "supervised-s0")]
@@ -1159,16 +1243,32 @@ impl SingleJointCheck {
             return Err("single-joint 未保持 Enabled/Ok/Active/TorqueOn/fault0".into());
         }
         let raw = HoldCheck::raw_positions(&state.position_rad)?;
-        if raw.len() != self.expected_raw.len() {
+        if raw.len() != self.expected_positions.len() || raw.len() != self.tolerances_rad.len() {
             return Err("single-joint 反馈关节数量变化".into());
+        }
+        if final_sample {
+            return if positions_within_tolerances(
+                &state.position_rad,
+                &self.expected_positions,
+                &self.tolerances_rad,
+            ) {
+                Ok(())
+            } else {
+                Err("single-joint 最终位置超出配置到位容差".into())
+            };
         }
         for (idx, &actual) in raw.iter().enumerate() {
             let target = self.expected_raw[idx];
             let start = self.source.anchor_raw[idx];
-            let valid = if idx == self.joint_idx && !final_sample {
-                actual >= start.min(target) - 4 && actual <= start.max(target) + 4
+            let actual_rad = state.position_rad[idx];
+            let target_rad = self.expected_positions[idx];
+            let start_rad = f64::from(robot_adapter_feetech::raw_to_rad(start));
+            let tolerance = self.tolerances_rad[idx];
+            let valid = if idx == self.joint_idx {
+                actual_rad >= start_rad.min(target_rad) - tolerance
+                    && actual_rad <= start_rad.max(target_rad) + tolerance
             } else {
-                (actual - target).abs() <= 4
+                (actual_rad - target_rad).abs() <= tolerance
             };
             if !valid {
                 return Err(format!(
@@ -1608,6 +1708,10 @@ trait TorqueOps {
     async fn begin_cancel_watch(&mut self, action_id: &str, timeout_ms: u64) -> Result<(), String>;
     #[cfg(feature = "supervised-s0")]
     async fn next_task_event(&mut self) -> Result<robot_rpc::proto::TaskEvent, String>;
+    #[cfg(feature = "supervised-s0")]
+    fn record_cancel_evidence(&mut self, line: String) {
+        println!("{line}");
+    }
     async fn poll_status(&mut self, action_id: &str) -> Result<TaskSnapshot, String>;
     async fn cancel(&mut self, action_id: &str) -> Result<(), String>;
     async fn sample(&mut self) -> Result<StateSample, String>;
@@ -2102,6 +2206,10 @@ async fn single_joint_cancel_task<O: TorqueOps>(
                             {
                                 return Err("Cancelled 源时间不在本次中途取消窗口".into());
                             }
+                            ops.record_cancel_evidence(format!(
+                                "SINGLE_JOINT_CANCEL_EVENT action_id={action_id} terminal_at_ns={} received_at_ns={}",
+                                event.at_ns, ops.now_ns()
+                            ));
                             return Ok(event.at_ns);
                         }
                         Ok(
@@ -2146,6 +2254,36 @@ async fn single_joint_cancel_task<O: TorqueOps>(
     })
 }
 
+/// 只记录现有反馈，不发起额外读取；尚无可信保持参考时误差显式为空。
+#[cfg(feature = "supervised-s0")]
+fn record_cancel_sample<O: TorqueOps>(
+    ops: &mut O,
+    state: &RobotState,
+    reference: Option<&PublishedCommand>,
+    sample: usize,
+) {
+    let actual_raw = HoldCheck::raw_positions(&state.position_rad).ok();
+    let expected_raw = reference.and_then(|frame| HoldCheck::raw_positions(&frame.target).ok());
+    let error_raw = actual_raw
+        .as_ref()
+        .zip(expected_raw.as_ref())
+        .filter(|(actual, expected)| actual.len() == expected.len())
+        .map(|(actual, expected)| {
+            actual
+                .iter()
+                .zip(expected)
+                .map(|(&actual, &expected)| i64::from(actual) - i64::from(expected))
+                .collect::<Vec<_>>()
+        });
+    ops.record_cancel_evidence(format!(
+        "SINGLE_JOINT_CANCEL_SAMPLE={}",
+        serde_json::json!({
+            "sample": sample, "stamp_ns": state.stamp_ns, "received_at_ns": ops.now_ns(),
+            "actual_raw": actual_raw, "error_raw": error_raw,
+        })
+    ));
+}
+
 /// 事件时刻切开完整命令流：末次动作目标与后续保持目标必须逐 f32 位一致。
 #[cfg(feature = "supervised-s0")]
 #[allow(clippy::too_many_arguments)]
@@ -2167,16 +2305,37 @@ async fn verify_cancel_hold<O: TorqueOps>(
         .ok_or("Cancelled 事件或回执已超过原到位预算")?;
     let mut stable_since = None;
     let mut samples = 0usize;
+    let mut sample_logs = 0usize;
+    let mut logged_reference = None;
     staged(Duration::from_nanos(remaining), "cancel hold settle", async {
         loop {
             tokio::time::sleep(STATUS_POLL).await;
             let state = ops.checked_state().await?;
+            let reference_result = ops.published_commands()
+                .and_then(|frames| evidence.observe(frames, plan, check, ops.now_ns()))
+                .and_then(|()| evidence.cancelled_target(at_ns).map(Option::<&PublishedCommand>::cloned));
+            if logged_reference.is_none() && let Ok(Some(reference)) = &reference_result {
+                let raw = HoldCheck::raw_positions(&reference.target)?;
+                ops.record_cancel_evidence(format!("SINGLE_JOINT_CANCEL_HOLD_RAW={raw:?}"));
+                ops.record_cancel_evidence(format!("SINGLE_JOINT_CANCEL_REFERENCE={}", serde_json::json!({
+                    "action_id": action_id, "terminal_at_ns": at_ns, "stamp_ns": reference.stamp_ns,
+                    "last_command_seq": reference.seq, "observer_seq": reference.metadata.observer_seq,
+                    "source_id": reference.source_id, "layout_id": reference.layout_id,
+                    "publisher_instance_id": format!("{:032x}", u128::from_le_bytes(reference.metadata.publisher_instance_id)),
+                    "target_rad": reference.target,
+                })));
+                logged_reference = Some(reference.clone());
+            }
+            if sample_logs < 8 {
+                sample_logs += 1;
+                record_cancel_sample(ops, &state, logged_reference.as_ref(), sample_logs);
+            }
+            let reference = reference_result?;
             if ops.now_ns() >= deadline_ns || state.stamp_ns <= at_ns {
                 return Err("取消保持反馈超时或不是终态后的新源帧".into());
             }
             check.observe(&state, &plan.hardware_id, ops.now_ns(), false)?;
-            evidence.observe(ops.published_commands()?, plan, check, ops.now_ns())?;
-            let Some(reference) = evidence.cancelled_target(at_ns)?.cloned() else {
+            let Some(reference) = reference else {
                 continue;
             };
             let expected_raw = HoldCheck::raw_positions(&reference.target)?;
@@ -2189,7 +2348,7 @@ async fn verify_cancel_hold<O: TorqueOps>(
             }
             let actual_raw = HoldCheck::raw_positions(&state.position_rad)?;
             samples += 1;
-            if actual_raw.iter().zip(&expected_raw).any(|(actual, expected)| (actual - expected).abs() > 4) {
+            if !positions_within_tolerances(&state.position_rad, &reference.target, &check.tolerances_rad) {
                 stable_since = None;
                 continue;
             }
@@ -2207,7 +2366,6 @@ async fn verify_cancel_hold<O: TorqueOps>(
             if ops.now_ns() >= deadline_ns || ops.now_ns().saturating_sub(state.stamp_ns) > 200_000_000 {
                 return Err("镜像覆盖终帧时已超过到位预算或终帧不新鲜".into());
             }
-            println!("SINGLE_JOINT_CANCEL_HOLD_RAW={expected_raw:?}");
             println!("SINGLE_JOINT_FINAL_RAW={actual_raw:?}");
             println!(
                 "SINGLE_JOINT_CANCEL action_id={action_id} requested_at_ns={requested_ns} terminal_at_ns={at_ns} last_command_seq={} observer_seq={} source_id={} publisher_instance_id={:032x} samples={samples} stable_ns={}",
@@ -2748,12 +2906,13 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
     println!("SINGLE_JOINT_ANCHOR_RAW={:?}", check.anchor_raw);
     println!("SINGLE_JOINT_EXPECTED_RAW={:?}", plan.expected_raw);
     println!(
-        "[single-joint] hardware={} joint={} target_position_rad={:.17} duration_ms={} task_timeout_ms={}",
+        "[single-joint] hardware={} joint={} target_position_rad={:.17} duration_ms={} task_timeout_ms={} max_offset_rad={:.17}",
         plan.hardware_id,
         plan.joint_name,
         plan.target_position_rad,
         plan.duration_ms,
-        plan.task_timeout_ms
+        plan.task_timeout_ms,
+        plan.max_offset_rad
     );
     rt.hold_check = Some(check);
     let before = rt.get_state_raw().await?;
@@ -2775,6 +2934,12 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
         layout_id: rt.layout.layout_id,
         joint_idx: plan.joint_idx,
         expected_raw: plan.expected_raw.clone(),
+        expected_positions: plan.expected_positions.clone(),
+        tolerances_rad: plan
+            .limits
+            .iter()
+            .map(|limit| limit.tolerance_rad)
+            .collect(),
     };
     if plan.cancel_after_ms.is_some() {
         rt.command_observer =
@@ -3778,6 +3943,8 @@ mod tests {
         event_r: VecDeque<Scripted<robot_rpc::proto::TaskEvent>>,
         #[cfg(feature = "supervised-s0")]
         event_received_ns: Option<u64>,
+        #[cfg(feature = "supervised-s0")]
+        cancel_logs: Vec<String>,
         status_r: VecDeque<Scripted<TaskSnapshot>>,
         cancel_r: VecDeque<Scripted<()>>,
         sample_r: VecDeque<Scripted<StateSample>>,
@@ -3811,6 +3978,8 @@ mod tests {
                 event_r: VecDeque::new(),
                 #[cfg(feature = "supervised-s0")]
                 event_received_ns: None,
+                #[cfg(feature = "supervised-s0")]
+                cancel_logs: Vec::new(),
                 status_r: VecDeque::new(),
                 cancel_r: VecDeque::new(),
                 sample_r: VecDeque::new(),
@@ -3930,6 +4099,11 @@ mod tests {
                 .event_received_ns
                 .unwrap_or_else(|| self.raw_state_now.max(event.at_ns));
             Ok(event)
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        fn record_cancel_evidence(&mut self, line: String) {
+            self.cancel_logs.push(line);
         }
 
         async fn poll_status(&mut self, _id: &str) -> Result<TaskSnapshot, String> {
@@ -4484,13 +4658,23 @@ mod tests {
         }
 
         fn check() -> SingleJointCheck {
+            check_for(&plan())
+        }
+
+        fn check_for(plan: &SingleJointPlan) -> SingleJointCheck {
             let mut source = HoldCheck::new("robot".into(), &[0.0; 8], 8).unwrap();
             source.last_stamp_ns = 1_000_000_000;
             SingleJointCheck {
                 source,
                 layout_id: 42,
                 joint_idx: 4,
-                expected_raw: plan().expected_raw,
+                expected_raw: plan.expected_raw.clone(),
+                expected_positions: plan.expected_positions.clone(),
+                tolerances_rad: plan
+                    .limits
+                    .iter()
+                    .map(|limit| limit.tolerance_rad)
+                    .collect(),
             }
         }
 
@@ -4527,7 +4711,7 @@ mod tests {
             plan: &SingleJointPlan,
             budgets: StageBudgets,
         ) -> Result<(), String> {
-            let body = single_joint_torque_body(ops, plan, &mut check(), budgets).await;
+            let body = single_joint_torque_body(ops, plan, &mut check_for(plan), budgets).await;
             finalize_single(ops, body, budgets).await
         }
 
@@ -4535,6 +4719,238 @@ mod tests {
             let mut plan = plan();
             plan.cancel_after_ms = Some(10_000);
             plan
+        }
+
+        fn configured_limits() -> Vec<SingleJointLimit> {
+            let config: toml::Value = toml::from_str(include_str!(
+                "../../../../configs/xlerobot-bus1-motion.toml"
+            ))
+            .unwrap();
+            let joints = config["s1"]["single_joint"]["joints"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|joint| joint["name"].as_str().unwrap().to_owned())
+                .collect();
+            motion_config(
+                &config,
+                &HardwareLayout {
+                    joints,
+                    motor_ids: Vec::new(),
+                    layout_id: 42,
+                },
+            )
+            .unwrap()
+            .0
+        }
+
+        fn configured_plan(offset: i32) -> Result<SingleJointPlan, String> {
+            let mut args = Args::parse_from(&raw_args()).unwrap();
+            args.target_offset_raw = Some(offset);
+            args.single_joint_max_offset_rad = Some(MAX_SINGLE_JOINT_OFFSET_RAD);
+            let mut config = config();
+            for (joint, limit) in config["s1"]["single_joint"]["joints"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .zip(configured_limits())
+            {
+                joint["tolerance_rad"] = toml::Value::Float(limit.tolerance_rad);
+            }
+            SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &config)
+        }
+
+        #[test]
+        fn configured_tolerances_accept_twenty_raw_reject_twenty_one_and_keep_each_slot() {
+            let limits = configured_limits();
+            for limit in &limits {
+                let ends = HoldCheck::raw_positions(&[limit.min, limit.max]).unwrap();
+                for target_raw in ends[0]..=ends[1] {
+                    for offset in [-21, -20, 20, 21] {
+                        let actual_raw = target_raw + offset;
+                        if !(ends[0]..=ends[1]).contains(&actual_raw) {
+                            continue;
+                        }
+                        assert_eq!(
+                            positions_within_tolerances(
+                                &[f64::from(robot_adapter_feetech::raw_to_rad(actual_raw))],
+                                &[f64::from(robot_adapter_feetech::raw_to_rad(target_raw))],
+                                &[limit.tolerance_rad],
+                            ),
+                            offset.abs() == 20,
+                            "target_raw={target_raw}, offset={offset}"
+                        );
+                    }
+                }
+            }
+            let broad = limits[0].tolerance_rad;
+            let one_raw = f64::from(robot_adapter_feetech::raw_to_rad(2048));
+            assert!(positions_within_tolerances(
+                &[0.0, one_raw],
+                &[0.0, 0.0],
+                &[0.0, broad]
+            ));
+            assert!(!positions_within_tolerances(
+                &[one_raw, 0.0],
+                &[0.0, 0.0],
+                &[0.0, broad]
+            ));
+            assert!(!positions_within_tolerances(
+                &[broad.next_up()],
+                &[0.0],
+                &[broad]
+            ));
+        }
+
+        #[test]
+        fn configured_arrival_intervals_must_not_overlap() {
+            for offset in [24, 40, -24, -40] {
+                assert!(
+                    configured_plan(offset)
+                        .err()
+                        .unwrap()
+                        .contains("容差区间相交")
+                );
+            }
+            assert!(configured_plan(41).is_ok());
+            assert!(configured_plan(-41).is_ok());
+            assert!(configured_plan(341).is_ok());
+            assert_eq!(
+                plan().limits[4].tolerance_rad.to_bits(),
+                0.001_f64.to_bits()
+            );
+        }
+
+        #[test]
+        fn final_and_cancel_hold_share_configured_arrival_tolerance() {
+            for offset in [-21, -20, 20, 21] {
+                run(async {
+                    let plan = configured_plan(341).unwrap();
+                    let mut ops = ops();
+                    ops.raw_state_r[1] = Scripted::Ok(state(201, 341));
+                    ops.raw_state_r[2] = Scripted::Ok(state(202, 341 + offset));
+                    assert_eq!(
+                        execute(&mut ops, &plan, tb()).await.is_ok(),
+                        offset.abs() == 20
+                    );
+                });
+                run(async {
+                    let mut plan = configured_plan(341).unwrap();
+                    plan.cancel_after_ms = Some(10000);
+                    let mut ops = cancel_ops();
+                    ops.raw_state_r[1] = Scripted::Ok(state(101, 170));
+                    for (index, step) in [(2, 102), (3, 103), (4, 104)] {
+                        ops.raw_state_r[index] = Scripted::Ok(state(step, 171 + offset));
+                    }
+                    for frames in ops
+                        .command_r
+                        .iter_mut()
+                        .filter_map(|frames| frames.as_mut().ok())
+                    {
+                        for frame in frames {
+                            if frame.seq > 1 {
+                                frame.target[4] = f64::from(robot_adapter_feetech::raw_to_rad(
+                                    2047 + if frame.seq == 2 { 170 } else { 171 },
+                                ));
+                            }
+                        }
+                    }
+                    assert_eq!(
+                        execute(&mut ops, &plan, tb()).await.is_ok(),
+                        offset.abs() == 20
+                    );
+                    assert_eq!(
+                        ops.calls
+                            .iter()
+                            .filter(|call| call.starts_with("cancel:"))
+                            .count(),
+                        1
+                    );
+                });
+            }
+        }
+
+        #[test]
+        fn explicit_single_joint_budget_preserves_default_and_other_phase_caps() {
+            assert_eq!(
+                plan().max_offset_rad.to_bits(),
+                MAX_PROBE_OFFSET_RAD.to_bits()
+            );
+            let mut raw = raw_args();
+            let index = raw
+                .iter()
+                .position(|arg| arg == "--target-offset-raw")
+                .unwrap();
+            raw[index + 1] = "341".into();
+            let args = Args::parse_from(&raw).unwrap();
+            assert!(SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &config()).is_err());
+            raw.extend([
+                "--single-joint-max-offset-rad".into(),
+                MAX_SINGLE_JOINT_OFFSET_RAD.to_string(),
+            ]);
+            let args = Args::parse_from(&raw).unwrap();
+            let visible = SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &config()).unwrap();
+            assert_eq!(visible.expected_raw[4], 2388);
+            assert_eq!(visible.action_spec().payload_schema_id, 0x040F);
+            assert!(validate_probe_geometry(MAX_SINGLE_JOINT_OFFSET_RAD, 0.02).is_err());
+            for invalid in ["0", "-1", "NaN", "inf", "0.523599"] {
+                *raw.last_mut().unwrap() = invalid.into();
+                assert!(Args::parse_from(&raw).is_err());
+            }
+            *raw.last_mut().unwrap() = MAX_SINGLE_JOINT_OFFSET_RAD.to_string();
+            raw.extend(["--single-joint-max-offset-rad".into(), "0.1".into()]);
+            assert!(Args::parse_from(&raw).is_err());
+            for phase in ["read-state", "single-arm", "dual-arm", "grippers", "all"] {
+                assert!(
+                    Args::parse_from(
+                        &[
+                            "--phase",
+                            phase,
+                            "--token",
+                            "test",
+                            "--single-joint-max-offset-rad",
+                            "0.1"
+                        ]
+                        .map(str::to_owned)
+                    )
+                    .is_err()
+                );
+            }
+        }
+
+        #[test]
+        fn explicit_budget_keeps_request_f32_range_and_rate_checks() {
+            let max = MAX_SINGLE_JOINT_OFFSET_RAD;
+            assert!(
+                check_single_joint_motion(
+                    0.0,
+                    f64::from(robot_adapter_feetech::raw_to_rad(2388)),
+                    20000,
+                    max
+                )
+                .is_ok()
+            );
+            assert!(check_single_joint_motion(0.0, 0.1, 20000, 0.1).is_err());
+            assert!(check_single_joint_motion(0.0, 0.35, 20000, 0.349_999_995).is_err());
+            assert!(check_single_joint_motion(0.0, 0.125, 20000, 0.125).is_ok());
+            assert!(check_single_joint_motion(0.0, 0.5, 1000, max).is_err());
+            let mut args = Args::parse_from(&raw_args()).unwrap();
+            args.target_offset_raw = Some(341);
+            args.single_joint_max_offset_rad = Some(max);
+            let mut narrow = config();
+            narrow["s1"]["single_joint"]["joints"][4]["max_position_rad"] = toml::Value::Float(0.5);
+            assert!(SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &narrow).is_err());
+            let mut slow = config();
+            slow["s1"]["single_joint"]["joints"][4]["max_velocity_rad_s"] =
+                toml::Value::Float(0.02);
+            assert!(SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &slow).is_err());
+            let visible = SingleJointPlan::prepare(&args, &layout(), &[0.0; 8], &config()).unwrap();
+            let mut moved_start = [0.0; 8];
+            moved_start[4] = f64::from(robot_adapter_feetech::raw_to_rad(2046));
+            assert!(
+                visible.check_start(&moved_start).is_err(),
+                "不以既有±4raw误差放宽运动幅度预算"
+            );
         }
 
         fn command(seq: u64, stamp_ns: u64, offset: i32) -> PublishedCommand {
@@ -4648,6 +5064,70 @@ mod tests {
                 assert!(ops.calls.contains(&"watch:25000".into()));
                 assert_eq!(ops.calls.last().map(String::as_str), Some("disable"));
                 assert!(!ops.calls.contains(&"estop".into()));
+                assert_eq!(
+                    ops.cancel_logs
+                        .iter()
+                        .filter(|line| line.starts_with("SINGLE_JOINT_CANCEL_HOLD_RAW="))
+                        .count(),
+                    1
+                );
+            });
+        }
+
+        #[test]
+        fn failed_cancel_hold_keeps_event_reference_and_original_sample_errors() {
+            run(async {
+                let mut ops = cancel_ops();
+                ops.raw_state_r[2] = Scripted::Ok(state(102, 8));
+                ops.raw_state_r[3] = Scripted::Ok(state(103, 8));
+                ops.raw_state_r[4] = Scripted::Ok(state(110, 8));
+                assert!(execute(&mut ops, &cancel_plan(), tb()).await.is_err());
+                assert!(ops.cancel_logs[0].starts_with("SINGLE_JOINT_CANCEL_EVENT "));
+                assert_eq!(
+                    ops.cancel_logs
+                        .iter()
+                        .filter(|line| line.starts_with("SINGLE_JOINT_CANCEL_HOLD_RAW="))
+                        .count(),
+                    1
+                );
+                let reference = ops
+                    .cancel_logs
+                    .iter()
+                    .find_map(|line| line.strip_prefix("SINGLE_JOINT_CANCEL_REFERENCE="))
+                    .unwrap();
+                let reference: serde_json::Value = serde_json::from_str(reference).unwrap();
+                assert_eq!(reference["last_command_seq"], 3);
+                assert_eq!(reference["terminal_at_ns"], 11_110_000_000_u64);
+                let samples: Vec<serde_json::Value> = ops
+                    .cancel_logs
+                    .iter()
+                    .filter_map(|line| line.strip_prefix("SINGLE_JOINT_CANCEL_SAMPLE="))
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(samples.len(), 3);
+                assert!(samples.iter().all(|sample| sample["error_raw"][4] == -5));
+                assert_eq!(samples[0]["actual_raw"][4], 2055);
+                assert_eq!(samples[2]["stamp_ns"], 12_000_000_000_u64);
+                assert_eq!(
+                    ops.calls.iter().filter(|call| *call == "state").count(),
+                    5,
+                    "日志不增加读回"
+                );
+                assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                assert_eq!(
+                    ops.calls
+                        .iter()
+                        .filter(|call| call.starts_with("cancel:"))
+                        .count(),
+                    1
+                );
+            });
+            run(async {
+                let mut ops = cancel_ops();
+                ops.status_r[1] = Scripted::Err("status after Cancelled unavailable".into());
+                assert!(execute(&mut ops, &cancel_plan(), tb()).await.is_err());
+                assert_eq!(ops.cancel_logs.len(), 1);
+                assert!(ops.cancel_logs[0].contains("terminal_at_ns=11110000000"));
             });
         }
 
@@ -4985,14 +5465,15 @@ mod tests {
             let mut short = layout.clone();
             short.joints.pop();
             assert!(SingleJointPlan::prepare(&args, &short, &[0.0; 8], &good).is_err());
-            args.target_offset_raw = Some(8);
+            args.target_offset_raw = Some(1);
             assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &good).is_err());
-            assert!(check_single_joint_motion(0.0, 0.088, 20000).is_err());
-            assert!(check_single_joint_motion(0.0, 0.05, 100).is_err());
+            assert!(check_single_joint_motion(0.0, 0.088, 20000, MAX_PROBE_OFFSET_RAD).is_err());
+            assert!(check_single_joint_motion(0.0, 0.05, 100, MAX_PROBE_OFFSET_RAD).is_err());
             let limits = [SingleJointLimit {
                 min: -0.1,
                 max: 0.1,
                 velocity: 1.0,
+                tolerance_rad: 0.0,
             }];
             assert!(check_single_joint_limits(&limits, &[0.1]).is_err());
             assert!(check_single_joint_limits(&limits, &[-0.1]).is_err());
@@ -5001,12 +5482,12 @@ mod tests {
         #[test]
         fn single_joint_observer_enforces_source_ready_corridor_and_all_joints() {
             let mut good = check();
-            for (step, offset) in [(1, -4), (2, 28)] {
+            for (step, offset) in [(1, 0), (2, 24)] {
                 let sample = state(step, offset);
                 good.observe(&sample, "left_arm", sample.stamp_ns, false)
                     .unwrap();
             }
-            for (slot, offset) in [(0, 5), (4, -5), (4, 29)] {
+            for (slot, offset) in [(0, 1), (4, -1), (4, 25)] {
                 let mut sample = state(1, 12);
                 sample.position_rad[slot] =
                     f64::from(robot_adapter_feetech::raw_to_rad(2047 + offset));
@@ -5055,7 +5536,7 @@ mod tests {
             );
             assert!(
                 check()
-                    .observe(&state(1, 20), "left_arm", 1_100_000_000, true)
+                    .observe(&state(1, 24), "left_arm", 1_100_000_000, true)
                     .is_ok()
             );
         }

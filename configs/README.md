@@ -8,6 +8,7 @@
 |---|---|---|
 | 全总线硬件配置 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
 | 左侧S1软件入口 | 同一份[bus1](xlerobot-bus1.toml)与[robot-s1-bus1.service](../scripts/systemd/robot-s1-bus1.service) | S1沿8关节顺序和现有scripted profile运行；临时服务的20秒保持已验收，尚未安装为常驻服务，不自动使能 |
+| 左侧单关节运动片段 | [xlerobot-bus1-motion.toml](xlerobot-bus1-motion.toml) | 仅含左侧8关节的`[s1.single_joint]`约束，供原维护工具与bus1合成候选；不是完整设备配置，不单独安装或自动开放生产动作 |
 | 单关节软件夹具 | [single-joint-smoke.toml](single-joint-smoke.toml) | 两关节mock配置，只用于新载荷、限位、取消和到位测试；其中数值不是XLeRobot实机运动参数 |
 | 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
 | 只读状态页 | [xlerobot-status.toml](xlerobot-status.toml) | 独立HTTP/WebSocket服务，引用原bus1/bus2配置及同机网关50061/50062；无Web token，HTTP默认回环、部署可指定IPv4私网地址，gRPC始终回环；不启动硬件，未纳入S0安装包 |
@@ -21,7 +22,9 @@
 
 `[s1.single_joint]`是可选动作配置，缺失时拒绝新的单关节请求，原完整向量Scripted不受影响。当前实机bus1/bus2均未添加，不能直接执行单关节动作。参数为`max_duration_ms`、`settle_timeout_ms`和`stable_window_ms`，均须非零，稳定窗口严格小于到位超时；`[[s1.single_joint.joints]]`按`name`完整覆盖所选hardware的位置关节，明确`min_position_rad`、`max_position_rad`、`max_velocity_rad_s`和`tolerance_rad`，不提供默认运动限值。到位超时从末目标成功发布开始计时。
 
-实际部署须依据现有校准与已验证动作填写这些值，S0继续执行原校准限制。原raw校准边界容差不能当作新的运动范围或到位容差。当前入口拒绝混合轮速总线，测试夹具不得安装为生产配置。
+`joints[].tolerance_rad`是单关节到位容差的唯一配置，按关节分别填写；正常到位、取消保持及单关节执行走廊使用同一值。用户已授权后续到位误差在20raw内通过，左侧运动片段使用原Feetech f32换算覆盖±20raw的最大rad差，并严格小于21raw的最小rad差；精确数值以该TOML为准。维护demo已修复丢弃此配置并硬编码4raw的问题，Orin软件验证通过；新20raw规则尚未实机验证。原运动范围、速率、800毫秒到位超时与200毫秒稳定窗口不变；默认hold及启用前锚点一致性仍沿原检查。
+
+实际部署仍须核对现有校准、产物和具体计划，S0继续执行原校准限制。raw校准边界容差与本次到位容差是两个独立参数，不互相扩大运动范围；断扭、停速和其他停止判据不变。当前入口拒绝混合轮速总线，运动片段与测试夹具均不得作为完整生产配置安装。
 
 ## 按矩阵打包
 
