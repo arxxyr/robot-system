@@ -13,6 +13,9 @@ use robot_core::time::RobotClock;
 use serde::Serialize;
 use tokio::sync::watch;
 
+#[path = "status_service_resources.rs"]
+mod services;
+
 const INTERVAL_MS: u64 = 2000;
 const STALE_AFTER_MS: u64 = 6000;
 const MAX_PROC_BYTES: u64 = 256 * 1024;
@@ -31,6 +34,7 @@ pub(super) struct Snapshot {
     context_switches: Option<ContextSwitches>,
     networks: Vec<Network>,
     web_process: Option<WebProcess>,
+    robot_system: services::Snapshot,
 }
 
 #[derive(Clone, Serialize)]
@@ -93,6 +97,7 @@ impl Snapshot {
             context_switches: None,
             networks: Vec::new(),
             web_process: None,
+            robot_system: services::Snapshot::unavailable("整机资源尚不可用"),
         }
     }
 
@@ -207,6 +212,7 @@ struct RawSample {
     context_switches: u64,
     networks: BTreeMap<String, NetworkCounters>,
     web_process: WebProcess,
+    robot_system: services::RawSnapshot,
 }
 
 impl RawSample {
@@ -251,6 +257,13 @@ impl RawSample {
                 })
                 .collect(),
             web_process: Some(self.web_process.clone()),
+            robot_system: self.robot_system.view(
+                stamp_ns,
+                previous
+                    .filter(|(_, raw)| raw.cpu.logical_cores == self.cpu.logical_cores)
+                    .map(|(stamp, raw)| (*stamp, &raw.robot_system)),
+                self.cpu.logical_cores,
+            ),
         }
     }
 }
@@ -483,6 +496,7 @@ fn parse(
         context_switches,
         networks: parse_networks(network)?,
         web_process: parse_process(process)?,
+        robot_system: services::RawSnapshot::unavailable("尚未读取robot服务cgroup"),
     })
 }
 
@@ -508,7 +522,11 @@ fn read_proc(root: &Path) -> Result<RawSample, String> {
 
 fn read_system() -> Result<RawSample, String> {
     if cfg!(target_os = "linux") {
-        read_proc(Path::new("/proc"))
+        let mut sample = read_proc(Path::new("/proc"))?;
+        // cgroup失败只影响robot_system；整机采样、状态和相机继续独立工作。
+        sample.robot_system =
+            services::read(Path::new("/sys/fs/cgroup/system.slice"), Path::new("/proc"));
+        Ok(sample)
     } else {
         Err("资源采集仅支持Linux procfs".into())
     }

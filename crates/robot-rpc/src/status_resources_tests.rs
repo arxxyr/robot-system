@@ -238,6 +238,21 @@ fn stale_and_future_cache_ages_never_report_live_values() {
     assert!(future.cpu.is_none());
 }
 
+#[test]
+fn service_resource_failure_does_not_clear_valid_machine_values() {
+    let mut raw = sample();
+    raw.robot_system = services::RawSnapshot::unavailable("cgroup权限不足");
+    let view = raw.view(1, None);
+    assert_eq!(view.status, "ok");
+    assert!(view.cpu.is_some() && view.memory.is_some() && view.tasks.is_some());
+    let json = serde_json::to_value(view).unwrap();
+    assert_eq!(json["robot_system"]["status"], "unavailable");
+    assert_eq!(
+        json["robot_system"]["totals"]["memory_bytes"],
+        serde_json::Value::Null
+    );
+}
+
 #[tokio::test]
 async fn concurrent_gets_share_cache_and_cannot_launch_or_trigger_sampling() {
     let clock = Arc::new(MockClock::new(MonoRawNs(1)));

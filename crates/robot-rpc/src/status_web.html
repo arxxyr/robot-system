@@ -85,6 +85,26 @@
     .resource-detail { margin: 4px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
     .resource-note { margin: 13px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
     .resources[data-state="stale"] .resource-grid dd, .resources[data-state="paused"] .resource-grid dd { color: var(--muted); }
+    .robot-summary { margin: 16px 0 22px; padding: 17px 18px; border: 1px solid #cedfe9; border-radius: 8px; background: #f5f9fc; }
+    .robot-summary h3 { margin: 0; font-size: 17px; }
+    .robot-summary .resource-grid dd { color: var(--blue); font-size: 21px; }
+    .robot-summary .resource-grid dd.robot-network-note { font-size: 13px; font-weight: 500; color: var(--muted); }
+    .robot-summary .section-row { margin-bottom: 17px; }
+    .resource-subheading { margin: 20px 0 14px; font-size: 14px; }
+    .robot-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+    .robot-service { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 8px; }
+    .robot-service-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .robot-service-title { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+    .robot-service-name { margin: 3px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .robot-service-description, .robot-service-error { margin: 9px 0 12px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .robot-service-error { color: var(--amber); }
+    .robot-service .resource-grid { gap: 12px; }
+    .robot-service .resource-grid dt { font-size: 11px; }
+    .robot-service .resource-grid dd { font-size: 13px; font-weight: 550; }
+    .resource-metric-help { margin: 16px 0 22px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: 12px; }
+    .resource-metric-help summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+    .resource-metric-help summary:focus-visible { outline: 3px solid #91b9db; outline-offset: 3px; }
+    .resource-metric-help p { margin: 10px 0 0; }
     .resource-networks-heading { margin: 20px 0 10px; padding-top: 15px; border-top: 1px solid var(--line); font-size: 13px; }
     .resource-networks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .resource-network { padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
@@ -109,7 +129,7 @@
     footer { margin-top: 23px; color: var(--muted); font-size: 12px; }
     footer p { margin: 4px 0; }
     @media (max-width: 900px) { .resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .buses { grid-template-columns: 1fr; } .cameras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 560px) { .resources { padding: 16px; } .resource-networks { grid-template-columns: 1fr; } .resource-heading { flex-wrap: wrap; gap: 6px; } .resource-grid { gap: 16px 12px; } .resource-grid dd { font-size: 14px; } .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
+    @media (max-width: 560px) { .robot-services { grid-template-columns: 1fr; } .robot-summary { padding: 14px; } .robot-summary .resource-grid dd { font-size: 19px; } .resources { padding: 16px; } .resource-networks { grid-template-columns: 1fr; } .resource-heading { flex-wrap: wrap; gap: 6px; } .resource-grid { gap: 16px 12px; } .resource-grid dd { font-size: 14px; } .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
     @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } .connection-actions { flex-wrap: wrap; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
   </style>
 </head>
@@ -128,8 +148,32 @@
       <p class="access-note">连接后持续接收状态；断开查看不会改变机器人状态。</p>
       <p id="notice" role="alert"></p>
     </section>
-    <section id="resources" class="resources" aria-label="整机资源占用" data-state="paused">
-      <div class="section-row"><div class="resource-heading"><h2>整机资源</h2><span id="resource-status" class="badge" data-tone="neutral">尚未连接</span></div><span id="resource-age">每 2 秒更新</span></div>
+    <section id="resources" class="resources" aria-label="机器人与整机资源占用" data-state="paused">
+      <div class="section-row"><div class="resource-heading"><h2>资源占用</h2><span id="resource-status" class="badge" data-tone="neutral">尚未连接</span></div><span id="resource-age">每 2 秒更新</span></div>
+      <div id="robot-system-summary" class="robot-summary">
+        <div class="section-row"><div class="resource-heading"><h3>robot-system 总占用</h3><span id="robot-system-status" class="badge" data-tone="neutral">等待采样</span></div><span id="robot-system-count">服务数量：—</span></div>
+        <dl class="resource-grid">
+          <div><dt>CPU 占整机</dt><dd id="robot-system-cpu">—</dd><p id="robot-system-cpu-cores" class="resource-detail">占用核数：—</p></div>
+          <div><dt>内存 · cgroup 计费</dt><dd id="robot-system-memory">—</dd><p id="robot-system-shmem" class="resource-detail">其中共享内存：—</p></div>
+          <div><dt>进程数（含子进程）</dt><dd id="robot-system-processes">—</dd></div>
+          <div><dt>线程数</dt><dd id="robot-system-threads">—</dd></div>
+          <div><dt>上下文切换率</dt><dd id="robot-system-context-rate">—</dd></div>
+          <div><dt>服务网络</dt><dd class="robot-network-note">服务级网络未单独采集</dd></div>
+        </dl>
+        <p id="robot-system-notice" class="resource-note">等待机器人服务资源采样。</p>
+      </div>
+      <div class="section-row"><h3 class="resource-subheading">服务明细</h3><span>按服务分别计费</span></div>
+      <div id="robot-services" class="robot-services"></div>
+      <p id="robot-services-notice" class="resource-note">连接查看后显示服务及职责。</p>
+      <details id="resource-metric-help" class="resource-metric-help">
+        <summary>指标说明与统计范围</summary>
+        <p>CPU 百分比以整机全部逻辑核为 100%；占用核数是采样间隔内的平均 CPU 用量。例如占用 0.6 / 共 6 核，相当于整机 10%。</p>
+        <p>服务内存使用 cgroup 计费，包含进程内存、共享内存和文件缓存等。“其中共享内存”已包含在内存数值中，不能再次相加；下方整机内存用于对照，两者口径不同。</p>
+        <p>进程数包含服务的子进程，例如相机采集辅助进程；线程数包含这些进程的全部 OS 线程。服务职责由各行说明；有无进程不代表服务健康或硬件状态，无进程的服务仍按实际占用展示。</p>
+        <p>上下文切换反映线程调度频率，数值较高不等同于故障。速率需要相邻且可比较的采样；初次采样或进程、线程发生变化时，相关项显示“采样中”；“—”表示对应指标不可用。</p>
+        <p>统计范围是 system.slice 下的 robot-*.service，后续纳入的 S1 等服务会自动列出。手动启动且未归属这些服务的进程不计入；服务级网络未单独采集，共享网卡流量不能准确归因到某一服务。</p>
+      </details>
+      <h3 class="resource-subheading">整机对照</h3>
       <dl class="resource-grid">
         <div><dt>CPU 利用率 / 总量</dt><dd id="resource-cpu">—</dd><p id="resource-load" class="resource-detail">负载：—</p></div>
         <div><dt>内存已用 / 总量</dt><dd id="resource-memory">—</dd><p id="resource-available" class="resource-detail">可用：—</p></div>
@@ -159,7 +203,7 @@
   <script>
     (() => {
       'use strict';
-      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras', 'resources', 'resource-status', 'resource-age', 'resource-cpu', 'resource-load', 'resource-memory', 'resource-available', 'resource-swap', 'resource-tasks', 'resource-context-rate', 'resource-context-total', 'resource-web', 'resource-notice', 'resource-networks', 'resource-network-notice'].map(id => [id, document.getElementById(id)]));
+      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras', 'resources', 'resource-status', 'resource-age', 'resource-cpu', 'resource-load', 'resource-memory', 'resource-available', 'resource-swap', 'resource-tasks', 'resource-context-rate', 'resource-context-total', 'resource-web', 'resource-notice', 'resource-networks', 'resource-network-notice', 'robot-system-summary', 'robot-system-status', 'robot-system-count', 'robot-system-cpu', 'robot-system-cpu-cores', 'robot-system-memory', 'robot-system-shmem', 'robot-system-processes', 'robot-system-threads', 'robot-system-context-rate', 'robot-system-notice', 'robot-services', 'robot-services-notice'].map(id => [id, document.getElementById(id)]));
       const modeText = { Safe: 'Safe · 安全态', Ready: 'Ready · 就绪', Enabled: 'Enabled · 已使能', Fault: 'Fault · 故障', Stopping: 'Stopping · 停止中' };
       const linkText = { Ok: '正常', Lost: '已丢失' };
       const outputText = { Active: '执行输出', Hold: '保持', Zero: '零输出', Stop: '停止输出' };
@@ -176,6 +220,8 @@
       let busOrder = [];
       const networkCards = new Map();
       let networkOrder = [];
+      const robotServiceCards = new Map();
+      let robotServiceOrder = [];
       let resourceSnapshot = null;
       let resourceReceivedAt = 0;
       let resourceAgeMs = 0;
@@ -227,10 +273,11 @@
         if (element[name] !== value) element[name] = value;
       }
       function syncChildren(parent, children) {
+        const retained = new Set(children);
+        for (const child of Array.from(parent.children)) if (!retained.has(child)) child.remove();
         for (let index = 0; index < children.length; index++) {
           if (parent.children[index] !== children[index]) parent.insertBefore(children[index], parent.children[index] || null);
         }
-        while (parent.children.length > children.length) parent.lastElementChild.remove();
       }
       function setConnection(text, tone) {
         connectionView = { text, tone };
@@ -412,8 +459,127 @@
         article.append(values);
         return { article, fields };
       }
+      function robotSystemView(value) {
+        if (!value || !['ok', 'partial', 'unavailable'].includes(value.status) || value.scope !== 'system.slice/robot-*.service' || !Number.isSafeInteger(value.service_count) || value.service_count < 0 || !Array.isArray(value.services) || value.services.length > 128) return null;
+        const names = new Set();
+        for (const service of value.services) {
+          if (!service || typeof service.name !== 'string' || !service.name || service.name.length > 256 || names.has(service.name) || typeof service.label !== 'string' || typeof service.description !== 'string' || !['running', 'inactive', 'unavailable'].includes(service.status)) return null;
+          names.add(service.name);
+        }
+        return value;
+      }
+      function robotCpuPercent(value, sampling) {
+        if (value === null && sampling) return '采样中';
+        return finiteNonnegative(value) && value <= 100 ? `${value.toFixed(1)}%` : '—';
+      }
+      function robotCpuCores(value, sampling) {
+        if (value === null && sampling) return '采样中';
+        return finiteNonnegative(value) ? value.toFixed(2) : '—';
+      }
+      function robotContextRate(value, sampling) {
+        return value === null && !sampling ? '—' : rateText(value);
+      }
+      function makeRobotService(service) {
+        const article = node('article', 'robot-service');
+        article.setAttribute('data-service-name', service.name);
+        const heading = node('div', 'robot-service-heading');
+        const identity = node('div');
+        const title = node('h4', 'robot-service-title');
+        const name = node('p', 'robot-service-name', service.name);
+        identity.append(title, name);
+        const badge = node('span', 'badge');
+        heading.append(identity, badge);
+        const description = node('p', 'robot-service-description');
+        const error = node('p', 'robot-service-error');
+        error.hidden = true;
+        const metrics = node('dl', 'resource-grid');
+        const fields = Object.fromEntries(['CPU', '内存（cgroup）', '其中共享内存', '进程数', '线程数', '上下文切换率'].map(label => {
+          const item = node('div');
+          const value = node('dd', '', '—');
+          item.append(node('dt', '', label), value);
+          metrics.append(item);
+          return [label, value];
+        }));
+        article.append(heading, description, metrics, error);
+        return { article, title, badge, description, error, fields };
+      }
+      function renderRobotSystemData() {
+        const system = robotSystemView(resourceSnapshot?.robot_system);
+        const totals = system?.totals;
+        const sampling = system?.status === 'ok';
+        const cores = resourceSnapshot?.cpu?.logical_cores;
+        const coreTotal = Number.isSafeInteger(cores) && cores > 0 ? String(cores) : '—';
+        setText(elements['robot-system-count'], `服务数量：${system && system.status !== 'unavailable' ? countText(system.service_count) : '—'}`);
+        setText(elements['robot-system-cpu'], robotCpuPercent(totals?.cpu_percent, sampling));
+        setText(elements['robot-system-cpu-cores'], `占用 ${robotCpuCores(totals?.cpu_cores, sampling)} / 共 ${coreTotal} 核`);
+        setText(elements['robot-system-memory'], bytesText(totals?.memory_bytes));
+        setText(elements['robot-system-shmem'], `其中共享内存：${bytesText(totals?.shmem_bytes)}`);
+        setText(elements['robot-system-processes'], countText(totals?.processes));
+        setText(elements['robot-system-threads'], countText(totals?.threads));
+        setText(elements['robot-system-context-rate'], robotContextRate(totals?.context_switches_per_second, sampling));
+        const services = system?.services || [];
+        const order = services.map(service => service.name);
+        for (const service of services) {
+          let card = robotServiceCards.get(service.name);
+          if (!card) { card = makeRobotService(service); robotServiceCards.set(service.name, card); }
+          setText(card.title, service.label || service.name);
+          setText(card.description, service.description || '尚未提供服务职责说明。');
+          const detail = typeof service.error === 'string' ? service.error : '';
+          setText(card.error, detail);
+          setProperty(card.error, 'hidden', !detail);
+          const serviceSampling = system.status !== 'unavailable' && service.status === 'running' && !detail;
+          const percent = robotCpuPercent(service.cpu_percent, serviceSampling);
+          const cpuCores = robotCpuCores(service.cpu_cores, serviceSampling);
+          const cpuValue = percent === '采样中' && cpuCores === '采样中' ? '采样中' : percent === '—' && cpuCores === '—' ? '—' : `${percent} · ${cpuCores} 核`;
+          setText(card.fields.CPU, cpuValue);
+          setText(card.fields['内存（cgroup）'], bytesText(service.memory_bytes));
+          setText(card.fields['其中共享内存'], bytesText(service.shmem_bytes));
+          setText(card.fields['进程数'], countText(service.processes));
+          setText(card.fields['线程数'], countText(service.threads));
+          setText(card.fields['上下文切换率'], robotContextRate(service.context_switches_per_second, serviceSampling));
+        }
+        if (JSON.stringify(order) !== JSON.stringify(robotServiceOrder)) {
+          syncChildren(elements['robot-services'], order.map(name => robotServiceCards.get(name).article));
+          for (const name of robotServiceCards.keys()) if (!order.includes(name)) robotServiceCards.delete(name);
+          robotServiceOrder = order;
+        }
+        setText(elements['robot-services-notice'], !system ? '机器人服务统计不可用。' : !services.length ? system.status === 'unavailable' ? '尚无可用的服务明细。' : '当前统计范围内没有服务。' : '');
+      }
+      function renderRobotSystemStatus(paused, timedOut) {
+        const system = robotSystemView(resourceSnapshot?.robot_system);
+        let text = '等待采样';
+        let tone = 'neutral';
+        if (paused) text = resourceSnapshot ? '已暂停' : '等待采样';
+        else if (timedOut) { text = '资源超时'; tone = 'warn'; }
+        else if (resourceError) { text = '资源不可用'; tone = 'warn'; }
+        else if (resourceSnapshot) {
+          text = !system || system.status === 'unavailable' ? '统计不可用' : system.status === 'partial' ? '部分指标不可用' : '统计正常';
+          tone = system?.status === 'ok' ? 'good' : 'warn';
+        }
+        const old = paused || timedOut || Boolean(resourceError);
+        for (const service of system?.services || []) {
+          const card = robotServiceCards.get(service.name);
+          if (!card) continue;
+          const label = { running: '有进程', inactive: '无进程', unavailable: '统计不可用' }[service.status];
+          setText(card.badge, `${label}${old ? '（最后报告）' : ''}`);
+          setAttribute(card.badge, 'data-tone', old ? 'warn' : service.status === 'running' && !service.error ? 'good' : service.status === 'inactive' ? 'neutral' : 'warn');
+        }
+        setText(elements['robot-system-status'], text);
+        setAttribute(elements['robot-system-status'], 'data-tone', tone);
+        let note = '统计 system.slice 下的 robot-*.service，包含服务子进程。';
+        if (!resourceSnapshot) note = '等待机器人服务资源采样。';
+        else if (!system) note = '机器人服务统计缺失或格式无效，不能确认总占用。';
+        else {
+          if (system.status === 'partial') note += ' 部分指标不可用，无法完整相加的合计显示“—”。';
+          if (system.status === 'unavailable') note += ' 当前统计不可用。';
+          if (typeof system.error === 'string' && system.error) note += ` ${system.error}`;
+        }
+        if ((paused || timedOut || resourceError) && resourceSnapshot) note += ' 当前保留最后一次采样，仅供参考。';
+        setText(elements['robot-system-notice'], note);
+      }
       function renderResourcesData() {
         if (document.hidden || !resourceSnapshot) return;
+        renderRobotSystemData();
         const { cpu, memory, tasks, context_switches: context, networks, web_process: web } = resourceSnapshot;
         const usage = finiteNonnegative(cpu?.usage_percent) && cpu.usage_percent <= 100 ? `${cpu.usage_percent.toFixed(1)}%` : cpu?.usage_percent === null ? '采样中' : '—';
         const cores = Number.isSafeInteger(cpu?.logical_cores) && cpu.logical_cores > 0 ? `${cpu.logical_cores} 逻辑核` : '总量未知';
@@ -466,6 +632,7 @@
         let note = resourceError || (paused ? activeSession ? '资源采样已暂停。' : '连接查看后读取资源采样。' : timedOut ? '资源采样未及时推进。' : resourceSnapshot ? '显示整机资源；速率取相邻采样差值，首个样本需等待下一次采样。' : '正在等待首个资源样本。');
         if ((paused || resourceError || timedOut) && resourceSnapshot) note += ' 以下保留最后一次采样，仅供参考。';
         setText(elements['resource-notice'], note);
+        renderRobotSystemStatus(paused, timedOut);
       }
       function stopResources(message = null) {
         const previous = resourceSession;
