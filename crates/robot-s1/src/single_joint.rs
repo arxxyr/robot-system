@@ -1,6 +1,7 @@
 //! 单关节定位的显式运动约束、提交校验与反馈到位判据。
 //!
 //! 目标只替换提交时完整快照中的一个位置关节；配置缺失时拒绝执行。
+//! 混合总线仅配置位置关节，三轮目标恒为 raw0，轮反馈不参与位置到位判断。
 //! 中断保持使用最后成功发布的目标，不能解释为当前位置或已断扭。
 
 use serde::Deserialize;
@@ -35,10 +36,10 @@ pub struct JointMotionLimits {
 }
 
 impl SingleJointConfig {
-    /// 校验完整硬件覆盖与参数边界；不补默认运动参数或放宽已有范围。
+    /// 校验完整位置关节覆盖与参数边界；不为轮槽补造 rad 运动参数。
     pub fn validate(&self, hardware: &HardwareSection) -> Result<(), String> {
-        if hardware.feetech_bus2_mixed_raw {
-            return Err("单关节定位当前只支持纯位置总线，不支持混合轮速总线".into());
+        if !hardware.mixed_layout_is_valid() {
+            return Err("混合总线需要完整右臂九槽及 ID1..9".into());
         }
         if self.max_duration_ms == 0
             || self.settle_timeout_ms == 0
@@ -54,13 +55,18 @@ impl SingleJointConfig {
             if hardware.joints[..index].contains(name) {
                 return Err(format!("硬件关节名称重复：{name}"));
             }
-            if !self.joints.iter().any(|joint| joint.name == *name) {
+            if !hardware.is_wheel_slot(index)
+                && !self.joints.iter().any(|joint| joint.name == *name)
+            {
                 return Err(format!("单关节运动约束缺少关节：{name}"));
             }
         }
         for (index, joint) in self.joints.iter().enumerate() {
-            if !hardware.joints.contains(&joint.name) {
+            let Some(slot) = hardware.joints.iter().position(|name| *name == joint.name) else {
                 return Err(format!("单关节运动约束包含未知关节：{}", joint.name));
+            };
+            if hardware.is_wheel_slot(slot) {
+                return Err(format!("轮关节不得配置 rad 位置运动约束：{}", joint.name));
             }
             if self.joints[..index]
                 .iter()
@@ -99,7 +105,8 @@ pub(crate) struct SingleJointExecution {
     settle_timeout_ns: u64,
     stable_window_ns: u64,
     max_stale_ns: u64,
-    limits: Vec<JointMotionLimits>,
+    /// 配置槽位顺序；None 只表示混合总线轮槽，不伪造位置范围或容差。
+    limits: Vec<Option<JointMotionLimits>>,
     target: Vec<f64>,
     last_feedback_stamp_ns: u64,
     final_published_at_ns: Option<u64>,
@@ -134,6 +141,11 @@ impl SingleJointPlan {
             .iter()
             .position(|name| payload.joint_name() == name.as_str())
             .ok_or_else(|| ActionStartError::Rejected("单关节请求包含未知关节名称".into()))?;
+        if ctx.hardware.is_wheel_slot(selected) {
+            return Err(ActionStartError::Rejected(
+                "单关节定位只能选择位置关节，三轮目标保持 raw0".into(),
+            ));
+        }
         let duration_ms = payload.duration_ms();
         if duration_ms == 0 || duration_ms > config.max_duration_ms {
             return Err(ActionStartError::Rejected(
@@ -162,19 +174,7 @@ impl SingleJointPlan {
                 "单关节起点与反馈必须来自同一快照".into(),
             ));
         }
-        let limits: Vec<_> = ctx
-            .hardware
-            .joints
-            .iter()
-            .map(|name| {
-                config
-                    .joints
-                    .iter()
-                    .find(|limit| limit.name == *name)
-                    .cloned()
-                    .ok_or_else(|| ActionStartError::Rejected(format!("缺少关节约束：{name}")))
-            })
-            .collect::<Result<_, _>>()?;
+        let limits = limits_in_slot_order(config, ctx.hardware)?;
         // validate 已确认逐关节覆盖；反馈维度仍由执行期共用校验独立守门。
         let mut execution = SingleJointExecution {
             deadline_ns: req.deadline_ns,
@@ -192,14 +192,17 @@ impl SingleJointPlan {
             .observe_feedback(now_ns, Some(feedback))
             .map_err(|error| ActionStartError::Rejected(error.to_string()))?;
         // S0 将位置命令降为 f32；真实 f32 反馈提升后的值在此转换中不变。
-        let initial_pose: Vec<_> = start_pose.iter().copied().map(position_for_s0).collect();
+        let mut initial_pose: Vec<_> = start_pose.iter().copied().map(position_for_s0).collect();
+        ctx.hardware.clear_wheel_targets(&mut initial_pose);
         execution.target.clone_from(&initial_pose);
         execution.last_published_target.clone_from(&initial_pose);
         execution.target[selected] = checked_motion_target(
             payload.target_position_rad(),
             initial_pose[selected],
             duration_ms,
-            &execution.limits[selected],
+            execution.limits[selected]
+                .as_ref()
+                .ok_or_else(|| ActionStartError::Rejected("所选关节缺少位置约束".into()))?,
         )?;
         Ok(Self {
             initial_pose,
@@ -208,6 +211,31 @@ impl SingleJointPlan {
             execution,
         })
     }
+}
+
+/// 按硬件槽位排列位置约束，轮槽保留 None，不给轮子补造 rad 参数。
+#[cfg(feature = "backend-scripted")]
+fn limits_in_slot_order(
+    config: &SingleJointConfig,
+    hardware: &HardwareSection,
+) -> Result<Vec<Option<JointMotionLimits>>, ActionStartError> {
+    hardware
+        .joints
+        .iter()
+        .enumerate()
+        .map(|(slot, name)| {
+            if hardware.is_wheel_slot(slot) {
+                return Ok(None);
+            }
+            config
+                .joints
+                .iter()
+                .find(|limit| limit.name == *name)
+                .cloned()
+                .map(Some)
+                .ok_or_else(|| ActionStartError::Rejected(format!("缺少关节约束：{name}")))
+        })
+        .collect()
 }
 
 /// 原请求与实际编码值同时守范围、速率；返回用于执行与到位确认的编码目标。
@@ -289,7 +317,13 @@ impl SingleJointExecution {
                 .positions
                 .iter()
                 .zip(&self.limits)
-                .any(|(&position, limit)| !valid_position(position, limit))
+                .any(|(&position, limit)| {
+                    !position.is_finite()
+                        || position.abs() > f64::from(f32::MAX)
+                        || limit
+                            .as_ref()
+                            .is_some_and(|limit| !valid_position(position, limit))
+                })
         {
             return Err(ActionFailure::SafetyAbort(
                 "单关节反馈位置不完整、非有限或越界".into(),
@@ -313,7 +347,11 @@ impl SingleJointExecution {
             .iter()
             .zip(&self.target)
             .zip(&self.limits)
-            .any(|((&position, &target), limit)| (position - target).abs() > limit.tolerance_rad)
+            .any(|((&position, &target), limit)| {
+                limit
+                    .as_ref()
+                    .is_some_and(|limit| (position - target).abs() > limit.tolerance_rad)
+            })
         {
             self.stable_since_ns = None;
             return Ok(false);
@@ -456,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn configuration_rejects_mixed_bus_and_unknown_fields() {
+    fn configuration_rejects_invalid_mixed_layout_and_unknown_fields() {
         let mut mixed = hardware();
         mixed.feetech_bus2_mixed_raw = true;
         assert!(config().validate(&mixed).is_err());
@@ -477,5 +515,50 @@ mod tests {
             guessed_limit = 1
         "#;
         assert!(toml::from_str::<JointMotionLimits>(text).is_err());
+    }
+
+    #[test]
+    fn mixed_configuration_covers_only_positions_in_configured_slot_order() {
+        let mut hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../configs/xlerobot-bus2.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        hardware.feetech_bus2_mixed_raw = true;
+        hardware.joints.rotate_left(4);
+        hardware.motor_ids.rotate_left(4);
+        let mut limits = config();
+        limits.joints = hardware
+            .joints
+            .iter()
+            .enumerate()
+            .filter(|(slot, _)| !hardware.is_wheel_slot(*slot))
+            .map(|(_, name)| JointMotionLimits {
+                name: name.clone(),
+                ..config().joints[0].clone()
+            })
+            .collect();
+        limits.joints.reverse();
+        assert_eq!(limits.joints.len(), 6);
+        assert!(limits.validate(&hardware).is_ok());
+
+        let mut missing = limits.clone();
+        missing.joints.pop();
+        assert!(missing.validate(&hardware).is_err());
+        let wheel_name = hardware
+            .joints
+            .iter()
+            .enumerate()
+            .find(|(slot, _)| hardware.is_wheel_slot(*slot))
+            .unwrap()
+            .1;
+        let mut wheel_limit = limits.clone();
+        wheel_limit.joints.push(JointMotionLimits {
+            name: wheel_name.clone(),
+            ..limits.joints[0].clone()
+        });
+        assert!(wheel_limit.validate(&hardware).is_err());
+        hardware.motor_ids[0] = hardware.motor_ids[1];
+        assert!(limits.validate(&hardware).is_err());
     }
 }

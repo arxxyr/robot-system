@@ -349,6 +349,31 @@ pub struct HardwareSection {
     pub feetech_bus2_mixed_raw: bool,
 }
 
+impl HardwareSection {
+    /// 轮槽只由同份混合总线配置的电机 ID 判定，不固定配置中的下标。
+    #[must_use]
+    pub fn is_wheel_slot(&self, slot: usize) -> bool {
+        self.feetech_bus2_mixed_raw && self.motor_ids.get(slot).is_some_and(|&id| id >= 7)
+    }
+
+    /// 将已校验的完整反馈转换为保持目标；轮反馈不解释为位置或速度目标。
+    pub fn clear_wheel_targets(&self, targets: &mut [f64]) {
+        for (slot, target) in targets.iter_mut().enumerate() {
+            if self.is_wheel_slot(slot) {
+                *target = 0.0;
+            }
+        }
+    }
+
+    pub(crate) fn mixed_layout_is_valid(&self) -> bool {
+        !self.feetech_bus2_mixed_raw
+            || (self.id == "right_arm_full_with_base"
+                && self.joints.len() == 9
+                && self.motor_ids.len() == 9
+                && (1..=9).all(|id| self.motor_ids.contains(&id)))
+    }
+}
+
 /// `[[hardware]]` 段的 wrapper（同一 TOML 可有多个 hardware section）。
 #[derive(Debug, Default, Deserialize)]
 struct HardwareWrapper {
@@ -414,11 +439,7 @@ pub fn parse_hardware_section_from_toml(
         }
         seen_ids[usize::from(motor_id)] = true;
     }
-    if section.feetech_bus2_mixed_raw
-        && (section.id != "right_arm_full_with_base"
-            || section.joints.len() != 9
-            || !(1..=9).all(|id| seen_ids[id]))
-    {
+    if !section.mixed_layout_is_valid() {
         return Err(ConfigError::Toml(
             "混合总线需要完整右臂九槽及 ID1..9".into(),
         ));
@@ -508,7 +529,7 @@ pub fn build_hardware_hold_command(
     }
     // 保留输入快照，编码时清零轮位，不再为掩码创建第二份位置数组。
     let arm_positions = positions.iter().enumerate().map(|(slot, &position)| {
-        if hardware.motor_ids.get(slot).is_some_and(|&id| id >= 7) {
+        if hardware.is_wheel_slot(slot) {
             0.0
         } else {
             position
@@ -1733,11 +1754,12 @@ impl Coordinator {
         config: CoordinatorConfig,
         hardware: HardwareSection,
         layout_id: u64,
-        anchor_bias: Vec<f64>,
+        mut anchor_bias: Vec<f64>,
         registry: BackendRegistry,
         enabled_backends: Vec<String>,
         solver: Option<Box<dyn robot_kinematics::ArmIkSolver>>,
     ) -> Self {
+        hardware.clear_wheel_targets(&mut anchor_bias);
         Self {
             inner: Mutex::new(InnerState::new_booting(&anchor_bias)),
             enabled_backends,
@@ -4554,7 +4576,7 @@ backends = 42
             let handle = spawn_state_cache_thread_with(
                 StateCacheConfig {
                     topic: "/t/s0/arm/state".into(),
-                    expected_joints: JOINTS,
+                    expected_joints: c.hardware.joints.len(),
                     expected_layout: LAYOUT,
                     max_stale_ms: 200,
                     poll_interval: Duration::from_millis(1),
@@ -4763,17 +4785,26 @@ backends = 42
         }
 
         fn single_joint_request() -> ActionRequest {
+            single_joint_request_for("arm", "j0", 0.5, 100)
+        }
+
+        fn single_joint_request_for(
+            hardware: &str,
+            joint: &str,
+            target: f64,
+            duration_ms: u32,
+        ) -> ActionRequest {
             use robot_msg::msg::{SingleJointPositionPayload, SingleJointPositionPayloadArgs};
             let mut builder = flatbuffers::FlatBufferBuilder::new();
-            let hardware_id = builder.create_string("arm");
-            let joint_name = builder.create_string("j0");
+            let hardware_id = builder.create_string(hardware);
+            let joint_name = builder.create_string(joint);
             let payload = SingleJointPositionPayload::create(
                 &mut builder,
                 &SingleJointPositionPayloadArgs {
                     hardware_id: Some(hardware_id),
                     joint_name: Some(joint_name),
-                    target_position_rad: 0.5,
-                    duration_ms: 100,
+                    target_position_rad: target,
+                    duration_ms,
                 },
             );
             builder.finish(payload, None);
@@ -4844,6 +4875,273 @@ backends = 42
             let target = decode_target(&command);
             c.command_published(clock.now().0);
             target
+        }
+
+        fn mixed_single_joint_fixture() -> (
+            Coordinator,
+            MockChannel<markers::JointState>,
+            MockClock,
+            Vec<f64>,
+        ) {
+            let mut hardware = mixed_test_hardware();
+            hardware.joints.rotate_left(4);
+            hardware.motor_ids.rotate_left(4);
+            let feedback: Vec<_> = hardware
+                .motor_ids
+                .iter()
+                .map(|&id| {
+                    if id <= 6 {
+                        f64::from(id) / 16.0
+                    } else {
+                        4000.0
+                    }
+                })
+                .collect();
+            let mut limits = single_joint_config();
+            limits.max_duration_ms = 20_000;
+            limits.joints = hardware
+                .joints
+                .iter()
+                .enumerate()
+                .filter(|(slot, _)| !hardware.is_wheel_slot(*slot))
+                .map(|(_, name)| crate::single_joint::JointMotionLimits {
+                    name: name.clone(),
+                    ..limits.joints[0].clone()
+                })
+                .collect();
+            limits.joints.reverse();
+            let coordinator = Coordinator::new(
+                CoordinatorConfig::default(),
+                hardware,
+                LAYOUT,
+                feedback.clone(),
+                BackendRegistry::from_explicit(&[&REAL_SCRIPTED as &'static dyn ActionBackend]),
+                vec!["scripted".into()],
+                None,
+            )
+            .with_single_joint_config(Some(limits));
+            coordinator.mark_idle().unwrap();
+            let channel = MockChannel::new();
+            let coordinator = attach_cache(coordinator, &channel);
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            publish_motion_feedback(&coordinator, &channel, &clock, &feedback, true);
+            (coordinator, channel, clock, feedback)
+        }
+
+        fn mixed_request(c: &Coordinator, duration_ms: u32) -> ActionRequest {
+            let selected = c.hardware.motor_ids.iter().position(|&id| id == 5).unwrap();
+            single_joint_request_for(
+                &c.hardware.id,
+                &c.hardware.joints[selected],
+                0.75,
+                duration_ms,
+            )
+        }
+
+        fn assert_mixed_target(body: &[u8], hardware: &HardwareSection, expected: &[f64]) {
+            let command = flatbuffers::root::<FbJointCommand<'_>>(body).unwrap();
+            assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+            assert_eq!(command.on_timeout(), StaleAction::Hold);
+            assert_eq!(
+                command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+                [0; 9]
+            );
+            let target: Vec<_> = command.target().unwrap().iter().collect();
+            assert_eq!(target, expected);
+            for (slot, value) in target.iter().enumerate() {
+                if hardware.is_wheel_slot(slot) {
+                    assert_eq!(value.to_bits(), 0.0_f64.to_bits());
+                }
+            }
+        }
+
+        #[test]
+        fn mixed_single_joint_cancel_before_publish_keeps_position_snapshot_and_zero_wheels() {
+            let (c, _, clock, feedback) = mixed_single_joint_fixture();
+            let mut expected = feedback.clone();
+            c.hardware.clear_wheel_targets(&mut expected);
+            assert_eq!(c.anchor_bias(), expected);
+            assert_eq!(c.idle_hold_target(), expected);
+            assert_eq!(c.probe_state_cache(clock.now()).unwrap().unwrap(), feedback);
+            let ticket = c.submit(mixed_request(&c, 100), &clock).unwrap();
+            c.cancel(ticket.action_id, &clock).unwrap();
+            assert!(c.tick_action(&clock, 1).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Cancelled)
+            ));
+            assert_eq!(c.idle_hold_target(), expected);
+            assert_mixed_target(
+                &c.hold_command(&c.idle_hold_target(), 2, clock.now().0),
+                &c.hardware,
+                &expected,
+            );
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[test]
+        fn mixed_single_joint_cancel_fault_and_deadline_keep_last_published_target() {
+            for termination in ["cancel", "fault", "deadline"] {
+                let (c, channel, clock, feedback) = mixed_single_joint_fixture();
+                let mut request = mixed_request(&c, 100);
+                request.deadline_ns = clock.now().0 + 400_000_000;
+                let ticket = c.submit(request, &clock).unwrap();
+                tick_and_confirm_publish(&c, &clock, 1);
+                clock.advance(DurationNs::from_nanos(50_000_000));
+                let committed = tick_and_confirm_publish(&c, &clock, 2);
+                clock.advance(DurationNs::from_nanos(25_000_000));
+                let unsent = c.tick_action(&clock, 3).unwrap();
+                assert_ne!(decode_target(&unsent), committed);
+                match termination {
+                    "cancel" => c.cancel(ticket.action_id, &clock).unwrap(),
+                    "fault" => publish_motion_feedback(&c, &channel, &clock, &feedback, false),
+                    "deadline" => clock.advance(DurationNs::from_nanos(325_000_000)),
+                    _ => unreachable!(),
+                }
+                assert!(c.tick_action(&clock, 4).is_none());
+                if termination == "cancel" {
+                    assert!(matches!(
+                        c.status(ticket.action_id),
+                        Some(ActionStatus::Cancelled)
+                    ));
+                } else {
+                    assert!(matches!(
+                        c.status(ticket.action_id),
+                        Some(ActionStatus::Failed(_))
+                    ));
+                    if termination == "fault" {
+                        assert!(matches!(
+                            c.current_state(),
+                            CoordinatorState::Degraded { .. }
+                        ));
+                    } else {
+                        assert!(matches!(c.current_state(), CoordinatorState::Idle));
+                    }
+                }
+                assert_eq!(c.idle_hold_target(), committed);
+                assert_mixed_target(
+                    &c.hold_command(&c.idle_hold_target(), 5, clock.now().0),
+                    &c.hardware,
+                    &committed,
+                );
+                if termination == "fault" {
+                    c.clear_error().unwrap();
+                    assert_eq!(c.idle_hold_target(), committed);
+                    assert_mixed_target(
+                        &c.hold_command(&c.idle_hold_target(), 6, clock.now().0),
+                        &c.hardware,
+                        &committed,
+                    );
+                }
+                c.take_state_cache().unwrap().join().unwrap();
+            }
+        }
+
+        #[test]
+        fn mixed_single_joint_20s_50hz_success_holds_position_target_and_zero_wheels() {
+            let (c, channel, clock, mut feedback) = mixed_single_joint_fixture();
+            let ticket = c.submit(mixed_request(&c, 20_000), &clock).unwrap();
+            let mut last = Vec::new();
+            // 真实 mixed 编码经解码后回灌六个位置；轮反馈始终保留非零值。
+            for tick in 0..=1_000 {
+                if tick != 0 {
+                    clock.advance(DurationNs::from_nanos(20_000_000));
+                }
+                last = mixed_tick_with_position_feedback(&c, &channel, &clock, &mut feedback, tick);
+            }
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Executing { .. }
+            ));
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &feedback, true);
+            assert_eq!(tick_and_confirm_publish(&c, &clock, 1_001), last);
+            clock.advance(DurationNs::from_nanos(40_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &feedback, true);
+            assert!(c.tick_action(&clock, 1_002).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Completed(ActionOutcome::Success))
+            ));
+            assert_eq!(c.idle_hold_target(), last);
+            assert_mixed_target(
+                &c.hold_command(&c.idle_hold_target(), 1_003, clock.now().0),
+                &c.hardware,
+                &last,
+            );
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        fn mixed_tick_with_position_feedback(
+            c: &Coordinator,
+            channel: &MockChannel<markers::JointState>,
+            clock: &MockClock,
+            feedback: &mut [f64],
+            seq: u64,
+        ) -> Vec<f64> {
+            publish_motion_feedback(c, channel, clock, feedback, true);
+            let body = c.tick_action(clock, seq).expect("完整混合目标");
+            let target = decode_target(&body);
+            assert_mixed_target(body.as_bytes(), &c.hardware, &target);
+            for (slot, position) in feedback.iter_mut().enumerate() {
+                if c.hardware.is_wheel_slot(slot) {
+                    assert_eq!(*position, 4000.0);
+                } else {
+                    if c.hardware.motor_ids[slot] != 5 {
+                        assert_eq!(target[slot], *position);
+                    }
+                    *position = target[slot];
+                }
+            }
+            c.command_published(clock.now().0);
+            target
+        }
+
+        #[test]
+        fn mixed_single_joint_20s_50hz_cancel_at_10s_freezes_last_published_target() {
+            let (c, channel, clock, mut feedback) = mixed_single_joint_fixture();
+            let started_at = clock.now().0;
+            let ticket = c.submit(mixed_request(&c, 20_000), &clock).unwrap();
+            let mut last = Vec::new();
+            for tick in 0..500 {
+                if tick != 0 {
+                    clock.advance(DurationNs::from_nanos(20_000_000));
+                }
+                last = mixed_tick_with_position_feedback(&c, &channel, &clock, &mut feedback, tick);
+            }
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            assert_eq!(clock.now().0 - started_at, 10_000_000_000);
+            publish_motion_feedback(&c, &channel, &clock, &feedback, true);
+            let unsent = c.tick_action(&clock, 500).unwrap();
+            assert_ne!(decode_target(&unsent), last);
+            c.cancel(ticket.action_id, &clock).unwrap();
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Executing { .. }
+            ));
+            assert!(c.tick_action(&clock, 501).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Cancelled)
+            ));
+            assert_eq!(
+                ticket
+                    .events
+                    .try_iter()
+                    .filter(|event| matches!(event, ActionEvent::Cancelled { .. }))
+                    .count(),
+                1
+            );
+            for seq in 502..=504 {
+                clock.advance(DurationNs::from_nanos(20_000_000));
+                assert_eq!(c.idle_hold_target(), last);
+                assert_mixed_target(
+                    &c.hold_command(&c.idle_hold_target(), seq, clock.now().0),
+                    &c.hardware,
+                    &last,
+                );
+            }
+            c.take_state_cache().unwrap().join().unwrap();
         }
 
         #[test]

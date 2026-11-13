@@ -485,7 +485,7 @@ fn run(args: &Args) -> Result<(), i32> {
     // ---- 启动锚定：校验配置布局与有限位置，坏帧不重试、不回退 ----
     install_signal_handlers();
     let clock = SystemClock::new();
-    let bias = anchor_or_fail(
+    let mut bias = anchor_or_fail(
         &node,
         &topic_state,
         &hardware,
@@ -494,6 +494,7 @@ fn run(args: &Args) -> Result<(), i32> {
         &clock,
         args.poll_interval,
     )?;
+    hardware.clear_wheel_targets(&mut bias);
     tracing::info!(?bias, "robot-s1 anchored to S0 state");
 
     // ---- v0.5 候选 E 段(5)：常驻 state cache 线程（Spec D3 第 1 条 +

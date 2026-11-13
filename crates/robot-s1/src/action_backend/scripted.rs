@@ -5,14 +5,15 @@
 //! 提交时新鲜完整快照中的一个目标，受显式运动配置、任务期限和反馈判据约束。
 //! 两者复用同一个插值实例，不创建另一条命令发布链。
 //!
-//! 新单关节请求只支持纯位置总线。末目标发布成功后继续保持末目标，只有其后
-//! 新鲜反馈中的全部关节连续满足各自容差及稳定窗口才报告成功。取消先于反馈
+//! 新单关节请求只选择位置关节，混合总线三轮目标保持 raw0。末目标发布成功后
+//! 继续保持末目标，只有其后新鲜反馈中的全部位置关节连续满足各自容差及稳定
+//! 窗口才报告成功。取消先于反馈
 //! 检查、总期限先于取消；中断保持使用最后成功发布的完整目标，首次尚未发布
 //! 则使用提交快照。这不表示当前位置保持或断扭。旧全向量请求的取消/失败保持
 //! 语义继续由 coordinator 原分支决定。
 //!
 //! 每条命令沿用 coordinator 的 `command_seq`，起点沿用 `scripted_start_pose`，
-//! 不回退启动锚点；混合总线旧请求继续保持三轮 raw0。tick 复用位置缓冲，
+//! 不回退启动锚点；混合总线请求继续保持三轮 raw0。tick 复用位置缓冲，
 //! 后端不创建线程、不直接访问硬件或发布 IPC。
 
 #![allow(clippy::doc_markdown)]
@@ -1950,6 +1951,31 @@ mod single_joint_tests {
             }
         }
 
+        fn mixed() -> Self {
+            let mut fixture = Self::new();
+            fixture.hardware = crate::coordinator::parse_hardware_section_from_toml(
+                include_str!("../../../../configs/xlerobot-bus2.toml"),
+                "right_arm_full_with_base",
+            )
+            .unwrap();
+            fixture.hardware.feetech_bus2_mixed_raw = true;
+            fixture.hardware.joints.rotate_left(4);
+            fixture.hardware.motor_ids.rotate_left(4);
+            fixture.limits.joints = fixture
+                .hardware
+                .joints
+                .iter()
+                .enumerate()
+                .filter(|(slot, _)| !fixture.hardware.is_wheel_slot(*slot))
+                .map(|(_, name)| JointMotionLimits {
+                    name: name.clone(),
+                    ..fixture.limits.joints[0].clone()
+                })
+                .collect();
+            fixture.limits.joints.reverse();
+            fixture
+        }
+
         fn context<'a>(&'a self, feedback: Option<&'a JointFeedbackSnapshot>) -> ActionContext<'a> {
             ActionContext {
                 clock: &self.clock,
@@ -2224,7 +2250,7 @@ mod single_joint_tests {
     }
 
     #[test]
-    fn single_joint_rejects_missing_config_mixed_bus_and_mismatched_snapshot() {
+    fn single_joint_rejects_missing_config_invalid_mixed_layout_and_mismatched_snapshot() {
         let mut fixture = Fixture::new();
         let feedback = sample(0, &START);
         let request = fixture.request("定位总线", "关节乙", 0.5, 200);
@@ -2438,5 +2464,181 @@ mod single_joint_tests {
             Err(ActionFailure::DeadlineExceeded)
         ));
         assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
+    }
+
+    fn mixed_feedback(fixture: &Fixture) -> Vec<f64> {
+        fixture
+            .hardware
+            .motor_ids
+            .iter()
+            .map(|&id| {
+                if id <= 6 {
+                    f64::from(id) / 16.0
+                } else {
+                    4000.0
+                }
+            })
+            .collect()
+    }
+
+    fn mixed_command(output: ActionTickOutput, hardware: &HardwareSection) -> Vec<f64> {
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = output
+        else {
+            panic!("应继续输出完整混合命令");
+        };
+        let command = flatbuffers::root::<JointCommand<'_>>(body.as_bytes()).unwrap();
+        assert_eq!(
+            command.mode(),
+            robot_msg::msg::ControlMode::MixedPositionRawVelocity
+        );
+        assert_eq!(command.on_timeout(), robot_msg::msg::StaleAction::Hold);
+        assert_eq!(
+            command.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+            [0; 9]
+        );
+        let targets: Vec<_> = command.target().unwrap().iter().collect();
+        assert_eq!(targets.len(), hardware.joints.len());
+        for (slot, target) in targets.iter().enumerate() {
+            if hardware.is_wheel_slot(slot) {
+                assert_eq!(target.to_bits(), 0.0_f64.to_bits());
+            }
+        }
+        targets
+    }
+
+    #[test]
+    fn mixed_single_joint_rejects_wheel_requests_even_for_zero_target() {
+        let fixture = Fixture::mixed();
+        let feedback = mixed_feedback(&fixture);
+        for (slot, name) in fixture.hardware.joints.iter().enumerate() {
+            if fixture.hardware.is_wheel_slot(slot) {
+                for target in [0.0, 0.5, 500.0] {
+                    let request = fixture.request(&fixture.hardware.id, name, target, 200);
+                    assert!(fixture.start_from(&request, &feedback).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_single_joint_keeps_wheels_zero_and_confirms_only_position_feedback() {
+        let fixture = Fixture::mixed();
+        let mut feedback = mixed_feedback(&fixture);
+        let selected = fixture
+            .hardware
+            .motor_ids
+            .iter()
+            .position(|&id| id == 5)
+            .unwrap();
+        let request = fixture.request(
+            &fixture.hardware.id,
+            &fixture.hardware.joints[selected],
+            0.75,
+            200,
+        );
+        let mut instance = fixture.start_from(&request, &feedback).unwrap();
+        let mut initial = feedback.clone();
+        fixture.hardware.clear_wheel_targets(&mut initial);
+        assert_eq!(instance.interrupted_hold_target(), Some(initial.clone()));
+        assert_eq!(
+            mixed_command(
+                fixture.ready_tick(instance.as_mut(), 0, &feedback),
+                &fixture.hardware
+            ),
+            initial
+        );
+        let halfway = mixed_command(
+            fixture.ready_tick(instance.as_mut(), 100, &feedback),
+            &fixture.hardware,
+        );
+        assert_eq!(halfway[selected], f64::midpoint(initial[selected], 0.75));
+        for (slot, &target) in halfway.iter().enumerate() {
+            if slot != selected {
+                assert_eq!(target, initial[slot]);
+            }
+        }
+        let mut final_target = initial;
+        final_target[selected] = 0.75;
+        assert_eq!(
+            mixed_command(
+                fixture.ready_tick(instance.as_mut(), 200, &feedback),
+                &fixture.hardware
+            ),
+            final_target
+        );
+        feedback[selected] = 0.75;
+        for (slot, position) in feedback.iter_mut().enumerate() {
+            if fixture.hardware.is_wheel_slot(slot) {
+                *position = -4096.0;
+            }
+        }
+        mixed_command(
+            fixture.ready_tick(instance.as_mut(), 220, &feedback),
+            &fixture.hardware,
+        );
+        assert!(matches!(
+            fixture.ready_tick(instance.as_mut(), 320, &feedback),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        assert_eq!(instance.successful_hold_target(), Some(final_target));
+    }
+
+    #[test]
+    fn mixed_single_joint_cancel_and_bad_feedback_keep_last_published_zero_wheels() {
+        for cancel in [true, false] {
+            let fixture = Fixture::mixed();
+            let feedback = mixed_feedback(&fixture);
+            let selected = fixture
+                .hardware
+                .motor_ids
+                .iter()
+                .position(|&id| id == 5)
+                .unwrap();
+            let request = fixture.request(
+                &fixture.hardware.id,
+                &fixture.hardware.joints[selected],
+                0.75,
+                200,
+            );
+            let mut instance = fixture.start_from(&request, &feedback).unwrap();
+            mixed_command(
+                fixture.ready_tick(instance.as_mut(), 0, &feedback),
+                &fixture.hardware,
+            );
+            let committed = mixed_command(
+                fixture.ready_tick(instance.as_mut(), 100, &feedback),
+                &fixture.hardware,
+            );
+            mixed_command(
+                fixture
+                    .tick(instance.as_mut(), 150, Some(&sample(150, &feedback)), false)
+                    .unwrap(),
+                &fixture.hardware,
+            );
+            if cancel {
+                instance.cancel(&mut fixture.context(None)).unwrap();
+                assert!(matches!(
+                    fixture.tick(instance.as_mut(), 160, None, false).unwrap(),
+                    ActionTickOutput::Completed(ActionOutcome::PartialSuccess { .. })
+                ));
+            } else {
+                let mut invalid = feedback;
+                let wheel = fixture
+                    .hardware
+                    .motor_ids
+                    .iter()
+                    .position(|&id| id == 7)
+                    .unwrap();
+                invalid[wheel] = f64::NAN;
+                assert!(matches!(
+                    fixture.tick(instance.as_mut(), 160, Some(&sample(160, &invalid)), false),
+                    Err(ActionFailure::SafetyAbort(_))
+                ));
+            }
+            assert_eq!(instance.interrupted_hold_target(), Some(committed));
+        }
     }
 }
