@@ -47,14 +47,20 @@ use robot_transport::traits::{LatestSubscriber, Publisher};
 use robot_core::time::{MockClock, MonoRawNs};
 
 const LAYOUT_ID: u64 = 0xCAFE_BABE_DEAD_BEEF;
+const BUS1_CONFIG: &str = include_str!("../../../configs/xlerobot-bus1.toml");
 
 /// Tick loop 端到端测试跑的步数（每步 25 ms，> 20 ms 周期），最少 10
 /// 帧 cmd（B1 outline §7.2 验证目标）。
 const TICK_STEPS: u64 = 12;
 
 /// 在 mock state channel 上 publish 一帧 `JointState` body bytes。
-fn publish_state(channel: &MockChannel<markers::JointState>, positions: &[f64], stamp_ns: u64) {
-    let body = build_joint_state(LAYOUT_ID, stamp_ns, positions, &[], &[], "");
+fn publish_state(
+    channel: &MockChannel<markers::JointState>,
+    layout_id: u64,
+    positions: &[f64],
+    stamp_ns: u64,
+) {
+    let body = build_joint_state(layout_id, stamp_ns, positions, &[], &[], "");
     let mut pub_ = channel.publisher();
     let mut writer = pub_.loan(body.len() + 1024).expect("loan");
     writer.set_body_bytes(&body);
@@ -74,7 +80,7 @@ fn anchor_then_tick_loop_publishes_hold_commands_with_monotonic_deadline() {
     // 1. mock S0 推一帧 state，positions = [0.5, -0.5, 0.25]。
     let state_ch = MockChannel::<markers::JointState>::new();
     let now_ns_anchor: u64 = 100_000_000;
-    publish_state(&state_ch, &[0.5, -0.5, 0.25], now_ns_anchor);
+    publish_state(&state_ch, LAYOUT_ID, &[0.5, -0.5, 0.25], now_ns_anchor);
 
     // 2. s1 端订阅 + anchor。
     let mut state_sub = state_ch.subscriber();
@@ -215,6 +221,105 @@ fn lib_api_surface_supports_full_anchor_to_hold_pipeline() {
     assert_eq!(cmd.source_task_id(), 5);
     let target: Vec<f64> = cmd.target().unwrap().iter().collect();
     assert_eq!(target, vec![1.0, 2.0, 3.0]);
+}
+
+/// 生产 bus1 配置必须能路由到已链接的 Scripted，不依赖默认 mock profile。
+#[cfg(feature = "backend-scripted")]
+#[test]
+fn bus1_profile_dispatches_scripted_for_eight_position_joints() {
+    use robot_s1::action::ActionKind;
+    use robot_s1::action_backend::BackendRegistry;
+    use robot_s1::coordinator::{
+        parse_hardware_section_from_toml, parse_profile_section_from_toml,
+        validate_profile_section, validate_solver_for_profile,
+    };
+
+    let hardware = parse_hardware_section_from_toml(BUS1_CONFIG, "left_arm_full_with_head")
+        .expect("bus1 硬件配置");
+    let profile = parse_profile_section_from_toml(BUS1_CONFIG).expect("bus1 profile");
+    assert_eq!(hardware.joints.len(), 8);
+    assert!(!hardware.feetech_bus2_mixed_raw);
+    assert_eq!(profile.backends, ["scripted"]);
+    assert_eq!(profile.command_mode, "joint_position");
+    let registry = BackendRegistry::from_inventory();
+    validate_profile_section(&profile, &registry, &hardware, 8).expect("八关节 profile 可用");
+    validate_solver_for_profile(&profile, false).expect("scripted 不需要 IK solver");
+    let backend = registry
+        .dispatch(
+            &profile.backends,
+            ActionKind::Scripted,
+            robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD,
+        )
+        .expect("生产 profile 必须接受 Scripted");
+    assert_eq!(backend.name(), "scripted");
+}
+
+/// 沿真实配置派生身份和布局，头部 ID7/8 必须与左臂一起保持位置。
+#[test]
+fn bus1_fresh_anchor_holds_all_eight_joints_and_rejects_stale_or_arm_only_state() {
+    use robot_s1::coordinator::{
+        AnchorError, build_hardware_hold_command, parse_hardware_section_from_toml,
+        parse_robot_id_from_toml, parse_s1_section_from_toml,
+    };
+
+    let robot_id = parse_robot_id_from_toml(BUS1_CONFIG).expect("bus1 robot_id");
+    assert_eq!(robot_id, "xlerobot_bus1_full");
+    let hardware = parse_hardware_section_from_toml(BUS1_CONFIG, "left_arm_full_with_head")
+        .expect("bus1 硬件配置");
+    assert_eq!(hardware.motor_ids, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(hardware.joints.len(), 8);
+    assert_eq!(hardware.joints[6..], ["head_motor_1", "head_motor_2"]);
+    let pairs: Vec<_> = hardware
+        .joints
+        .iter()
+        .zip(&hardware.motor_ids)
+        .map(|(name, &id)| (name.as_str(), u32::from(id)))
+        .collect();
+    let layout_id = robot_msg::joint_layout::compute_layout_id(&robot_id, &hardware.id, &pairs);
+    let cfg = parse_s1_section_from_toml(BUS1_CONFIG).expect("原 S1 时序配置");
+    let now_ns = 1_000_000_000;
+    let max_stale_ns = cfg.max_stale_ms * 1_000_000;
+    let positions = [0.1, -0.2, 0.3, -0.4, 0.5, 0.6, 0.7, -0.8];
+    let state_ch = MockChannel::<markers::JointState>::new();
+    publish_state(&state_ch, layout_id, &positions, now_ns - 1_000_000);
+    let bias = read_anchor_from_s0_state(
+        &mut state_ch.subscriber(),
+        hardware.joints.len(),
+        &MockClock::new(MonoRawNs(now_ns)),
+        Duration::from_millis(cfg.anchor_timeout_ms),
+        Duration::from_millis(cfg.max_stale_ms),
+        Duration::from_millis(1),
+    )
+    .expect("新鲜八关节反馈可锚定");
+    assert_eq!(bias, positions);
+    let bytes = build_hardware_hold_command(&cfg, &hardware, layout_id, &bias, 1, now_ns);
+    let hold = root::<FbJointCommand<'_>>(&bytes).expect("位置保持帧");
+    assert_eq!(hold.layout_id(), layout_id);
+    assert_eq!(hold.mode(), ControlMode::Position);
+    assert_eq!(hold.on_timeout(), StaleAction::Hold);
+    assert_eq!(hold.deadline_ns(), now_ns + cfg.deadline_offset_ns());
+    assert_eq!(hold.target().unwrap().iter().collect::<Vec<_>>(), positions);
+
+    let stale = build_joint_state(
+        layout_id,
+        now_ns - max_stale_ns - 1,
+        &positions,
+        &[],
+        &[],
+        "",
+    );
+    assert!(matches!(
+        parse_anchor_from_state_bytes(&stale, 8, now_ns, max_stale_ns),
+        Err(AnchorError::Stale { .. })
+    ));
+    let arm_only = build_joint_state(layout_id, now_ns, &positions[..6], &[], &[], "");
+    assert!(matches!(
+        parse_anchor_from_state_bytes(&arm_only, 8, now_ns, max_stale_ns),
+        Err(AnchorError::JointCountMismatch {
+            expected: 8,
+            got: 6
+        })
+    ));
 }
 
 /// 验证 tick_once 在 cmd 周期未到时**不**发；hb 周期到时仍发（独立计时）。

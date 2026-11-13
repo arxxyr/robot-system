@@ -31,6 +31,11 @@ calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/head.json",
 ]
 
+# S1 复用八关节位置布局；启动只建立锚点和命令流，不自动使能。
+[s1.profile]
+backends = ["scripted"]
+command_mode = "joint_position"
+
 # 已在 Orin 核对 D435i（序列号 043323051347）的 RGB 接口；不用易变的 video8。
 # helper 路径跟随正式仓库；候选验证使用隔离工作目录，不启动正式电机实例。
 [[sensor]]

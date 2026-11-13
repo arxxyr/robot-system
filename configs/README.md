@@ -6,7 +6,8 @@
 
 | 用途 | 文件 | 边界 |
 |---|---|---|
-| 当前全身 S0 候选 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
+| 全总线硬件配置 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
+| 左侧S1软件入口 | 同一份[bus1](xlerobot-bus1.toml)与[robot-s1-bus1.service](../scripts/systemd/robot-s1-bus1.service) | S1沿8关节顺序和现有scripted profile运行；不复制映射，不自动使能，尚未部署或实机验收 |
 | 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
 | 只读状态页 | [xlerobot-status.toml](xlerobot-status.toml) | 独立HTTP/WebSocket服务，引用原bus1/bus2配置及同机网关50061/50062；无Web token，HTTP默认回环、部署可指定IPv4私网地址，gRPC始终回环；不启动硬件，未纳入S0安装包 |
 | 只读部署角色 | [rpc-roles-status.toml](rpc-roles-status.toml) | 候选网关使用空凭据表与viewer/read_state，沿既有GetState免令牌语义；不授予控制权限，不覆盖原rpc-roles.toml |

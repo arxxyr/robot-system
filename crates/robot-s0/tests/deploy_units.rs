@@ -2,7 +2,7 @@
 //!
 //! 锁的是 systemd 侧的**部署契约**，不碰真硬件：
 //!
-//! - unit ×7 齐全（handoff + arm S0 ×2 + S1 ×2 + gateway ×2）；
+//! - 原兼容栈、全总线 S0 和 bus1 S1 模板齐全；
 //! - arm S0 unit **无 `ExecStartPre=`**（QA1 / Y1：guard 必须是主进程，
 //!   否则 `RestartPreventExitStatus=86` 捕不到停止态）；
 //! - **R10-1 三处 config 路径一致锁**：handoff 的双 `--config` / arm guard
@@ -36,6 +36,7 @@ const S1_UNITS: [(&str, &str); 2] = [
     ("left", "robot-s1-left.service"),
     ("right", "robot-s1-right.service"),
 ];
+const S1_BUS1: &str = "robot-s1-bus1.service";
 const GATEWAY_UNITS: [(&str, &str, &str); 2] = [
     ("left", "robot-gateway-left.service", "127.0.0.1:50051"),
     ("right", "robot-gateway-right.service", "127.0.0.1:50052"),
@@ -139,8 +140,9 @@ fn deployment_units_exist() {
     names.extend(ARM_UNITS.iter().map(|(_, n)| (*n).to_string()));
     names.extend(FULL_UNITS.iter().map(|(_, n)| (*n).to_string()));
     names.extend(S1_UNITS.iter().map(|(_, n)| (*n).to_string()));
+    names.push(S1_BUS1.to_string());
     names.extend(GATEWAY_UNITS.iter().map(|(_, n, _)| (*n).to_string()));
-    assert_eq!(names.len(), 9, "handoff + 两组S0 + S1 + gateway");
+    assert_eq!(names.len(), 10, "handoff + 两组S0 + 原S1/gateway + bus1 S1");
     for name in names {
         assert!(systemd_dir().join(&name).is_file(), "缺 unit {name}");
     }
@@ -286,7 +288,7 @@ fn arm_units_grant_rt_and_pass_serial_fifo_flags() {
 /// PX-16 "测试模板 2s / 生产 5s"）；S0 arm unit 与 freeze 测试模板保持 2s。
 #[test]
 fn production_watchdog_values_are_five_seconds() {
-    for (_, name) in S1_UNITS {
+    for name in S1_UNITS.map(|(_, name)| name).into_iter().chain([S1_BUS1]) {
         assert_eq!(single(name, "WatchdogSec"), "5s", "{name}");
     }
     for (_, name, _) in GATEWAY_UNITS {
@@ -521,6 +523,27 @@ fn s1_units_hard_depend_on_same_arm_s0() {
             format!("/etc/robot/xlerobot-{side}-arm.toml")
         );
     }
+}
+
+#[test]
+fn bus1_s1_reuses_s0_identity_config_and_housekeeping_cpus() {
+    let s0 = exec_start_argv(FULL_UNITS[0].1);
+    let s1 = exec_start_argv(S1_BUS1);
+    assert_eq!(single(S1_BUS1, "Requires"), FULL_UNITS[0].1);
+    assert_eq!(single(S1_BUS1, "After"), FULL_UNITS[0].1);
+    assert_eq!(single(S1_BUS1, "Type"), "notify");
+    assert_eq!(single(S1_BUS1, "NotifyAccess"), "main");
+    assert_eq!(single(S1_BUS1, "CPUAffinity"), "0-3");
+    assert_eq!(single(S1_BUS1, "Restart"), "on-failure");
+    assert_eq!(single(S1_BUS1, "RestartSec"), "2s");
+    assert_eq!(single(S1_BUS1, "StartLimitIntervalSec"), "60s");
+    assert_eq!(single(S1_BUS1, "StartLimitBurst"), "5");
+    assert!(s1[0].ends_with("/robot-s1"));
+    for flag in ["--robot-id", "--hardware-id", "--config"] {
+        assert_eq!(opt(&s1, flag), opt(&s0, flag), "{flag} 必须与 bus1 S0 同源");
+    }
+    assert_eq!(directives(S1_BUS1, "ExecStartPre"), Vec::<String>::new());
+    assert_eq!(directives(S1_BUS1, "Wants"), Vec::<String>::new());
 }
 
 #[test]

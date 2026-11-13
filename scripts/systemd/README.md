@@ -12,7 +12,9 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 依赖为 `preflight → guard → S0`。preflight 成功后保留 `active/exited`，同次开机内另一侧启动不重复执行；该完成态只证明上次检查结束，不证明此刻物理安全。重启主机不等于电机断电。
 
-本机保留的 arm-only、S1 和 gateway 模板仍被兼容部署及测试调用，不能与 full S0 同时占用总线。三个 `*-freeze-test.service` 仅供隔离 smoke 渲染使用，不直接安装到实机。旧服务的停稳检查用于排除占用，不要求将其程序纳入 S0 产物清单。
+原arm-only S0/S1/gateway模板仍被兼容部署及测试调用，不能与full S0同时占用总线。三个 `*-freeze-test.service` 仅供隔离 smoke 渲染使用，不直接安装到实机。旧服务的停稳检查用于排除占用，不要求将其程序纳入 S0 产物清单。
+
+`robot-s1-bus1.service`是新增的左总线S1软件模板，硬依赖`robot-s0-bus1.service`，复用同一bus1 TOML、8关节布局和既有scripted profile；普通线程限制在CPU0–3，沿原5秒watchdog。它不访问串口、不自动使能或解除急停，尚未安装、启动或纳入S0包；后续须冻结到独立候选并核对当前S0配置路径，不能直接复制模板覆盖运行环境。控制前提与实施顺序见[通讯方案](../../docs/control_plan.md)。
 
 ## 只读状态接入模板
 
@@ -20,7 +22,7 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 这些模板不在S0安装器、发布矩阵或自启清单内。状态部署入口会冻结产物并渲染绝对路径，不直接复制模板覆盖当前正式安装。原网关保留原生控制RPC；只读候选使用[rpc-roles-status.toml](../../configs/rpc-roles-status.toml)的空凭据表与viewer权限，不授予控制能力，也不覆盖原角色表。新增网页只提供状态GET与只读WebSocket、只调用`GetState`。当前构建方式见[只读WebSocket入口](../../docs/control_plan.md#当前只读websocket入口)；Web不设置token，外部接入管理由用户已有系统承担。
 
-状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；模板已静态检查，实际限额及峰值需在后续部署验收，不等于已在运行实例生效。
+状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；当前部署已核对实际限额，结果见[当前状态](../../docs/s0_hal_status.md)，不据此推断未来相机预览负载峰值。
 
 ### 状态服务安装与回滚
 
