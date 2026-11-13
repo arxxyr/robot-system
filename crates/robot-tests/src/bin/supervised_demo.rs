@@ -265,6 +265,7 @@ struct Args {
     target_offset_raw: Option<i32>,
     duration_ms: Option<u32>,
     task_timeout_ms: Option<u64>,
+    cancel_after_ms: Option<u32>,
     ack_safety_checklist: bool,
 }
 
@@ -303,6 +304,7 @@ impl Args {
             target_offset_raw: None,
             duration_ms: None,
             task_timeout_ms: None,
+            cancel_after_ms: None,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
@@ -390,6 +392,16 @@ impl Args {
                             .map_err(|e| format!("--task-timeout-ms: {e}"))?,
                     );
                 }
+                "--cancel-after-ms" => {
+                    if args.cancel_after_ms.is_some() {
+                        return Err("--cancel-after-ms 不得重复".into());
+                    }
+                    args.cancel_after_ms = Some(
+                        value(raw, &mut i, "--cancel-after-ms")?
+                            .parse()
+                            .map_err(|e| format!("--cancel-after-ms: {e}"))?,
+                    );
+                }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown option {other:?}")),
@@ -426,6 +438,9 @@ impl Args {
                 })
                 || args.target_offset_raw == Some(0)
                 || args.duration_ms.is_none_or(|duration| duration == 0)
+                || args
+                    .cancel_after_ms
+                    .is_some_and(|delay| delay == 0 || delay >= args.duration_ms.unwrap_or(0))
                 || args.task_timeout_ms.is_none_or(|timeout| {
                     timeout <= u64::from(args.duration_ms.unwrap_or(0))
                         || timeout.checked_mul(1_000_000).is_none()
@@ -441,6 +456,7 @@ impl Args {
                 || args.target_position_rad.is_some()
                 || args.target_offset_raw.is_some()
                 || args.duration_ms.is_some()
+                || args.cancel_after_ms.is_some()
                 || args.task_timeout_ms.is_some())
         {
             return Err("单关节目标与时长参数仅用于 single-joint".into());
@@ -491,6 +507,7 @@ OPTIONS:
   --target-offset-raw <RAW>     或相对本次S1锚点的raw偏移；与绝对rad目标互斥
   --duration-ms <MS>            single-joint必填，正整数运动时长
   --task-timeout-ms <MS>        single-joint必填，覆盖运动、到位超时和请求余量
+  --cancel-after-ms <MS>        single-joint可选；任务中途仅取消一次，验证最后发布目标保持后断扭
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
   --settle-tolerance-rad <F>     回落容差（默认 {DEFAULT_SETTLE_TOLERANCE_RAD}；上限 {MAX_SETTLE_TOLERANCE_RAD} 且 offset ≥ {TOLERANCE_SEPARATION}×容差）
@@ -835,6 +852,9 @@ struct SingleJointPlan {
     target_position_rad: f64,
     duration_ms: u32,
     task_timeout_ms: u64,
+    cancel_after_ms: Option<u32>,
+    settle_ms: u32,
+    stable_ms: u32,
     expected_raw: Vec<i32>,
     limits: Vec<SingleJointLimit>,
 }
@@ -874,7 +894,7 @@ fn check_single_joint_limits(limits: &[SingleJointLimit], positions: &[f64]) -> 
 fn motion_config(
     config: &toml::Value,
     layout: &HardwareLayout,
-) -> Result<(Vec<SingleJointLimit>, u32, u32), String> {
+) -> Result<(Vec<SingleJointLimit>, u32, u32, u32), String> {
     let section = config
         .get("s1")
         .and_then(|s1| s1.get("single_joint"))
@@ -903,7 +923,8 @@ fn motion_config(
     };
     let max_duration = positive_ms("max_duration_ms")?;
     let settle = positive_ms("settle_timeout_ms")?;
-    if positive_ms("stable_window_ms")? >= settle {
+    let stable = positive_ms("stable_window_ms")?;
+    if stable >= settle {
         return Err("稳定窗口必须小于到位超时".into());
     }
     let joints = section
@@ -955,7 +976,7 @@ fn motion_config(
         }
         limits.push(SingleJointLimit { min, max, velocity });
     }
-    Ok((limits, max_duration, settle))
+    Ok((limits, max_duration, settle, stable))
 }
 
 #[cfg(feature = "supervised-s0")]
@@ -1005,7 +1026,7 @@ impl SingleJointPlan {
         };
         let duration_ms = args.duration_ms.ok_or("缺少 duration-ms")?;
         let task_timeout_ms = args.task_timeout_ms.ok_or("缺少 task-timeout-ms")?;
-        let (limits, max_duration, settle_ms) = motion_config(config, layout)?;
+        let (limits, max_duration, settle_ms, stable_ms) = motion_config(config, layout)?;
         if duration_ms == 0 || duration_ms > max_duration {
             return Err("单关节时长超出候选S1配置".into());
         }
@@ -1028,6 +1049,9 @@ impl SingleJointPlan {
             target_position_rad: target,
             duration_ms,
             task_timeout_ms,
+            cancel_after_ms: args.cancel_after_ms,
+            settle_ms,
+            stable_ms,
             expected_raw,
             limits,
         };
@@ -1156,6 +1180,234 @@ impl SingleJointCheck {
     }
 }
 
+/// 独立镜像只证明主 topic 已成功发布，不代表 S0 已执行或已经停止。
+#[cfg(feature = "supervised-s0")]
+#[derive(Clone, Debug)]
+struct PublishedCommand {
+    metadata: robot_transport::iceoryx2::ObserverMetadata,
+    seq: u64,
+    stamp_ns: u64,
+    received_ns: u64,
+    source_id: u32,
+    layout_id: u64,
+    source_task_id: u64,
+    deadline_ns: u64,
+    position_mode: bool,
+    target: Vec<f64>,
+}
+
+#[cfg(feature = "supervised-s0")]
+type CommandQueue = std::sync::Mutex<std::collections::VecDeque<Result<PublishedCommand, String>>>;
+
+/// RPC 等待期间也持续收取 FIFO；满队列即失败，不把漏掉的帧当作最后目标。
+#[cfg(feature = "supervised-s0")]
+struct CommandObserver {
+    queue: Arc<CommandQueue>,
+    stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+#[cfg(feature = "supervised-s0")]
+impl CommandObserver {
+    async fn open(robot_id: &str, hardware_id: &str) -> Result<Self, String> {
+        let topic = format!("/{robot_id}/s1/{hardware_id}/command");
+        let queue = Arc::new(CommandQueue::new(std::collections::VecDeque::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let (thread_queue, thread_stop) = (Arc::clone(&queue), Arc::clone(&stop));
+        let worker = std::thread::Builder::new()
+            .name("robot-cmd-watch".into())
+            .spawn(move || {
+                let result = Self::receive(&topic, &thread_queue, &thread_stop, ready_tx);
+                if let Err(error) = result
+                    && let Ok(mut queue) = thread_queue.lock()
+                {
+                    queue.clear();
+                    queue.push_back(Err(error));
+                }
+            })
+            .map_err(|error| format!("命令镜像线程创建失败：{error}"))?;
+        let observer = Self {
+            queue,
+            stop,
+            worker: Some(worker),
+        };
+        staged(CLIENT_HARD_TIMEOUT, "command observer ready", async {
+            ready_rx.await.map_err(|_| "命令镜像未就绪".into())
+        })
+        .await?;
+        Ok(observer)
+    }
+
+    fn receive(
+        topic: &str,
+        queue: &CommandQueue,
+        stop: &AtomicBool,
+        ready: tokio::sync::oneshot::Sender<()>,
+    ) -> Result<(), String> {
+        use iceoryx2::prelude::NodeBuilder;
+        use iceoryx2::service::ipc::Service;
+        use robot_transport::iceoryx2::observer_subscriber;
+
+        let node = NodeBuilder::new()
+            .create::<Service>()
+            .map_err(|error| format!("命令镜像 Node：{error:?}"))?;
+        let mut subscriber = observer_subscriber::<robot_msg::markers::JointCommand>(&node, topic)
+            .map_err(|error| format!("命令镜像不可用：{error}"))?;
+        let _ = ready.send(());
+        while !stop.load(Ordering::Acquire) {
+            // 有界 drain，退出请求不会被持续到达的帧饿死。
+            for _ in 0..64 {
+                let Some(sample) = subscriber.try_recv().map_err(|error| error.to_string())? else {
+                    break;
+                };
+                let view = sample.view().map_err(|error| error.to_string())?;
+                let command = view.body.get();
+                let frame = PublishedCommand {
+                    metadata: sample.metadata(),
+                    seq: view.header.seq(),
+                    stamp_ns: view.header.stamp_ns(),
+                    received_ns: SystemClock::new().now().0,
+                    source_id: view.header.source_id(),
+                    layout_id: command.layout_id(),
+                    source_task_id: command.source_task_id(),
+                    deadline_ns: command.deadline_ns(),
+                    position_mode: command.mode() == robot_msg::msg::ControlMode::Position
+                        && command.on_timeout() == robot_msg::msg::StaleAction::Hold,
+                    target: command
+                        .target()
+                        .map_or_else(Vec::new, |target| target.iter().collect()),
+                };
+                let mut queue = queue.lock().map_err(|_| "命令镜像队列锁异常")?;
+                if queue.len() >= 1024 {
+                    return Err("命令镜像本地队列溢出，证据不完整".into());
+                }
+                queue.push_back(Ok(frame));
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        Ok(())
+    }
+
+    fn drain(&self) -> Result<Vec<PublishedCommand>, String> {
+        let mut queue = self.queue.lock().map_err(|_| "命令镜像队列锁异常")?;
+        if let Some(Err(error)) = queue.iter().find(|frame| frame.is_err()) {
+            return Err(error.clone());
+        }
+        queue.drain(..).collect()
+    }
+
+    fn peek(&self) -> Result<Vec<PublishedCommand>, String> {
+        self.queue
+            .lock()
+            .map_err(|_| "命令镜像队列锁异常")?
+            .iter()
+            .cloned()
+            .collect()
+    }
+}
+
+#[cfg(feature = "supervised-s0")]
+impl Drop for CommandObserver {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+#[cfg(feature = "supervised-s0")]
+#[derive(Default)]
+struct CommandEvidence {
+    frames: std::collections::VecDeque<PublishedCommand>,
+}
+
+#[cfg(feature = "supervised-s0")]
+impl CommandEvidence {
+    fn observe(
+        &mut self,
+        frames: Vec<PublishedCommand>,
+        plan: &SingleJointPlan,
+        check: &SingleJointCheck,
+        now: u64,
+    ) -> Result<(), String> {
+        for frame in frames {
+            if frame.source_id != 2
+                || frame.layout_id != check.layout_id
+                || !frame.position_mode
+                || frame.source_task_id != frame.seq
+                || frame.target.len() != 8
+                || frame.stamp_ns == 0
+                || frame.stamp_ns > frame.received_ns
+                || frame.received_ns - frame.stamp_ns > 200_000_000
+                || frame.deadline_ns <= frame.stamp_ns
+            {
+                return Err("命令镜像身份、模式、维度或源时间无效".into());
+            }
+            check_single_joint_limits(&plan.limits, &frame.target)?;
+            if let Some(previous) = self.frames.back()
+                && (frame.metadata.publisher_instance_id != previous.metadata.publisher_instance_id
+                    || Some(frame.metadata.observer_seq)
+                        != previous.metadata.observer_seq.checked_add(1)
+                    || frame.metadata.dropped_frames != previous.metadata.dropped_frames
+                    || Some(frame.seq) != previous.seq.checked_add(1)
+                    || frame.stamp_ns <= previous.stamp_ns)
+            {
+                return Err("命令镜像换源、丢帧或序号/时间未严格推进".into());
+            }
+            let raw = HoldCheck::raw_positions(&frame.target)?;
+            for (index, &target) in raw.iter().enumerate() {
+                let start = check.source.anchor_raw[index];
+                let end = plan.expected_raw[index];
+                if target < start.min(end) - 4 || target > start.max(end) + 4 {
+                    return Err("命令镜像目标超出本次单向轨迹范围".into());
+                }
+            }
+            // 只保留近期边界帧；连续性已逐帧核验，取消窗口不足则显式拒绝。
+            if self.frames.len() == 1024 {
+                self.frames.pop_front();
+            }
+            self.frames.push_back(frame);
+        }
+        let latest = self.frames.back().ok_or("未收到命令镜像")?;
+        if latest.stamp_ns > now || now - latest.stamp_ns > 200_000_000 {
+            return Err("命令镜像最新帧不新鲜".into());
+        }
+        Ok(())
+    }
+
+    fn cancelled_target(&self, at_ns: u64) -> Result<Option<&PublishedCommand>, String> {
+        let last = self
+            .frames
+            .iter()
+            .rev()
+            .find(|frame| frame.stamp_ns < at_ns)
+            .ok_or("缺少取消前最后发布命令")?;
+        let mut after = false;
+        for frame in self.frames.iter().filter(|frame| frame.stamp_ns >= at_ns) {
+            if frame.stamp_ns == at_ns || !same_command_target(&last.target, &frame.target) {
+                return Err("取消后的完整命令目标未冻结在最后成功发布值".into());
+            }
+            after = true;
+        }
+        Ok(after.then_some(last))
+    }
+}
+
+#[cfg(feature = "supervised-s0")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "镜像值已验证有限及 f32 范围；比较实际 S0 编码"
+)]
+fn same_command_target(left: &[f64], right: &[f64]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(&a, &b)| (a as f32).to_bits() == (b as f32).to_bits())
+}
+
 struct SideRt {
     side: Side,
     hardware_id: String,
@@ -1166,6 +1418,10 @@ struct SideRt {
     last_submission_id: Option<String>,
     #[cfg(feature = "supervised-s0")]
     hold_check: Option<HoldCheck>,
+    #[cfg(feature = "supervised-s0")]
+    command_observer: Option<CommandObserver>,
+    #[cfg(feature = "supervised-s0")]
+    task_events: Option<tonic::Streaming<robot_rpc::proto::TaskEvent>>,
 }
 
 /// 独立采样端（witness 用；克隆 channel，双臂 phase 与协议 RPC 并行采样）。
@@ -1238,6 +1494,10 @@ impl SideRt {
             last_submission_id: None,
             #[cfg(feature = "supervised-s0")]
             hold_check: None,
+            #[cfg(feature = "supervised-s0")]
+            command_observer: None,
+            #[cfg(feature = "supervised-s0")]
+            task_events: None,
         })
     }
 
@@ -1342,6 +1602,12 @@ trait TorqueOps {
     async fn checked_state(&mut self) -> Result<RobotState, String>;
     #[cfg(feature = "supervised-s0")]
     fn now_ns(&self) -> u64;
+    #[cfg(feature = "supervised-s0")]
+    fn published_commands(&mut self) -> Result<Vec<PublishedCommand>, String>;
+    #[cfg(feature = "supervised-s0")]
+    async fn begin_cancel_watch(&mut self, action_id: &str, timeout_ms: u64) -> Result<(), String>;
+    #[cfg(feature = "supervised-s0")]
+    async fn next_task_event(&mut self) -> Result<robot_rpc::proto::TaskEvent, String>;
     async fn poll_status(&mut self, action_id: &str) -> Result<TaskSnapshot, String>;
     async fn cancel(&mut self, action_id: &str) -> Result<(), String>;
     async fn sample(&mut self) -> Result<StateSample, String>;
@@ -1461,6 +1727,43 @@ impl TorqueOps for SideRt {
     #[cfg(feature = "supervised-s0")]
     fn now_ns(&self) -> u64 {
         SystemClock::new().now().0
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    fn published_commands(&mut self) -> Result<Vec<PublishedCommand>, String> {
+        self.command_observer
+            .as_ref()
+            .ok_or("命令镜像尚未建立")?
+            .drain()
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    async fn begin_cancel_watch(&mut self, action_id: &str, timeout_ms: u64) -> Result<(), String> {
+        let mut request = tonic::Request::new(TaskHandleRef {
+            request_id: uuidv7_compat(),
+            action_id: action_id.into(),
+        });
+        // 握手仍受本地4秒限制，已建立的流覆盖完整任务，不沿普通RPC的短期限。
+        request.set_timeout(Duration::from_millis(timeout_ms));
+        self.task_events = Some(
+            bounded(
+                "cancel event stream".into(),
+                self.client.stream_task_events(request),
+            )
+            .await?,
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    async fn next_task_event(&mut self) -> Result<robot_rpc::proto::TaskEvent, String> {
+        self.task_events
+            .as_mut()
+            .ok_or("取消事件流未建立")?
+            .message()
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "取消事件流提前结束".into())
     }
 
     async fn poll_status(&mut self, action_id: &str) -> Result<TaskSnapshot, String> {
@@ -1660,6 +1963,10 @@ async fn single_joint_torque_body<O: TorqueOps>(
         }
     };
     println!("[single-joint] submitted action_id={action_id}");
+    if plan.cancel_after_ms.is_some() {
+        return single_joint_cancel_task(ops, plan, check, &action_id, task_started_ns, budgets)
+            .await;
+    }
     let mut terminal_seen = false;
     let mut samples = 0usize;
     let poll = async {
@@ -1725,6 +2032,191 @@ async fn single_joint_torque_body<O: TorqueOps>(
             cancel_target: (!terminal_seen).then_some(action_id),
         }),
     }
+}
+
+/// 主动取消一旦尝试，未知结果直接交给 EStop；外层超时也不能再发第二次取消。
+#[cfg(feature = "supervised-s0")]
+#[allow(clippy::too_many_lines)]
+async fn single_joint_cancel_task<O: TorqueOps>(
+    ops: &mut O,
+    plan: &SingleJointPlan,
+    check: &mut SingleJointCheck,
+    action_id: &str,
+    started_ns: u64,
+    budgets: StageBudgets,
+) -> Result<(), BodyFailure> {
+    let mut cancel_attempted = false;
+    let mut terminal_seen = false;
+    let run = async {
+        let mut evidence = CommandEvidence::default();
+        evidence.observe(ops.published_commands()?, plan, check, ops.now_ns())?;
+        staged(
+            budgets.submit,
+            "cancel event stream handshake",
+            ops.begin_cancel_watch(action_id, plan.task_timeout_ms),
+        )
+        .await?;
+        let cancel_after_ns = u64::from(plan.cancel_after_ms.ok_or("取消时间缺失")?) * 1_000_000;
+        loop {
+            tokio::time::sleep(STATUS_POLL).await;
+            let state = ops.checked_state().await?;
+            check.observe(&state, &plan.hardware_id, ops.now_ns(), false)?;
+            evidence.observe(ops.published_commands()?, plan, check, ops.now_ns())?;
+            let status = ops.poll_status(action_id).await?;
+            if matches!(status.phase, TaskPhase::Terminal(_)) {
+                terminal_seen = true;
+                return Err("主动取消前任务已经终止".into());
+            }
+            if status.phase != TaskPhase::Executing {
+                return Err("主动取消任务未处于 Executing".into());
+            }
+            let elapsed = ops.now_ns().saturating_sub(started_ns);
+            if elapsed >= u64::from(plan.duration_ms) * 1_000_000 {
+                return Err("主动取消已错过显式运动时长".into());
+            }
+            if elapsed < cancel_after_ns {
+                continue;
+            }
+            let requested_ns = ops.now_ns();
+            cancel_attempted = true;
+            println!(
+                "SINGLE_JOINT_CANCEL_REQUEST action_id={action_id} started_at_ns={started_ns} requested_at_ns={requested_ns} cancel_after_ms={} duration_ms={} task_timeout_ms={}",
+                cancel_after_ns / 1_000_000,
+                plan.duration_ms,
+                plan.task_timeout_ms
+            );
+            staged(budgets.submit, "active CancelTask", ops.cancel(action_id)).await?;
+            let at_ns = staged(budgets.submit, "Cancelled event", async {
+                loop {
+                    let event = ops.next_task_event().await?;
+                    if event.action_id != action_id {
+                        return Err("取消事件 action_id 不匹配".into());
+                    }
+                    match robot_rpc::proto::TaskEventKind::try_from(event.event) {
+                        Ok(robot_rpc::proto::TaskEventKind::Cancelled) => {
+                            terminal_seen = true;
+                            if event.at_ns <= requested_ns
+                                || event.at_ns > ops.now_ns()
+                                || event.at_ns.saturating_sub(started_ns)
+                                    >= u64::from(plan.duration_ms) * 1_000_000
+                            {
+                                return Err("Cancelled 源时间不在本次中途取消窗口".into());
+                            }
+                            return Ok(event.at_ns);
+                        }
+                        Ok(
+                            robot_rpc::proto::TaskEventKind::Completed
+                            | robot_rpc::proto::TaskEventKind::Failed,
+                        ) => {
+                            terminal_seen = true;
+                            return Err("主动取消收到非 Cancelled 终态".into());
+                        }
+                        Ok(
+                            robot_rpc::proto::TaskEventKind::Started
+                            | robot_rpc::proto::TaskEventKind::Progress,
+                        ) => {}
+                        _ => return Err("取消事件种类未知".into()),
+                    }
+                }
+            })
+            .await?;
+            if ops.poll_status(action_id).await?.phase
+                != TaskPhase::Terminal(TerminalState::Cancelled)
+            {
+                return Err("Cancelled 事件与任务终态不一致".into());
+            }
+            return verify_cancel_hold(
+                ops,
+                plan,
+                check,
+                &mut evidence,
+                action_id,
+                requested_ns,
+                at_ns,
+            )
+            .await;
+        }
+    };
+    let result = tokio::time::timeout(Duration::from_millis(plan.task_timeout_ms), run)
+        .await
+        .unwrap_or_else(|_| Err("主动取消流程超过任务观察预算".into()));
+    result.map_err(|message| BodyFailure {
+        message,
+        cancel_target: (!cancel_attempted && !terminal_seen).then(|| action_id.to_owned()),
+    })
+}
+
+/// 事件时刻切开完整命令流：末次动作目标与后续保持目标必须逐 f32 位一致。
+#[cfg(feature = "supervised-s0")]
+#[allow(clippy::too_many_arguments)]
+async fn verify_cancel_hold<O: TorqueOps>(
+    ops: &mut O,
+    plan: &SingleJointPlan,
+    check: &mut SingleJointCheck,
+    evidence: &mut CommandEvidence,
+    action_id: &str,
+    requested_ns: u64,
+    at_ns: u64,
+) -> Result<(), String> {
+    let deadline_ns = at_ns
+        .checked_add(u64::from(plan.settle_ms) * 1_000_000)
+        .ok_or("取消到位期限溢出")?;
+    let remaining = deadline_ns
+        .checked_sub(ops.now_ns())
+        .filter(|value| *value > 0)
+        .ok_or("Cancelled 事件或回执已超过原到位预算")?;
+    let mut stable_since = None;
+    let mut samples = 0usize;
+    staged(Duration::from_nanos(remaining), "cancel hold settle", async {
+        loop {
+            tokio::time::sleep(STATUS_POLL).await;
+            let state = ops.checked_state().await?;
+            if ops.now_ns() >= deadline_ns || state.stamp_ns <= at_ns {
+                return Err("取消保持反馈超时或不是终态后的新源帧".into());
+            }
+            check.observe(&state, &plan.hardware_id, ops.now_ns(), false)?;
+            evidence.observe(ops.published_commands()?, plan, check, ops.now_ns())?;
+            let Some(reference) = evidence.cancelled_target(at_ns)?.cloned() else {
+                continue;
+            };
+            let expected_raw = HoldCheck::raw_positions(&reference.target)?;
+            let start = check.source.anchor_raw[plan.joint_idx];
+            let end = plan.expected_raw[plan.joint_idx];
+            if expected_raw[plan.joint_idx] <= start.min(end)
+                || expected_raw[plan.joint_idx] >= start.max(end)
+            {
+                return Err("取消保持目标不是已发布的途中目标".into());
+            }
+            let actual_raw = HoldCheck::raw_positions(&state.position_rad)?;
+            samples += 1;
+            if actual_raw.iter().zip(&expected_raw).any(|(actual, expected)| (actual - expected).abs() > 4) {
+                stable_since = None;
+                continue;
+            }
+            let since = *stable_since.get_or_insert(state.stamp_ns);
+            let stable_end = since.checked_add(u64::from(plan.stable_ms) * 1_000_000).ok_or("取消稳定窗口溢出")?;
+            if state.stamp_ns < stable_end {
+                continue;
+            }
+            // 固定已稳定的实测终帧，等待镜像覆盖它；不追逐新的反馈延长窗口。
+            while evidence.frames.back().is_none_or(|frame| frame.stamp_ns < state.stamp_ns) {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+                evidence.observe(ops.published_commands()?, plan, check, ops.now_ns())?;
+                evidence.cancelled_target(at_ns)?;
+            }
+            if ops.now_ns() >= deadline_ns || ops.now_ns().saturating_sub(state.stamp_ns) > 200_000_000 {
+                return Err("镜像覆盖终帧时已超过到位预算或终帧不新鲜".into());
+            }
+            println!("SINGLE_JOINT_CANCEL_HOLD_RAW={expected_raw:?}");
+            println!("SINGLE_JOINT_FINAL_RAW={actual_raw:?}");
+            println!(
+                "SINGLE_JOINT_CANCEL action_id={action_id} requested_at_ns={requested_ns} terminal_at_ns={at_ns} last_command_seq={} observer_seq={} source_id={} publisher_instance_id={:032x} samples={samples} stable_ns={}",
+                reference.seq, reference.metadata.observer_seq, reference.source_id,
+                u128::from_le_bytes(reference.metadata.publisher_instance_id), state.stamp_ns - since
+            );
+            return Ok(());
+        }
+    }).await
 }
 
 /// **统一 fail-closed finalizer（单臂）**：body 的任何结果都必经此处。
@@ -2284,9 +2776,38 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
         joint_idx: plan.joint_idx,
         expected_raw: plan.expected_raw.clone(),
     };
+    if plan.cancel_after_ms.is_some() {
+        rt.command_observer =
+            Some(CommandObserver::open(&check.source.robot_id, &plan.hardware_id).await?);
+        tokio::time::sleep(STATUS_POLL).await;
+        // 首帧证据在 enable 之前验证；保留队列，启用等待期间仍逐帧记录。
+        let frames = rt
+            .command_observer
+            .as_ref()
+            .ok_or("命令镜像未建立")?
+            .peek()?;
+        let initial_raw =
+            HoldCheck::raw_positions(&frames.last().ok_or("启用前缺少命令镜像")?.target)?;
+        if initial_raw.len() != check.source.anchor_raw.len()
+            || initial_raw
+                .iter()
+                .zip(&check.source.anchor_raw)
+                .any(|(target, anchor)| (target - anchor).abs() > 4)
+        {
+            return Err("启用前发布目标不在本次启动锚点±4raw内".into());
+        }
+        CommandEvidence::default().observe(frames, &plan, &check, rt.now_ns())?;
+    }
     let body = single_joint_torque_body(rt, &plan, &mut check, PROD_STAGE_BUDGETS).await;
-    finalize_single(rt, body, PROD_STAGE_BUDGETS).await?;
-    println!("SINGLE_JOINT_PASS");
+    let result = finalize_single(rt, body, PROD_STAGE_BUDGETS).await;
+    rt.task_events = None;
+    rt.command_observer = None;
+    result?;
+    if plan.cancel_after_ms.is_some() {
+        println!("SINGLE_JOINT_CANCEL_PASS");
+    } else {
+        println!("SINGLE_JOINT_PASS");
+    }
     Ok(())
 }
 
@@ -3249,6 +3770,14 @@ mod tests {
         raw_state_now: u64,
         #[cfg(feature = "supervised-s0")]
         status_now: Option<u64>,
+        #[cfg(feature = "supervised-s0")]
+        command_r: VecDeque<Result<Vec<PublishedCommand>, String>>,
+        #[cfg(feature = "supervised-s0")]
+        watch_r: VecDeque<Scripted<()>>,
+        #[cfg(feature = "supervised-s0")]
+        event_r: VecDeque<Scripted<robot_rpc::proto::TaskEvent>>,
+        #[cfg(feature = "supervised-s0")]
+        event_received_ns: Option<u64>,
         status_r: VecDeque<Scripted<TaskSnapshot>>,
         cancel_r: VecDeque<Scripted<()>>,
         sample_r: VecDeque<Scripted<StateSample>>,
@@ -3274,6 +3803,14 @@ mod tests {
                 raw_state_now: 0,
                 #[cfg(feature = "supervised-s0")]
                 status_now: None,
+                #[cfg(feature = "supervised-s0")]
+                command_r: VecDeque::new(),
+                #[cfg(feature = "supervised-s0")]
+                watch_r: VecDeque::new(),
+                #[cfg(feature = "supervised-s0")]
+                event_r: VecDeque::new(),
+                #[cfg(feature = "supervised-s0")]
+                event_received_ns: None,
                 status_r: VecDeque::new(),
                 cancel_r: VecDeque::new(),
                 sample_r: VecDeque::new(),
@@ -3364,6 +3901,35 @@ mod tests {
         #[cfg(feature = "supervised-s0")]
         fn now_ns(&self) -> u64 {
             self.raw_state_now
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        fn published_commands(&mut self) -> Result<Vec<PublishedCommand>, String> {
+            self.calls.push("commands".into());
+            self.command_r
+                .pop_front()
+                .unwrap_or_else(|| Err("command queue exhausted".into()))
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        async fn begin_cancel_watch(&mut self, _id: &str, timeout_ms: u64) -> Result<(), String> {
+            self.calls.push(format!("watch:{timeout_ms}"));
+            Self::pop(&mut self.watch_r).resolve().await
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        async fn next_task_event(&mut self) -> Result<robot_rpc::proto::TaskEvent, String> {
+            self.calls.push("event".into());
+            let event = self
+                .event_r
+                .pop_front()
+                .unwrap_or_else(|| Scripted::Err("event queue exhausted".into()))
+                .resolve()
+                .await?;
+            self.raw_state_now = self
+                .event_received_ns
+                .unwrap_or_else(|| self.raw_state_now.max(event.at_ns));
+            Ok(event)
         }
 
         async fn poll_status(&mut self, _id: &str) -> Result<TaskSnapshot, String> {
@@ -3963,6 +4529,355 @@ mod tests {
         ) -> Result<(), String> {
             let body = single_joint_torque_body(ops, plan, &mut check(), budgets).await;
             finalize_single(ops, body, budgets).await
+        }
+
+        fn cancel_plan() -> SingleJointPlan {
+            let mut plan = plan();
+            plan.cancel_after_ms = Some(10_000);
+            plan
+        }
+
+        fn command(seq: u64, stamp_ns: u64, offset: i32) -> PublishedCommand {
+            PublishedCommand {
+                metadata: robot_transport::iceoryx2::ObserverMetadata {
+                    publisher_instance_id: [1; 16],
+                    observer_seq: seq,
+                    dropped_frames: 0,
+                },
+                seq,
+                stamp_ns,
+                received_ns: stamp_ns,
+                source_id: 2,
+                layout_id: 42,
+                source_task_id: seq,
+                deadline_ns: stamp_ns + 500_000_000,
+                position_mode: true,
+                target: state(1, offset).position_rad,
+            }
+        }
+
+        fn cancelled_event() -> robot_rpc::proto::TaskEvent {
+            robot_rpc::proto::TaskEvent {
+                action_id: "action-1".into(),
+                event: robot_rpc::proto::TaskEventKind::Cancelled as i32,
+                at_ns: 11_110_000_000,
+                ..Default::default()
+            }
+        }
+
+        fn cancel_ops() -> ScriptedOps {
+            let mut ops = ScriptedOps::new("left");
+            ops.raw_state_r.extend([
+                Scripted::Ok(state(1, 0)),
+                Scripted::Ok(state(101, 12)),
+                Scripted::Ok(state(102, 13)),
+                Scripted::Ok(state(103, 13)),
+                Scripted::Ok(state(104, 13)),
+            ]);
+            ops.status_r.extend([
+                Scripted::Ok(TaskSnapshot {
+                    phase: TaskPhase::Executing,
+                    ..success_snapshot()
+                }),
+                Scripted::Ok(TaskSnapshot {
+                    phase: TaskPhase::Terminal(TerminalState::Cancelled),
+                    ..success_snapshot()
+                }),
+            ]);
+            ops.event_r.push_back(Scripted::Ok(cancelled_event()));
+            ops.command_r.extend([
+                Ok(vec![command(1, 1_100_000_000, 0)]),
+                Ok(vec![command(2, 11_100_000_000, 12)]),
+                // Cancel 发起后、终态前仍可成功发布；参考必须取13raw，不能冻结12raw。
+                Ok(vec![
+                    command(3, 11_105_000_000, 13),
+                    command(4, 11_130_000_000, 13),
+                    command(5, 11_200_000_000, 13),
+                ]),
+                Ok(vec![command(6, 11_300_000_000, 13)]),
+                Ok(vec![command(7, 11_400_000_000, 13)]),
+            ]);
+            ops
+        }
+
+        #[test]
+        fn cancel_arguments_are_single_joint_only_once_and_strictly_mid_duration() {
+            for delay in ["0", "20000", "20001", "-1"] {
+                let mut args = raw_args();
+                args.extend(["--cancel-after-ms".into(), delay.into()]);
+                assert!(Args::parse_from(&args).is_err());
+            }
+            let mut args = raw_args();
+            args.extend(["--cancel-after-ms".into(), "10000".into()]);
+            assert_eq!(
+                Args::parse_from(&args).unwrap().cancel_after_ms,
+                Some(10000)
+            );
+            args.extend(["--cancel-after-ms".into(), "9000".into()]);
+            assert!(Args::parse_from(&args).is_err());
+            assert!(
+                Args::parse_from(
+                    &[
+                        "--phase",
+                        "read-state",
+                        "--token",
+                        "test",
+                        "--cancel-after-ms",
+                        "10000"
+                    ]
+                    .map(str::to_owned)
+                )
+                .is_err()
+            );
+        }
+
+        #[test]
+        fn cancel_success_uses_last_publish_after_request_then_one_disable() {
+            run(async {
+                let mut ops = cancel_ops();
+                execute(&mut ops, &cancel_plan(), tb()).await.unwrap();
+                assert_eq!(
+                    ops.calls
+                        .iter()
+                        .filter(|call| call.starts_with("cancel:"))
+                        .count(),
+                    1
+                );
+                assert_eq!(ops.calls.iter().filter(|call| *call == "enable").count(), 1);
+                assert_eq!(ops.submitted.len(), 1);
+                assert!(ops.calls.contains(&"watch:25000".into()));
+                assert_eq!(ops.calls.last().map(String::as_str), Some("disable"));
+                assert!(!ops.calls.contains(&"estop".into()));
+            });
+        }
+
+        #[test]
+        fn cancel_ack_unknown_timeout_or_missing_event_never_sends_second_cancel() {
+            for failure in 0..4 {
+                run(async {
+                    let mut ops = cancel_ops();
+                    let mut budgets = tb();
+                    budgets.submit = Duration::from_millis(15);
+                    match failure {
+                        0 => ops
+                            .cancel_r
+                            .push_back(Scripted::Err("unknown cancel reply".into())),
+                        1 => ops.cancel_r.push_back(Scripted::Hang),
+                        2 => ops.event_r = VecDeque::from([Scripted::Hang]),
+                        _ => {
+                            ops.event_r =
+                                VecDeque::from([Scripted::Err("event stream closed".into())]);
+                        }
+                    }
+                    assert!(execute(&mut ops, &cancel_plan(), budgets).await.is_err());
+                    assert_eq!(
+                        ops.calls
+                            .iter()
+                            .filter(|call| call.starts_with("cancel:"))
+                            .count(),
+                        1
+                    );
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                    assert!(!ops.calls.contains(&"disable".into()));
+                });
+            }
+        }
+
+        #[test]
+        fn cancel_rejects_wrong_terminal_identity_time_and_late_receipt() {
+            for failure in 0..6 {
+                run(async {
+                    let mut ops = cancel_ops();
+                    let mut event = cancelled_event();
+                    match failure {
+                        0 => event.action_id = "other-action".into(),
+                        1 => event.event = robot_rpc::proto::TaskEventKind::Completed as i32,
+                        2 => event.at_ns = 11_100_000_000,
+                        3 => ops.status_r[1] = Scripted::Ok(success_snapshot()),
+                        4 => ops.event_received_ns = Some(11_950_000_000),
+                        _ => ops.event_received_ns = Some(11_105_000_000),
+                    }
+                    ops.event_r[0] = Scripted::Ok(event);
+                    assert!(execute(&mut ops, &cancel_plan(), tb()).await.is_err());
+                    assert_eq!(
+                        ops.calls
+                            .iter()
+                            .filter(|call| call.starts_with("cancel:"))
+                            .count(),
+                        1
+                    );
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                });
+            }
+        }
+
+        #[test]
+        fn cancel_rejects_target_reversion_endpoint_or_actual_as_reference() {
+            for offset in [0, 12, 24] {
+                run(async {
+                    let mut ops = cancel_ops();
+                    let frames = ops.command_r[2].as_mut().unwrap();
+                    frames[1].target = state(1, offset).position_rad;
+                    frames[2].target = state(1, offset).position_rad;
+                    assert!(execute(&mut ops, &cancel_plan(), tb()).await.is_err());
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                });
+            }
+            for offset in [0, 24] {
+                run(async {
+                    let mut ops = cancel_ops();
+                    for frame in ops.command_r[2].as_mut().unwrap() {
+                        frame.target = state(1, offset).position_rad;
+                    }
+                    assert!(
+                        execute(&mut ops, &cancel_plan(), tb())
+                            .await
+                            .unwrap_err()
+                            .contains("途中目标")
+                    );
+                });
+            }
+        }
+
+        #[test]
+        fn cancel_requires_fresh_continuous_actual_stability_within_original_deadline() {
+            for failure in 0..4 {
+                run(async {
+                    let mut ops = cancel_ops();
+                    match failure {
+                        0 => ops.raw_state_r[3] = Scripted::Ok(state(102, 13)),
+                        1 => ops.raw_state_r[3] = Scripted::Ok(state(110, 13)),
+                        2 => ops.raw_state_r[3] = Scripted::Ok(state(103, 18)),
+                        _ => {
+                            let mut drift = state(103, 13);
+                            drift.position_rad[0] =
+                                f64::from(robot_adapter_feetech::raw_to_rad(2052));
+                            ops.raw_state_r[3] = Scripted::Ok(drift);
+                        }
+                    }
+                    assert!(execute(&mut ops, &cancel_plan(), tb()).await.is_err());
+                    assert_eq!(
+                        ops.calls
+                            .iter()
+                            .filter(|call| call.starts_with("cancel:"))
+                            .count(),
+                        1
+                    );
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                });
+            }
+        }
+
+        #[test]
+        fn command_evidence_rejects_missing_boundary_gaps_overflow_and_changed_bits() {
+            let plan = cancel_plan();
+            let check = check();
+            for failure in 0..11 {
+                let mut evidence = CommandEvidence::default();
+                let before = command(1, 11_100_000_000, 12);
+                evidence
+                    .observe(vec![before.clone()], &plan, &check, before.stamp_ns)
+                    .unwrap();
+                let mut after = command(2, 11_130_000_000, 12);
+                match failure {
+                    0 => after.metadata.observer_seq = 3,
+                    1 => after.seq = 3,
+                    2 => after.metadata.publisher_instance_id = [2; 16],
+                    3 => after.metadata.dropped_frames = 1,
+                    4 => after.stamp_ns = before.stamp_ns,
+                    5 => after.source_id = 1,
+                    6 => after.layout_id = 7,
+                    7 => after.target[0] = f64::NAN,
+                    8 => after.received_ns = after.stamp_ns - 1,
+                    9 => after.received_ns = after.stamp_ns + 200_000_001,
+                    _ => after.position_mode = false,
+                }
+                assert!(
+                    evidence
+                        .observe(vec![after], &plan, &check, 11_130_000_000)
+                        .is_err()
+                );
+            }
+            let mut evidence = CommandEvidence::default();
+            evidence
+                .observe(
+                    vec![command(u64::MAX, 11_100_000_000, 12)],
+                    &plan,
+                    &check,
+                    11_100_000_000,
+                )
+                .unwrap();
+            assert!(
+                evidence
+                    .observe(
+                        vec![command(0, 11_130_000_000, 12)],
+                        &plan,
+                        &check,
+                        11_130_000_000
+                    )
+                    .is_err()
+            );
+            let mut evidence = CommandEvidence::default();
+            evidence
+                .observe(
+                    vec![command(1, 11_100_000_000, 12)],
+                    &plan,
+                    &check,
+                    11_100_000_000,
+                )
+                .unwrap();
+            assert!(evidence.cancelled_target(11_110_000_000).unwrap().is_none());
+            assert!(evidence.cancelled_target(11_090_000_000).is_err());
+            evidence
+                .observe(
+                    vec![command(2, 11_110_000_000, 12)],
+                    &plan,
+                    &check,
+                    11_110_000_000,
+                )
+                .unwrap();
+            assert!(evidence.cancelled_target(11_110_000_000).is_err());
+            assert!(!same_command_target(&[0.0], &[-0.0]));
+            assert!(!same_command_target(&[0.001], &[0.001_000_1]));
+        }
+
+        #[test]
+        fn command_observer_failure_is_sticky_without_new_samples() {
+            let observer = CommandObserver {
+                queue: Arc::new(CommandQueue::new(VecDeque::from([Err(
+                    "queue overflow".into()
+                )]))),
+                stop: Arc::new(AtomicBool::new(false)),
+                worker: None,
+            };
+            assert_eq!(observer.drain().unwrap_err(), "queue overflow");
+            assert_eq!(observer.drain().unwrap_err(), "queue overflow");
+        }
+
+        #[test]
+        fn cancel_waits_for_mirror_to_cover_fixed_final_feedback_and_rejects_tail_change() {
+            for changed in [false, true] {
+                run(async {
+                    let mut ops = cancel_ops();
+                    let mut final_state = state(104, 13);
+                    final_state.stamp_ns = 11_450_000_000;
+                    ops.raw_state_r[4] = Scripted::Ok(final_state);
+                    ops.command_r[4] = Ok(vec![command(7, 11_420_000_000, 13)]);
+                    ops.command_r.push_back(Ok(vec![command(
+                        8,
+                        11_450_000_000,
+                        if changed { 14 } else { 13 },
+                    )]));
+                    let result = execute(&mut ops, &cancel_plan(), tb()).await;
+                    assert_eq!(result.is_err(), changed, "{result:?}");
+                    assert_eq!(
+                        ops.calls.last().map(String::as_str),
+                        Some(if changed { "estop" } else { "disable" })
+                    );
+                    assert!(ops.raw_state_r.is_empty());
+                    assert!(ops.command_r.is_empty());
+                });
+            }
         }
 
         #[test]
