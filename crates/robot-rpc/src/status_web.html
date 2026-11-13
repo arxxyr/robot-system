@@ -159,8 +159,8 @@
         parent.append(item);
       }
       function stateTone(bus, status) {
-        if (status !== 'fresh') return 'warn';
         if (bus.mode === 'Fault' || bus.safety_state === 'StopFailed') return 'bad';
+        if (status !== 'fresh') return 'warn';
         if (bus.safety_state === 'TorqueUnknown' || bus.safety_state === 'AdapterUncertain' || !Object.hasOwn(safetyText, bus.safety_state)) return 'warn';
         return undefined;
       }
@@ -179,13 +179,14 @@
         article.append(heading);
 
         const metrics = node('dl', 'metrics');
-        const old = status !== 'fresh' && bus.stamp_ns ? '（最后反馈）' : '';
+        const hasReportedState = [bus.mode, bus.safety_state, bus.control_link, bus.output_mode, bus.fault_code].some(value => value !== null && value !== undefined);
+        const old = status !== 'fresh' && hasReportedState ? '（最后报告）' : '';
         metric(metrics, `软件状态${old}`, valueText(bus.mode, modeText), stateTone(bus, status));
         metric(metrics, `扭矩确认${old}`, valueText(bus.safety_state, safetyText), stateTone(bus, status));
         metric(metrics, `控制链路${old}`, valueText(bus.control_link, linkText), bus.control_link === 'Lost' ? 'warn' : undefined);
         metric(metrics, `输出模式${old}`, valueText(bus.output_mode, outputText));
         metric(metrics, `故障码${old}`, Number.isInteger(bus.fault_code) ? String(bus.fault_code) : '未知', bus.fault_code > 0 ? 'bad' : undefined);
-        metric(metrics, '源数据年龄', ageText(age));
+        metric(metrics, '位置数据年龄', ageText(age));
         article.append(metrics);
 
         let note = '';
@@ -195,6 +196,7 @@
         else if (status === 'unavailable') note = '尚无有效状态样本，不能判断设备是否上扭。';
         else if (status === 'invalid') note = '状态身份、布局或数据校验未通过。';
         else if (bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown') note = '数据正在更新，但电机扭矩状态仍未确认。';
+        if (status !== 'fresh' && hasReportedState) note += ' 软件与保护状态为最后报告，不代表已有新鲜位置或确认当前扭矩。';
         if (note) {
           const detail = node('p', 'state-note', note);
           detail.dataset.tone = status === 'invalid' ? 'bad' : status !== 'fresh' || bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown' ? 'warn' : 'neutral';

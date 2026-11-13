@@ -56,7 +56,11 @@ Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样�
 - `enable-autostart`：按新备份核对身份后，仅对固定三个服务执行 `systemctl enable`，不带 `--now`，不启动服务。
 - `disable-autostart`：沿同份备份关闭三个服务的自启，可处理前次 enable 部分成功；撤销不要求运行产物完好或重启前的设备节点身份，但仍核对 unit、服务停止状态和保护文件。不停止进程、不修改保护文件；文件回滚仍须先停稳并关闭自启，再走原 `rollback`。
 
-自启不代表控制授权。RX 一次性授权消费后的 Dirty 保持；没有有效授权时，即使启动停止读回成功，仍进入 `CommFault/BootUntrusted + AdapterUncertain`。该路径可保持Disabled并常驻，满足默认保护待机；它不产生正常关节采样，也不能宣称可信断扭。停止时保留原有界退出码1及未完成责任证据，再独立执行原STOP51确认物理停止；不得把故障待机、预期拒帧或非正常退出改成healthy Safe或断扭通过。
+自启不代表控制授权。两侧正式模板显式传入 `--resume-rx-on-clean-exit`：只有本轮已有可信RX授权、没有故障、原完整关闭及断扭确认通过、全部设备线程已退出，才将下一次RX授权双写为 `0`；下一次启动仍消费它并重新预检，保持 `auto_enable=false` 和原EStop。可信的Disabled/EStop待机沿既有路径持续读位置，不发送动作目标。该选项默认关闭，维护入口的原Dirty收尾合同不变。
+
+当前已有Dirty、通讯故障或关闭失败不能靠此选项自动恢复；首次仍需原维护流程的一次RX授权。没有有效授权时，即使启动停止读回成功，仍进入 `CommFault/BootUntrusted + AdapterUncertain`，不产生正常关节采样。停止时保留原有界退出码1及未完成责任证据，再独立执行原STOP51确认物理停止。运行中崩溃、尚未交接时仍留Dirty；授权提交之后进程被终止不保证回到Dirty。不能删marker、用反复重启或把故障待机改判为healthy Safe来绕过。
+
+续授权提交后的存储错误会尽力撤回为Dirty；若撤回也失败，保留授权状态未确认，不能仅凭退出码1认定文件为Dirty。此时仍沿原保护恢复入口处理，不自动重试。
 
 默认不上扭，故障及 EStop 不因启动而清除。不增加 S0 对外 Boot/Init 状态：进程初始化沿现有启动流程和 systemd `activating`；S1 已有 `Booting` 保留。后续真实开机验收须独立核对新 boot ID、服务状态、保护状态、心跳/RGB及原停止收尾，不能只检查 enabled 或 active。
 
@@ -74,7 +78,7 @@ Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样�
 |---|---|
 | 总线与身份 | 同侧配置、robot/hardware ID、USB 和校准必须对应；full 候选 preflight 与两个 guard 使用同批配置 |
 | 保护目录 | bus1 使用 `/var/lib/robot/xlerobot_left`，bus2 使用 `/var/lib/robot/xlerobot_right`；不得按新运行 ID 新建或迁移保护状态 |
-| RX 信任 | 一次性授权只供本轮启动消费；消费后 Dirty 是正常结果。status/authorize/revoke 也持 RX 锁，不与同目录 daemon 并发，不自动续授 |
+| RX 信任 | 启动消费一次性授权后写 Dirty；status/authorize/revoke 持 RX 锁，不与同目录 daemon 并发。默认不续授；正式模板仅在上述可信干净退出条件下交接下一次授权 |
 | EStop | latch 双份持久化；只通过 maintainer+ 的 ClearEStop 事务解除，成功后仍 Safe，上扭是另一个动作 |
 | 实例锁 | 核真实持有者，待进程退出由 OS 释放；不删文件、换 inode 或凭锁内 PID 文字判断活进程 |
 | 失败退出 | 86 为 guard 停止态，87 为 RX 锁竞争，89 为 latch 锁竞争；保留真实错误并修明根因，不清计数或 reset-failed 掩盖故障 |

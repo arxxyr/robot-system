@@ -252,8 +252,30 @@ struct JointView {
     position_rad: Option<f64>,
 }
 
+struct ReportedStatus {
+    mode: i32,
+    control_link: i32,
+    output_mode: i32,
+    safety_state: i32,
+    fault_code: u32,
+}
+
+impl From<&RobotState> for ReportedStatus {
+    fn from(state: &RobotState) -> Self {
+        Self {
+            mode: state.mode,
+            control_link: state.control_link,
+            output_mode: state.output_mode,
+            safety_state: state.safety_state,
+            fault_code: state.fault_code,
+        }
+    }
+}
+
 struct SourceState {
     source: Source,
+    // 保护待机可报告故障但没有位置采样；软件状态不能随位置校验一起丢失。
+    reported: Option<ReportedStatus>,
     last: Option<RobotState>,
     invalid: bool,
     error: Option<String>,
@@ -263,6 +285,7 @@ impl SourceState {
     fn new(source: Source) -> Self {
         Self {
             source,
+            reported: None,
             last: None,
             invalid: false,
             error: Some("等待首个有效状态".into()),
@@ -275,29 +298,44 @@ impl SourceState {
                 self.invalid = false;
                 self.error = Some(error);
             }
-            Ok(state) => match self.validate(&state, now_ns) {
-                Ok(()) => {
-                    self.last = Some(state);
-                    self.invalid = false;
-                    self.error = None;
-                }
-                Err(error) => {
+            Ok(state) => {
+                if let Err(error) = self.validate_identity(&state) {
                     self.invalid = true;
                     self.error = Some(error);
+                    return;
                 }
-            },
+                self.reported = Some(ReportedStatus::from(&state));
+                match self.validate_positions(&state, now_ns) {
+                    Ok(()) => {
+                        self.last = Some(state);
+                        self.invalid = false;
+                        self.error = None;
+                    }
+                    Err(error) => {
+                        self.invalid = true;
+                        self.error = Some(error);
+                    }
+                }
+            }
         }
     }
 
-    fn validate(&self, state: &RobotState, now_ns: u64) -> Result<(), String> {
+    fn validate_identity(&self, state: &RobotState) -> Result<(), String> {
         if state.robot_id != self.source.robot_id || state.hardware_id != self.source.hardware_id {
             return Err("状态身份与配置不一致".into());
         }
-        validate_state_layout(&self.source.layout, state).map_err(|error| error.to_string())?;
-        if state.position_rad.len() != self.source.layout.joints.len()
-            || state.position_rad.iter().any(|value| !value.is_finite())
-        {
-            return Err("关节状态长度错误或含非有限值".into());
+        validate_state_layout(&self.source.layout, state).map_err(|error| error.to_string())
+    }
+
+    fn validate_positions(&self, state: &RobotState, now_ns: u64) -> Result<(), String> {
+        if state.position_rad.is_empty() {
+            return Err("尚无位置采样，不能确认位置与数据新鲜度".into());
+        }
+        if state.position_rad.len() != self.source.layout.joints.len() {
+            return Err("关节状态长度与配置不一致".into());
+        }
+        if state.position_rad.iter().any(|value| !value.is_finite()) {
+            return Err("关节位置含非有限值".into());
         }
         if state.stamp_ns == 0 || state.stamp_ns > now_ns {
             return Err("源时间戳为零或在未来，无法确认新鲜度".into());
@@ -358,22 +396,22 @@ impl SourceState {
             age_ms,
             stamp_ns: self.last.as_ref().map(|last| last.stamp_ns.to_string()),
             mode: self
-                .last
+                .reported
                 .as_ref()
                 .map(|last| enum_name::<S0Mode>(last.mode)),
             control_link: self
-                .last
+                .reported
                 .as_ref()
                 .map(|last| enum_name::<S0ControlLink>(last.control_link)),
             output_mode: self
-                .last
+                .reported
                 .as_ref()
                 .map(|last| enum_name::<S0OutputMode>(last.output_mode)),
             safety_state: self
-                .last
+                .reported
                 .as_ref()
                 .map(|last| enum_name::<S0SafetyState>(last.safety_state)),
-            fault_code: self.last.as_ref().map(|last| last.fault_code),
+            fault_code: self.reported.as_ref().map(|last| last.fault_code),
             joints,
         }
     }

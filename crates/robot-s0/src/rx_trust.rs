@@ -174,6 +174,15 @@ pub fn write_marker_two_phase(
     path: &Path,
     value: MarkerValue,
 ) -> Result<(), MarkerWriteError> {
+    write_marker_two_phase_checked(fs, path, value, || true)
+}
+
+fn write_marker_two_phase_checked(
+    fs: &dyn MarkerFs,
+    path: &Path,
+    value: MarkerValue,
+    mut before_rename: impl FnMut() -> bool,
+) -> Result<(), MarkerWriteError> {
     let bytes = value.bytes().ok_or_else(|| {
         MarkerWriteError::NotCommitted(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -183,6 +192,13 @@ pub fn write_marker_two_phase(
     let temporary = fs
         .write_sync_temp(path, bytes)
         .map_err(MarkerWriteError::NotCommitted)?;
+    if !before_rename() {
+        let _ = fs.remove_temp(&temporary);
+        return Err(MarkerWriteError::NotCommitted(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "RX marker 提交前预算已耗尽",
+        )));
+    }
     if let Err(error) = fs.rename(&temporary, path) {
         let _ = fs.remove_temp(&temporary);
         return Err(MarkerWriteError::NotCommitted(error));
@@ -312,6 +328,81 @@ pub fn run_marker_command(
     }
 }
 
+/// 在已确认干净退出后，为下一次启动保留一次性 RX 授权。
+///
+/// 调用方须持有信任独占锁、已 join 全部设备线程，并证明本轮无故障且可信断扭。
+/// 两份写入仍使用原两阶段持久化；每次放宽前与完成后检查同一个退出截止。
+/// 本函数不延长监督器期限，存储错误或观察到超期时尽力恢复双 Dirty。
+/// 最后一次 rename 后的同步失败沿原 `AuthorizedNotDurable` 边界处理：若撤回也失败，
+/// 返回错误时仍可能是双授权。此时原设备关闭已完成，不能将存储失败误报为断扭失败。
+///
+/// # Errors
+///
+/// 原文件不是双 Dirty、存储失败或预算耗尽时失败；错误不证明已恢复双 Dirty。
+pub fn resume_authorization_after_clean_exit(
+    fs: &dyn MarkerFs,
+    dir: &Path,
+    mut within_budget: impl FnMut() -> bool,
+) -> io::Result<()> {
+    let primary = dir.join(PRIMARY_NAME);
+    let backup = dir.join(BACKUP_NAME);
+    let result = (|| {
+        if !within_budget() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "RX 续授权预算已耗尽",
+            ));
+        }
+        if !marker_status(fs, dir)?.canonical_dirty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "RX 续授权要求双 Dirty",
+            ));
+        }
+        for path in [&backup, &primary] {
+            if !within_budget() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "RX 续授权预算已耗尽",
+                ));
+            }
+            write_marker_two_phase_checked(
+                fs,
+                path,
+                MarkerValue::AuthorizedOnce,
+                &mut within_budget,
+            )
+            .map_err(|error| {
+                log_write_failure(path, &error);
+                match error {
+                    MarkerWriteError::NotCommitted(error)
+                    | MarkerWriteError::CommittedNotDurable(error) => error,
+                }
+            })?;
+        }
+        if !within_budget() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "RX 续授权完成时已超期",
+            ));
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        // 收紧不能因为授权预算已耗尽而跳过；原监督器仍负责绝对退出期限。
+        let backup_dirty = normalize_dirty(fs, &backup);
+        let primary_dirty = normalize_dirty(fs, &primary);
+        if !backup_dirty || !primary_dirty {
+            tracing::error!(
+                backup_dirty,
+                primary_dirty,
+                "原设备关闭已完成；RX 授权提交或撤回状态未确认，可能仍为双授权"
+            );
+        }
+    }
+    result
+}
+
 #[derive(Debug)]
 pub enum TrustLockError {
     Held { pid: Option<u32> },
@@ -403,6 +494,175 @@ mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
+
+    fn dirty_pair(dir: &Path) {
+        for name in [PRIMARY_NAME, BACKUP_NAME, "estop_latch", "estop_latch.bak"] {
+            std::fs::write(dir.join(name), b"1\n").unwrap();
+        }
+    }
+
+    struct FailingMarkerFs {
+        mutation: Cell<usize>,
+        fail_at: usize,
+        fail_following: bool,
+    }
+
+    impl FailingMarkerFs {
+        fn before_mutation(&self) -> io::Result<()> {
+            let step = self.mutation.get() + 1;
+            self.mutation.set(step);
+            if step == self.fail_at || (self.fail_following && step > self.fail_at) {
+                Err(io::Error::other("模拟续授权持久化失败"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl MarkerFs for FailingMarkerFs {
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            RealMarkerFs.read(path)
+        }
+        fn write_sync_temp(&self, path: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
+            self.before_mutation()?;
+            RealMarkerFs.write_sync_temp(path, bytes)
+        }
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.before_mutation()?;
+            RealMarkerFs.rename(from, to)
+        }
+        fn sync_parent(&self, path: &Path) -> io::Result<()> {
+            self.before_mutation()?;
+            RealMarkerFs.sync_parent(path)
+        }
+        fn remove_temp(&self, path: &Path) -> io::Result<()> {
+            RealMarkerFs.remove_temp(path)
+        }
+    }
+
+    #[test]
+    fn clean_exit_resume_is_once_only_and_preserves_estop() {
+        let dir = tempfile::tempdir().unwrap();
+        dirty_pair(dir.path());
+        resume_authorization_after_clean_exit(&RealMarkerFs, dir.path(), || true).unwrap();
+        assert!(
+            marker_status(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized_candidate()
+        );
+        assert!(
+            consume_authorization(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized
+        );
+        assert!(
+            !consume_authorization(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized
+        );
+        for name in ["estop_latch", "estop_latch.bak"] {
+            assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), b"1\n");
+        }
+    }
+
+    #[test]
+    fn clean_exit_resume_revokes_each_failed_persistence_step() {
+        for fail_at in 1..=6 {
+            let dir = tempfile::tempdir().unwrap();
+            dirty_pair(dir.path());
+            let fs = FailingMarkerFs {
+                mutation: Cell::new(0),
+                fail_at,
+                fail_following: false,
+            };
+            assert!(resume_authorization_after_clean_exit(&fs, dir.path(), || true).is_err());
+            assert!(
+                marker_status(&RealMarkerFs, dir.path())
+                    .unwrap()
+                    .canonical_dirty()
+            );
+        }
+    }
+
+    #[test]
+    fn clean_exit_resume_error_can_leave_authorized_pair_when_revoke_also_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        dirty_pair(dir.path());
+        let fs = FailingMarkerFs {
+            mutation: Cell::new(0),
+            // 主文件 rename 已落地；随后的目录同步及双 Dirty 撤回都失败。
+            fail_at: 6,
+            fail_following: true,
+        };
+        let error = resume_authorization_after_clean_exit(&fs, dir.path(), || true).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(fs.mutation.get(), 8, "原同步失败后，两份撤回都必须尝试");
+        for name in [PRIMARY_NAME, BACKUP_NAME] {
+            assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), b"0\n");
+        }
+        assert!(
+            marker_status(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized_candidate()
+        );
+        // 存储恢复后，下一次启动沿旧规则消费；该授权仍只能使用一次。
+        assert!(
+            consume_authorization(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized
+        );
+        assert!(
+            marker_status(&RealMarkerFs, dir.path())
+                .unwrap()
+                .canonical_dirty()
+        );
+        assert!(
+            !consume_authorization(&RealMarkerFs, dir.path())
+                .unwrap()
+                .authorized
+        );
+        for name in ["estop_latch", "estop_latch.bak"] {
+            assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), b"1\n");
+        }
+    }
+
+    #[test]
+    fn clean_exit_resume_checks_budget_before_each_release_and_after_completion() {
+        for permitted_checks in 0..6 {
+            let dir = tempfile::tempdir().unwrap();
+            dirty_pair(dir.path());
+            let mut checks = 0;
+            let error = resume_authorization_after_clean_exit(&RealMarkerFs, dir.path(), || {
+                checks += 1;
+                checks <= permitted_checks
+            })
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert!(
+                marker_status(&RealMarkerFs, dir.path())
+                    .unwrap()
+                    .canonical_dirty()
+            );
+        }
+    }
+
+    #[test]
+    fn clean_exit_resume_rejects_unexpected_marker_content() {
+        let dir = tempfile::tempdir().unwrap();
+        dirty_pair(dir.path());
+        std::fs::write(dir.path().join(PRIMARY_NAME), b"corrupt").unwrap();
+        assert_eq!(
+            resume_authorization_after_clean_exit(&RealMarkerFs, dir.path(), || true)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(
+            marker_status(&RealMarkerFs, dir.path())
+                .unwrap()
+                .canonical_dirty()
+        );
+    }
 
     struct ScriptedLockIo {
         cloexec_errno: Cell<Option<i32>>,

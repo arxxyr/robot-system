@@ -112,6 +112,7 @@ struct Args {
     marker_command: Option<MarkerCommand>,
     rx_trust_dir_cli: Option<PathBuf>,
     trust_policy: Option<SerialTrustPolicy>,
+    resume_rx_on_clean_exit: bool,
     notify_mode: NotifyMode,
     /// CLI 显式指定时为 `Some`；否则从 `--config` TOML / env / "default" 回填。
     robot_id_cli: Option<String>,
@@ -138,6 +139,7 @@ struct ResolvedArgs {
     marker_command: Option<MarkerCommand>,
     rx_trust_dir: PathBuf,
     trust_policy: Option<SerialTrustPolicy>,
+    resume_rx_on_clean_exit: bool,
     notify_mode: NotifyMode,
     robot_id: String,
     hardware_id: String,
@@ -183,6 +185,7 @@ impl Args {
             marker_command: None,
             rx_trust_dir_cli: None,
             trust_policy: None,
+            resume_rx_on_clean_exit: false,
             notify_mode: NotifyMode::Auto,
             robot_id_cli: None,
             hardware_id_cli: None,
@@ -229,6 +232,12 @@ impl Args {
                         Some("static") => SerialTrustPolicy::Static,
                         _ => return Err("--rx-trust-policy 需要 marker|static".into()),
                     });
+                }
+                "--resume-rx-on-clean-exit" => {
+                    if args.resume_rx_on_clean_exit {
+                        return Err("--resume-rx-on-clean-exit 重复".into());
+                    }
+                    args.resume_rx_on_clean_exit = true;
                 }
                 "--notify-mode" => {
                     i += 1;
@@ -329,9 +338,10 @@ impl Args {
         if args.marker_command.is_some()
             && (args.config_path.is_some()
                 || args.hardware_id_cli.is_some()
-                || args.trust_policy.is_some())
+                || args.trust_policy.is_some()
+                || args.resume_rx_on_clean_exit)
         {
-            return Err("rx-trust 子命令不接受 hardware/config/trust-policy".into());
+            return Err("rx-trust 子命令不接受 hardware/config/trust-policy/退出续授权".into());
         }
         Ok(args)
     }
@@ -456,6 +466,7 @@ impl Args {
             marker_command: self.marker_command,
             rx_trust_dir,
             trust_policy: self.trust_policy,
+            resume_rx_on_clean_exit: self.resume_rx_on_clean_exit,
             notify_mode: self.notify_mode,
             robot_id,
             hardware_id,
@@ -504,6 +515,7 @@ OPTIONS:
   --latch-path <PATH>          EStop latch 文件路径。默认 /var/lib/robot/<robot_id>/estop_latch。
   --rx-trust-dir <PATH>        信任文件与实例锁目录。默认 latch 的父目录。
   --rx-trust-policy <POLICY>   mock SerialRT 可选 marker|static；真实 Feetech 固定 marker。
+  --resume-rx-on-clean-exit    仅 marker 后端：可信干净退出后为下次启动保留一次授权；默认关闭。
   --notify-mode <MODE>         required|standalone|auto，默认 auto（看 INVOCATION_ID）。
   --serial-fifo <PRIORITY>     SerialRT 可选 FIFO 优先级，1..99。
   --heartbeat-timeout-ms <MS>  S1 heartbeat 超时阈值（毫秒）。默认 200。
@@ -679,7 +691,7 @@ fn selected_kind(args: &ResolvedArgs) -> &str {
 }
 
 fn select_trust(args: &ResolvedArgs) -> Result<Option<SerialTrustPolicy>, i32> {
-    match (selected_kind(args), args.trust_policy) {
+    let policy = match (selected_kind(args), args.trust_policy) {
         ("mock_hard_rt", None) => Ok(None),
         ("mock_serial_rt", override_policy) => {
             Ok(Some(override_policy.unwrap_or(SerialTrustPolicy::Static)))
@@ -689,7 +701,12 @@ fn select_trust(args: &ResolvedArgs) -> Result<Option<SerialTrustPolicy>, i32> {
             tracing::error!(kind, ?policy, "不支持的 adapter 信任策略组合");
             Err(2)
         }
+    }?;
+    if args.resume_rx_on_clean_exit && policy != Some(SerialTrustPolicy::Marker) {
+        tracing::error!("退出 RX 续授权只允许 marker 后端");
+        return Err(2);
     }
+    Ok(policy)
 }
 
 struct WorkerStart {
@@ -947,7 +964,7 @@ fn run(
             let mut runtime = boot.into_runtime();
             // READY 的唯一凭证发布后，第一步只能是不可失败的拥有移动。
             let result = run_runtime(args, supervisor, &resources, &mut runtime, &state_reader);
-            finish_runtime_owned(runtime, &resources, standby, supervisor, result)
+            finish_runtime_owned(args, runtime, &resources, standby, supervisor, result)
         }
     }
 }
@@ -1371,6 +1388,7 @@ fn writer_exit_clean(writer: &WriterSettlement, shared: &PersistShared) -> bool 
     reason = "原teardown、按值收回各join结果及一次诊断共处拥有域，保持失败收尾顺序"
 )]
 fn finish_runtime_owned(
+    args: &ResolvedArgs,
     runtime: RuntimeHandles,
     res: &ExecutionResources,
     mut standby: StandbyStore,
@@ -1472,6 +1490,7 @@ fn finish_runtime_owned(
         &mut report.residual,
         ResidualHandles::from_startup(Ok(std::array::from_fn(|_| None)), None),
     );
+    let code = resume_rx_after_shutdown(args, res, code, deadline);
     MainExit {
         run_exit: RunExit::new(code, residual),
         settled: ExitSettled {
@@ -1483,6 +1502,35 @@ fn finish_runtime_owned(
             _standby: Some(standby),
             _meta: meta,
         },
+    }
+}
+
+fn resume_rx_after_shutdown(
+    args: &ResolvedArgs,
+    res: &ExecutionResources,
+    exit_code: i32,
+    deadline: u64,
+) -> i32 {
+    if !args.resume_rx_on_clean_exit || exit_code != 0 {
+        return exit_code;
+    }
+    if !res.serial || !res.authorized || !res.ctrl.clean_rx_restart_ready() {
+        tracing::warn!("退出未满足可信无故障条件，保留 RX Dirty");
+        return 1;
+    }
+    match robot_s0::rx_trust::resume_authorization_after_clean_exit(
+        &RealMarkerFs,
+        &args.rx_trust_dir,
+        || res.clock.now().0 < deadline,
+    ) {
+        Ok(()) => {
+            tracing::info!("干净退出已保留下一次 RX 启动授权，EStop 保持原值");
+            0
+        }
+        Err(error) => {
+            tracing::error!(%error, "原设备关闭已通过；退出 RX 续授权未确认，错误退出不保证已恢复 Dirty");
+            1
+        }
     }
 }
 
@@ -3177,6 +3225,7 @@ mod tests {
             marker_command: None,
             rx_trust_dir_cli: None,
             trust_policy: None,
+            resume_rx_on_clean_exit: false,
             notify_mode: NotifyMode::Auto,
             robot_id_cli: None,
             hardware_id_cli: None,
@@ -3190,6 +3239,16 @@ mod tests {
             joint_count: 3,
             cpu_affinity: None,
         }
+    }
+
+    #[test]
+    fn clean_exit_rx_resume_is_opt_in_and_requires_marker_backend() {
+        let args = base_args().resolve().unwrap();
+        assert!(!args.resume_rx_on_clean_exit);
+        assert_eq!(select_trust(&args), Ok(None));
+        let mut args = base_args();
+        args.resume_rx_on_clean_exit = true;
+        assert_eq!(select_trust(&args.resolve().unwrap()), Err(2));
     }
 
     fn write_identity_cfg(robot_id: &str) -> tempfile::NamedTempFile {

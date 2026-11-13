@@ -41,6 +41,7 @@ ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-deploy guard
     --hardware-id right_arm_full_with_base \
     --latch-path /var/lib/robot/xlerobot_right/estop_latch \
     --rx-trust-dir /var/lib/robot/xlerobot_right \
+    --resume-rx-on-clean-exit \
     --tick-hz 50 \
     --notify-mode required
 

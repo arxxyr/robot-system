@@ -4,6 +4,8 @@
 
 #[path = "comm_fault_startup/camera_actuator.rs"]
 mod camera_actuator;
+#[path = "comm_fault_startup/rx_resume.rs"]
+mod rx_resume;
 
 use std::fmt::Write as _;
 use std::path::PathBuf;

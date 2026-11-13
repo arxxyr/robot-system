@@ -302,6 +302,30 @@ pub struct SerialBootProgress {
 }
 
 impl HardRtCtrlInner {
+    /// 仅供全部 worker 已 join 的主线程判定干净退出；不授予 IO 或解除 EStop。
+    /// 故障邮箱在本轮进程内只发布、不清零，因此零值同时排除已 ACK 的历史故障。
+    #[must_use]
+    pub fn clean_rx_restart_ready(&self) -> bool {
+        let state = self.authority.snapshot();
+        self.ctrl_kind == CtrlKind::SerialRt
+            && self.boot_outcome.load(Ordering::Acquire) == 1
+            && !self.boot_deadline_expired.load(Ordering::Acquire)
+            && self.rx_trust.load(Ordering::Acquire)
+            && self.session_clean.load(Ordering::Acquire)
+            && self.fault_mailbox.load(Ordering::Acquire) == 0
+            && self.pending_normal.load(Ordering::Acquire) == 0
+            && self.active_action.load(Ordering::Acquire) == 0
+            && self.abort_request.load(Ordering::Acquire) == 0
+            && state.shutdown
+            && state.disabled
+            && !state.exhausted
+            && state.phase == Some(robot_core::control_authority::Phase::Idle)
+            && state.inhibits.is_empty()
+            && !state.normal_io_active
+            && !state.serial_estop_pending
+            && state.safety == OutputSafetyState::TorqueOffConfirmed
+    }
+
     #[must_use]
     pub fn serial_boot_progress(&self) -> SerialBootProgress {
         let outcome = self.boot_outcome.load(Ordering::Acquire);
@@ -1068,6 +1092,100 @@ mod tests {
     use super::*;
     use robot_core::adapter::ControlMode;
     use robot_core::executor_ctrl::{AdapterErr, pack_completed};
+
+    fn clean_serial_exit() -> HardRtCtrlInner {
+        use robot_core::control_authority::{AuthorityInit, InhibitSet};
+        let authority = Arc::new(
+            ControlAuthority::new(AuthorityInit::new(
+                true,
+                OutputSafetyState::TorqueOffConfirmed,
+                InhibitSet::EMPTY,
+            ))
+            .unwrap(),
+        );
+        let _ = authority.shutdown();
+        let ctrl = HardRtCtrlInner::new_serial(authority);
+        ctrl.boot_outcome.store(1, Ordering::Release);
+        ctrl.rx_trust.store(true, Ordering::Release);
+        ctrl
+    }
+
+    #[test]
+    fn clean_rx_restart_requires_trust_and_no_fault_history() {
+        let ctrl = clean_serial_exit();
+        assert!(ctrl.clean_rx_restart_ready());
+        assert!(ctrl.safety_latched(), "续授权判据不要求解除 EStop");
+        ctrl.boot_outcome.store(0, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.boot_outcome.store(2, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.boot_outcome.store(1, Ordering::Release);
+        ctrl.boot_deadline_expired.store(true, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.boot_deadline_expired.store(false, Ordering::Release);
+        ctrl.rx_trust.store(false, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.rx_trust.store(true, Ordering::Release);
+        ctrl.session_clean.store(false, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.session_clean.store(true, Ordering::Release);
+        let fault = MailboxSnapshot {
+            generation: 1,
+            code: FaultCode::CommFault,
+            detail: 0,
+            origin: FaultOrigin::Periodic,
+        };
+        ctrl.fault_mailbox.store(fault.pack(), Ordering::Release);
+        ctrl.fault_ack.store(1, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready(), "已 ACK 故障仍不得续授权");
+    }
+
+    #[test]
+    fn clean_rx_restart_rejects_pending_or_uncertain_execution() {
+        let ctrl = clean_serial_exit();
+        for word in [
+            &ctrl.pending_normal,
+            &ctrl.active_action,
+            &ctrl.abort_request,
+        ] {
+            word.store(1, Ordering::Release);
+            assert!(!ctrl.clean_rx_restart_ready());
+            word.store(0, Ordering::Release);
+        }
+        assert!(ctrl.clean_rx_restart_ready());
+        let _ = ctrl.authority().tighten_inhibit(InhibitReason::CommFault);
+        assert!(!ctrl.clean_rx_restart_ready());
+        let ctrl = clean_serial_exit();
+        let _ = ctrl
+            .authority()
+            .tighten_safety(SafetyTightening::AdapterUncertain);
+        assert!(!ctrl.clean_rx_restart_ready());
+    }
+
+    #[test]
+    fn clean_rx_restart_is_unavailable_before_shutdown_or_with_io_held() {
+        use robot_core::control_authority::{AuthorityInit, InhibitSet, NormalIoIntent};
+        let authority = Arc::new(
+            ControlAuthority::new(AuthorityInit::new(
+                true,
+                OutputSafetyState::TorqueOffConfirmed,
+                InhibitSet::EMPTY,
+            ))
+            .unwrap(),
+        );
+        let ctrl = HardRtCtrlInner::new_serial(authority);
+        ctrl.boot_outcome.store(1, Ordering::Release);
+        ctrl.rx_trust.store(true, Ordering::Release);
+        assert!(!ctrl.clean_rx_restart_ready());
+        let read = ctrl
+            .authority()
+            .acquire_normal_io(NormalIoIntent::PeriodicRead)
+            .unwrap();
+        let _ = ctrl.authority().shutdown();
+        assert!(!ctrl.clean_rx_restart_ready());
+        ctrl.authority().release_normal_io(read).unwrap();
+        assert!(ctrl.clean_rx_restart_ready());
+    }
 
     #[test]
     fn cancelled_serial_pending_preserves_identity_and_rejects_every_reserved_bit() {

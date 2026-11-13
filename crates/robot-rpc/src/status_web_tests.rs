@@ -136,6 +136,129 @@ fn invalid_identity_layout_clock_and_values_never_replace_valid_state() {
 }
 
 #[test]
+fn protected_boot_reports_fault_without_claiming_position_feedback() {
+    for bus in 1..=2 {
+        let mut state = SourceState::new(source(bus, String::new()));
+        let mut fault = sample(&state.source, 0);
+        fault.position_rad.clear();
+        fault.fault_code = 7;
+        for now in [1_000_000_000, 5_000_000_000] {
+            state.accept(Ok(fault.clone()), now);
+            let view = state.view(now, 2000);
+            assert_eq!(view.data_status, "invalid");
+            assert_eq!(view.mode.as_deref(), Some("Fault"));
+            assert_eq!(view.safety_state.as_deref(), Some("AdapterUncertain"));
+            assert_eq!(view.fault_code, Some(7));
+            assert!(view.error.as_deref().unwrap().contains("尚无位置采样"));
+            assert!(view.stamp_ns.is_none() && view.age_ms.is_none());
+            assert!(view.joints.iter().all(|joint| joint.position_rad.is_none()));
+        }
+    }
+}
+
+#[test]
+fn invalid_positions_report_new_fault_but_keep_last_valid_positions() {
+    let mut state = SourceState::new(source(1, String::new()));
+    let mut valid = sample(&state.source, 1_000_000_000);
+    valid.mode = S0Mode::Ready as i32;
+    valid.safety_state = S0SafetyState::TorqueOffConfirmed as i32;
+    valid.fault_code = 0;
+    state.accept(Ok(valid.clone()), 1_000_000_000);
+
+    let mut fault = valid;
+    fault.mode = S0Mode::Fault as i32;
+    fault.safety_state = S0SafetyState::AdapterUncertain as i32;
+    fault.fault_code = 7;
+    fault.position_rad[0] = f64::NAN;
+    fault.stamp_ns = 1_500_000_000;
+    state.accept(Ok(fault), 1_500_000_000);
+    let view = state.view(1_500_000_000, 2000);
+    assert_eq!(view.data_status, "invalid");
+    assert_eq!(view.mode.as_deref(), Some("Fault"));
+    assert_eq!(view.safety_state.as_deref(), Some("AdapterUncertain"));
+    assert_eq!(view.fault_code, Some(7));
+    assert_eq!(view.stamp_ns.as_deref(), Some("1000000000"));
+    assert_eq!(view.age_ms, Some(500));
+    assert!(
+        view.joints
+            .iter()
+            .all(|joint| joint.position_rad == Some(0.25))
+    );
+}
+
+#[test]
+fn mismatched_identity_or_layout_cannot_replace_reported_status() {
+    for field in 0..3 {
+        for has_previous in [false, true] {
+            let mut state = SourceState::new(source(1, String::new()));
+            let original = sample(&state.source, 1_000_000_000);
+            if has_previous {
+                state.accept(Ok(original.clone()), 1_000_000_000);
+            }
+            let mut wrong = original;
+            match field {
+                0 => wrong.robot_id = "other_robot".into(),
+                1 => wrong.hardware_id = "other_hardware".into(),
+                _ => wrong.layout_id ^= 1,
+            }
+            wrong.mode = S0Mode::Enabled as i32;
+            wrong.safety_state = S0SafetyState::TorqueOn as i32;
+            wrong.fault_code = 0;
+            state.accept(Ok(wrong), 1_000_000_000);
+            let view = state.view(1_000_000_000, 2000);
+            assert_eq!(view.data_status, "invalid");
+            assert_eq!(view.mode.as_deref(), has_previous.then_some("Fault"));
+            assert_eq!(
+                view.safety_state.as_deref(),
+                has_previous.then_some("AdapterUncertain")
+            );
+            assert_eq!(view.fault_code, has_previous.then_some(1));
+        }
+    }
+}
+
+#[test]
+fn reported_fault_survives_disconnect_and_positions_recover_only_from_valid_sample() {
+    let mut state = SourceState::new(source(1, String::new()));
+    let mut fault = sample(&state.source, 0);
+    fault.position_rad.clear();
+    fault.fault_code = 7;
+    state.accept(Ok(fault), 1_000_000_000);
+    state.accept(Err("连接已断开".into()), 2_000_000_000);
+    let lost = state.view(5_000_000_000, 2000);
+    assert_eq!(lost.data_status, "unavailable");
+    assert_eq!(lost.error.as_deref(), Some("连接已断开"));
+    assert_eq!(lost.mode.as_deref(), Some("Fault"));
+    assert_eq!(lost.fault_code, Some(7));
+    assert!(lost.stamp_ns.is_none() && lost.age_ms.is_none());
+
+    let mut recovered = sample(&state.source, 5_000_000_000);
+    recovered.position_rad.fill(0.5);
+    recovered.mode = S0Mode::Ready as i32;
+    recovered.safety_state = S0SafetyState::TorqueOffConfirmed as i32;
+    recovered.fault_code = 0;
+    state.accept(Ok(recovered), 5_000_000_000);
+    let fresh = state.view(5_000_000_000, 2000);
+    assert_eq!(fresh.data_status, "fresh");
+    assert_eq!(fresh.mode.as_deref(), Some("Ready"));
+    assert_eq!(fresh.safety_state.as_deref(), Some("TorqueOffConfirmed"));
+    assert_eq!(fresh.fault_code, Some(0));
+    assert!(
+        fresh
+            .joints
+            .iter()
+            .all(|joint| joint.position_rad == Some(0.5))
+    );
+    let expired = Snapshot {
+        stale_after_ms: 2000,
+        buses: vec![fresh],
+    }
+    .at_time(8_000_000_000);
+    assert_eq!(expired.buses[0].data_status, "stale");
+    assert_eq!(expired.buses[0].age_ms, Some(3000));
+}
+
+#[test]
 fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
     let parse = |listen: &str, endpoint: &str, stale: u64| ConfigFile {
         listen: listen.parse().unwrap(),
