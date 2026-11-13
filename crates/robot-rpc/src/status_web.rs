@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -149,10 +149,20 @@ impl StatusConfig {
     }
 }
 
-fn validate_file(file: &ConfigFile) -> Result<(), String> {
-    if !file.listen.ip().is_loopback() || file.listen.port() == 0 {
-        return Err("HTTP只允许固定端口的loopback地址".into());
+fn validate_http_listen(address: SocketAddr) -> Result<(), String> {
+    // Web可由同网段Nginx接入；不放开通配、公网或gRPC监听。
+    let allowed = match address.ip() {
+        IpAddr::V4(ip) => ip.is_loopback() || ip.is_private(),
+        IpAddr::V6(ip) => ip.is_loopback(),
+    };
+    if !allowed || address.port() == 0 {
+        return Err("HTTP只允许固定端口的loopback或显式IPv4 RFC1918私网地址".into());
     }
+    Ok(())
+}
+
+fn validate_file(file: &ConfigFile) -> Result<(), String> {
+    validate_http_listen(file.listen)?;
     if !(100..=10_000).contains(&file.poll_interval_ms)
         || !(50..=5_000).contains(&file.rpc_timeout_ms)
         || !(file.poll_interval_ms..=60_000).contains(&file.stale_after_ms)
@@ -542,7 +552,7 @@ fn router(state: WebState) -> Router {
         .with_state(state)
 }
 
-/// 在给定本机监听器上提供只读页面；关闭时回收轮询及已升级WebSocket任务。
+/// 在给定回环或IPv4私网监听器上提供只读页面；关闭时回收轮询及WebSocket任务。
 /// HTTP协作收尾最多等待2秒，超时返回错误，由CLI退出结束残余连接；
 /// 本函数不宣称强制销毁Axum内部已派生的连接任务。
 pub async fn serve(
@@ -550,14 +560,7 @@ pub async fn serve(
     config: StatusConfig,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), String> {
-    if !listener
-        .local_addr()
-        .map_err(|error| error.to_string())?
-        .ip()
-        .is_loopback()
-    {
-        return Err("HTTP监听器必须是loopback".into());
-    }
+    validate_http_listen(listener.local_addr().map_err(|error| error.to_string())?)?;
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
     let initial = Snapshot {
         stale_after_ms: config.stale_after_ms,

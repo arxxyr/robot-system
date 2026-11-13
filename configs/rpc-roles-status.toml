@@ -1,0 +1,5 @@
+# 只读状态部署专用；不配置控制凭据，GetState/StreamState 沿原免令牌语义。
+[tokens]
+
+[roles.viewer]
+capabilities = ["read_state"]

@@ -18,9 +18,21 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 `robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`独立运行只读HTTP/WebSocket页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
 
-这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET与只读WebSocket、只调用`GetState`，不能将原网关本身称为禁写服务。当前构建方式见[只读WebSocket入口](../../docs/control_plan.md#当前只读websocket入口)；Orin真实状态部署及Nginx外网接入仍待验收，Web不设置token，外部接入管理由用户已有系统承担。
+这些模板不在S0安装器、发布矩阵或自启清单内。状态部署入口会冻结产物并渲染绝对路径，不直接复制模板覆盖当前正式安装。原网关保留原生控制RPC；只读候选使用[rpc-roles-status.toml](../../configs/rpc-roles-status.toml)的空凭据表与viewer权限，不授予控制能力，也不覆盖原角色表。新增网页只提供状态GET与只读WebSocket、只调用`GetState`。当前构建方式见[只读WebSocket入口](../../docs/control_plan.md#当前只读websocket入口)；Web不设置token，外部接入管理由用户已有系统承担。
 
 状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；模板已静态检查，实际限额及峰值需在后续部署验收，不等于已在运行实例生效。
+
+### 状态服务安装与回滚
+
+使用[install_status_units.py](../install_status_units.py)，复用原文件身份校验、备份及同目录原子替换，仅管理两份bus网关和一份状态页unit。S0可保持运行；入口不检查串口占用、不触碰保护文件，不带任何start/stop/enable操作。
+
+- `prepare --candidate <绝对目录> --bin-dir <隔离构建的release目录> --bus1-config <当前S0配置绝对路径> --bus2-config <当前S0配置绝对路径> --runtime-commit <实际构建提交的完整SHA> --listen 10.0.1.40:8080`：在仓库脚本位置执行，复制两份AArch64程序，生成两份配置与三份unit，冻结七个文件及外部两份S0配置身份。输出清单SHA；候选目录必须不存在。
+- `check --candidate <目录> --manifest-sha256 <SHA>`：只读核候选和三个接入服务，拒绝运行中服务、待执行Job、未知drop-in或路径漂移，不要求停止S0。
+- `backup/install/rollback --candidate <目录> --manifest-sha256 <SHA> --backup-dir <绝对目录>`：写操作要求root。先备份三份unit原内容、权限或缺失状态，再安装；安装和回滚仅处理这些文件并执行`daemon-reload`。失败保留进度回执；回滚允许已知的部分安装，拒绝未知漂移。回滚前须停止本批三个上层服务，不停止S0。
+
+开发自测用`uv run --no-project python`；本轮准备好的启动入口使用已核对的固定Python。准备完成后再确认现场并启动：先两个网关，再Web；观察20秒，核实际unit/可执行程序、HTTP两源身份与8/9槽位、真实cgroup限额和所有Web线程CPU范围。真实反馈缺失或被拒收应保留原因，服务及资源通过不等于关节反馈健康。失败只清理本轮三个新服务；通过后可保留运行，自启另行安排。
+
+Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前只读websocket入口)。本项目不安装或重载Nginx。最终URL明确后再验外网WSS，不能以Orin本机HTTP成功代替。
 
 ## 安装与回滚
 

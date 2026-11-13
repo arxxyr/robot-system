@@ -1,6 +1,6 @@
 # 只读状态页；同机读取两个网关，不启动S0/S1、不访问电机。
 # 路径相对此文件。设备身份和关节表从原总线配置读取。
-# HTTP和gRPC均限定loopback；远程查看使用SSH端口转发。
+# HTTP默认loopback，也可配置显式IPv4私网地址供Nginx访问；gRPC仍限定loopback。
 listen = "127.0.0.1:8080"
 poll_interval_ms = 500
 # 仅为页面的新鲜度阈值，不修改S0看门狗或停止判据。

@@ -136,7 +136,7 @@ fn invalid_identity_layout_clock_and_values_never_replace_valid_state() {
 }
 
 #[test]
-fn config_rejects_remote_duplicate_sources_and_bad_budgets() {
+fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
     let parse = |listen: &str, endpoint: &str, stale: u64| ConfigFile {
         listen: listen.parse().unwrap(),
         poll_interval_ms: 500,
@@ -149,8 +149,38 @@ fn config_rejects_remote_duplicate_sources_and_bad_budgets() {
             endpoint: endpoint.into(),
         }],
     };
-    assert!(validate_file(&parse("0.0.0.0:8080", "http://127.0.0.1:50061", 2000)).is_err());
+    for listen in [
+        "127.0.0.1:8080",
+        "[::1]:8080",
+        "10.0.1.40:8080",
+        "172.16.0.1:8080",
+        "172.31.255.254:8080",
+        "192.168.1.40:8080",
+    ] {
+        assert!(validate_file(&parse(listen, "http://127.0.0.1:50061", 2000)).is_ok());
+    }
+    for listen in [
+        "0.0.0.0:8080",
+        "8.8.8.8:8080",
+        "172.15.255.254:8080",
+        "172.32.0.1:8080",
+        "192.169.1.40:8080",
+        "100.64.0.4:8080",
+        "169.254.1.2:8080",
+        "224.0.0.1:8080",
+        "255.255.255.255:8080",
+        "[::]:8080",
+        "[::ffff:10.0.1.40]:8080",
+        "[fd00::1]:8080",
+        "[fe80::1]:8080",
+        "[2001:db8::1]:8080",
+        "127.0.0.1:0",
+        "10.0.1.40:0",
+    ] {
+        assert!(validate_file(&parse(listen, "http://127.0.0.1:50061", 2000)).is_err());
+    }
     assert!(validate_file(&parse("127.0.0.1:8080", "http://10.0.1.40:50061", 2000)).is_err());
+    assert!(validate_file(&parse("10.0.1.40:8080", "http://10.0.1.40:50061", 2000)).is_err());
     assert!(validate_file(&parse("127.0.0.1:8080", "http://localhost:50061", 2000)).is_err());
     assert!(validate_file(&parse("127.0.0.1:8080", "http://127.0.0.1:50061", 1)).is_err());
     let mut config = parse("127.0.0.1:8080", "http://127.0.0.1:50061", 2000);
@@ -161,6 +191,31 @@ fn config_rejects_remote_duplicate_sources_and_bad_budgets() {
         endpoint: "http://127.0.0.1:50061".into(),
     });
     assert!(validate_file(&config).is_err());
+}
+
+#[test]
+fn deployment_roles_load_without_control_credentials() {
+    use crate::auth::{Capability, Role, load_role_table};
+
+    let text = include_str!("../../../configs/rpc-roles-status.toml");
+    let config: toml::Value = toml::from_str(text).unwrap();
+    assert!(config["tokens"].as_table().unwrap().is_empty());
+    let table = load_role_table(text).unwrap();
+    assert!(table.role_has_capability(Role::Viewer, Capability::ReadState));
+    for role in [Role::Viewer, Role::Operator, Role::Maintainer, Role::Admin] {
+        for capability in [
+            Capability::InvokeTask,
+            Capability::SetEnabled,
+            Capability::EStop,
+            Capability::ClearEStop,
+            Capability::ClearError,
+            Capability::ReloadCalibration,
+            Capability::SetPolicy,
+            Capability::Shutdown,
+        ] {
+            assert!(!table.role_has_capability(role, capability));
+        }
+    }
 }
 
 fn web_state() -> (
