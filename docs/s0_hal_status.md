@@ -41,7 +41,7 @@
 
 正式0.1.0安装根为`/home/loosqk/robot-checks/deploy-0.1.0-20261112`，S0候选在`candidate`，两份网关在`status/candidate`，均从发布提交`bc5603f100e50b57b8e28a889a800bf1062821b5`原生构建。S0备份为`/var/lib/robot/deploy-backup-s0-0.1.0-bc5603f`，原状态层备份为安装根下`status/backup`。S0、网关、校准、保护目录及旧Web产物仍留原位；本次相机开发未更新master或发布标签。
 
-Web当前运行开发提交`aff972cfeb828c22b909c7633b04678059957ad3`的Orin原生release候选，部署根为`/home/loosqk/robot-checks/web-resource-overview-20261112/deploy-aff972c`，unit引用其`candidate/bin/robot-status`及`candidate/configs/xlerobot-status.toml`。本轮只更新`robot-status.service`，677个编译输入与提交匹配；备份、清单、PLAN_ONLY、安装与部署后身份核验均通过。旧unit位于该根`backup/robot-status.service`，`robot-resource-rollback-web.sh`仅恢复Web到上一版相机候选`/home/loosqk/robot-checks/web-camera-preview-20261112/deploy-209ad4c`。两轮部署根、事务脚本及其引用的源码目录需保留。原三服务状态层回滚会涉及网关，不用于单Web回退。
+Web当前运行开发提交`2539a7ec577af4a447f8f95a95a764b4d2506947`的Orin原生release候选，部署根为`/home/loosqk/robot-checks/robot-service-resources-20261112/deploy-2539a7e`，unit引用其`candidate/bin/robot-status`及`candidate/configs/xlerobot-status.toml`。本轮只更新`robot-status.service`，679个编译输入与提交匹配；备份、清单、PLAN_ONLY、安装与部署后身份核验均通过。旧unit位于该根`backup/robot-status.service`，`robot-service-resource-rollback-web.sh`仅恢复Web到上一版资源面板候选`/home/loosqk/robot-checks/web-resource-overview-20261112/deploy-aff972c`。当前及旧部署根、事务脚本及其引用的源码目录需保留；上一版仍可仅Web回退到`/home/loosqk/robot-checks/web-camera-preview-20261112/deploy-209ad4c`。原三服务状态层回滚会涉及网关，不用于单Web回退。
 
 两侧S0、两份网关和状态页均`active/running`、`NRestarts=0`。两侧S0保持`auto_enable=false`、EStop锁存和可信只读；S0三服务保持enabled，preflight为`active/exited`。三个上层服务尚未配置开机自启。本轮验证了正常停止后的再次启动，未追加整机重启。
 
@@ -59,11 +59,13 @@ Web当前运行开发提交`aff972cfeb828c22b909c7633b04678059957ad3`的Orin原�
 - [ ] **4. 停止与异常收尾**：验证停用、急停、缺帧及超时，网络结果未知不自动重发；核对取消/失败返回启动锚点的现有行为，不将其包装为“停止当前位置”。必要语义变更先登记，保留原停止和锁存合同。
 - [ ] **5. 右侧复用**：左侧通过后对齐bus2的9槽位，复用相同控制路径验证一个位置关节；三轮raw0，不开放轮位置控制、单电机使能或双总线同时动作。
 - [x] **6. 低帧率相机预览**：独立Web进程从既有RGB观测镜像取得头部、左腕、右腕最新帧，归还共享内存后再编码JPEG；默认每路1Hz、320×240，间隔、尺寸、质量及陈旧阈值可配置。网页提供独立查看/暂停，慢端无逐帧队列，源时间不因重复收包续鲜，过期或错误隐藏图像；状态WebSocket保持独立。已仅更新Web并完成三路真实画面和外网验证，不再次打开相机或改采集配置；本轮30秒观测通过，长期USB稳定性及负载峰值仍未闭环。
-- [x] **7. 共享资源监控与页面更新**：开发提交`aff972cfeb828c22b909c7633b04678059957ad3`增加整机CPU、内存/交换空间、系统任务、上下文切换、各网络接口收发，以及Web自身线程/RSS。后台每2秒统一采样，浏览器仅查缓存；页面保留总线/关节节点，只更新变化字段，“反馈新鲜”改为“反馈正常/反馈超时”。已仅更新Web，资源实采与并发缓存读取验证通过。
+- [x] **7. 共享资源监控与页面更新**：页面顶部展示robot-system合计及各服务CPU核数/整机占比、cgroup内存与其中的共享内存、进程、线程和每秒上下文切换，并解释服务职责和统计口径；保留整机CPU、内存/交换空间、系统任务、上下文切换、各网络接口收发及Web自身线程/RSS。统一后台线程每2秒采样，浏览器仅查缓存；只更新变化字段，保留节点和选区，“反馈新鲜”改为“反馈正常/反馈超时”。服务范围为`system.slice/robot-*.service`及其子进程，当前5服务包含相机helper；不含该范围外的手动进程，网络仅展示整机接口，未按服务归属。服务内存不再叠加RSS或共享内存；“有进程/无进程”不代表服务健康或硬件状态。
 
-资源与页面更新的fmt、全workspace/all-targets及`status-web`专项Clippy通过；首轮专项Clippy发现8项新增lint，修正后复验零警告，首轮日志保留在本机临时路径。相关Rust测试38项通过/1项既有手动浏览器夹具忽略，其中11项新增资源测试覆盖计数/单位、异常输入、采样回退与关闭，64个并发GET仍仅读同一缓存。Chrome模拟重复快照下未变标签和位置为0次DOM修改，节点及选区保留；三路同源时间9次图像读取仅3次解码，17次资源读取最大在途1，故障、超时、恢复、后台暂停和390px布局通过。原始结果保留在本机临时路径，不提交Git。
+资源与页面更新的fmt、全workspace/all-targets及`status-web`专项Clippy通过；初版资源面板的8项及本轮服务统计的4项新增lint均已修正，复验零警告，首轮失败日志保留。本轮相关Rust测试51项通过/1项既有手动浏览器夹具忽略，新增13项覆盖服务汇总、子进程、共享内存、进程/线程身份变化、重建/回退、读取预算及采样隔离；既有64并发GET仍仅读同一缓存。Chrome模拟初次采样、真实零值、缺项、服务增减和停止后残留内存通过；未变服务节点0次DOM修改，删除前一服务仍保留后一服务的节点及完整选区，说明展开状态保持。27次资源读取最大在途1，相机重复帧、后台暂停/恢复及390px布局通过。单Web安装/回滚事务10项离线检查通过；原始结果保留在本机临时路径，不提交Git。
 
-本轮资源实采7轮，CPU在线核数和内存总量与`/proc`一致，源时间持续推进；8并发共32次GET在23.2ms内完成，均返回同一缓存源时间，最长单请求10.24ms。Web固定5个OS线程（仅1个资源采样线程），并发查询未增加线程。Web当前PID`287629`、重启数0；部署及验收窗口内S0 PID`272643/272696`、网关PID`200612/200632`及其运行标识、unit和配置均未变，两侧状态保持fresh/Safe/TorqueOffConfirmed/故障0。开发期间曾观察到S0 PID变化，本任务没有执行S0启停，因此不宣称整个开发时段S0身份未变。备份和仅Web回滚入口保留；原始资源结果位于新部署根`verify-resources/resources.json`。Chrome经内网转发和外网各验证7/7次资源读取、源时间持续推进；三路相机各入口各11/11帧成功，共66帧，均320×240。两入口各27个状态快照、17行关节，6.2秒观察内未变标签0次DOM修改，节点和文字选区保留；暂停/恢复、后台停读、断开资源查询和390px布局通过。业务API及页面异常为0；各入口仍有1次既有favicon 404，未扩展修复。浏览器原始结果与截图留在本机临时路径。
+本轮服务资源实采4轮、184项核对通过：5服务合计8进程/96线程，与递归cgroup.procs及pids.current逐项一致；内存与共享内存按相邻时刻的原始cgroup计数核对，CPU保留独立采样窗口对照，不冒充同一窗口。一次采样为0.437核、整机7.28%、内存3.00GiB，其中共享内存2.83GiB；仅为该观测窗口数据，不代表长期峰值。8并发共32次GET在28.7ms内完成，均返回同一缓存源时间；Web固定5个OS线程，仅1个资源采样线程，并发查询未增加线程。Web当前PID`290467`、重启数0；部署及验收窗口内S0 PID`272643/272696`、网关PID`200612/200632`及其运行标识、unit和配置均未变，两侧状态保持fresh/Safe/TorqueOffConfirmed/故障0。开发期间曾观察到S0 PID变化，本任务没有执行S0启停，因此不宣称整个开发时段S0身份未变。备份和仅Web回滚入口保留；原始资源结果位于新部署根`verify-services/resources.json`，前版整机资源实采记录仍在旧根`verify-resources/resources.json`。
+
+本轮Chrome经内网转发和外网各验证8/8次资源读取，源时间持续推进，5服务7项汇总均与明细一致，最大在途1；三路相机各入口各13/13帧成功，共78帧，均320×240。两入口均展示17行关节，未变总线及服务字段0次DOM修改，节点、文字选区及说明展开状态保留；暂停/恢复、后台停读、断开资源查询和390px布局通过。业务API、网络失败及页面异常为0；各入口仍有1次既有favicon 404，未扩展修复。浏览器原始结果与截图留在本机临时路径。
 
 相机预览开发使用独立worktree、隔离Orin源码与产物目录，nightly版本同下。fmt、全workspace/all-targets及`status-web`专项Clippy零警告；RPC串行334项通过/1项既有手动夹具忽略，包含9项新增相机测试和真实软件镜像→JPEG→HTTP/关闭回收。首次并行运行有1项原有subscriber生命周期测试在30秒超时，单独复查及串行全套通过，不回填首轮结果。Chrome模拟三路图像通过暂停、故障恢复、慢端单请求、重复源时间不续鲜及390px布局检查；安装脚本15项通过，本轮单Web事务另有10项离线检查通过。
 
