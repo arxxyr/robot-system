@@ -19,12 +19,12 @@
     .secondary { color: var(--ink); background: #fff; border-color: var(--line); }
     .secondary:hover:not(:disabled) { background: #f3f7fa; }
     header { background: var(--paper); border-bottom: 1px solid var(--line); }
-    .topbar { max-width: 1280px; margin: auto; padding: 19px 32px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+    .topbar { max-width: 1280px; margin: auto; padding: 12px 32px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
     .brand { font-size: 18px; font-weight: 750; letter-spacing: -.4px; display: flex; align-items: center; gap: 11px; }
     .brand-mark { width: 27px; height: 27px; background: var(--blue); border-radius: 6px; display: inline-grid; grid-template-columns: repeat(2, 5px); gap: 4px; place-content: center; }
     .brand-mark i { background: #fff; border-radius: 1px; width: 5px; height: 5px; }
     .readonly { color: var(--muted); font-size: 13px; }
-    main { max-width: 1280px; margin: 0 auto; padding: 34px 32px 28px; }
+    main { max-width: 1280px; margin: 0 auto; padding: 18px 32px 24px; }
     .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; margin-bottom: 25px; }
     h1 { margin: 0 0 6px; font-size: clamp(25px, 3vw, 31px); letter-spacing: -.7px; line-height: 1.35; }
     .subtitle { margin: 0; color: var(--muted); font-size: 14px; }
@@ -91,13 +91,22 @@
     .robot-summary .resource-grid dd.robot-network-note { font-size: 13px; font-weight: 500; color: var(--muted); }
     .robot-summary .section-row { margin-bottom: 17px; }
     .resource-subheading { margin: 20px 0 14px; font-size: 14px; }
-    .robot-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-    .robot-service { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 8px; }
-    .robot-service-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-    .robot-service-title { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
-    .robot-service-name { margin: 3px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-    .robot-service-description, .robot-service-error { margin: 9px 0 12px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-    .robot-service-error { color: var(--amber); }
+    .robot-services { display: grid; gap: 8px; }
+    .robot-service { min-width: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .robot-service-row { display: grid; grid-template-columns: minmax(170px, 1.5fr) repeat(3, minmax(100px, .8fr)) 28px; align-items: center; gap: 16px; padding: 12px 15px; cursor: pointer; list-style: none; }
+    .robot-service-row::-webkit-details-marker { display: none; }
+    .robot-service-identity { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+    .robot-service-title { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+    .robot-service-row .badge { padding: 2px 7px; font-size: 10px; }
+    .robot-service-core { display: grid; gap: 2px; min-width: 0; }
+    .robot-service-core-label { color: var(--muted); font-size: 10px; }
+    .robot-service-value { font-size: 12px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .service-disclosure { color: var(--muted); font-size: 11px; }
+    .robot-service-details[open] .service-disclosure { color: var(--blue); }
+    .robot-service-body { border-top: 1px solid var(--line); background: #f8fafc; padding: 12px 15px; }
+    .robot-service-name { margin: 0 0 6px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .robot-service-description, .robot-service-error { margin: 0 0 12px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .robot-service-error { color: var(--amber); margin: 12px 0 0; }
     .robot-service .resource-grid { gap: 12px; }
     .robot-service .resource-grid dt { font-size: 11px; }
     .robot-service .resource-grid dd { font-size: 13px; font-weight: 550; }
@@ -131,24 +140,112 @@
     @media (max-width: 900px) { .resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .buses { grid-template-columns: 1fr; } .cameras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 560px) { .robot-services { grid-template-columns: 1fr; } .robot-summary { padding: 14px; } .robot-summary .resource-grid dd { font-size: 19px; } .resources { padding: 16px; } .resource-networks { grid-template-columns: 1fr; } .resource-heading { flex-wrap: wrap; gap: 6px; } .resource-grid { gap: 16px 12px; } .resource-grid dd { font-size: 14px; } .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
     @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } .connection-actions { flex-wrap: wrap; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
+    .monitor-toolbar { position: sticky; top: 0; z-index: 5; padding: 8px 0 0; margin-bottom: 20px; background: var(--bg); }
+    .toolbar-main { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 12px; }
+    .toolbar-main h1 { margin: 0; font-size: 25px; }
+    .toolbar-main .subtitle { font-size: 12px; margin-top: 3px; }
+    .toolbar-main .access { margin: 0; padding: 0; border: 0; background: none; display: flex; align-items: center; gap: 15px; }
+    .toolbar-main .connection { margin: 0; font-size: 12px; }
+    .toolbar-main button { padding: 7px 12px; font-size: 12px; }
+    .feedback-strip { display: flex; align-items: baseline; gap: 12px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12px; }
+    .feedback-strip[data-tone="bad"] { border-color: #efceca; background: #fff5f3; }
+    .feedback-strip[data-tone="warn"] { border-color: #edd9af; background: #fffaf0; }
+    #global-feedback-summary { font-weight: 600; flex-shrink: 0; }
+    #global-alert { color: var(--muted); overflow-wrap: anywhere; }
+    .dashboard-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-bottom: 1px solid var(--line); margin-top: 12px; }
+    .dashboard-tab { padding: 10px 12px; text-align: center; text-decoration: none; color: var(--muted); font-size: 14px; border-bottom: 3px solid transparent; }
+    .dashboard-tab[aria-selected="true"] { color: var(--blue); border-bottom-color: var(--blue); font-weight: 650; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #91b9db; outline-offset: 3px; }
+    .view-panel { scroll-margin-top: 195px; }
+    .text-link { color: var(--blue); font-size: 12px; text-decoration: none; white-space: nowrap; }
+    .text-link:hover { text-decoration: underline; }
+    .overview-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; margin-bottom: 22px; }
+    .overview-metric { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 15px 18px; min-width: 0; }
+    .overview-metric h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+    .overview-metric strong { display: block; font-size: 27px; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .overview-metric p { margin: 6px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .overview-buses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+    .overview-buses .empty { min-height: 145px; padding: 30px 18px; }
+    .overview-bus { padding: 15px 18px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+    .overview-bus-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 13px; }
+    .overview-bus h3 { margin: 0; font-size: 16px; }
+    .overview-bus dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+    .overview-bus dt { color: var(--muted); font-size: 11px; }
+    .overview-bus dd { margin: 3px 0 0; font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+    .overview-note { color: var(--muted); font-size: 12px; margin: 12px 0 0; }
+    .overview-actions { margin-top: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .overview-actions a { padding: 8px 13px; border: 1px solid var(--line); border-radius: 7px; text-decoration: none; font-size: 13px; color: var(--blue); background: #fff; }
+    .overview-actions a:first-child { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .resource-fold { margin-top: 14px; border: 1px solid var(--line); border-radius: 7px; }
+    .resource-fold > summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 11px 13px; }
+    .resource-fold-body { padding: 5px 13px 14px; }
+    .resources { margin-bottom: 0; }
+    .robot-summary { margin: 12px 0 17px; padding: 14px 16px; }
+    .robot-summary .resource-grid dd { font-size: 19px; }
+    .robot-summary .resource-grid { gap: 12px 20px; }
+    .robot-summary .section-row { margin-bottom: 12px; }
+    .resource-subheading { margin: 0; }
+    .camera-section { margin-top: 0; }
+    footer { margin-top: 16px; font-size: 11px; }
+    @media (max-width: 900px) { .robot-service-row { grid-template-columns: minmax(130px, 1.4fr) repeat(3, minmax(75px, .8fr)) 22px; gap: 10px; } }
+    @media (max-width: 560px) {
+      .topbar { padding: 10px 16px; } main { padding: 10px 16px 20px; }
+      .monitor-toolbar { padding-top: 4px; margin-bottom: 15px; }
+      .toolbar-main { align-items: flex-start; flex-direction: column; gap: 10px; padding-bottom: 10px; }
+      .toolbar-main h1 { font-size: 22px; } .toolbar-main .subtitle { display: none; }
+      .toolbar-main .access { justify-content: space-between; width: 100%; gap: 8px; }
+      .toolbar-main .connection-actions { gap: 6px; flex-wrap: nowrap; }
+      .toolbar-main button { flex: none; padding: 6px 10px; }
+      .feedback-strip { flex-direction: column; gap: 2px; padding: 8px 10px; font-size: 11px; }
+      .dashboard-nav { margin-top: 9px; } .dashboard-tab { padding: 9px 5px; font-size: 13px; }
+      .overview-metrics { gap: 8px; margin-bottom: 17px; }
+      .overview-metric { padding: 12px 10px; } .overview-metric h3 { font-size: 10px; }
+      .overview-metric strong { font-size: 21px; } .overview-metric p { font-size: 10px; }
+      .overview-buses { grid-template-columns: 1fr; gap: 10px; } .overview-bus { padding: 12px 14px; }
+      .overview-bus-heading { margin-bottom: 10px; } .overview-bus h3 { font-size: 14px; }
+      .overview-bus dd { font-size: 12px; } .overview-note { font-size: 11px; }
+      .overview-actions { margin-top: 15px; gap: 7px; } .overview-actions a { font-size: 12px; padding: 7px 10px; }
+      .robot-service-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; padding: 11px 12px; }
+      .robot-service-identity { grid-column: 1 / -1; padding-right: 30px; }
+      .service-disclosure { grid-column: 3; grid-row: 1; justify-self: end; align-self: start; }
+      .robot-service-value { font-size: 11px; } .robot-service-core-label { font-size: 10px; }
+      .robot-service-body { padding: 11px 12px; }
+    }
   </style>
 </head>
 <body>
   <header><div class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>robot-system</div><span class="readonly">只读监控 · 不下发控制命令</span></div></header>
   <main>
-    <div class="title-row">
-      <div><h1>机器人状态</h1><p class="subtitle">查看总线反馈、关节位置、保护状态与相机画面。</p></div>
-      <div id="connection" class="connection" data-tone="neutral" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">尚未连接</span></div>
-    </div>
-    <section class="access" aria-label="只读访问">
-      <div class="connection-actions">
-        <button id="connect" class="primary" type="button">连接查看</button>
-        <button id="disconnect" class="secondary" type="button" disabled>断开查看</button>
+    <div class="monitor-toolbar">
+      <div class="toolbar-main">
+        <div><h1>机器人监控</h1><p class="subtitle">状态、画面与资源，按需要查看。</p></div>
+        <section class="access" aria-label="只读访问">
+          <div id="connection" class="connection" data-tone="neutral" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">尚未连接</span></div>
+          <div class="connection-actions"><button id="connect" class="primary" type="button">连接查看</button><button id="disconnect" class="secondary" type="button" disabled>断开查看</button></div>
+        </section>
       </div>
-      <p class="access-note">连接后持续接收状态；断开查看不会改变机器人状态。</p>
+      <div id="global-feedback" class="feedback-strip" data-tone="neutral"><span id="global-feedback-summary">尚无设备反馈</span><span id="global-alert" role="status">连接后查看源状态；服务有进程或软件处于 Safe 不能确认硬件安全。</span></div>
       <p id="notice" role="alert"></p>
+      <nav class="dashboard-nav" role="tablist" aria-label="查看内容">
+        <a id="nav-overview" class="dashboard-tab" role="tab" aria-controls="overview" aria-selected="true" tabindex="0" href="#overview" data-view="overview">总览</a>
+        <a id="nav-camera" class="dashboard-tab" role="tab" aria-controls="panel-camera" aria-selected="false" tabindex="-1" href="#camera" data-view="camera">相机</a>
+        <a id="nav-joints" class="dashboard-tab" role="tab" aria-controls="panel-joints" aria-selected="false" tabindex="-1" href="#joints" data-view="joints">关节</a>
+        <a id="nav-resources" class="dashboard-tab" role="tab" aria-controls="resources" aria-selected="false" tabindex="-1" href="#resources" data-view="resources">资源</a>
+      </nav>
+    </div>
+    <section id="overview" class="view-panel" role="tabpanel" aria-labelledby="nav-overview">
+      <div class="section-row"><h2>运行概况</h2><a class="text-link" href="#resources" data-view="resources">资源明细 →</a></div>
+      <div class="overview-metrics">
+        <article class="overview-metric"><h3>机器人 CPU 占整机</h3><strong id="overview-cpu">—</strong><p id="overview-cpu-detail">占用核数：—</p></article>
+        <article class="overview-metric"><h3>机器人内存</h3><strong id="overview-memory">—</strong><p>cgroup 计费，含共享内存</p></article>
+        <article class="overview-metric"><h3>计入服务数</h3><strong id="overview-services">—</strong><p id="overview-resource-status">等待资源采样</p></article>
+      </div>
+      <div class="section-row"><h2>总线反馈</h2><a class="text-link" href="#joints" data-view="joints">全部关节 →</a></div>
+      <div id="overview-buses" class="overview-buses"><div class="empty"><strong>尚无设备反馈</strong><p>连接后显示两条总线的软件与保护状态。</p></div></div>
+      <p class="overview-note">反馈正常表示源数据及时更新；保护状态仍以实际读回为准。</p>
+      <div class="overview-actions"><a href="#camera" data-view="camera">查看相机画面</a><a href="#joints" data-view="joints">查看关节位置</a><a href="#resources" data-view="resources">查看服务资源</a></div>
     </section>
-    <section id="resources" class="resources" aria-label="机器人与整机资源占用" data-state="paused">
+    <section id="resources" class="resources view-panel" role="tabpanel" aria-labelledby="nav-resources" hidden aria-label="机器人与整机资源占用" data-state="paused">
       <div class="section-row"><div class="resource-heading"><h2>资源占用</h2><span id="resource-status" class="badge" data-tone="neutral">尚未连接</span></div><span id="resource-age">每 2 秒更新</span></div>
       <div id="robot-system-summary" class="robot-summary">
         <div class="section-row"><div class="resource-heading"><h3>robot-system 总占用</h3><span id="robot-system-status" class="badge" data-tone="neutral">等待采样</span></div><span id="robot-system-count">服务数量：—</span></div>
@@ -170,10 +267,10 @@
         <p>CPU 百分比以整机全部逻辑核为 100%；占用核数是采样间隔内的平均 CPU 用量。例如占用 0.6 / 共 6 核，相当于整机 10%。</p>
         <p>服务内存使用 cgroup 计费，包含进程内存、共享内存和文件缓存等。“其中共享内存”已包含在内存数值中，不能再次相加；下方整机内存用于对照，两者口径不同。</p>
         <p>进程数包含服务的子进程，例如相机采集辅助进程；线程数包含这些进程的全部 OS 线程。服务职责由各行说明；有无进程不代表服务健康或硬件状态，无进程的服务仍按实际占用展示。</p>
-        <p>上下文切换反映线程调度频率，数值较高不等同于故障。速率需要相邻且可比较的采样；初次采样或进程、线程发生变化时，相关项显示“采样中”；“—”表示对应指标不可用。</p>
+        <p>上下文切换率是各线程自愿与非自愿切换计数的增量，除以实际采样间隔；当前仅展示合计。睡眠、等待或调度让出 CPU 都会产生切换，次数不等于 CPU 利用率，也不直接表示故障。速率需要相邻且可比较的采样；初次采样或进程、线程发生变化时，相关项显示“采样中”；“—”表示对应指标不可用。</p>
         <p>统计范围是 system.slice 下的 robot-*.service，后续纳入的 S1 等服务会自动列出。手动启动且未归属这些服务的进程不计入；服务级网络未单独采集，共享网卡流量不能准确归因到某一服务。</p>
       </details>
-      <h3 class="resource-subheading">整机对照</h3>
+      <details id="host-resources" class="resource-fold"><summary>整机对照 · CPU、内存与线程</summary><div class="resource-fold-body">
       <dl class="resource-grid">
         <div><dt>CPU 利用率 / 总量</dt><dd id="resource-cpu">—</dd><p id="resource-load" class="resource-detail">负载：—</p></div>
         <div><dt>内存已用 / 总量</dt><dd id="resource-memory">—</dd><p id="resource-available" class="resource-detail">可用：—</p></div>
@@ -182,17 +279,19 @@
         <div><dt>整机上下文切换</dt><dd id="resource-context-rate">—</dd><p id="resource-context-total" class="resource-detail">累计：—</p></div>
         <div><dt>Web 进程线程 / 常驻内存</dt><dd id="resource-web">—</dd><p class="resource-detail">仅当前 Web 服务，不是整机总量</p></div>
       </dl>
+      </div></details>
       <p id="resource-notice" class="resource-note">连接查看后读取资源采样。</p>
-      <h3 class="resource-networks-heading">网络接口 · 速率与累计流量</h3>
+      <details id="network-resources" class="resource-fold"><summary>网络接口 · 速率与累计流量</summary><div class="resource-fold-body">
       <div id="resource-networks" class="resource-networks"></div>
       <p id="resource-network-notice" class="resource-note">等待网络接口采样。</p>
       <p class="resource-note">各接口单独统计；物理接口与隧道接口的流量可能重复，不合并计算。</p>
+      </div></details>
     </section>
-    <section aria-label="总线状态">
+    <section id="panel-joints" class="view-panel" role="tabpanel" aria-labelledby="nav-joints" aria-label="总线状态" hidden>
       <div class="section-row"><h2>总线与关节</h2><span id="summary">等待状态数据</span></div>
       <div id="buses" class="buses"><div class="empty"><strong>尚未连接状态源</strong><p>连接后，按当前机器人配置显示设备及反馈。没有反馈时保留“未知”。</p></div></div>
     </section>
-    <section class="camera-section" aria-label="相机预览">
+    <section id="panel-camera" class="camera-section view-panel" role="tabpanel" aria-labelledby="nav-camera" aria-label="相机预览" hidden>
       <div class="section-row"><h2>相机画面</h2><span id="camera-summary">低帧率预览</span></div>
       <div class="camera-actions"><button id="camera-toggle" class="secondary" type="button" aria-pressed="false">查看画面</button><p>画面独立连接；暂停或切到后台时停止读取。</p></div>
       <p id="camera-notice" role="status">点击“查看画面”读取当前配置的相机。</p>
@@ -203,13 +302,18 @@
   <script>
     (() => {
       'use strict';
-      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras', 'resources', 'resource-status', 'resource-age', 'resource-cpu', 'resource-load', 'resource-memory', 'resource-available', 'resource-swap', 'resource-tasks', 'resource-context-rate', 'resource-context-total', 'resource-web', 'resource-notice', 'resource-networks', 'resource-network-notice', 'robot-system-summary', 'robot-system-status', 'robot-system-count', 'robot-system-cpu', 'robot-system-cpu-cores', 'robot-system-memory', 'robot-system-shmem', 'robot-system-processes', 'robot-system-threads', 'robot-system-context-rate', 'robot-system-notice', 'robot-services', 'robot-services-notice'].map(id => [id, document.getElementById(id)]));
+      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras', 'resources', 'resource-status', 'resource-age', 'resource-cpu', 'resource-load', 'resource-memory', 'resource-available', 'resource-swap', 'resource-tasks', 'resource-context-rate', 'resource-context-total', 'resource-web', 'resource-notice', 'resource-networks', 'resource-network-notice', 'robot-system-summary', 'robot-system-status', 'robot-system-count', 'robot-system-cpu', 'robot-system-cpu-cores', 'robot-system-memory', 'robot-system-shmem', 'robot-system-processes', 'robot-system-threads', 'robot-system-context-rate', 'robot-system-notice', 'robot-services', 'robot-services-notice', 'global-feedback', 'global-feedback-summary', 'global-alert', 'overview-cpu', 'overview-cpu-detail', 'overview-memory', 'overview-services', 'overview-resource-status', 'overview-buses', 'host-resources', 'network-resources'].map(id => [id, document.getElementById(id)]));
       const modeText = { Safe: 'Safe · 安全态', Ready: 'Ready · 就绪', Enabled: 'Enabled · 已使能', Fault: 'Fault · 故障', Stopping: 'Stopping · 停止中' };
       const linkText = { Ok: '正常', Lost: '已丢失' };
       const outputText = { Active: '执行输出', Hold: '保持', Zero: '零输出', Stop: '停止输出' };
       const safetyText = { TorqueUnknown: '扭矩未知', TorqueOn: '总线上扭', StopCommanded: '已请求停止', TorqueOffConfirmed: '已确认断扭', StopFailed: '停止失败', AdapterUncertain: '未确认' };
       const statusText = { fresh: '反馈正常', stale: '反馈超时', unavailable: '无可用反馈', invalid: '反馈不匹配' };
       const jointLabels = { shoulder_pan: '肩部旋转', shoulder_lift: '肩部抬升', elbow_flex: '肘关节', wrist_flex: '腕部俯仰', wrist_roll: '腕部旋转', gripper: '夹爪', head_motor_1: '头部关节 1', head_motor_2: '头部关节 2', base_left_wheel: '左轮', base_front_wheel: '前轮', base_right_wheel: '右轮' };
+      const views = ['overview', 'camera', 'joints', 'resources'];
+      const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), resources: elements.resources };
+      let activeView = 'overview';
+      const overviewBusCards = new Map();
+      let overviewBusOrder = [];
       let activeSession = null;
       let snapshot = null;
       let receivedAt = 0;
@@ -278,6 +382,111 @@
         for (let index = 0; index < children.length; index++) {
           if (parent.children[index] !== children[index]) parent.insertBefore(children[index], parent.children[index] || null);
         }
+      }
+      function viewFromHash() {
+        const value = window.location.hash.slice(1);
+        return views.includes(value) ? value : 'overview';
+      }
+      function selectView(view, push = false, focus = false) {
+        if (!views.includes(view)) return;
+        const changed = activeView !== view;
+        if (push && window.location.hash !== `#${view}`) window.history.pushState(null, '', `#${view}`);
+        if (activeView === 'camera' && view !== 'camera' && preview) stopPreview('已离开相机页，画面已暂停；返回后点击“查看画面”继续。');
+        activeView = view;
+        for (const name of views) {
+          setProperty(panels[name], 'hidden', name !== view);
+          const tab = document.getElementById(`nav-${name}`);
+          setAttribute(tab, 'aria-selected', name === view);
+          setAttribute(tab, 'tabindex', name === view ? '0' : '-1');
+        }
+        if (focus) document.getElementById(`nav-${view}`).focus();
+        if (changed) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        renderCurrentView();
+      }
+      function renderCurrentView() {
+        if (document.hidden) return;
+        render();
+        renderResourcesData();
+        renderResourcesStatus();
+        if (activeView === 'camera') for (const camera of cameraCards) renderCameraAge(camera);
+      }
+      function renderGlobalFeedback() {
+        if (document.hidden) return;
+        const buses = snapshot?.buses || [];
+        const alerts = [];
+        let tone = 'neutral';
+        if (!activeSession && snapshot) alerts.push('状态连接已断开，设备数据为最后报告');
+        for (const bus of buses) {
+          const label = bus.label || bus.id;
+          const status = statusOf(bus);
+          const old = status === 'fresh' ? '' : '（最后报告）';
+          if (Number.isInteger(bus.fault_code) && bus.fault_code > 0) { alerts.push(`${label}故障码 ${bus.fault_code}${old}`); tone = 'bad'; }
+          else if (bus.mode === 'Fault') { alerts.push(`${label}软件故障${old}`); tone = 'bad'; }
+          if (bus.safety_state === 'StopFailed') { alerts.push(`${label}停止失败${old}`); tone = 'bad'; }
+          else if (bus.safety_state === 'AdapterUncertain' || bus.safety_state === 'TorqueUnknown') alerts.push(`${label}扭矩未确认${old}`);
+          if (status !== 'fresh') alerts.push(`${label}${statusText[status]}`);
+        }
+        if (resourceSession && resourceError) alerts.push('资源采样不可用');
+        else if (resourceSession && (resourceTimedOut || (resourceSnapshot && currentResourceAge() > resourceSnapshot.stale_after_ms))) alerts.push('资源采样超时');
+        const robot = robotSystemView(resourceSnapshot?.robot_system);
+        if (resourceSession && robot?.status === 'partial') alerts.push('机器人资源部分指标不可用');
+        else if (resourceSession && robot?.status === 'unavailable') alerts.push('机器人服务统计不可用');
+        const fresh = buses.filter(bus => statusOf(bus) === 'fresh').length;
+        setText(elements['global-feedback-summary'], buses.length ? `${fresh} / ${buses.length} 条总线反馈正常` : '尚无设备反馈');
+        setText(elements['global-alert'], alerts.length ? alerts.join('；') : '软件与保护状态按源报告展示；Safe 或服务有进程不能确认硬件安全。');
+        setAttribute(elements['global-feedback'], 'data-tone', tone === 'bad' ? 'bad' : alerts.length ? 'warn' : fresh ? 'good' : 'neutral');
+      }
+      function makeOverviewBus(bus) {
+        const article = node('article', 'overview-bus');
+        const heading = node('div', 'overview-bus-heading');
+        const title = node('h3');
+        const badge = node('span', 'badge');
+        heading.append(title, badge);
+        const metrics = node('dl');
+        const fields = Object.fromEntries(['软件状态', '保护状态', '故障码'].map(label => {
+          const item = node('div');
+          const value = node('dd', '', '未知');
+          item.append(node('dt', '', label), value);
+          metrics.append(item);
+          return [label, value];
+        }));
+        article.append(heading, metrics);
+        return { article, title, badge, fields };
+      }
+      function renderOverviewBuses() {
+        if (activeView !== 'overview' || !snapshot || document.hidden) return;
+        const order = snapshot.buses.map(busKey);
+        for (const bus of snapshot.buses) {
+          const key = busKey(bus);
+          let card = overviewBusCards.get(key);
+          if (!card) { card = makeOverviewBus(bus); overviewBusCards.set(key, card); }
+          const status = statusOf(bus);
+          setText(card.title, bus.label || bus.id);
+          setText(card.badge, statusText[status]);
+          setAttribute(card.badge, 'data-tone', status === 'fresh' ? 'good' : status === 'invalid' ? 'bad' : 'warn');
+          const old = status === 'fresh' ? '' : '（最后报告）';
+          setText(card.fields['软件状态'], `${valueText(bus.mode, modeText)}${old}`);
+          setText(card.fields['保护状态'], `${valueText(bus.safety_state, safetyText)}${old}`);
+          setText(card.fields['故障码'], Number.isInteger(bus.fault_code) ? `${bus.fault_code}${old}` : '未知');
+          setAttribute(card.fields['故障码'], 'data-tone', bus.fault_code > 0 ? 'bad' : null);
+        }
+        if (JSON.stringify(order) !== JSON.stringify(overviewBusOrder)) {
+          syncChildren(elements['overview-buses'], order.map(key => overviewBusCards.get(key).article));
+          for (const key of overviewBusCards.keys()) if (!order.includes(key)) overviewBusCards.delete(key);
+          overviewBusOrder = order;
+        }
+      }
+      function renderOverviewResources(paused, timedOut) {
+        if (activeView !== 'overview' || document.hidden) return;
+        const robot = robotSystemView(resourceSnapshot?.robot_system);
+        const sampling = robot?.status === 'ok';
+        const cores = resourceSnapshot?.cpu?.logical_cores;
+        setText(elements['overview-cpu'], robotCpuPercent(robot?.totals?.cpu_percent, sampling));
+        setText(elements['overview-cpu-detail'], `占用 ${robotCpuCores(robot?.totals?.cpu_cores, sampling)} / ${Number.isSafeInteger(cores) && cores > 0 ? cores : '—'} 核`);
+        setText(elements['overview-memory'], bytesText(robot?.totals?.memory_bytes));
+        setText(elements['overview-services'], robot && robot.status !== 'unavailable' ? countText(robot.service_count) : '—');
+        const status = paused ? resourceSnapshot ? '最后采样 · 已暂停' : '等待连接' : timedOut ? '资源采样超时' : resourceError ? '资源采样不可用' : robot?.status === 'partial' ? '部分指标不可用' : robot?.status === 'ok' ? '资源采样正常' : '等待有效采样';
+        setText(elements['overview-resource-status'], status);
       }
       function setConnection(text, tone) {
         connectionView = { text, tone };
@@ -394,7 +603,10 @@
         }
       }
       function render() {
-        if (document.hidden || !snapshot) return;
+        if (document.hidden) return;
+        renderGlobalFeedback();
+        renderOverviewBuses();
+        if (activeView !== 'joints' || !snapshot) return;
         const order = snapshot.buses.map(busKey);
         for (const bus of snapshot.buses) {
           const key = busKey(bus);
@@ -482,26 +694,52 @@
       function makeRobotService(service) {
         const article = node('article', 'robot-service');
         article.setAttribute('data-service-name', service.name);
-        const heading = node('div', 'robot-service-heading');
-        const identity = node('div');
-        const title = node('h4', 'robot-service-title');
-        const name = node('p', 'robot-service-name', service.name);
-        identity.append(title, name);
+        const details = node('details', 'robot-service-details');
+        const summary = node('summary', 'robot-service-row');
+        const identity = node('span', 'robot-service-identity');
+        const title = node('span', 'robot-service-title');
         const badge = node('span', 'badge');
-        heading.append(identity, badge);
+        identity.append(title, badge);
+        summary.append(identity);
+        const fields = {};
+        for (const [key, label] of [['CPU', 'CPU 占整机'], ['内存（cgroup）', '内存'], ['上下文切换率', '上下文切换']]) {
+          const item = node('span', 'robot-service-core');
+          const value = node('strong', 'robot-service-value', '—');
+          fields[key] = value;
+          item.append(node('span', 'robot-service-core-label', label), value);
+          summary.append(item);
+        }
+        summary.append(node('span', 'service-disclosure', '详情'));
+        const body = node('div', 'robot-service-body');
+        const name = node('p', 'robot-service-name', service.name);
         const description = node('p', 'robot-service-description');
         const error = node('p', 'robot-service-error');
         error.hidden = true;
         const metrics = node('dl', 'resource-grid');
-        const fields = Object.fromEntries(['CPU', '内存（cgroup）', '其中共享内存', '进程数', '线程数', '上下文切换率'].map(label => {
+        for (const label of ['其中共享内存', '进程数', '线程数']) {
           const item = node('div');
           const value = node('dd', '', '—');
+          fields[label] = value;
           item.append(node('dt', '', label), value);
           metrics.append(item);
-          return [label, value];
-        }));
-        article.append(heading, description, metrics, error);
-        return { article, title, badge, description, error, fields };
+        }
+        body.append(name, description, metrics, error);
+        details.append(summary, body);
+        article.append(details);
+        const card = { article, details, title, badge, description, error, fields, service: null };
+        details.addEventListener('toggle', () => renderRobotServiceDetails(card));
+        return card;
+      }
+      function renderRobotServiceDetails(card) {
+        if (activeView !== 'resources' || document.hidden || !card.details.open || !card.service) return;
+        const service = card.service;
+        setText(card.description, service.description || '尚未提供服务职责说明。');
+        const error = typeof service.error === 'string' ? service.error : '';
+        setText(card.error, error);
+        setProperty(card.error, 'hidden', !error);
+        setText(card.fields['其中共享内存'], bytesText(service.shmem_bytes));
+        setText(card.fields['进程数'], countText(service.processes));
+        setText(card.fields['线程数'], countText(service.threads));
       }
       function renderRobotSystemData() {
         const system = robotSystemView(resourceSnapshot?.robot_system);
@@ -523,20 +761,16 @@
           let card = robotServiceCards.get(service.name);
           if (!card) { card = makeRobotService(service); robotServiceCards.set(service.name, card); }
           setText(card.title, service.label || service.name);
-          setText(card.description, service.description || '尚未提供服务职责说明。');
+          card.service = service;
           const detail = typeof service.error === 'string' ? service.error : '';
-          setText(card.error, detail);
-          setProperty(card.error, 'hidden', !detail);
           const serviceSampling = system.status !== 'unavailable' && service.status === 'running' && !detail;
           const percent = robotCpuPercent(service.cpu_percent, serviceSampling);
           const cpuCores = robotCpuCores(service.cpu_cores, serviceSampling);
           const cpuValue = percent === '采样中' && cpuCores === '采样中' ? '采样中' : percent === '—' && cpuCores === '—' ? '—' : `${percent} · ${cpuCores} 核`;
           setText(card.fields.CPU, cpuValue);
           setText(card.fields['内存（cgroup）'], bytesText(service.memory_bytes));
-          setText(card.fields['其中共享内存'], bytesText(service.shmem_bytes));
-          setText(card.fields['进程数'], countText(service.processes));
-          setText(card.fields['线程数'], countText(service.threads));
           setText(card.fields['上下文切换率'], robotContextRate(service.context_switches_per_second, serviceSampling));
+          renderRobotServiceDetails(card);
         }
         if (JSON.stringify(order) !== JSON.stringify(robotServiceOrder)) {
           syncChildren(elements['robot-services'], order.map(name => robotServiceCards.get(name).article));
@@ -578,23 +812,26 @@
         setText(elements['robot-system-notice'], note);
       }
       function renderResourcesData() {
-        if (document.hidden || !resourceSnapshot) return;
+        if (document.hidden || activeView !== 'resources' || !resourceSnapshot) return;
         renderRobotSystemData();
         const { cpu, memory, tasks, context_switches: context, networks, web_process: web } = resourceSnapshot;
-        const usage = finiteNonnegative(cpu?.usage_percent) && cpu.usage_percent <= 100 ? `${cpu.usage_percent.toFixed(1)}%` : cpu?.usage_percent === null ? '采样中' : '—';
-        const cores = Number.isSafeInteger(cpu?.logical_cores) && cpu.logical_cores > 0 ? `${cpu.logical_cores} 逻辑核` : '总量未知';
-        setText(elements['resource-cpu'], cpu ? `${usage} / ${cores}` : '—');
-        const load = Array.isArray(cpu?.load_average) && cpu.load_average.length === 3 && cpu.load_average.every(finiteNonnegative) ? cpu.load_average.map(value => value.toFixed(2)).join(' / ') : '—';
-        setText(elements['resource-load'], `负载：${load}（1 / 5 / 15 分钟）`);
-        const validMemory = memory && finiteNonnegative(memory.total_bytes) && finiteNonnegative(memory.used_bytes) && memory.used_bytes <= memory.total_bytes && finiteNonnegative(memory.available_bytes) && memory.available_bytes <= memory.total_bytes;
-        setText(elements['resource-memory'], validMemory ? `${bytesText(memory.used_bytes)} / ${bytesText(memory.total_bytes)}` : '—');
-        setText(elements['resource-available'], `可用：${validMemory ? bytesText(memory.available_bytes) : '—'}`);
-        const validSwap = memory && finiteNonnegative(memory.swap_total_bytes) && finiteNonnegative(memory.swap_used_bytes) && memory.swap_used_bytes <= memory.swap_total_bytes;
-        setText(elements['resource-swap'], validSwap ? `${bytesText(memory.swap_used_bytes)} / ${bytesText(memory.swap_total_bytes)}` : '—');
-        setText(elements['resource-tasks'], tasks ? `${countText(tasks.running)} / ${countText(tasks.total)}` : '—');
-        setText(elements['resource-context-rate'], context ? rateText(context.per_second) : '—');
-        setText(elements['resource-context-total'], `累计：${context ? countText(context.total) : '—'} 次`);
-        setText(elements['resource-web'], web ? `${countText(web.threads)} 线程 / ${bytesText(web.resident_bytes)}` : '—');
+        if (elements['host-resources'].open) {
+          const usage = finiteNonnegative(cpu?.usage_percent) && cpu.usage_percent <= 100 ? `${cpu.usage_percent.toFixed(1)}%` : cpu?.usage_percent === null ? '采样中' : '—';
+          const cores = Number.isSafeInteger(cpu?.logical_cores) && cpu.logical_cores > 0 ? `${cpu.logical_cores} 逻辑核` : '总量未知';
+          setText(elements['resource-cpu'], cpu ? `${usage} / ${cores}` : '—');
+          const load = Array.isArray(cpu?.load_average) && cpu.load_average.length === 3 && cpu.load_average.every(finiteNonnegative) ? cpu.load_average.map(value => value.toFixed(2)).join(' / ') : '—';
+          setText(elements['resource-load'], `负载：${load}（1 / 5 / 15 分钟）`);
+          const validMemory = memory && finiteNonnegative(memory.total_bytes) && finiteNonnegative(memory.used_bytes) && memory.used_bytes <= memory.total_bytes && finiteNonnegative(memory.available_bytes) && memory.available_bytes <= memory.total_bytes;
+          setText(elements['resource-memory'], validMemory ? `${bytesText(memory.used_bytes)} / ${bytesText(memory.total_bytes)}` : '—');
+          setText(elements['resource-available'], `可用：${validMemory ? bytesText(memory.available_bytes) : '—'}`);
+          const validSwap = memory && finiteNonnegative(memory.swap_total_bytes) && finiteNonnegative(memory.swap_used_bytes) && memory.swap_used_bytes <= memory.swap_total_bytes;
+          setText(elements['resource-swap'], validSwap ? `${bytesText(memory.swap_used_bytes)} / ${bytesText(memory.swap_total_bytes)}` : '—');
+          setText(elements['resource-tasks'], tasks ? `${countText(tasks.running)} / ${countText(tasks.total)}` : '—');
+          setText(elements['resource-context-rate'], context ? rateText(context.per_second) : '—');
+          setText(elements['resource-context-total'], `累计：${context ? countText(context.total) : '—'} 次`);
+          setText(elements['resource-web'], web ? `${countText(web.threads)} 线程 / ${bytesText(web.resident_bytes)}` : '—');
+        }
+        if (!elements['network-resources'].open) return;
         const available = Array.isArray(networks);
         setProperty(elements['resource-networks'], 'hidden', !available || networks.length === 0);
         setText(elements['resource-network-notice'], !available ? '网络统计不可用。' : !networks.length ? '当前未报告网络接口。' : '');
@@ -624,6 +861,9 @@
         const age = currentResourceAge();
         const paused = !resourceSession;
         const timedOut = resourceTimedOut || (resourceSnapshot && age > resourceSnapshot.stale_after_ms);
+        renderGlobalFeedback();
+        renderOverviewResources(paused, timedOut);
+        if (activeView !== 'resources') return;
         const text = paused ? activeSession ? '资源已暂停' : resourceSnapshot ? '已暂停' : '尚未连接' : timedOut ? '资源超时' : resourceError ? '资源不可用' : resourceSnapshot ? '资源正常' : '等待采样';
         setText(elements['resource-status'], text);
         setAttribute(elements['resource-status'], 'data-tone', !paused && !resourceError && !timedOut && resourceSnapshot ? 'good' : paused ? 'neutral' : 'warn');
@@ -764,7 +1004,7 @@
         return camera.stamp ? camera.age + Math.max(0, performance.now() - camera.receivedAt) : null;
       }
       function renderCameraAge(camera) {
-        if (document.hidden) return;
+        if (document.hidden || activeView !== 'camera') return;
         const age = cameraAge(camera);
         const fresh = preview && !camera.error && age !== null && age <= preview.config?.stale_after_ms && camera.url;
         setText(camera.badge, fresh ? '画面正常' : camera.error ? '无可用画面' : age !== null ? '画面超时' : '等待画面');
@@ -807,7 +1047,7 @@
         return { id: definition.id, image, placeholder, badge, meta, stamp: null, age: 0, receivedAt: 0, error: null, url: null, pendingUrl: null, controller: null, timer: null };
       }
       async function readCamera(session, camera) {
-        if (preview !== session) return;
+        if (preview !== session || activeView !== 'camera') return;
         const controller = new AbortController();
         camera.controller = controller;
         const timeout = setTimeout(() => controller.abort(), 3000);
@@ -872,7 +1112,7 @@
         }
       }
       async function startPreview() {
-        if (document.hidden) return;
+        if (document.hidden || activeView !== 'camera') return;
         const session = { controller: new AbortController(), config: null };
         preview = session;
         setText(elements['camera-toggle'], '暂停画面');
@@ -918,11 +1158,35 @@
           if (activeSession?.socket.readyState === WebSocket.OPEN) startResources(activeSession);
           render();
           renderResourcesStatus();
-          for (const camera of cameraCards) renderCameraAge(camera);
+          if (activeView === 'camera') for (const camera of cameraCards) renderCameraAge(camera);
         }
       });
+      document.addEventListener('click', event => {
+        const link = event.target.closest('a[data-view]');
+        if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        selectView(link.dataset.view, true);
+      });
+      document.querySelector('.dashboard-nav').addEventListener('keydown', event => {
+        const tab = event.target.closest('[role="tab"]');
+        if (!tab) return;
+        const current = views.indexOf(tab.dataset.view);
+        let next = current;
+        if (event.key === 'ArrowRight') next = (current + 1) % views.length;
+        else if (event.key === 'ArrowLeft') next = (current + views.length - 1) % views.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = views.length - 1;
+        else if (event.key !== ' ') return;
+        event.preventDefault();
+        selectView(views[next], true, true);
+      });
+      if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
+      window.addEventListener('hashchange', () => selectView(viewFromHash()));
+      window.addEventListener('popstate', () => selectView(viewFromHash()));
+      for (const id of ['host-resources', 'network-resources']) elements[id].addEventListener('toggle', renderResourcesData);
+      selectView(viewFromHash());
       // 仅推进展示年龄，不把页面计时或重复收包当成新的设备采样。
-      const ageTimer = setInterval(() => { if (document.hidden) return; render(); renderResourcesStatus(); for (const camera of cameraCards) renderCameraAge(camera); }, 500);
+      const ageTimer = setInterval(() => { if (document.hidden) return; render(); renderResourcesStatus(); if (activeView === 'camera') for (const camera of cameraCards) renderCameraAge(camera); }, 500);
       window.addEventListener('pagehide', () => { clearInterval(ageTimer); closeSession(); stopPreview('画面已暂停。'); });
     })();
   </script>
