@@ -27,4 +27,5 @@ pub mod events_drain;
 pub mod freeze_control;
 pub mod liveness;
 pub mod rr_server;
+pub mod single_joint;
 pub mod state_cache;

@@ -119,6 +119,10 @@ pub const SCHEMA_SET_ENABLED_REQUEST: u32 = 0x0000_040D;
 /// （S0 → gateway；wire `RpcStatus` + domain `SetEnabledStatus`）。
 pub const SCHEMA_SET_ENABLED_RESPONSE: u32 = 0x0000_040E;
 
+/// `robot.msg.SingleJointPositionPayload`：Scripted 单关节定位输入。
+/// 使用独立 schema，旧 S1 必须拒绝，不能按完整向量请求解释。
+pub const SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD: u32 = 0x0000_040F;
+
 // -----------------------------------------------------------------------------
 // deprecated 登记
 // -----------------------------------------------------------------------------
@@ -173,6 +177,10 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
     (SCHEMA_IK_PAYLOAD, "robot.msg.IkPayload"),
     (SCHEMA_SET_ENABLED_REQUEST, "robot.msg.SetEnabledRequest"),
     (SCHEMA_SET_ENABLED_RESPONSE, "robot.msg.SetEnabledResponse"),
+    (
+        SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+        "robot.msg.SingleJointPositionPayload",
+    ),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

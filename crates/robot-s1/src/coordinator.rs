@@ -157,6 +157,8 @@ pub enum ConfigError {
         "hold_strategy must be \"anchor\" in B1 (got {0:?}); zero/neutral/from_config land in B2"
     )]
     InvalidHoldStrategy(String),
+    #[error("invalid single_joint configuration: {0}")]
+    InvalidSingleJoint(String),
     /// 配置里没有匹配 `--hardware-id` 的 `[[hardware]]` section。
     #[error("hardware section with id={0:?} not found in config")]
     HardwareIdNotFound(String),
@@ -232,6 +234,7 @@ struct S1Section {
     #[serde(default)]
     #[allow(dead_code)]
     profile: Option<toml::Value>,
+    single_joint: Option<crate::single_joint::SingleJointConfig>,
 }
 
 /// 把 TOML 文本（daemon `--config` 同款）解析成 [`CoordinatorConfig`]。
@@ -304,6 +307,21 @@ pub fn parse_s1_section_from_toml(toml_text: &str) -> Result<CoordinatorConfig, 
     }
 
     Ok(cfg)
+}
+
+/// 单关节运动配置缺省关闭；显式配置必须完整匹配本实例硬件布局。
+pub fn parse_single_joint_config_from_toml(
+    text: &str,
+    hardware: &HardwareSection,
+) -> Result<Option<crate::single_joint::SingleJointConfig>, ConfigError> {
+    let wrap: Wrapper = toml::from_str(text).map_err(|e| ConfigError::Toml(e.to_string()))?;
+    let config = wrap.s1.and_then(|section| section.single_joint);
+    if let Some(config) = &config {
+        config
+            .validate(hardware)
+            .map_err(ConfigError::InvalidSingleJoint)?;
+    }
+    Ok(config)
 }
 
 // ============================================================================
@@ -665,7 +683,7 @@ pub(crate) fn check_state_frame(
     }
 
     let stamp_ns = js.stamp_ns();
-    if stamp_ns == 0 || now_ns.saturating_sub(stamp_ns) > max_stale_ns {
+    if stamp_ns == 0 || stamp_ns > now_ns || now_ns.saturating_sub(stamp_ns) > max_stale_ns {
         return Err(FrameCheckError::Stale {
             stamp_ns,
             now_ns,
@@ -986,9 +1004,10 @@ where
 /// 心跳与命令分别按配置周期门控，发布失败向调用方返回错误：
 ///
 /// - `Degraded` 仍发送心跳，不把 S1 内部降级当作 S0 控制链路失活。
-/// - `Idle` 保持 [`Coordinator::idle_hold_target`]：初值为启动锚点；仅 Scripted
-///   成功且末 waypoint 已发布后改为末 target，其余 backend/终态重置为启动锚点。
-/// - `Degraded` 始终保持启动锚点，与 `Idle` 的成功后保持目标分开。
+/// - `Idle` 保持 [`Coordinator::idle_hold_target`]：初值为启动锚点；Scripted
+///   成功后保持末目标，新单关节请求中断时保持最后成功发布目标。
+///   旧载荷及其他后端的中断仍重置为启动锚点。
+/// - `Degraded` 与 `Idle` 共用终态保持目标；旧后端失败仍重置启动锚点。
 /// - 保持命令经 `Coordinator::hold_command` 构造；混合实例的轮 raw 固定为零。
 /// - `Executing` 调用 [`Coordinator::tick_action`]，透传当前 `cmd_seq` 作为 backend
 ///   的命令序号来源；`Some(body)` 发布 backend 命令，`None` 不发保持替代命令，
@@ -1019,7 +1038,6 @@ where
     C: RobotClock,
 {
     let cfg = coordinator.config();
-    let bias = coordinator.anchor_bias();
     let loop_metrics = coordinator.loop_metrics();
 
     let start_ns = clock.now().0;
@@ -1103,9 +1121,9 @@ where
                     published = true;
                 }
                 CoordinatorState::Degraded { .. } => {
-                    // Degraded hold cmd：target = 启动 anchor_bias，**不**
-                    // 解锁（D3 行为矩阵末行；Idle 与 Degraded 自此分源）。
-                    let body = coordinator.hold_command(bias, state.cmd_seq, now_ns);
+                    // 与Idle使用同一终态目标；旧后端失败仍显式恢复启动锚点。
+                    let target = coordinator.idle_hold_target();
+                    let body = coordinator.hold_command(&target, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
                         body,
@@ -1131,6 +1149,7 @@ where
                             cfg.source_id,
                             now_ns,
                         )?;
+                        coordinator.command_published(clock.now().0);
                         published = true;
                     }
                     // None 路径：不 publish；cmd_seq 不递增 —— reviewer
@@ -1518,7 +1537,9 @@ use crate::action::{
 };
 use crate::action_backend::BackendRegistry;
 use crate::liveness::TickLoopMetrics;
-use crate::state_cache::{StaleOrMissing, StateCacheHandle, StateCacheLiveness};
+use crate::state_cache::{
+    JointFeedbackSnapshot, StaleOrMissing, StateCacheHandle, StateCacheLiveness,
+};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -1545,6 +1566,7 @@ struct CurrentAction {
     /// 收敛 = `Cancelled`，backend 收敛报错 = `Failed`，**不**双发。
     pending_cancel: bool,
     last_progress: f32,
+    needs_feedback: bool,
 }
 
 /// Coordinator 内部状态（state machine + current action + finished ring）。
@@ -1558,7 +1580,7 @@ struct InnerState {
     /// `Idle` 状态 hold cmd 的 target（v0.5 候选 E 段(5)，Spec D3 第 3
     /// 条穷尽式单一规则）。初值 = 启动 `anchor_bias`；`tick_action`
     /// 终态处按 [`InnerState::apply_terminal_hold_target`] 更新 / reset。
-    /// `Degraded` 路径**不**读本字段（永远 anchor_bias）。
+    /// `Degraded` 也读取本字段，使单关节任务失败后不会回拉启动锚点。
     idle_hold_target: Vec<f64>,
 }
 
@@ -1572,11 +1594,8 @@ impl InnerState {
         }
     }
 
-    /// 终态 hold target 单一规则（Spec D3 第 3 条）：`Some(t)`（仅
-    /// Success-Scripted 末 waypoint 已发布）→ `idle_hold_target = t`；
-    /// `None`（其余所有 backend × 终态组合）→ 显式 reset =
-    /// `anchor_bias`。`Some(t)` 长度与 `anchor_bias` 不等 = backend 契约
-    /// 违反 → warn + reset（防御：绝不让错长 target 上线）。
+    /// 有明确终态目标时保持该完整向量；None沿旧后端语义重置启动锚点。
+    /// 单关节中断目标来自最后成功发布的命令，或首次发布前的提交快照。
     fn apply_terminal_hold_target(&mut self, hold_target: Option<Vec<f64>>, anchor_bias: &[f64]) {
         match hold_target {
             Some(t) if t.len() == anchor_bias.len() => {
@@ -1654,6 +1673,7 @@ pub struct Coordinator {
     /// Backend `start` / `tick` 的 [`ActionContext`] 字段集（非 RT，
     /// 启动期 + tick 期间复用）。
     config: CoordinatorConfig,
+    single_joint_config: Option<crate::single_joint::SingleJointConfig>,
     hardware: HardwareSection,
     layout_id: u64,
     anchor_bias: Vec<f64>,
@@ -1723,6 +1743,7 @@ impl Coordinator {
             enabled_backends,
             registry,
             config,
+            single_joint_config: None,
             hardware,
             layout_id,
             anchor_bias,
@@ -1756,6 +1777,23 @@ impl Coordinator {
         self
     }
 
+    /// 注入已经按硬件布局校验的运动配置；缺省保持单关节入口关闭。
+    #[must_use]
+    pub fn with_single_joint_config(
+        mut self,
+        config: Option<crate::single_joint::SingleJointConfig>,
+    ) -> Self {
+        self.single_joint_config = config;
+        self
+    }
+
+    /// 发布成功后才推进中断保持目标，不把生成但未发送的命令当作已执行。
+    pub fn command_published(&self, published_at_ns: u64) {
+        if let Some(action) = self.lock_inner().current.as_mut() {
+            action.instance.command_published(published_at_ns);
+        }
+    }
+
     /// 是否已注入 state cache（诊断 / 测试）。
     #[must_use]
     pub fn has_state_cache(&self) -> bool {
@@ -1781,7 +1819,7 @@ impl Coordinator {
 
     /// 当前 `Idle` hold target 快照（v0.5 候选 E 段(5) D3 第 3 条）。
     /// [`run_action_tick_loop`] `Idle` 分支每 cmd 周期读；初值 = 启动
-    /// `anchor_bias`，仅 Success-Scripted 终态后变更，其余终态 reset。
+    /// `anchor_bias`；单关节中断后也保持其已确认的终态目标。
     #[must_use]
     pub fn idle_hold_target(&self) -> Vec<f64> {
         self.lock_inner().idle_hold_target.clone()
@@ -1922,8 +1960,8 @@ impl Coordinator {
         // v0.5 候选 E 段(5) D3 第 1 条：Scripted 起点 = 提交时当前位
         // （state cache 最新鲜帧）；其余 kind 恒 None（穷举 match 让新增
         // ActionKind 编译期显式表态）。
-        let scripted_start_pose: Option<Vec<f64>> = match req.kind {
-            ActionKind::Scripted => Some(self.fetch_scripted_start_pose(now_ns)?),
+        let feedback = match req.kind {
+            ActionKind::Scripted => Some(self.fetch_scripted_start_snapshot(clock)?),
             ActionKind::DwellMs | ActionKind::HoldPose | ActionKind::Ik => None,
         };
 
@@ -1933,7 +1971,11 @@ impl Coordinator {
             hardware: &self.hardware,
             config: &self.config,
             anchor_bias: &self.anchor_bias,
-            scripted_start_pose: scripted_start_pose.as_deref(),
+            scripted_start_pose: feedback
+                .as_ref()
+                .map(|snapshot| snapshot.positions.as_slice()),
+            single_joint_config: self.single_joint_config.as_ref(),
+            feedback: feedback.as_ref(),
             // submit 路径不在 publish frame seq 流上；backend.start 通常
             // 不产 body bytes（仅返 ActionInstance），用 0 哨兵安全（详
             // ActionContext::command_seq doc）。
@@ -1965,6 +2007,8 @@ impl Coordinator {
             events_tx: tx,
             pending_cancel: false,
             last_progress: 0.0,
+            needs_feedback: req.payload_schema_id
+                == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
         });
 
         Ok(ActionTicket {
@@ -2006,6 +2050,8 @@ impl Coordinator {
             anchor_bias: &self.anchor_bias,
             // cancel 路径不取起点（仅 submit Scripted 路径填 Some）。
             scripted_start_pose: None,
+            single_joint_config: self.single_joint_config.as_ref(),
+            feedback: None,
             // cancel 路径不在 publish frame seq 流上；backend.cancel 通
             // 常仅 set flag 不产 body bytes，用 0 哨兵安全。
             command_seq: 0,
@@ -2066,14 +2112,9 @@ impl Coordinator {
     /// | `AdapterError(reason)` | `Degraded { reason }` |
     /// | `InternalError(reason)` | `Degraded { reason }` |
     ///
-    /// **终态 hold target（v0.5 候选 E 段(5)，Spec D3 第 3 条穷尽式单一
-    /// 规则）**：每个终态分支都显式落 `idle_hold_target`——
-    /// `Completed(Success) ∧ !pending_cancel` →
-    /// `instance.successful_hold_target()`（`Some(t)` → `t`；`None` →
-    /// reset anchor_bias）；`Completed(PartialSuccess)` / cancel 收敛 /
-    /// `Err(_)` 全部 reset = anchor_bias。行为矩阵（D3 第 4 条）各行 =
-    /// 本规则实例化：Scripted Success → 末 waypoint；Scripted cancel /
-    /// failure、IK / HoldPose / DwellMs 一切结局 → 启动 anchor。
+    /// 成功使用successful_hold_target；取消、PartialSuccess及失败使用
+    /// interrupted_hold_target。新单关节请求在中断后保持最后已发送目标，
+    /// 其他后端默认None，沿旧语义重置启动锚点；取消不表示已断扭。
     pub fn tick_action(
         &self,
         clock: &dyn RobotClock,
@@ -2089,6 +2130,16 @@ impl Coordinator {
         // 用方（典型 run_action_tick_loop）传的本帧 cmd_seq —— backend
         // 产 body bytes 时把它作为 source_task_id（详 ActionContext doc
         // + B3 outline §3.4 round 2 阻断 1 修法）。
+        let feedback = inner
+            .current
+            .as_ref()
+            .filter(|action| action.needs_feedback)
+            .and_then(|_| {
+                self.lock_state_cache()
+                    .as_ref()
+                    .and_then(|cache| cache.latest_fresh_snapshot(clock).ok())
+            });
+        let now_ns = clock.now().0;
         let mut ctx = ActionContext {
             clock,
             layout_id: self.layout_id,
@@ -2097,6 +2148,8 @@ impl Coordinator {
             anchor_bias: &self.anchor_bias,
             // tick 路径不取起点（Scripted 已在 start() 期 snapshot）。
             scripted_start_pose: None,
+            single_joint_config: self.single_joint_config.as_ref(),
+            feedback: feedback.as_ref(),
             command_seq,
             // IK solver borrow（v0.4 候选 2 round 2 (3/4)；详 submit 同款；
             // tick_action 路径上 IkBackend 自己用 ctx.solver 调 solve()，
@@ -2104,7 +2157,6 @@ impl Coordinator {
             solver: self.solver.as_deref(),
         };
 
-        let now_ns = clock.now().0;
         let Some(current) = inner.current.as_mut() else {
             // state 是 Executing 但 current 为空：不一致；防御性回 Idle
             // （非 Success 路径 → idle_hold_target reset = anchor_bias）。
@@ -2133,14 +2185,15 @@ impl Coordinator {
                 // ring buffer 写一条；drop current（events_tx drop → ticket
                 // 端 RecvError = 流关闭）。
                 //
-                // D3 第 3 条：hold target 仅在 `Success ∧ !pending_cancel` 问
-                // backend（successful_hold_target）；其余路径 None → reset。
+                // 成功与中断目标分开，取消不能被末帧成功覆盖。
                 let hold_target: Option<Vec<f64>> = if pending_cancel {
-                    None
+                    current.instance.interrupted_hold_target()
                 } else {
                     match &outcome {
                         ActionOutcome::Success => current.instance.successful_hold_target(),
-                        ActionOutcome::PartialSuccess { .. } => None,
+                        ActionOutcome::PartialSuccess { .. } => {
+                            current.instance.interrupted_hold_target()
+                        }
                     }
                 };
                 if pending_cancel {
@@ -2161,9 +2214,8 @@ impl Coordinator {
                 None
             }
             Err(failure) => {
-                // 终态 Failed：emit + ring + 状态转移（按 failure 类型）；
-                // hold target 一律 reset = anchor_bias（Idle 与 Degraded
-                // 两个去向都回启动锚点，D3 行为矩阵 failure 行 + 末行）。
+                // Failed仍按原错误类型转移；单关节中断保持目标同时用于Idle/Degraded。
+                let hold_target = current.instance.interrupted_hold_target();
                 let _ = current.events_tx.send(ActionEvent::Failed {
                     failure: failure.clone(),
                     at_ns: now_ns,
@@ -2178,7 +2230,7 @@ impl Coordinator {
                     | ActionFailure::AdapterError(reason)
                     | ActionFailure::InternalError(reason) => CoordinatorState::Degraded { reason },
                 };
-                inner.reset_idle_hold_target(&self.anchor_bias);
+                inner.apply_terminal_hold_target(hold_target, &self.anchor_bias);
                 None
             }
         }
@@ -2218,7 +2270,10 @@ impl Coordinator {
     /// 未注入 cache / `latest_fresh` 任一校验失败 →
     /// `SubmitError::BackendStartFailed(ActionStartError::Rejected(..))`
     /// （既有 wire 映射 → `FailedPrecondition`），**不** fallback。
-    fn fetch_scripted_start_pose(&self, now_ns: u64) -> Result<Vec<f64>, SubmitError> {
+    fn fetch_scripted_start_snapshot(
+        &self,
+        clock: &dyn RobotClock,
+    ) -> Result<JointFeedbackSnapshot, SubmitError> {
         let guard = self.lock_state_cache();
         let Some(cache) = guard.as_ref() else {
             return Err(SubmitError::BackendStartFailed(ActionStartError::Rejected(
@@ -2227,7 +2282,7 @@ impl Coordinator {
                     .into(),
             )));
         };
-        cache.latest_fresh(MonoRawNs(now_ns)).map_err(|e| {
+        cache.latest_fresh_snapshot(clock).map_err(|e| {
             SubmitError::BackendStartFailed(ActionStartError::Rejected(format!(
                 "scripted_start_pose unavailable: {e} (D3: no fallback to anchor_bias)"
             )))
@@ -2586,6 +2641,15 @@ hold_strategy      = "anchor"
         )
         .unwrap();
         assert_eq!(bias, vec![1.5, -2.5, 0.0]);
+    }
+
+    #[test]
+    fn parse_anchor_rejects_future_source_timestamp() {
+        let body = fresh_state_bytes(&[0.25], 1_000_000_001);
+        assert!(matches!(
+            parse_anchor_from_state_bytes(&body, 1, 0xBEEF, 1_000_000_000, 200_000_000),
+            Err(AnchorError::Stale { .. })
+        ));
     }
 
     #[test]
@@ -3769,6 +3833,7 @@ backends = 42
             events_tx: tx,
             pending_cancel: false,
             last_progress: 0.0,
+            needs_feedback: false,
         });
         ActionTicket {
             action_id,
@@ -4687,6 +4752,256 @@ backends = 42
                 .submit(scripted_request(&[vec![1.0, 1.0]]), &clock)
                 .expect_err("must reject");
             assert!(rejected_reason(&err).contains("no S1 state cache"));
+        }
+
+        fn single_joint_config() -> crate::single_joint::SingleJointConfig {
+            let text = include_str!("../../../configs/single-joint-smoke.toml");
+            let hardware = parse_hardware_section_from_toml(text, "arm").unwrap();
+            parse_single_joint_config_from_toml(text, &hardware)
+                .unwrap()
+                .unwrap()
+        }
+
+        fn single_joint_request() -> ActionRequest {
+            use robot_msg::msg::{SingleJointPositionPayload, SingleJointPositionPayloadArgs};
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let hardware_id = builder.create_string("arm");
+            let joint_name = builder.create_string("j0");
+            let payload = SingleJointPositionPayload::create(
+                &mut builder,
+                &SingleJointPositionPayloadArgs {
+                    hardware_id: Some(hardware_id),
+                    joint_name: Some(joint_name),
+                    target_position_rad: 0.5,
+                    duration_ms: 100,
+                },
+            );
+            builder.finish(payload, None);
+            ActionRequest {
+                payload_schema_id: robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+                payload: builder.finished_data().to_vec(),
+                ..scripted_request(&[vec![0.5, 0.25]])
+            }
+        }
+
+        fn publish_motion_feedback(
+            c: &Coordinator,
+            channel: &MockChannel<markers::JointState>,
+            clock: &MockClock,
+            positions: &[f64],
+            ready: bool,
+        ) {
+            use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
+            let stamp = clock.now().0;
+            let body = robot_msg::build_helpers::build_joint_state_with_s0(
+                LAYOUT,
+                stamp,
+                positions,
+                &[],
+                &[],
+                "",
+                if ready { S0Mode::Enabled } else { S0Mode::Safe },
+                S0ControlLink::Ok,
+                S0OutputMode::Active,
+                S0SafetyState::TorqueOn,
+                S0FaultCode::Unknown,
+            );
+            let mut publisher = channel.publisher();
+            let mut writer = publisher.loan(body.len() + 1024).unwrap();
+            writer.set_body_bytes(&body);
+            writer.set_stamp_ns(stamp);
+            writer.publish().unwrap();
+            for _ in 0..2000 {
+                let observed = c
+                    .lock_state_cache()
+                    .as_ref()
+                    .unwrap()
+                    .latest_fresh_snapshot(clock)
+                    .ok();
+                if observed.as_ref().is_some_and(|snapshot| {
+                    snapshot.stamp_ns == stamp
+                        && snapshot.positions == positions
+                        && snapshot.motion_ready == ready
+                }) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            panic!("模拟反馈未进入缓存");
+        }
+
+        fn single_joint_fixture() -> (Coordinator, MockChannel<markers::JointState>, MockClock) {
+            let channel = MockChannel::new();
+            let coordinator = attach_cache(scripted_coordinator(), &channel)
+                .with_single_joint_config(Some(single_joint_config()));
+            let clock = MockClock::new(MonoRawNs(1_000_000_000));
+            publish_motion_feedback(&coordinator, &channel, &clock, &[0.0, 0.25], true);
+            (coordinator, channel, clock)
+        }
+
+        fn tick_and_confirm_publish(c: &Coordinator, clock: &MockClock, seq: u64) -> Vec<f64> {
+            let command = c.tick_action(clock, seq).expect("应发布完整目标");
+            let target = decode_target(&command);
+            c.command_published(clock.now().0);
+            target
+        }
+
+        #[test]
+        fn single_joint_configuration_is_explicit_and_production_configs_remain_disabled() {
+            for (text, hardware_id) in [
+                (
+                    include_str!("../../../configs/xlerobot-bus1.toml"),
+                    "left_arm_full_with_head",
+                ),
+                (
+                    include_str!("../../../configs/xlerobot-bus2.toml"),
+                    "right_arm_full_with_base",
+                ),
+            ] {
+                let hardware = parse_hardware_section_from_toml(text, hardware_id).unwrap();
+                assert!(
+                    parse_single_joint_config_from_toml(text, &hardware)
+                        .unwrap()
+                        .is_none()
+                );
+            }
+            let text = include_str!("../../../configs/single-joint-smoke.toml");
+            assert!(parse_s1_section_from_toml(text).is_ok());
+            assert_eq!(
+                parse_profile_section_from_toml(text).unwrap().backends,
+                ["scripted"]
+            );
+            let hardware = parse_hardware_section_from_toml(text, "arm").unwrap();
+            let bad = text.replace("stable_window_ms = 40", "stable_window_ms = 201");
+            assert!(parse_single_joint_config_from_toml(&bad, &hardware).is_err());
+        }
+
+        #[test]
+        fn single_joint_uses_one_submit_snapshot_and_rejects_busy() {
+            let (c, channel, clock) = single_joint_fixture();
+            c.submit(single_joint_request(), &clock).unwrap();
+            assert!(matches!(
+                c.submit(single_joint_request(), &clock),
+                Err(SubmitError::BusyExecuting(_))
+            ));
+            clock.advance(DurationNs::from_nanos(1_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &[0.125, 0.375], true);
+            assert_eq!(tick_and_confirm_publish(&c, &clock, 1), [0.0, 0.25]);
+            clock.advance(DurationNs::from_nanos(50_000_000));
+            let halfway = tick_and_confirm_publish(&c, &clock, 2);
+            assert!((halfway[0] - 0.25).abs() < 1e-12);
+            assert_eq!(halfway[1], 0.25);
+        }
+
+        #[test]
+        fn single_joint_cancel_before_first_publish_keeps_submit_pose() {
+            let (c, _, clock) = single_joint_fixture();
+            let ticket = c.submit(single_joint_request(), &clock).unwrap();
+            c.cancel(ticket.action_id, &clock).unwrap();
+            assert!(c.tick_action(&clock, 1).is_none());
+            assert_eq!(c.idle_hold_target(), [0.0, 0.25]);
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Cancelled)
+            ));
+            assert_eq!(
+                ticket
+                    .events
+                    .try_iter()
+                    .filter(|event| matches!(event, ActionEvent::Cancelled { .. }))
+                    .count(),
+                1
+            );
+        }
+
+        #[test]
+        fn single_joint_cancel_never_commits_generated_but_unpublished_target() {
+            let (c, _, clock) = single_joint_fixture();
+            let ticket = c.submit(single_joint_request(), &clock).unwrap();
+            tick_and_confirm_publish(&c, &clock, 1);
+            clock.advance(DurationNs::from_nanos(50_000_000));
+            let committed = tick_and_confirm_publish(&c, &clock, 2);
+            clock.advance(DurationNs::from_nanos(25_000_000));
+            let unsent = c.tick_action(&clock, 3).unwrap();
+            assert_ne!(decode_target(&unsent), committed);
+            c.cancel(ticket.action_id, &clock).unwrap();
+            assert!(c.tick_action(&clock, 3).is_none());
+            assert_eq!(c.idle_hold_target(), committed);
+        }
+
+        #[test]
+        fn single_joint_deadline_keeps_last_published_target() {
+            let (c, _, clock) = single_joint_fixture();
+            let mut request = single_joint_request();
+            request.deadline_ns = clock.now().0 + 400_000_000;
+            let ticket = c.submit(request, &clock).unwrap();
+            tick_and_confirm_publish(&c, &clock, 1);
+            clock.advance(DurationNs::from_nanos(50_000_000));
+            let last = tick_and_confirm_publish(&c, &clock, 2);
+            clock.advance(DurationNs::from_nanos(350_000_000));
+            assert!(c.tick_action(&clock, 3).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Failed(ActionFailure::DeadlineExceeded))
+            ));
+            assert_eq!(c.idle_hold_target(), last);
+        }
+
+        #[test]
+        fn single_joint_fault_then_clear_error_preserves_target_without_reenable() {
+            let (c, channel, clock) = single_joint_fixture();
+            let ticket = c.submit(single_joint_request(), &clock).unwrap();
+            tick_and_confirm_publish(&c, &clock, 1);
+            clock.advance(DurationNs::from_nanos(50_000_000));
+            let last = tick_and_confirm_publish(&c, &clock, 2);
+            clock.advance(DurationNs::from_nanos(10_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &last, false);
+            assert!(c.tick_action(&clock, 3).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Failed(_))
+            ));
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Degraded { .. }
+            ));
+            assert_eq!(c.idle_hold_target(), last);
+            c.clear_error().unwrap();
+            assert_eq!(c.idle_hold_target(), last);
+            assert!(c.submit(single_joint_request(), &clock).is_err());
+        }
+
+        #[test]
+        fn single_joint_success_waits_for_advancing_all_joint_feedback() {
+            let (c, channel, clock) = single_joint_fixture();
+            let ticket = c.submit(single_joint_request(), &clock).unwrap();
+            tick_and_confirm_publish(&c, &clock, 1);
+            clock.advance(DurationNs::from_nanos(100_000_000));
+            assert_eq!(tick_and_confirm_publish(&c, &clock, 2), [0.5, 0.25]);
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &[0.5, 0.25], true);
+            tick_and_confirm_publish(&c, &clock, 3);
+            clock.advance(DurationNs::from_nanos(40_000_000));
+            tick_and_confirm_publish(&c, &clock, 4);
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Executing { .. }
+            ));
+            publish_motion_feedback(&c, &channel, &clock, &[0.5, 0.375], true);
+            tick_and_confirm_publish(&c, &clock, 5);
+            for (delta, seq) in [(20_000_000, 6), (20_000_000, 7)] {
+                clock.advance(DurationNs::from_nanos(delta));
+                publish_motion_feedback(&c, &channel, &clock, &[0.5, 0.25], true);
+                tick_and_confirm_publish(&c, &clock, seq);
+            }
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &[0.5, 0.25], true);
+            assert!(c.tick_action(&clock, 8).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Completed(ActionOutcome::Success))
+            ));
+            assert_eq!(c.idle_hold_target(), [0.5, 0.25]);
         }
 
         #[test]

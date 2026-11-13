@@ -418,6 +418,15 @@ fn run(args: &Args) -> Result<(), i32> {
         }
     };
 
+    let single_joint_config =
+        match coordinator::parse_single_joint_config_from_toml(&toml_text, &hardware) {
+            Ok(config) => config,
+            Err(error) => {
+                eprintln!("fatal: parse [s1.single_joint]: {error}");
+                return Err(error.exit_code());
+            }
+        };
+
     // ---- 加载 [s1.profile]（B2 (3/3) wiring）----
     // 缺失 [s1.profile] 走 ProfileSection::default_b2 = mock_dwell +
     // joint_position（reviewer 拍板：等价 B1 no-active-action 路径）。
@@ -575,7 +584,8 @@ fn run(args: &Args) -> Result<(), i32> {
         profile.backends.clone(),
         solver,
     )
-    .with_state_cache(state_cache);
+    .with_state_cache(state_cache)
+    .with_single_joint_config(single_joint_config);
     if let Err(e) = coordinator.mark_idle() {
         // Coordinator::new 总是构造在 Booting；mark_idle 仅 Booting → Idle
         // 接受，理论不可能失败。失败 = 内部状态机 bug。

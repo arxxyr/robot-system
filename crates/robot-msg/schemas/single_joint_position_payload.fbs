@@ -1,0 +1,16 @@
+// 单关节定位请求，由 S1 在接受任务时从同一新鲜快照补齐保持目标。
+// 通过 InvokeTask(kind=Scripted) 传递，使用独立 schema_id；旧 S1 拒绝未知 schema。
+// hardware_id 必须匹配所选 S1 的硬件，joint_name 按该硬件配置定位。
+// target_position_rad 单位为 rad；duration_ms 为正整数插值时长。
+// S1 负责校验显式运动范围、模式、有限值和所需速率；S0保留原校准限制。
+
+namespace robot.msg;
+
+table SingleJointPositionPayload {
+    hardware_id:         string (required);
+    joint_name:          string (required);
+    target_position_rad: double;
+    duration_ms:         uint;
+}
+
+root_type SingleJointPositionPayload;

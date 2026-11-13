@@ -1,113 +1,19 @@
-//! v0.4 候选 1 `ScriptedBackend`：joint-space 线性插值 + waypoint dwell。
+//! Scripted 动作后端：关节位置插值、驻留与单关节实测到位确认。
 //!
-//! ## 行为
+//! 同一 `scripted` profile 接受两种载荷：旧 `ScriptedPayload` 保留完整向量、
+//! 多 waypoint、末目标发布后完成的行为；`SingleJointPositionPayload` 仅替换
+//! 提交时新鲜完整快照中的一个目标，受显式运动配置、任务期限和反馈判据约束。
+//! 两者复用同一个插值实例，不创建另一条命令发布链。
 //!
-//! - `name()` = `"scripted"`（profile `[s1.profile.backends]` 引用名）。
-//! - `supported_kinds()` = `&[ActionKind::Scripted]`（v0.4 (1/3) atomic
-//!   land 后的新 variant；详 `crates/robot-s1/src/action.rs`）。
-//! - `supported_schemas()` = `&[SCHEMA_SCRIPTED_PAYLOAD]`（`0x0000_040B`；
-//!   **不**含 `NO_PAYLOAD_SCHEMA_ID`，跟 hold_pose 显著区分）。
-//! - `start(req, ctx)`：四项 semantic check（详 ## semantic check 段）→
-//!   一次性解码 `ScriptedPayload` 到 `Vec<DecodedWaypoint>` + snapshot
-//!   `ctx.scripted_start_pose`（**提交时当前位**，v0.5 候选 E 段(5)）作
-//!   `initial_pose` → 构造 [`ScriptedInstance`] 返 `Box<dyn ActionInstance>`。
-//!   `scripted_start_pose == None` → `ActionStartError::Rejected`（**不**
-//!   fallback 到 `ctx.anchor_bias`）。
-//! - `tick(ctx)`：phase 状态机推进（Interp → Dwell → next waypoint →
-//!   FinalEmitted）+ 线性插值算 target positions → 复用
-//!   [`crate::coordinator::build_hold_command`] 构 body bytes（
-//!   source_task_id == `ctx.command_seq`，B3 §3.7 单调契约）→ 末 waypoint
-//!   target **已发布一帧**后下一 tick 返 `Completed(ActionOutcome::Success)`
-//!   （详 ## 末点发布保证 段），中间段返
-//!   `Continue { progress, command: Some(body) }`。
-//! - `successful_hold_target()`：`final_published == true` 时返
-//!   `Some(末 waypoint positions)`——coordinator 仅在 `Completed(Success)`
-//!   且非 cancel 收敛时读，作 Idle hold target（Spec D3 第 3 条）。
-//! - `cancel()`：cooperative，set flag；下次 tick 返
-//!   `Completed(ActionOutcome::PartialSuccess { warning: "cancelled_at_waypoint_N" })`
-//!   （Q4(a) 拍板：backend lib 返 PartialSuccess，coordinator
-//!   `pending_cancel` 路径转 `ActionEvent::Cancelled` 写 stream）。
+//! 新单关节请求只支持纯位置总线。末目标发布成功后继续保持末目标，只有其后
+//! 新鲜反馈中的全部关节连续满足各自容差及稳定窗口才报告成功。取消先于反馈
+//! 检查、总期限先于取消；中断保持使用最后成功发布的完整目标，首次尚未发布
+//! 则使用提交快照。这不表示当前位置保持或断扭。旧全向量请求的取消/失败保持
+//! 语义继续由 coordinator 原分支决定。
 //!
-//! ## semantic check（`start()` 期；reviewer Plan round 3 拍板 only byte cap）
-//!
-//! `MAX_SCRIPTED_PAYLOAD_BYTES = 4 KiB` 是**唯一**容量上限（gateway
-//! byte cap，详 `crates/robot-rpc/src/task_handlers.rs`）。
-//! `ScriptedBackend::start()` **不**做 `decoded_waypoints.len()` count
-//! check / `> 100` 拒绝路径；只做四项：
-//!
-//! 1. `payload_schema_id == SCHEMA_SCRIPTED_PAYLOAD`（dispatch 守门已保，
-//!    本步 defensive 再断言；不匹配 → `ActionStartError::Rejected`）
-//! 2. `flatbuffers::root::<ScriptedPayload>(payload)` decode 成功（含
-//!    fbs verify）；失败 → `ActionStartError::PayloadDecode`
-//! 3. `waypoints` 非空（empty → `ActionStartError::Rejected`）
-//! 4. 每段 `positions.len() == hardware.joints.len()` +
-//!    `segment_duration_ms > 0`；任一段不满足 → `ActionStartError::Rejected`
-//!
-//! ## source_task_id 单调契约（B3 §3.7）
-//!
-//! Scripted body 的 `source_task_id` **必须**等于 `ctx.command_seq`，
-//! 由 `run_action_tick_loop` 透传当前 publish frame 的 `TickState.cmd_seq`
-//! 进 `ActionContext.command_seq`。**不**允许 backend 私有 counter 从
-//! 0 起增 —— 那会让 S0 `ipc_thread::join_command_to_buf` 把
-//! `fb.source_task_id()` 写到 `JointCommandBuf.seq` 时看到 seq 回退，
-//! 破坏 `adapter.rs` 单调递增契约。沿 hold_pose B3 round 2 阻断 1 修法。
-//!
-//! ## segment from/to 来源（reviewer Plan round 2 阻断 2 拍板 → v0.5 候选 E
-//!    段(5) D3 第 1 条改源）
-//!
-//! - segment 0 的 `from` = `start()` 期 snapshot 的
-//!   `initial_pose = ctx.scripted_start_pose.to_vec()`（**提交时当前位**，
-//!   coordinator 自常驻 state cache 取，已校 joint_count / layout / 新鲜度；
-//!   v0.4 候选 1 原为启动期 `ctx.anchor_bias`——CodeMap G1 P0 缺口：连续
-//!   chunk 从启动姿态重放）
-//! - segment i>0 的 `from` = `decoded_waypoints[i-1].positions`
-//! - 任一 segment 的 `to` = `decoded_waypoints[i].positions`
-//!
-//! `ctx.anchor_bias` 本 backend **不再读**（HoldPose 专用，Spec D3 第 5 条
-//! 物理隔离）；tick 期复用 `self.initial_pose` / `self.decoded_waypoints`
-//! 内部 owned 数据。
-//!
-//! ## 末点发布保证（v0.5 候选 E 段(5)，Spec D3 第 2 条 S1 阻断根修）
-//!
-//! v0.4 现状：`dwell_ms == 0` 时末 waypoint 填 `tick_buf` 后直接 advance
-//! → `Completed(Success)`，**该 tick 不产命令帧**；coordinator 对 Completed
-//! 帧不 publish → 末 target 可能从未上线。修法锁定：
-//!
-//! - `final_published: bool` = "末 waypoint target 已作为一帧
-//!   `Continue { command: Some }` 交给 coordinator publish"。
-//! - 末 waypoint 完成（`advance_waypoint_and_emit` 走到 `current_idx ==
-//!   len`）时：`final_published == false` → **先返一帧 Continue（target =
-//!   末 waypoint，progress 1.0）** 并进 [`Phase::FinalEmitted`]，**下一
-//!   tick** 才返 `Completed(Success)`；`final_published == true`（dwell>0
-//!   路径 Dwell 期已反复发末 target）→ 直接 `Completed(Success)`，行为不变。
-//! - dwell>0 路径：末 waypoint 进入 / 处于 Dwell 的每一帧（target = 末
-//!   waypoint）都置 `final_published = true`（首个 dwell 帧即置）。
-//! - 效果：`Completed(Success)` 严格晚于"末 target 已 publish"，保证
-//!   coordinator 提交 `idle_hold_target = 末 waypoint` 时该 target 已上线，
-//!   Idle hold 无跳变（G1 回拉半闭合）。
-//!
-//! ## progress 语义化（Q3(c) 组合拍板）
-//!
-//! `progress = (self.current_idx as f32 + segment_progress) /
-//! total_waypoints as f32`；其中 `segment_progress ∈ [0.0, 1.0]` 是当前
-//! segment 内的时间百分比（Interp 期）或 1.0（Dwell 期）。
-//! `current_idx` 是已**完成**的 waypoint 数；末段 Dwell 完之后
-//! progress 自然到 1.0 + Completed。
-//!
-//! ## tick_buf 复用（Q7 拍板）
-//!
-//! `self.tick_buf: Vec<f64>` 启动期 `Vec::with_capacity(hardware.joints.len())`
-//! 预分配，tick 期 `clear()` + extend；**避免** per-tick alloc。
-//! Hardware joint 数在 backend 生命周期内不变（`HardwareSection` 启动
-//! 期固化），不需 grow 防护。
-//!
-//! ## inventory 注册
-//!
-//! 整文件 `#[cfg(feature = "backend-scripted")]` gate（Q17(a) 拍板默
-//! 认 on）。Feature off 时整文件不 link → `BackendRegistry::from_inventory`
-//! 收集不到 scripted → `[s1.profile.backends = ["scripted"]]` 在
-//! `validate_profile_section` 报 `UnknownBackend`，符合"配置与编译
-//! profile 不匹配启动期 fail-fast"硬约束。
+//! 每条命令沿用 coordinator 的 `command_seq`，起点沿用 `scripted_start_pose`，
+//! 不回退启动锚点；混合总线旧请求继续保持三轮 raw0。tick 复用位置缓冲，
+//! 后端不创建线程、不直接访问硬件或发布 IPC。
 
 #![allow(clippy::doc_markdown)]
 
@@ -118,8 +24,9 @@ use crate::action::{
 use crate::coordinator::build_hardware_hold_command;
 #[cfg(test)]
 use crate::coordinator::build_hold_command;
+use crate::single_joint::{SingleJointExecution, SingleJointPlan, position_for_s0};
 use robot_msg::msg::ScriptedPayload as FbScriptedPayload;
-use robot_msg::schema_id::SCHEMA_SCRIPTED_PAYLOAD;
+use robot_msg::schema_id::{SCHEMA_SCRIPTED_PAYLOAD, SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD};
 
 // ============================================================================
 // ScriptedBackend
@@ -147,7 +54,10 @@ impl ActionBackend for ScriptedBackend {
     fn supported_schemas(&self) -> &[u32] {
         // **不**含 NO_PAYLOAD_SCHEMA_ID：Scripted 强制带 payload；
         // 跟 hold_pose / mock_dwell 显著区分。
-        const SCHEMAS: &[u32] = &[SCHEMA_SCRIPTED_PAYLOAD];
+        const SCHEMAS: &[u32] = &[
+            SCHEMA_SCRIPTED_PAYLOAD,
+            SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+        ];
         SCHEMAS
     }
 
@@ -156,6 +66,9 @@ impl ActionBackend for ScriptedBackend {
         req: &ActionRequest,
         ctx: &ActionContext<'_>,
     ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+        if req.payload_schema_id == SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD {
+            return Self::start_single_joint(req, ctx);
+        }
         // (1) defensive payload_schema_id check（dispatch 已守门，这里
         // 再防御性确认；如未来 dispatch 路径漂移可立刻定位）。
         if req.payload_schema_id != SCHEMA_SCRIPTED_PAYLOAD {
@@ -262,8 +175,36 @@ impl ActionBackend for ScriptedBackend {
             phase_started: false,
             final_published: false,
             tick_buf: Vec::with_capacity(expected_joints),
+            single_joint: None,
         };
         Ok(Box::new(instance))
+    }
+}
+
+impl ScriptedBackend {
+    fn start_single_joint(
+        req: &ActionRequest,
+        ctx: &ActionContext<'_>,
+    ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+        let plan = SingleJointPlan::prepare(req, ctx)?;
+        // prepare 已检查同一快照、完整维度、配置范围与硬件状态。
+        let initial_pose = plan.initial_pose;
+        let tick_buf = Vec::with_capacity(initial_pose.len());
+        Ok(Box::new(ScriptedInstance {
+            cancelled: false,
+            decoded_waypoints: vec![DecodedWaypoint {
+                positions: plan.positions,
+                dwell_ms: 0,
+                segment_duration_ms: plan.duration_ms,
+            }],
+            initial_pose,
+            current_idx: 0,
+            phase: Phase::Interp { start_ns: 0 },
+            phase_started: false,
+            final_published: false,
+            tick_buf,
+            single_joint: Some(plan.execution),
+        }))
     }
 }
 
@@ -292,7 +233,7 @@ struct DecodedWaypoint {
 ///
 /// 每个 waypoint 经历 `Interp` → `Dwell` → next waypoint（如果不是末
 /// 段）；末段完成后若末 target 尚未发布，先进 `FinalEmitted`（本 tick 发
-/// 末 target 帧）、下一 tick 才返 `Completed(Success)`（末点发布保证）。
+/// 末 target 帧）。旧请求下一 tick 完成，新单关节请求等待实测到位。
 #[derive(Debug, Clone, Copy)]
 enum Phase {
     /// 线性插值阶段：从 `from` 到 `to` 走 `segment_duration_ms`。
@@ -306,8 +247,8 @@ enum Phase {
         start_ns: u64,
     },
     /// 末 waypoint 已完成且末 target 帧已于上一 tick 返回（v0.5 候选 E
-    /// 段(5)）；下一 tick 直接 `Completed(Success)`，不再索引
-    /// `decoded_waypoints[current_idx]`（此时 `current_idx == len`）。
+    /// 段(5)）；旧请求下一 tick 完成，新请求继续末目标保持及反馈确认，
+    /// 不再索引 `decoded_waypoints[current_idx]`（此时 `current_idx == len`）。
     FinalEmitted,
 }
 
@@ -347,6 +288,8 @@ struct ScriptedInstance {
     /// tick 期目标位置缓冲（`with_capacity(hardware.joints.len())` 预
     /// 分配，tick 期 `clear()` + extend 复用；Q7 拍板避 per-tick alloc）。
     tick_buf: Vec<f64>,
+    /// 新单关节请求专有的约束与反馈状态；旧载荷恒为 None。
+    single_joint: Option<SingleJointExecution>,
 }
 
 impl ScriptedInstance {
@@ -378,15 +321,57 @@ impl ScriptedInstance {
             .last()
             .map_or(&[], |wp| wp.positions.as_slice())
     }
+
+    /// 插值与到位确认阶段共用当前目标缓冲及同一命令序号。
+    fn emit_current_target(
+        &mut self,
+        ctx: &ActionContext<'_>,
+        now_ns: u64,
+        progress: f32,
+    ) -> ActionTickOutput {
+        if self.single_joint.is_some() {
+            // 与 S0 实际位置表示一致；已验证端点的线性插值不以 clamp 修正。
+            for position in &mut self.tick_buf {
+                *position = position_for_s0(*position);
+            }
+        }
+        let body = build_hardware_hold_command(
+            ctx.config,
+            ctx.hardware,
+            ctx.layout_id,
+            &self.tick_buf,
+            ctx.command_seq,
+            now_ns,
+        );
+        ActionTickOutput::Continue {
+            progress,
+            command: Some(JointCommandBody::new(body)),
+        }
+    }
 }
 
 impl ActionInstance for ScriptedInstance {
     fn tick(&mut self, ctx: &mut ActionContext<'_>) -> Result<ActionTickOutput, ActionFailure> {
+        let now_ns = ctx.clock.now().0;
+        if let Some(single_joint) = self.single_joint.as_ref() {
+            single_joint.check_deadline(now_ns)?;
+        }
         // (1) cancel 短路（Q4(a)）：backend lib 返 PartialSuccess；
         // coordinator pending_cancel 路径会转成 ActionEvent::Cancelled
         // 写事件流。
         if self.cancelled {
             return Ok(ActionTickOutput::Completed(self.cancel_outcome()));
+        }
+
+        if let Some(single_joint) = self.single_joint.as_mut() {
+            let confirmed = single_joint.observe_feedback(now_ns, ctx.feedback)?;
+            if matches!(self.phase, Phase::FinalEmitted) {
+                if confirmed {
+                    return Ok(ActionTickOutput::Completed(ActionOutcome::Success));
+                }
+                // 等待实测到位时持续发末目标；没有发布回调也不能提前成功。
+                return Ok(self.emit_current_target(ctx, now_ns, 1.0));
+            }
         }
 
         // (1b) 末点发布保证收敛（v0.5 候选 E 段(5)）：上一 tick 已返末
@@ -396,8 +381,6 @@ impl ActionInstance for ScriptedInstance {
             debug_assert!(self.final_published, "FinalEmitted 必伴随 final_published");
             return Ok(ActionTickOutput::Completed(ActionOutcome::Success));
         }
-
-        let now_ns = ctx.clock.now().0;
 
         // (2) phase start_ns 延迟初始化（首次 tick 拿真 clock 填）。
         if !self.phase_started {
@@ -500,19 +483,7 @@ impl ActionInstance for ScriptedInstance {
 
         // (4) build_hold_command 复用（B3 §3.7 source_task_id 单调契约：
         // source_task_id == ctx.command_seq，**不**用私有 counter）。
-        let body = build_hardware_hold_command(
-            ctx.config,
-            ctx.hardware,
-            ctx.layout_id,
-            &self.tick_buf,
-            /* source_task_id */ ctx.command_seq,
-            /* now_ns */ now_ns,
-        );
-
-        Ok(ActionTickOutput::Continue {
-            progress: self.progress(segment_progress),
-            command: Some(JointCommandBody::new(body)),
-        })
+        Ok(self.emit_current_target(ctx, now_ns, self.progress(segment_progress)))
     }
 
     fn cancel(&mut self, _ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError> {
@@ -521,14 +492,26 @@ impl ActionInstance for ScriptedInstance {
         Ok(())
     }
 
-    /// v0.5 候选 E 段(5) D3 第 3 条终态数据通路：末 waypoint target 已发布
-    /// （`final_published`）→ `Some(末 waypoint positions)`；否则 `None`
-    /// （coordinator reset 回 anchor_bias）。coordinator 仅在
-    /// `Completed(Success) ∧ !pending_cancel` 时调用；cancel 收敛（即使
-    /// 发生在末帧之后）走 Cancelled → reset，本方法返值不参与。
+    /// 成功后的末目标；新请求还要求 publisher 明确回报末帧成功。
     fn successful_hold_target(&self) -> Option<Vec<f64>> {
-        self.final_published
-            .then(|| self.last_waypoint_positions().to_vec())
+        (self.final_published
+            && self
+                .single_joint
+                .as_ref()
+                .is_none_or(SingleJointExecution::final_target_published))
+        .then(|| self.last_waypoint_positions().to_vec())
+    }
+
+    fn command_published(&mut self, published_at_ns: u64) {
+        if let Some(single_joint) = self.single_joint.as_mut() {
+            single_joint.command_published(&self.tick_buf, self.final_published, published_at_ns);
+        }
+    }
+
+    fn interrupted_hold_target(&self) -> Option<Vec<f64>> {
+        self.single_joint
+            .as_ref()
+            .map(SingleJointExecution::interrupted_hold_target)
     }
 }
 
@@ -738,6 +721,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(start_pose),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let instance = backend.start(&req, &ctx).expect("start ok");
         (instance, cfg, hardware, anchor_bias, clock)
@@ -785,6 +770,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&anchor),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let mut instance = ScriptedBackend.start(&req, &ctx).unwrap();
         for (seq, elapsed_ms) in [0_u64, 50, 100, 150, 200].into_iter().enumerate() {
@@ -831,12 +818,18 @@ mod tests {
     // ----- 3. supported_schemas() -----
 
     #[test]
-    fn supported_schemas_is_scripted_payload_only() {
+    fn supported_schemas_include_legacy_and_single_joint() {
         // **不**含 NO_PAYLOAD_SCHEMA_ID（跟 hold_pose / mock_dwell 显
         // 著区分）。
         let b = ScriptedBackend;
         let schemas = b.supported_schemas();
-        assert_eq!(schemas, &[SCHEMA_SCRIPTED_PAYLOAD]);
+        assert_eq!(
+            schemas,
+            &[
+                SCHEMA_SCRIPTED_PAYLOAD,
+                SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
+            ]
+        );
     }
 
     // ----- 4. start_rejects_empty_waypoints -----
@@ -871,6 +864,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&anchor_bias),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -912,6 +907,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&anchor_bias),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -952,6 +949,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&anchor_bias),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -993,6 +992,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&start_pose),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(error) = backend.start(&req, &ctx) else {
             panic!("非法位置不能创建可运行或保存保持目标的实例");
@@ -1059,6 +1060,8 @@ mod tests {
             command_seq: 0,
             scripted_start_pose: Some(&anchor_bias),
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -1098,6 +1101,8 @@ mod tests {
                 command_seq: (i + 1) * 100, // 100, 200, 300, ...
                 scripted_start_pose: None,
                 solver: None,
+                single_joint_config: None,
+                feedback: None,
             };
             let out = instance.tick(&mut ctx).expect("tick ok");
             let body = match out {
@@ -1170,6 +1175,8 @@ mod tests {
             command_seq: 1,
             scripted_start_pose: None,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let ActionTickOutput::Continue {
             command: Some(body),
@@ -1195,6 +1202,8 @@ mod tests {
             command_seq: 2,
             scripted_start_pose: None,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let ActionTickOutput::Continue {
             command: Some(body),
@@ -1236,6 +1245,8 @@ mod tests {
             command_seq: 1,
             scripted_start_pose: None,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
 
@@ -1250,6 +1261,8 @@ mod tests {
             command_seq: 2,
             scripted_start_pose: None,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
 
@@ -1265,6 +1278,8 @@ mod tests {
                 command_seq: 10 + i,
                 scripted_start_pose: None,
                 solver: None,
+                single_joint_config: None,
+                feedback: None,
             };
             let ActionTickOutput::Continue {
                 command: Some(body),
@@ -1358,6 +1373,8 @@ mod tests {
             scripted_start_pose: None,
             command_seq: 1,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let _ = instance.tick(&mut ctx).expect("tick ok");
         assert!(
@@ -1377,6 +1394,8 @@ mod tests {
             scripted_start_pose: None,
             command_seq: 2,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         let ActionTickOutput::Continue {
@@ -1415,6 +1434,8 @@ mod tests {
             scripted_start_pose: None,
             command_seq: 3,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         match out {
@@ -1447,6 +1468,8 @@ mod tests {
             command_seq: 1,
             scripted_start_pose: None,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let out = instance.tick(&mut ctx).expect("tick ok");
         assert!(matches!(out, ActionTickOutput::Continue { .. }));
@@ -1506,6 +1529,8 @@ mod tests {
             scripted_start_pose: None,
             command_seq,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         }
     }
 
@@ -1545,6 +1570,8 @@ mod tests {
             scripted_start_pose: None,
             command_seq: 0,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -1586,6 +1613,8 @@ mod tests {
             scripted_start_pose: Some(&start_pose),
             command_seq: 0,
             solver: None,
+            single_joint_config: None,
+            feedback: None,
         };
         let Err(err) = backend.start(&req, &ctx) else {
             panic!("expected Err");
@@ -1861,5 +1890,553 @@ mod tests {
             }
             other => panic!("expected Completed(PartialSuccess), got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod single_joint_tests {
+    use super::*;
+    use crate::action::{ActionId, ActionSource};
+    use crate::coordinator::{CoordinatorConfig, HardwareSection};
+    use crate::single_joint::{JointMotionLimits, SingleJointConfig};
+    use crate::state_cache::JointFeedbackSnapshot;
+    use flatbuffers::FlatBufferBuilder;
+    use robot_core::time::{MockClock, MonoRawNs, RobotClock};
+    use robot_msg::msg::{
+        JointCommand, SingleJointPositionPayload, SingleJointPositionPayloadArgs,
+    };
+
+    const BASE_NS: u64 = 1_000_000_000;
+    // 模拟 S0 的真实 f32 位置反馈提升到 wire f64 后的值。
+    const START: [f64; 3] = [(-0.2_f32) as f64, 0.1_f32 as f64, 0.3_f32 as f64];
+    const TARGET: [f64; 3] = [START[0], 0.5, START[2]];
+
+    struct Fixture {
+        hardware: HardwareSection,
+        config: CoordinatorConfig,
+        limits: SingleJointConfig,
+        clock: MockClock,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let hardware = HardwareSection {
+                id: "定位总线".into(),
+                joints: vec!["关节甲".into(), "关节乙".into(), "关节丙".into()],
+                motor_ids: vec![1, 2, 3],
+                feetech_bus2_mixed_raw: false,
+            };
+            let limits = SingleJointConfig {
+                max_duration_ms: 2_000,
+                settle_timeout_ms: 500,
+                stable_window_ms: 100,
+                joints: hardware
+                    .joints
+                    .iter()
+                    .map(|name| JointMotionLimits {
+                        name: name.clone(),
+                        min_position_rad: -1.0,
+                        max_position_rad: 1.0,
+                        max_velocity_rad_s: 3.0,
+                        tolerance_rad: 0.001,
+                    })
+                    .collect(),
+            };
+            Self {
+                hardware,
+                config: CoordinatorConfig::default(),
+                limits,
+                clock: MockClock::new(MonoRawNs(BASE_NS)),
+            }
+        }
+
+        fn context<'a>(&'a self, feedback: Option<&'a JointFeedbackSnapshot>) -> ActionContext<'a> {
+            ActionContext {
+                clock: &self.clock,
+                layout_id: 7,
+                hardware: &self.hardware,
+                config: &self.config,
+                anchor_bias: &[99.0; 3],
+                scripted_start_pose: Some(&START),
+                command_seq: 42,
+                solver: None,
+                single_joint_config: Some(&self.limits),
+                feedback,
+            }
+        }
+
+        fn request(
+            &self,
+            hardware: &str,
+            joint: &str,
+            target: f64,
+            duration_ms: u32,
+        ) -> ActionRequest {
+            let mut builder = FlatBufferBuilder::new();
+            let hardware_id = builder.create_string(hardware);
+            let joint_name = builder.create_string(joint);
+            let payload = SingleJointPositionPayload::create(
+                &mut builder,
+                &SingleJointPositionPayloadArgs {
+                    hardware_id: Some(hardware_id),
+                    joint_name: Some(joint_name),
+                    target_position_rad: target,
+                    duration_ms,
+                },
+            );
+            builder.finish(payload, None);
+            ActionRequest {
+                action_id: ActionId::new_v7(),
+                kind: ActionKind::Scripted,
+                deadline_ns: self.clock.now().0 + 2_000_000_000,
+                priority: 10,
+                payload_schema_id: SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+                payload: builder.finished_data().to_vec(),
+                idempotency_key: "单关节离线测试".into(),
+                source: ActionSource::Internal,
+            }
+        }
+
+        fn start(&self) -> Box<dyn ActionInstance> {
+            self.start_from(&self.request("定位总线", "关节乙", 0.5, 200), &START)
+                .unwrap()
+        }
+
+        fn start_from(
+            &self,
+            request: &ActionRequest,
+            start: &[f64],
+        ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+            let feedback = sample(0, start);
+            let mut context = self.context(Some(&feedback));
+            context.scripted_start_pose = Some(start);
+            ScriptedBackend.start(request, &context)
+        }
+
+        fn tick(
+            &self,
+            instance: &mut dyn ActionInstance,
+            milliseconds: u64,
+            feedback: Option<&JointFeedbackSnapshot>,
+            publish: bool,
+        ) -> Result<ActionTickOutput, ActionFailure> {
+            self.clock.set(MonoRawNs(at(milliseconds)));
+            let mut context = self.context(feedback);
+            context.scripted_start_pose = None;
+            let output = instance.tick(&mut context)?;
+            if publish
+                && matches!(
+                    output,
+                    ActionTickOutput::Continue {
+                        command: Some(_),
+                        ..
+                    }
+                )
+            {
+                instance.command_published(self.clock.now().0);
+            }
+            Ok(output)
+        }
+
+        fn ready_tick(
+            &self,
+            instance: &mut dyn ActionInstance,
+            milliseconds: u64,
+            positions: &[f64],
+        ) -> ActionTickOutput {
+            self.tick(
+                instance,
+                milliseconds,
+                Some(&sample(milliseconds, positions)),
+                true,
+            )
+            .unwrap()
+        }
+    }
+
+    const fn at(milliseconds: u64) -> u64 {
+        BASE_NS + milliseconds * 1_000_000
+    }
+
+    fn sample(milliseconds: u64, positions: &[f64]) -> JointFeedbackSnapshot {
+        JointFeedbackSnapshot {
+            stamp_ns: at(milliseconds),
+            positions: positions.to_vec(),
+            motion_ready: true,
+        }
+    }
+
+    fn command(output: ActionTickOutput) -> Vec<f64> {
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = output
+        else {
+            panic!("应继续输出位置命令");
+        };
+        let command = flatbuffers::root::<JointCommand<'_>>(body.as_bytes()).unwrap();
+        assert_eq!(command.source_task_id(), 42);
+        command.target().unwrap().iter().collect()
+    }
+
+    #[test]
+    fn single_joint_interpolates_only_selected_target_and_preserves_published_hold() {
+        let mut fixture = Fixture::new();
+        fixture.limits.joints.reverse();
+        let mut instance = fixture.start();
+        assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 0, &START)),
+            START
+        );
+        let half = command(fixture.ready_tick(instance.as_mut(), 100, &START));
+        assert_eq!(half[0], START[0]);
+        assert_eq!(half[1], f64::from(0.3_f32));
+        assert_eq!(half[2], START[2]);
+        assert_eq!(instance.interrupted_hold_target(), Some(half));
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 200, &START)),
+            TARGET
+        );
+        assert_eq!(instance.interrupted_hold_target(), Some(TARGET.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_rejects_f32_target_rounding_outside_exact_limits() {
+        for target in [0.1, -0.1] {
+            let mut fixture = Fixture::new();
+            if target > 0.0 {
+                fixture.limits.joints[1].max_position_rad = target;
+            } else {
+                fixture.limits.joints[1].min_position_rad = target;
+            }
+            let start = [START[0], 0.0, START[2]];
+            let request = fixture.request("定位总线", "关节乙", target, 200);
+            assert!(
+                matches!(fixture.start_from(&request, &start), Err(ActionStartError::Rejected(reason)) if reason.contains("f32 编码值"))
+            );
+            // 相邻的内侧 f32 值可接受；不以夹紧目标代替拒绝外侧编码值。
+            let inside = f64::from(f32::from_bits(0.1_f32.to_bits() - 1)) * target.signum();
+            assert!(
+                fixture
+                    .start_from(&fixture.request("定位总线", "关节乙", inside, 200), &start)
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn single_joint_checks_both_requested_and_encoded_velocity_without_tolerance() {
+        let mut fixture = Fixture::new();
+        let start = [START[0], 0.0, START[2]];
+        let request = fixture.request("定位总线", "关节乙", 0.1, 1_000);
+        fixture.limits.joints[1].max_velocity_rad_s = 0.1;
+        assert!(
+            matches!(fixture.start_from(&request, &start), Err(ActionStartError::Rejected(reason)) if reason.contains("速率"))
+        );
+        fixture.limits.joints[1].max_velocity_rad_s = f64::from(0.1_f32);
+        assert!(fixture.start_from(&request, &start).is_ok());
+        // 向内舍入也不能使原请求超速变为可接受。
+        fixture.limits.joints[1].max_velocity_rad_s = f64::from(0.7_f32);
+        let request = fixture.request("定位总线", "关节乙", 0.7, 1_000);
+        assert!(
+            matches!(fixture.start_from(&request, &start), Err(ActionStartError::Rejected(reason)) if reason.contains("速率"))
+        );
+    }
+
+    #[test]
+    fn single_joint_rejects_encoded_start_or_unselected_hold_outside_limits() {
+        let mut fixture = Fixture::new();
+        fixture.limits.joints[0].max_position_rad = 0.1;
+        let request = fixture.request("定位总线", "关节乙", 0.5, 200);
+        for first_position in [0.1, f64::from(0.1_f32)] {
+            let start = [first_position, 0.0, START[2]];
+            assert!(
+                matches!(fixture.start_from(&request, &start), Err(ActionStartError::Rejected(reason)) if reason.contains("反馈位置"))
+            );
+        }
+        // 物理反馈已是 f32 时，在其实际值边界可用且未选关节保持完全相同。
+        fixture.limits.joints[0].max_position_rad = f64::from(0.1_f32);
+        let start = [f64::from(0.1_f32), 0.0, START[2]];
+        let mut instance = fixture.start_from(&request, &start).unwrap();
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 0, &start)),
+            start
+        );
+        let final_target = command(fixture.ready_tick(instance.as_mut(), 200, &start));
+        assert_eq!(final_target[0], start[0]);
+        assert_eq!(final_target[2], start[2]);
+    }
+
+    #[test]
+    fn single_joint_uses_encoded_target_for_trajectory_hold_and_zero_tolerance_confirmation() {
+        let mut fixture = Fixture::new();
+        for joint in &mut fixture.limits.joints {
+            joint.tolerance_rad = 0.0;
+        }
+        let start = [START[0], 0.0, START[2]];
+        let target = [START[0], f64::from(0.1_f32), START[2]];
+        let request = fixture.request("定位总线", "关节乙", 0.1, 200);
+        let mut instance = fixture.start_from(&request, &start).unwrap();
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 0, &start)),
+            start
+        );
+        let half = command(fixture.ready_tick(instance.as_mut(), 100, &start));
+        assert_eq!(half, [start[0], f64::from(0.05_f32), start[2]]);
+        assert_eq!(instance.interrupted_hold_target(), Some(half));
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 200, &start)),
+            target
+        );
+        assert_eq!(instance.interrupted_hold_target(), Some(target.to_vec()));
+        command(fixture.ready_tick(instance.as_mut(), 210, &target));
+        assert!(matches!(
+            fixture.ready_tick(instance.as_mut(), 310, &target),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        assert_eq!(instance.successful_hold_target(), Some(target.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_rejects_identity_target_duration_and_rate_errors() {
+        let fixture = Fixture::new();
+        let feedback = sample(0, &START);
+        let context = fixture.context(Some(&feedback));
+        for (hardware, joint, target, duration) in [
+            ("其他总线", "关节乙", 0.5, 200),
+            ("定位总线", "未知关节", 0.5, 200),
+            ("定位总线", "关节乙", f64::NAN, 200),
+            ("定位总线", "关节乙", f64::INFINITY, 200),
+            ("定位总线", "关节乙", 1.1, 200),
+            ("定位总线", "关节乙", 0.5, 0),
+            ("定位总线", "关节乙", 0.5, 2_001),
+            ("定位总线", "关节乙", 0.5, 10),
+        ] {
+            assert!(matches!(
+                ScriptedBackend.start(
+                    &fixture.request(hardware, joint, target, duration),
+                    &context
+                ),
+                Err(ActionStartError::Rejected(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn single_joint_rejects_missing_config_mixed_bus_and_mismatched_snapshot() {
+        let mut fixture = Fixture::new();
+        let feedback = sample(0, &START);
+        let request = fixture.request("定位总线", "关节乙", 0.5, 200);
+        let mut context = fixture.context(Some(&feedback));
+        context.single_joint_config = None;
+        assert!(ScriptedBackend.start(&request, &context).is_err());
+        let mut context = fixture.context(Some(&feedback));
+        context.scripted_start_pose = Some(&TARGET);
+        assert!(ScriptedBackend.start(&request, &context).is_err());
+        assert!(
+            ScriptedBackend
+                .start(&request, &fixture.context(None))
+                .is_err()
+        );
+        fixture.hardware.feetech_bus2_mixed_raw = true;
+        assert!(
+            ScriptedBackend
+                .start(&request, &fixture.context(Some(&feedback)))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn single_joint_rejects_bad_start_feedback_and_insufficient_deadline() {
+        let fixture = Fixture::new();
+        let request = fixture.request("定位总线", "关节乙", 0.5, 200);
+        for feedback in [
+            sample(0, &[1.1, 0.1, 0.3]),
+            sample(0, &[f64::NAN, 0.1, 0.3]),
+            sample(0, &[0.1]),
+        ] {
+            let mut context = fixture.context(Some(&feedback));
+            context.scripted_start_pose = Some(&feedback.positions);
+            assert!(ScriptedBackend.start(&request, &context).is_err());
+        }
+        let feedback = sample(0, &START);
+        let mut too_short = request.clone();
+        too_short.deadline_ns = at(700) - 1;
+        assert!(
+            ScriptedBackend
+                .start(&too_short, &fixture.context(Some(&feedback)))
+                .is_err()
+        );
+        fixture.clock.set(MonoRawNs(u64::MAX - 10));
+        let mut overflow = request;
+        overflow.deadline_ns = u64::MAX;
+        let feedback = JointFeedbackSnapshot {
+            stamp_ns: u64::MAX - 10,
+            positions: START.to_vec(),
+            motion_ready: true,
+        };
+        assert!(
+            ScriptedBackend
+                .start(&overflow, &fixture.context(Some(&feedback)))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn single_joint_completion_requires_new_feedback_after_actual_final_publish() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        let output = fixture
+            .tick(instance.as_mut(), 200, Some(&sample(200, &TARGET)), false)
+            .unwrap();
+        assert_eq!(command(output), TARGET);
+        assert!(instance.successful_hold_target().is_none());
+        instance.command_published(at(205));
+        // 这帧晚于命令生成，仍早于实际发布成功，不得开始稳定窗口。
+        command(
+            fixture
+                .tick(instance.as_mut(), 210, Some(&sample(203, &TARGET)), true)
+                .unwrap(),
+        );
+        command(fixture.ready_tick(instance.as_mut(), 250, &TARGET));
+        // 相同缓存帧被反复读取，不能按本地时间累计到位。
+        command(
+            fixture
+                .tick(instance.as_mut(), 350, Some(&sample(250, &TARGET)), true)
+                .unwrap(),
+        );
+        assert!(matches!(
+            fixture.ready_tick(instance.as_mut(), 351, &TARGET),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        assert_eq!(instance.successful_hold_target(), Some(TARGET.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_unpublished_final_command_cannot_complete() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        for milliseconds in [200, 300, 400] {
+            command(
+                fixture
+                    .tick(
+                        instance.as_mut(),
+                        milliseconds,
+                        Some(&sample(milliseconds, &TARGET)),
+                        false,
+                    )
+                    .unwrap(),
+            );
+        }
+        assert!(instance.successful_hold_target().is_none());
+        assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_checks_all_joints_and_resets_broken_stable_window() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        fixture.ready_tick(instance.as_mut(), 200, &START);
+        command(fixture.ready_tick(instance.as_mut(), 210, &TARGET));
+        command(fixture.ready_tick(instance.as_mut(), 260, &[-0.19, 0.5, 0.3]));
+        command(fixture.ready_tick(instance.as_mut(), 310, &TARGET));
+        command(fixture.ready_tick(instance.as_mut(), 409, &TARGET));
+        assert!(matches!(
+            fixture.ready_tick(instance.as_mut(), 410, &TARGET),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+    }
+
+    #[test]
+    fn single_joint_settle_timeout_does_not_report_success_or_refresh_on_hold() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        fixture.ready_tick(instance.as_mut(), 200, &START);
+        command(fixture.ready_tick(instance.as_mut(), 699, &START));
+        assert!(matches!(
+            fixture.tick(instance.as_mut(), 700, Some(&sample(700, &START)), true),
+            Err(ActionFailure::PreconditionFailed(_))
+        ));
+        assert_eq!(instance.interrupted_hold_target(), Some(TARGET.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_feedback_failure_preserves_last_published_target() {
+        for bad_feedback in [
+            None,
+            Some(JointFeedbackSnapshot {
+                motion_ready: false,
+                ..sample(110, &START)
+            }),
+            Some(sample(111, &START)),
+            Some(sample(99, &START)),
+            Some(sample(110, &[0.0])),
+            Some(sample(110, &[f64::NAN, 0.1, 0.3])),
+            Some(sample(110, &[1.1, 0.1, 0.3])),
+        ] {
+            let fixture = Fixture::new();
+            let mut instance = fixture.start();
+            fixture.ready_tick(instance.as_mut(), 0, &START);
+            let last = command(fixture.ready_tick(instance.as_mut(), 100, &START));
+            assert!(matches!(
+                fixture.tick(instance.as_mut(), 110, bad_feedback.as_ref(), true),
+                Err(ActionFailure::SafetyAbort(_))
+            ));
+            assert_eq!(instance.interrupted_hold_target(), Some(last));
+        }
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        assert!(matches!(
+            fixture.tick(instance.as_mut(), 201, Some(&sample(0, &START)), true),
+            Err(ActionFailure::SafetyAbort(_))
+        ));
+    }
+
+    #[test]
+    fn single_joint_cancel_without_feedback_never_commits_unsent_target() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        fixture.ready_tick(instance.as_mut(), 0, &START);
+        command(
+            fixture
+                .tick(instance.as_mut(), 100, Some(&sample(100, &START)), false)
+                .unwrap(),
+        );
+        instance.cancel(&mut fixture.context(None)).unwrap();
+        assert!(matches!(
+            fixture.tick(instance.as_mut(), 110, None, true).unwrap(),
+            ActionTickOutput::Completed(ActionOutcome::PartialSuccess { .. })
+        ));
+        assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_cancel_before_first_tick_uses_submission_snapshot() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        instance.cancel(&mut fixture.context(None)).unwrap();
+        assert!(matches!(
+            fixture.tick(instance.as_mut(), 10, None, true).unwrap(),
+            ActionTickOutput::Completed(ActionOutcome::PartialSuccess { .. })
+        ));
+        assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
+    }
+
+    #[test]
+    fn single_joint_deadline_precedes_cancel_and_feedback_checks() {
+        let fixture = Fixture::new();
+        let mut instance = fixture.start();
+        instance.cancel(&mut fixture.context(None)).unwrap();
+        assert!(matches!(
+            fixture.tick(instance.as_mut(), 2_000, None, true),
+            Err(ActionFailure::DeadlineExceeded)
+        ));
+        assert_eq!(instance.interrupted_hold_target(), Some(START.to_vec()));
     }
 }

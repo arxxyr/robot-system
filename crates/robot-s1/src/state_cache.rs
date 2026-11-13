@@ -297,6 +297,14 @@ impl core::fmt::Debug for StateCacheHandle {
     }
 }
 
+/// 同一帧中的位置、源时间及运动准入状态；不是控制命令或扭矩操作。
+#[derive(Debug, Clone, PartialEq)]
+pub struct JointFeedbackSnapshot {
+    pub stamp_ns: u64,
+    pub positions: Vec<f64>,
+    pub motion_ready: bool,
+}
+
 impl StateCacheHandle {
     /// 借用 spawn 时的配置（topic / expected_* / max_stale_ms / poll）。
     #[must_use]
@@ -317,18 +325,51 @@ impl StateCacheHandle {
     /// 任一校验失败返 [`StaleOrMissing`]；调用方（coordinator）**不得**
     /// fallback 到 `anchor_bias`（Spec D3 第 1 条）。
     pub fn latest_fresh(&self, now: MonoRawNs) -> Result<Vec<f64>, StaleOrMissing> {
+        self.read_fresh_snapshot(|| now)
+            .map(|snapshot| snapshot.positions)
+    }
+
+    /// 返回经过同一布局、新鲜度及有限值检查的完整反馈快照。
+    pub fn latest_fresh_snapshot(
+        &self,
+        clock: &dyn RobotClock,
+    ) -> Result<JointFeedbackSnapshot, StaleOrMissing> {
+        self.read_fresh_snapshot(|| clock.now())
+    }
+
+    fn read_fresh_snapshot(
+        &self,
+        read_time: impl FnOnce() -> MonoRawNs,
+    ) -> Result<JointFeedbackSnapshot, StaleOrMissing> {
+        use robot_msg::msg::{
+            JointState, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState,
+        };
+
         let guard = self.slot.lock_latest();
         let Some(frame) = guard.as_ref() else {
             return Err(StaleOrMissing::NoFrame);
         };
-        check_state_frame(
+        // 先固定帧，再读当前时间，避免并发新帧被旧的调用时刻误判为未来帧。
+        let now = read_time();
+        let positions = check_state_frame(
             &frame.body,
             self.cfg.expected_joints,
             self.cfg.expected_layout,
             now.0,
             self.cfg.max_stale_ns(),
         )
-        .map_err(StaleOrMissing::from)
+        .map_err(StaleOrMissing::from)?;
+        let state = flatbuffers::root::<JointState<'_>>(&frame.body)
+            .map_err(|error| StaleOrMissing::Decode(error.to_string()))?;
+        Ok(JointFeedbackSnapshot {
+            stamp_ns: state.stamp_ns(),
+            positions,
+            motion_ready: state.s0_mode() == S0Mode::Enabled
+                && state.s0_control_link() == S0ControlLink::Ok
+                && state.s0_output_mode() == S0OutputMode::Active
+                && state.s0_safety_state() == S0SafetyState::TorqueOn
+                && state.s0_fault_code() == S0FaultCode::Unknown,
+        })
     }
 
     /// 线程 liveness 面（watchdog observer 读 `loop_tick_count`；test-only

@@ -326,6 +326,10 @@ pub struct ActionContext<'a> {
     /// kind 恒 `None`。长度 == `hardware.joints.len()`（cache 已校验；
     /// backend 再防御断言）。
     pub scripted_start_pose: Option<&'a [f64]>,
+    /// 单关节定位的显式运动配置；未配置时不得接受该请求。
+    pub single_joint_config: Option<&'a crate::single_joint::SingleJointConfig>,
+    /// 本次检查得到的同一完整反馈；缺失或失效时为 None。
+    pub feedback: Option<&'a crate::state_cache::JointFeedbackSnapshot>,
     pub command_seq: u64,
     /// IK solver borrow（v0.4 候选 2 round 2 (3/4) 加；Q-IK3 (a) ACK
     /// `Option<&dyn ArmIkSolver>` 引用 plumb，**不** `Arc` / **不** clone）。
@@ -487,6 +491,14 @@ pub trait ActionBackend: Send + Sync {
 /// 自查 + 收敛返 `Completed(PartialSuccess)` 或 `Err(...)`（§10 决策
 /// #4）。
 pub trait ActionInstance: Send {
+    /// 仅在命令成功发布后调用；用于记录取消或失败后的保持目标。
+    fn command_published(&mut self, _published_at_ns: u64) {}
+
+    /// 中断时保持的最后已发送目标；None保留原后端的启动锚点语义。
+    fn interrupted_hold_target(&self) -> Option<Vec<f64>> {
+        None
+    }
+
     /// 50 Hz tick；backend 决定本 tick 是否产生新 `JointCommand`。
     ///
     /// 返 `Err(ActionFailure)` 立刻终止 action；coordinator 按
@@ -510,8 +522,8 @@ pub trait ActionInstance: Send {
     /// - **仅** `ScriptedInstance` override：`final_published == true`
     ///   （末 waypoint target 已作为一帧 `Continue { command: Some }`
     ///   交给 coordinator publish）时返 `Some(末 waypoint target)`。
-    /// - coordinator **只在** `outcome == Success ∧ !pending_cancel`
-    ///   时调用；cancel / failure / PartialSuccess 路径不调、直接 reset。
+    /// - coordinator只在`outcome == Success && !pending_cancel`时调用；
+    ///   中断改用interrupted_hold_target，未实现该接口的旧后端仍reset。
     /// - 返 `Some` 的长度必须 == `hardware.joints.len()`（backend 自保）。
     fn successful_hold_target(&self) -> Option<Vec<f64>> {
         None

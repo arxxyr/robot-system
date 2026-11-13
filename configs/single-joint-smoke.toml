@@ -1,0 +1,33 @@
+# 仅用于单关节定位软件测试；数值不是XLeRobot实机运动参数。
+[robot]
+id = "single_joint_smoke"
+config_version = "0.1.0"
+
+[[hardware]]
+id = "arm"
+adapter = "mock_hard_rt"
+joints = ["j0", "j1"]
+motor_ids = [1, 2]
+
+[s1.profile]
+backends = ["scripted"]
+command_mode = "joint_position"
+
+[s1.single_joint]
+max_duration_ms = 1000
+settle_timeout_ms = 200
+stable_window_ms = 40
+
+[[s1.single_joint.joints]]
+name = "j0"
+min_position_rad = -1.0
+max_position_rad = 1.0
+max_velocity_rad_s = 5.0
+tolerance_rad = 0.001
+
+[[s1.single_joint.joints]]
+name = "j1"
+min_position_rad = -1.0
+max_position_rad = 1.0
+max_velocity_rad_s = 5.0
+tolerance_rad = 0.001

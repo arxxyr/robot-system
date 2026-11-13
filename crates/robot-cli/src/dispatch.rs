@@ -14,7 +14,9 @@ use std::future::Future;
 use std::io::Write;
 use std::time::Duration;
 
-use robot_msg::schema_id::{SCHEMA_IK_PAYLOAD, SCHEMA_SCRIPTED_PAYLOAD};
+use robot_msg::schema_id::{
+    SCHEMA_IK_PAYLOAD, SCHEMA_SCRIPTED_PAYLOAD, SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+};
 use robot_rpc::proto::robot_control_client::RobotControlClient;
 use robot_rpc::proto::{
     Ack, ActionKindProto, CancelTaskCommand, ClearEStopCommand, ClearErrorCommand, CommandMeta,
@@ -36,13 +38,23 @@ use crate::meta::{
     MetaInputs, TOKEN_REQUIRED_MSG, build_command_meta, default_cli_source, resolve_token,
 };
 use crate::payload::{
-    build_ik_payload, build_scripted_payload, parse_ik_target, parse_waypoints_json,
+    SingleJointTarget, build_ik_payload, build_scripted_payload,
+    build_single_joint_position_payload, parse_ik_target, parse_single_joint_target,
+    parse_waypoints_json,
 };
 use crate::uuid_v7::new_request_id;
 use crate::validate::{check_clear_estop_gates, check_write_rpc_gates, validate_action_id};
 
 /// `invoke scripted` 允许的 invoke-family flag 白名单（其余 ik flag 拒）。
 const INVOKE_SCRIPTED_ALLOWED: [&str; 2] = ["--waypoints-file", "--follow"];
+/// 单关节入口只接受硬件身份、单个目标和显式时长。
+const INVOKE_SINGLE_JOINT_ALLOWED: [&str; 5] = [
+    "--hardware-id",
+    "--joint-name",
+    "--target-position-rad",
+    "--duration-ms",
+    "--follow",
+];
 /// `invoke ik` 允许的 invoke-family flag 白名单（`--waypoints-file` 拒）。
 const INVOKE_IK_ALLOWED: [&str; 10] = [
     "--target-x",
@@ -190,8 +202,9 @@ OPTIONS:
 const INVOKE_USAGE: &str = "\
 robotctl invoke <KIND> [OPTIONS]
 
-提交一个 action。KIND ∈ {scripted, ik}：
+提交一个 action。KIND ∈ {scripted, single-joint, ik}：
   robotctl invoke scripted --waypoints-file <PATH> --audit-reason <STR> ...
+  robotctl invoke single-joint --hardware-id <ID> --joint-name <NAME> --target-position-rad <RAD> --duration-ms <MS> --audit-reason <STR> ...
   robotctl invoke ik --target-x <F> --target-y <F> --target-z <F> --audit-reason <STR> ...
 
 各 KIND 详见 robotctl invoke <KIND> --help。";
@@ -209,6 +222,27 @@ REQUIRED:
 OPTIONS:
   --gateway-addr / --source / --idempotency-key / --timeout-ms / --json
   --follow                     提交后接 stream-events 跟到终态（默认 off，Q-CLI11(b)）";
+
+const INVOKE_SINGLE_JOINT_USAGE: &str = "\
+robotctl invoke single-joint --hardware-id <ID> --joint-name <NAME> --target-position-rad <RAD> --duration-ms <MS> --audit-reason <STR> [OPTIONS]
+
+单关节定位，复用 Scripted；S1 接受时从同一新鲜反馈补齐其余关节目标。
+仅显式配置允许的位置关节可用；成功须通过新鲜反馈的到位稳定窗口。
+取消或失败保持最后已发布目标，不表示当前位置停止或断扭。
+
+必填参数：
+  --hardware-id <ID>           所选 S1 的 hardware 身份
+  --joint-name <NAME>          该 hardware 配置中的关节名
+  --target-position-rad <RAD>  绝对位置，单位 rad
+  --duration-ms <MS>           正整数插值时长，单位 ms
+  --audit-reason <STR>         非空操作原因
+  --token <TOKEN>             operator+ 令牌（或环境变量 ROBOT_TOKEN）
+
+可选参数：
+  --gateway-addr / --source / --idempotency-key / --timeout-ms / --json
+  --follow                    提交后跟踪原任务事件至终态
+
+范围、模式和所需速率由 S1 校验；旧 S1 不支持此请求时拒绝，不自动降级或重发。";
 
 const INVOKE_IK_USAGE: &str = "\
 robotctl invoke ik --target-x <F> --target-y <F> --target-z <F> --audit-reason <STR> [OPTIONS]
@@ -469,17 +503,20 @@ async fn run_stream_events(raw: &[String]) -> u8 {
 async fn run_invoke(raw: &[String]) -> u8 {
     match raw.first().map(String::as_str) {
         Some("scripted") => run_invoke_scripted(&raw[1..]).await,
+        Some("single-joint") => run_invoke_single_joint(&raw[1..]).await,
         Some("ik") => run_invoke_ik(&raw[1..]).await,
         Some("-h" | "--help") => {
             eprintln!("{INVOKE_USAGE}");
             0
         }
         Some(other) => {
-            eprintln!("error: unknown invoke kind: {other} (expected 'scripted' or 'ik')");
+            eprintln!(
+                "error: unknown invoke kind: {other} (expected 'scripted', 'single-joint' or 'ik')"
+            );
             EXIT_CLI_ARGS
         }
         None => {
-            eprintln!("error: invoke requires a kind ('scripted' or 'ik')");
+            eprintln!("error: invoke requires a kind ('scripted', 'single-joint' or 'ik')");
             eprintln!("{INVOKE_USAGE}");
             EXIT_CLI_ARGS
         }
@@ -553,6 +590,66 @@ async fn run_invoke_scripted(raw: &[String]) -> u8 {
     run_invoke_rpc(&args, cmd).await
 }
 
+/// 单关节请求仅编码所选目标，起点和保持目标由 S1 在受理时决定。
+async fn run_invoke_single_joint(raw: &[String]) -> u8 {
+    let args = match parse_gateway_args(raw) {
+        Ok(args) => args,
+        Err(ArgError::Help) => {
+            eprintln!("{INVOKE_SINGLE_JOINT_USAGE}");
+            return 0;
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    if let Err(error) = reject_confirmation("invoke single-joint", &args)
+        .and_then(|()| {
+            reject_invoke_flags_except("invoke single-joint", &args, &INVOKE_SINGLE_JOINT_ALLOWED)
+        })
+        .and_then(|()| reject_dry_run("invoke single-joint", &args))
+        .and_then(|()| reject_positional("invoke single-joint", &args))
+    {
+        eprintln!("error: {error}");
+        return EXIT_CLI_ARGS;
+    }
+    let target = match parse_single_joint_target(
+        args.hardware_id.as_deref(),
+        args.joint_name.as_deref(),
+        args.target_position_rad.as_deref(),
+        args.duration_ms.as_deref(),
+    ) {
+        Ok(target) => target,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return EXIT_CLI_ARGS;
+        }
+    };
+    let env_token = std::env::var("ROBOT_TOKEN").ok();
+    let resolved = resolve_token(args.token.as_deref(), env_token.as_deref());
+    if let Err(error) =
+        check_write_rpc_gates(resolved.as_deref().ok(), args.audit_reason.as_deref())
+    {
+        eprintln!("error: {error}");
+        return EXIT_CLI_ARGS;
+    }
+    let token = resolved.expect("写 RPC 检查已确认令牌存在");
+    let meta = build_meta(&args, &token);
+    maybe_emit_idempotency_info(&args, &meta);
+    run_invoke_rpc(&args, single_joint_command(meta, &target)).await
+}
+
+fn single_joint_command(meta: CommandMeta, target: &SingleJointTarget) -> InvokeTaskCommand {
+    InvokeTaskCommand {
+        meta: Some(meta),
+        kind: ActionKindProto::ActionKindScripted as i32,
+        deadline_ns: 0,
+        priority: 0,
+        payload_schema_id: SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+        payload: build_single_joint_position_payload(target),
+    }
+}
+
 /// `invoke ik --target-x/y/z ...`（AC-9；写 RPC kind=Ik）。
 async fn run_invoke_ik(raw: &[String]) -> u8 {
     let args = match parse_gateway_args(raw) {
@@ -616,7 +713,7 @@ async fn run_invoke_ik(raw: &[String]) -> u8 {
     run_invoke_rpc(&args, cmd).await
 }
 
-/// invoke scripted / ik 公共 RPC 收尾：`InvokeTask` → 打 `action_id` →
+/// invoke 公共 RPC 收尾：`InvokeTask` → 打 `action_id` →
 /// （`--follow`）接 stream-events 到终态（AC-7 / Q-CLI11(b)）。
 async fn run_invoke_rpc(args: &GatewayArgs, cmd: InvokeTaskCommand) -> u8 {
     let mut client = match connect(args).await {
@@ -830,10 +927,94 @@ where
 mod tests {
     use std::time::Duration;
 
-    use robot_rpc::proto::Ack;
+    use robot_rpc::proto::{Ack, ActionKindProto};
+    use robot_rpc::task_handlers::{
+        invoke_task_idempotency_fingerprint, validate_invoke_task_command,
+    };
 
-    use super::{EXIT_TIMEOUT, complete_ack_rpc, is_dispatchable_async};
+    use super::{
+        EXIT_CLI_ARGS, EXIT_TIMEOUT, build_meta, complete_ack_rpc, is_dispatchable_async,
+        run_async, single_joint_command,
+    };
+    use crate::cli_args::parse_gateway_args;
+    use crate::payload::parse_single_joint_target;
     use crate::{Lane, subcommand_lane};
+
+    fn single_joint_args() -> Vec<String> {
+        [
+            "single-joint",
+            "--hardware-id",
+            "hardware",
+            "--joint-name",
+            "joint",
+            "--target-position-rad",
+            "-0.25",
+            "--duration-ms",
+            "1000",
+            "--token",
+            "test-operator",
+            "--audit-reason",
+            "离线测试",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    }
+
+    #[test]
+    fn single_joint_uses_existing_gateway_contract_and_idempotency() {
+        let raw = single_joint_args();
+        let args = parse_gateway_args(&raw[1..]).expect("解析单关节参数");
+        let mut target = parse_single_joint_target(
+            args.hardware_id.as_deref(),
+            args.joint_name.as_deref(),
+            args.target_position_rad.as_deref(),
+            args.duration_ms.as_deref(),
+        )
+        .expect("参数有效");
+        let meta = build_meta(&args, "test-operator");
+        let command = single_joint_command(meta.clone(), &target);
+        // 网关验证逻辑保持原样；新 payload 继续使用 Scripted 的 byte cap 和幂等键。
+        let validated = validate_invoke_task_command(&command).expect("既有网关接受请求外壳");
+        assert_eq!(validated.kind, ActionKindProto::ActionKindScripted);
+        assert_eq!(validated.payload_schema_id, 0x0000_040F);
+        assert!(validated.payload.len() <= 4 * 1024);
+        let decoded =
+            flatbuffers::root::<robot_msg::msg::SingleJointPositionPayload<'_>>(&validated.payload)
+                .expect("单关节语义保持");
+        assert_eq!(decoded.hardware_id(), "hardware");
+        assert_eq!(decoded.joint_name(), "joint");
+        assert_eq!(
+            decoded.target_position_rad().to_bits(),
+            (-0.25_f64).to_bits()
+        );
+        assert_eq!(decoded.duration_ms(), 1000);
+
+        target.duration_ms = 2000;
+        let changed = validate_invoke_task_command(&single_joint_command(meta, &target))
+            .expect("变化后的请求外壳有效");
+        assert_ne!(
+            invoke_task_idempotency_fingerprint(&validated),
+            invoke_task_idempotency_fingerprint(&changed)
+        );
+    }
+
+    #[tokio::test]
+    async fn single_joint_dispatch_help_and_invalid_flags_do_not_connect() {
+        let help = vec!["single-joint".into(), "--help".into()];
+        assert_eq!(run_async("invoke", &help).await, 0);
+        for extra in [
+            vec!["--dry-run"],
+            vec!["--confirmation", "CONFIRM_CLEAR_ESTOP"],
+            vec!["--waypoints-file", "/不存在的文件"],
+            vec!["--target-x", "0.1"],
+            vec!["多余位置参数"],
+        ] {
+            let mut raw = single_joint_args();
+            raw.extend(extra.into_iter().map(str::to_owned));
+            assert_eq!(run_async("invoke", &raw).await, EXIT_CLI_ARGS);
+        }
+    }
 
     /// (4/5) landed set = 全部 6 个 async-lane gateway 子命令（invoke 落地）。
     #[test]

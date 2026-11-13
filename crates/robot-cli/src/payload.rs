@@ -6,7 +6,8 @@
 use flatbuffers::FlatBufferBuilder;
 use robot_msg::msg::{
     IkPayload as FbIkPayload, IkPayloadArgs, ScriptedPayload as FbScriptedPayload,
-    ScriptedPayloadArgs, WaypointTarget, WaypointTargetArgs,
+    ScriptedPayloadArgs, SingleJointPositionPayload as FbSingleJointPositionPayload,
+    SingleJointPositionPayloadArgs, WaypointTarget, WaypointTargetArgs,
 };
 use serde::Deserialize;
 
@@ -95,6 +96,70 @@ pub fn build_scripted_payload(waypoints: &[Waypoint]) -> Vec<u8> {
         &mut fbb,
         &ScriptedPayloadArgs {
             waypoints: Some(wps_vec),
+        },
+    );
+    fbb.finish(payload, None);
+    fbb.finished_data().to_vec()
+}
+
+/// 单关节定位输入；CLI 不读取反馈，也不构造其余关节目标。
+#[derive(Debug, PartialEq)]
+pub struct SingleJointTarget {
+    pub hardware_id: String,
+    pub joint_name: String,
+    pub target_position_rad: f64,
+    pub duration_ms: u32,
+}
+
+/// 校验单关节必填参数；配置范围、模式和所需速率由 S1 校验。
+pub fn parse_single_joint_target(
+    hardware_id: Option<&str>,
+    joint_name: Option<&str>,
+    target_position_rad: Option<&str>,
+    duration_ms: Option<&str>,
+) -> Result<SingleJointTarget, String> {
+    let required = |value: Option<&str>, flag: &str| {
+        value
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{flag} 必须提供非空值"))
+    };
+    let hardware_id = required(hardware_id, "--hardware-id")?;
+    let joint_name = required(joint_name, "--joint-name")?;
+    let position_text = required(target_position_rad, "--target-position-rad")?;
+    let target_position_rad: f64 = position_text
+        .parse()
+        .map_err(|_| "--target-position-rad 必须是 rad 单位的有限数值".to_owned())?;
+    if !target_position_rad.is_finite() || target_position_rad.abs() > f64::from(f32::MAX) {
+        return Err("--target-position-rad 必须有限且可表示为 f32".into());
+    }
+    let duration_text = required(duration_ms, "--duration-ms")?;
+    let duration_ms = duration_text
+        .parse::<u32>()
+        .ok()
+        .filter(|duration| *duration > 0)
+        .ok_or_else(|| "--duration-ms 必须是 1..=4294967295 的整数".to_owned())?;
+    Ok(SingleJointTarget {
+        hardware_id,
+        joint_name,
+        target_position_rad,
+        duration_ms,
+    })
+}
+
+/// 编码独立单关节 payload；保持 `ScriptedPayload` 原完整向量语义。
+#[must_use]
+pub fn build_single_joint_position_payload(target: &SingleJointTarget) -> Vec<u8> {
+    let mut fbb = FlatBufferBuilder::with_capacity(256);
+    let hardware_id = fbb.create_string(&target.hardware_id);
+    let joint_name = fbb.create_string(&target.joint_name);
+    let payload = FbSingleJointPositionPayload::create(
+        &mut fbb,
+        &SingleJointPositionPayloadArgs {
+            hardware_id: Some(hardware_id),
+            joint_name: Some(joint_name),
+            target_position_rad: target.target_position_rad,
+            duration_ms: target.duration_ms,
         },
     );
     fbb.finish(payload, None);
@@ -205,8 +270,70 @@ pub fn build_ik_payload(target: &IkTarget) -> Vec<u8> {
 #[allow(clippy::float_cmp)] // round-trip 是 bit-exact，== 是正确判据
 mod tests {
     use super::{
-        IkTarget, build_ik_payload, build_scripted_payload, parse_ik_target, parse_waypoints_json,
+        IkTarget, build_ik_payload, build_scripted_payload, build_single_joint_position_payload,
+        parse_ik_target, parse_single_joint_target, parse_waypoints_json,
     };
+
+    #[test]
+    fn single_joint_payload_preserves_identity_units_and_duration() {
+        let target = parse_single_joint_target(
+            Some("left_arm_full_with_head"),
+            Some("head_motor_2"),
+            Some("-0.25"),
+            Some("1200"),
+        )
+        .expect("单关节参数有效");
+        let bytes = build_single_joint_position_payload(&target);
+        let payload = flatbuffers::root::<robot_msg::msg::SingleJointPositionPayload<'_>>(&bytes)
+            .expect("单关节 payload 可解码");
+        assert_eq!(payload.hardware_id(), "left_arm_full_with_head");
+        assert_eq!(payload.joint_name(), "head_motor_2");
+        assert_eq!(payload.target_position_rad(), -0.25);
+        assert_eq!(payload.duration_ms(), 1200);
+    }
+
+    #[test]
+    fn single_joint_requires_all_four_arguments() {
+        let valid = [Some("hardware"), Some("joint"), Some("0"), Some("1")];
+        for index in 0..valid.len() {
+            for missing in [None, Some(""), Some(" \t")] {
+                let mut values = valid;
+                values[index] = missing;
+                assert!(
+                    parse_single_joint_target(values[0], values[1], values[2], values[3]).is_err(),
+                    "参数 {index} 不得缺失或为空"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn single_joint_rejects_nonfinite_or_unrepresentable_positions() {
+        for value in ["NaN", "inf", "-inf", "1e100", "-1e100", "abc"] {
+            assert!(
+                parse_single_joint_target(Some("hardware"), Some("joint"), Some(value), Some("1"))
+                    .is_err(),
+                "无效位置必须拒绝：{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_joint_duration_is_an_explicit_positive_u32() {
+        for value in ["0", "-1", "1.5", "4294967296", "NaN"] {
+            assert!(
+                parse_single_joint_target(Some("hardware"), Some("joint"), Some("0"), Some(value))
+                    .is_err(),
+                "无效时长必须拒绝：{value}"
+            );
+        }
+        for value in ["1", "4294967295"] {
+            assert!(
+                parse_single_joint_target(Some("hardware"), Some("joint"), Some("0"), Some(value))
+                    .is_ok()
+            );
+        }
+    }
 
     // ---- waypoints JSON（AC-8）----
 

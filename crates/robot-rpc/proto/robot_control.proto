@@ -265,6 +265,10 @@ message ActionFailureProto {
 //   表示无 payload，此时 `payload` 必须为空。
 // - `payload`：FlatBuffers body bytes（按 `payload_schema_id`）。B3
 //   期间 HoldPose / MockDwell 都用空 payload。
+//   Scripted 支持原完整向量 ScriptedPayload，以及独立 schema 的
+//   SingleJointPositionPayload（0x0000040F）。后者仅传 hardware_id、关节名、
+//   目标 rad 和时长 ms；S1 接受时用同一新鲜快照补齐其它关节，网关原样转发。
+//   旧 S1 不支持该 schema 时明确拒绝，不得降级为原完整向量请求。
 message InvokeTaskCommand {
     CommandMeta     meta              = 1;
     ActionKindProto kind              = 2;

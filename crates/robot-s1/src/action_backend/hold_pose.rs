@@ -235,6 +235,8 @@ mod tests {
         let clock = MockClock::new(MonoRawNs(clock_now_ns));
         let req = sample_request();
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -292,6 +294,8 @@ mod tests {
         let mut req = sample_request();
         req.payload = vec![1, 2, 3]; // 故意非空
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -328,6 +332,8 @@ mod tests {
         let clock = MockClock::new(MonoRawNs(100));
         let cfg = CoordinatorConfig::default();
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -376,6 +382,8 @@ mod tests {
         let backend = HoldPoseBackend;
         let req = sample_request();
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -452,6 +460,8 @@ mod tests {
 
         // 第一帧正常 tick（验状态确实在跑）。
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -494,6 +504,8 @@ mod tests {
         let req = sample_request();
 
         let ctx_initial = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -509,6 +521,8 @@ mod tests {
             // 每次 tick 推 20ms 模拟 50Hz cadence；命令 seq 累增。
             clock.advance(robot_core::time::DurationNs::from_nanos(20_000_000));
             let mut ctx = ActionContext {
+                single_joint_config: None,
+                feedback: None,
                 clock: &clock,
                 layout_id: TEST_LAYOUT_ID,
                 hardware: &hardware,

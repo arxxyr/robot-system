@@ -326,6 +326,8 @@ mod tests {
         let req = sample_request(clock.now().0 + 1_000_000_000); // +1s deadline (足够 dwell)
 
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock,
             layout_id: 0xCAFE,
             hardware: &hardware,
@@ -354,6 +356,8 @@ mod tests {
         let hardware = sample_hardware();
         let anchor = vec![0.0];
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: 0xCAFE,
             hardware: &hardware,
@@ -391,6 +395,8 @@ mod tests {
         let hardware = sample_hardware();
         let anchor = vec![0.0];
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: 0xCAFE,
             hardware: &hardware,
@@ -419,6 +425,8 @@ mod tests {
         let req = sample_request(clock.now().0 + 5_000_000_000);
 
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: 0xCAFE,
             hardware: &hardware,
@@ -463,6 +471,8 @@ mod tests {
         req.payload = vec![1, 2, 3];
 
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: 0xCAFE,
             hardware: &hardware,

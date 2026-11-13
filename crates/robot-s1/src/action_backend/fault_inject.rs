@@ -239,6 +239,8 @@ mod tests {
         let hw = hardware();
         let anchor = vec![0.0_f64];
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: 0xABCD_0001,
             hardware: &hw,

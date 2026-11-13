@@ -482,6 +482,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -544,6 +546,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -583,6 +587,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -623,6 +629,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -667,6 +675,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -710,6 +720,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -756,6 +768,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -803,6 +817,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -847,6 +863,8 @@ mod tests {
             source: ActionSource::Internal,
         };
         let ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -884,6 +902,8 @@ mod tests {
             fresh_instance_with_payload(payload, anchor_bias.clone(), now_ns, &solver);
 
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -959,6 +979,8 @@ mod tests {
             fresh_instance_with_payload(payload, anchor_bias.clone(), now_ns, &solver);
 
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -980,6 +1002,8 @@ mod tests {
 
         // second tick: Completed(Success)
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -1008,6 +1032,8 @@ mod tests {
             fresh_instance_with_payload(payload, anchor_bias.clone(), now_ns, &solver);
 
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,
@@ -1040,6 +1066,8 @@ mod tests {
 
         // first tick: emit
         let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
             clock: &clock,
             layout_id: TEST_LAYOUT_ID,
             hardware: &hardware,

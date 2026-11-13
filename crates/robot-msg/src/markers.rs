@@ -170,6 +170,10 @@ pub struct ActionEventEnvelope;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScriptedPayload;
 
+/// [`msg::SingleJointPositionPayload`] 的类型标记，用于单关节定位输入。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SingleJointPositionPayload;
+
 /// Marker for [`msg::IkPayload`]（v0.4 候选 2 round 2 `IkBackend`
 /// `InvokeTask` payload；笛卡尔 pose + 5-DOF IK 解算入口）。
 #[derive(Debug, Clone, Copy, Default)]
@@ -350,6 +354,13 @@ impl BodyMarker for ScriptedPayload {
     const SCHEMA_NAME: &'static str = "robot.msg.ScriptedPayload";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::ScriptedPayload<'a>;
+}
+
+impl BodyMarker for SingleJointPositionPayload {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
+    const SCHEMA_NAME: &'static str = "robot.msg.SingleJointPositionPayload";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::SingleJointPositionPayload<'a>;
 }
 
 impl BodyMarker for IkPayload {

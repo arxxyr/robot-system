@@ -33,6 +33,14 @@ pub struct GatewayArgs {
     pub confirmation: Option<String>,
     /// `--waypoints-file <PATH>`（invoke scripted 专属；AC-8）。
     pub waypoints_file: Option<String>,
+    /// `--hardware-id`（invoke single-joint 专属）。
+    pub hardware_id: Option<String>,
+    /// `--joint-name`（invoke single-joint 专属）。
+    pub joint_name: Option<String>,
+    /// `--target-position-rad`（invoke single-joint 专属，handler 校验数值）。
+    pub target_position_rad: Option<String>,
+    /// `--duration-ms`（invoke single-joint 专属，handler 校验正整数）。
+    pub duration_ms: Option<String>,
     /// `--follow`（invoke 专属；默认 off，Q-CLI11(b)）。
     pub follow: bool,
     /// `--target-x`（invoke ik 专属；原样字符串，handler parse f64）。
@@ -71,6 +79,10 @@ impl Default for GatewayArgs {
             audit_reason: None,
             confirmation: None,
             waypoints_file: None,
+            hardware_id: None,
+            joint_name: None,
+            target_position_rad: None,
+            duration_ms: None,
             follow: false,
             target_x: None,
             target_y: None,
@@ -159,6 +171,12 @@ pub fn parse_gateway_args(raw: &[String]) -> Result<GatewayArgs, ArgError> {
             "--waypoints-file" => {
                 args.waypoints_file = Some(take_value(raw, &mut i, "--waypoints-file")?);
             }
+            "--hardware-id" => args.hardware_id = Some(take_value(raw, &mut i, "--hardware-id")?),
+            "--joint-name" => args.joint_name = Some(take_value(raw, &mut i, "--joint-name")?),
+            "--target-position-rad" => {
+                args.target_position_rad = Some(take_value(raw, &mut i, "--target-position-rad")?);
+            }
+            "--duration-ms" => args.duration_ms = Some(take_value(raw, &mut i, "--duration-ms")?),
             "--follow" => args.follow = true,
             "--target-x" => args.target_x = Some(take_value(raw, &mut i, "--target-x")?),
             "--target-y" => args.target_y = Some(take_value(raw, &mut i, "--target-y")?),
@@ -224,8 +242,8 @@ pub fn expect_one_positional(subcommand: &str, args: &GatewayArgs) -> Result<Str
 }
 
 /// 拒绝不在 `allowed` 白名单内的 invoke-family flag（沿阻断 1：**不静默吞**）。
-/// invoke-family = {`--waypoints-file`, `--follow`, `--target-*`,
-/// `--seed-joints`, `--frame`}。共享 parser 收下它们；各子命令按白名单拒：
+/// invoke-family 包括轨迹文件、单关节目标、IK 目标及 `--follow`。
+/// 共享 parser 收下它们；各子命令按白名单拒：
 /// 非 invoke 子命令 `allowed = []`（全拒）；`invoke scripted` 放
 /// `--waypoints-file` / `--follow`；`invoke ik` 放 `--target-*` /
 /// `--seed-joints` / `--frame` / `--follow`。
@@ -238,8 +256,12 @@ pub fn reject_invoke_flags_except(
     args: &GatewayArgs,
     allowed: &[&str],
 ) -> Result<(), String> {
-    let invoke_flags: [(bool, &str); 11] = [
+    let invoke_flags: [(bool, &str); 15] = [
         (args.waypoints_file.is_some(), "--waypoints-file"),
+        (args.hardware_id.is_some(), "--hardware-id"),
+        (args.joint_name.is_some(), "--joint-name"),
+        (args.target_position_rad.is_some(), "--target-position-rad"),
+        (args.duration_ms.is_some(), "--duration-ms"),
         (args.follow, "--follow"),
         (args.target_x.is_some(), "--target-x"),
         (args.target_y.is_some(), "--target-y"),
@@ -348,6 +370,17 @@ mod tests {
 
     #[test]
     fn missing_value_errors() {
+        for flag in [
+            "--hardware-id",
+            "--joint-name",
+            "--target-position-rad",
+            "--duration-ms",
+        ] {
+            assert_eq!(
+                parse_gateway_args(&v(&[flag])),
+                Err(ArgError::MissingValue(flag))
+            );
+        }
         assert_eq!(
             parse_gateway_args(&v(&["--token"])),
             Err(ArgError::MissingValue("--token"))
@@ -360,6 +393,43 @@ mod tests {
             parse_gateway_args(&v(&["--timeout-ms"])),
             Err(ArgError::MissingValue("--timeout-ms"))
         );
+    }
+
+    #[test]
+    fn single_joint_flags_parse_without_changing_negative_position() {
+        let args = parse_gateway_args(&v(&[
+            "--hardware-id",
+            "hardware",
+            "--joint-name",
+            "joint",
+            "--target-position-rad",
+            "-0.5",
+            "--duration-ms",
+            "1000",
+            "--follow",
+        ]))
+        .expect("解析单关节参数");
+        assert_eq!(args.hardware_id.as_deref(), Some("hardware"));
+        assert_eq!(args.joint_name.as_deref(), Some("joint"));
+        assert_eq!(args.target_position_rad.as_deref(), Some("-0.5"));
+        assert_eq!(args.duration_ms.as_deref(), Some("1000"));
+        assert!(args.follow);
+        assert_eq!(args.positional, Vec::<String>::new());
+    }
+
+    #[test]
+    fn single_joint_flags_are_rejected_outside_their_command() {
+        for flag in [
+            "--hardware-id",
+            "--joint-name",
+            "--target-position-rad",
+            "--duration-ms",
+        ] {
+            let args = parse_gateway_args(&v(&[flag, "value"])).expect("共享参数解析");
+            for command in ["invoke scripted", "invoke ik", "clear-error", "cancel-task"] {
+                assert!(reject_invoke_flags_except(command, &args, &[]).is_err());
+            }
+        }
     }
 
     #[test]
