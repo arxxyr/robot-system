@@ -4426,7 +4426,7 @@ dependencies = [
 
 [[package]]
 name = "robot-adapter-feetech"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "criterion",
@@ -4445,7 +4445,7 @@ dependencies = [
 
 [[package]]
 name = "robot-adapter-mock"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "inventory",
@@ -4454,7 +4454,7 @@ dependencies = [
 
 [[package]]
 name = "robot-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flatbuffers",
  "iceoryx2",
@@ -4474,7 +4474,7 @@ dependencies = [
 
 [[package]]
 name = "robot-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "inventory",
@@ -4484,7 +4484,7 @@ dependencies = [
 
 [[package]]
 name = "robot-health"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "tempfile",
  "tracing",
@@ -4492,21 +4492,21 @@ dependencies = [
 
 [[package]]
 name = "robot-kinematics"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "robot-kinematics-xlerobot"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "robot-kinematics",
 ]
 
 [[package]]
 name = "robot-logging"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ctor",
  "tracing",
@@ -4515,7 +4515,7 @@ dependencies = [
 
 [[package]]
 name = "robot-msg"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "flatbuffers",
@@ -4523,7 +4523,7 @@ dependencies = [
 
 [[package]]
 name = "robot-rpc"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "axum",
  "blake3",
@@ -4556,7 +4556,7 @@ dependencies = [
 
 [[package]]
 name = "robot-s0"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "blake3",
@@ -4580,7 +4580,7 @@ dependencies = [
 
 [[package]]
 name = "robot-s1"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flatbuffers",
  "iceoryx2",
@@ -4602,7 +4602,7 @@ dependencies = [
 
 [[package]]
 name = "robot-tests"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "flatbuffers",
@@ -4630,7 +4630,7 @@ dependencies = [
 
 [[package]]
 name = "robot-transport"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flatbuffers",
  "iceoryx2",
@@ -4643,7 +4643,7 @@ dependencies = [
 
 [[package]]
 name = "robot-viz"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flatbuffers",
  "iceoryx2",
@@ -4666,7 +4666,7 @@ dependencies = [
 
 [[package]]
 name = "rr-memory-model"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "loom",
 ]

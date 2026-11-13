@@ -4,7 +4,7 @@
 
 ## 当前完成范围
 
-通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，版本为 **0.0.1**。`D15=OPEN/DEFERRED`、`deployable=false`；不代表无人值守部署完成。
+通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，初版为 **0.0.1**。当前软件版本为 **0.1.0**，新增只读Web/WebSocket接入和RX交接修复；已安装实机版本仍为0.0.1。`D15=OPEN/DEFERRED`、`deployable=false`；不代表无人值守部署完成。
 
 - 左臂六关节＋头部两关节原位保持20秒，同时采集头部、左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`，同时采集右腕RGB。两侧分别完成动作观察、停止及清场。
 - 正式链路为 `robot-s0-preflight → guard → robot-s0`；两侧服务为 `robot-s0-bus1/bus2`。手动启停及此前真实重启后的双侧保护待机自启已验证，默认不上扭、故障保持锁存。
@@ -43,7 +43,9 @@
 
 按用户要求，两侧服务保持运行，`auto_enable=false`，双份RX/EStop仍为1；运行状态为`Fault(CommFault)`、`AdapterUncertain`，存活计数持续推进，输出受抑制。本次只完成正式版保护待机启动，未解除锁存、未下发电机动作；运行检查不等于新一轮物理停止确认。
 
-正式版 [v0.0.1+ad04d8d](https://github.com/arxxyr/robot-system/releases/tag/v0.0.1%2Bad04d8d) 已从最终提交在Orin按 [配置矩阵](../configs/package-matrix.toml) 重新打包并发布；包内`commit`、两个远程master与标签均为`ad04d8d7057264eb8445944196baf60ed3d32d3f`，附件校验值见Release。所有旧标签保留；GitHub Actions因账户付款或额度限制未启动步骤，不能记作CI通过，本次依据Orin验证。部署状态更新仅进dev，不改变发布提交或标签。
+已安装的 [v0.0.1+ad04d8d](https://github.com/arxxyr/robot-system/releases/tag/v0.0.1%2Bad04d8d) 从最终提交在Orin按 [配置矩阵](../configs/package-matrix.toml) 打包发布；该版本发布时包内`commit`、两个远程master与标签均为`ad04d8d7057264eb8445944196baf60ed3d32d3f`，附件校验值见Release。当次GitHub Actions因账户付款或额度限制未启动步骤，不能记作CI通过。
+
+0.1.0沿原矩阵与`v0.1.0+<发布提交7位SHA>`标签发布，包内提交、master与标签须一致；原标签不覆盖。当前矩阵只包含S0程序与配置，Web沿既有独立部署入口管理。软件发布不自动更新现场安装，不替代下面仍待完成的恢复和实机复验。
 
 ## 通讯与控制TODO
 

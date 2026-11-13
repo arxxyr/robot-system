@@ -2,7 +2,7 @@
 
 > 上游参考实现：https://github.com/Roboparty/atom01_deploy.git （ROS 2 Humble + C++17）
 > 本地仓库位置：`~/repo/robot/atom01_deploy`
-> 用途：后续构型研究与训练／部署合同参考。当前0.0.1没有ATOM01硬件适配或实机验收；下文上游能力及拟议crate不是本项目已交付能力。
+> 用途：后续构型研究与训练／部署合同参考。当前0.1.0没有ATOM01硬件适配或实机验收；下文上游能力及拟议crate不是本项目已交付能力。
 
 ---
 
