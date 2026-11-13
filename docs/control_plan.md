@@ -1,15 +1,15 @@
 # 对外通讯与控制方案
 
-本文记录下一阶段的最小方案，尚未开发或部署，不修改S0 0.0.1及冻结契约。实施顺序与完成状态只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)；本文件说明职责、已有能力和待补语义。
+本文记录通讯与控制的最小方案。只读状态链路已实现，动作控制仍待开发；本轮不部署、不连接实机接口，不修改S0 0.0.1及冻结契约。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)；本文件说明职责、已有能力和待补语义。
 
 ## 通讯链路
 
 ```mermaid
 flowchart TD
-    UI[浏览器管理界面] -->|HTTP/JSON，待实现| WEB[薄Web接入，待实现]
-    WEB -->|SSE状态和任务事件，待实现| UI
+    UI[浏览器状态页] -->|只读HTTP/JSON| WEB[robot-status]
+    WEB -->|SSE状态| UI
     APP[外部程序或CLI] -->|现有gRPC| RPC[robot-gateway]
-    WEB -->|复用gRPC| RPC
+    WEB -->|GetState| RPC
     RPC -->|位置任务| S1[S1 coordinator与scripted]
     RPC -->|使能和断扭RR，急停事件| S0[S0 HAL]
     S1 -->|iceoryx2 / FlatBuffers命令和心跳| S0
@@ -20,9 +20,9 @@ flowchart TD
     AD -->|现有串口协议| DEV[电机总线]
 ```
 
-- 外部程序沿现有原生gRPC；浏览器只补HTTP/JSON转换和SSE推送，不在页面实现运动插值或串口读写。Web接入的进程包装在实施时复用现有网关布局，不预建新框架。
+- 外部程序沿现有原生gRPC；浏览器通过现有`robot-rpc`包内的`robot-status`提供HTTP/JSON与SSE状态，不在页面实现运动插值或串口读写。本轮只实现状态GET，浏览器动作和任务事件接入仍待实施。
 - 机器人本机继续使用iceoryx2和FlatBuffers。状态查询、使能、断扭、急停不经过S1；位置任务由S1执行，再交S0。每条总线只有一个S0串口所有者、命令流和停止域，Web和网关不进入RT线程，也不成为S0启动依赖。
-- 第一版仅用于局域网或既有VPN，gRPC保持本机监听；Web入口补访问认证，凭据保留在后端，复用现有角色与控制校验。当前原型的token查表和明文gRPC不作为公网认证方案。
+- 当前HTTP与gRPC均只监听本机，远程查看通过既有SSH端口转发。Web入口复用现有角色表校验`read_state`；浏览器仅在当前连接的内存中保存访问令牌，不写入URL或浏览器存储。当前原型的token查表和明文gRPC不作为公网认证方案。
 - 每个动作沿既有`CommandMeta`、请求标识、权限、截止时间和幂等规则。超时先查询原任务；结果未知不自动重发。截止时间由机器人侧时钟换算，不使用浏览器时钟代替`RobotClock`。
 - 浏览器断连不等于电机已停。首版仅有限时长的单次定位，不做连续拖动或长按点动；本机S1/S0按既有心跳和命令超时合同处理。重连查询真实状态，不续发旧目标。
 
@@ -39,7 +39,7 @@ flowchart TD
 | 取消任务 | `CancelTask` | 合作式取消；当前可能返回启动锚点保持，不能标为“停止当前位置” |
 | 急停与解除 | `EStop`、`ClearEStop` | 急停Ack只证明事件发布；解除急停为独立maintainer操作，不自动使能 |
 
-设备列表、总线身份、关节名称、物理ID和模式来自[现有TOML](../configs/README.md)，限位沿现有校准和配置读取，不另存一套映射。现有RPC尚无设备枚举接口，Web入口需将配置中的必要只读元数据提供给客户端。
+设备列表、总线身份、关节名称、物理ID和模式来自[现有TOML](../configs/README.md)，不另存一套映射。现有RPC尚无设备枚举接口，Web入口已将必要只读元数据与状态一起返回；后续控制限位仍须沿原校准和配置校验。
 
 ## 单电机位置控制还缺什么
 
@@ -54,7 +54,7 @@ flowchart TD
 
 ## 最小管理页与状态语义
 
-一页即可：两总线状态卡片、由配置生成的关节表、当前/目标位置、运动时长、执行与任务结果；控制按钮为使能、停用/断扭、急停，解除急停单独处理。业务拒绝显示实际原因，不自动清故障或启用电机。
+当前页面只有两总线状态卡片、由配置生成的关节表、反馈位置和保护状态。后续控制仍在同页最小补齐目标位置、运动时长、执行与任务结果，以及使能、停用/断扭、急停；解除急停单独处理。业务拒绝显示实际原因，不自动清故障或启用电机。
 
 | 显示 | 判断依据 |
 |---|---|
@@ -65,4 +65,21 @@ flowchart TD
 
 当前Dirty保护待机不能当作S1可用的健康关节反馈。状态页可以显示未知和拒绝原因；位置动作必须等现有恢复流程、有效反馈和控制前提通过。停止确认、解除锁存及现场条件均沿既有入口，不另造旁路。
 
-现有[gateway](../scripts/systemd/robot-gateway-left.service)和[S1](../scripts/systemd/robot-s1-left.service)模板仍引用arm-only服务与身份，不能直接启动用于bus1/bus2。实施前先对齐配置、产物和依赖，避免为打开页面拉起另一套串口所有者。S0正式发布及D15边界保持不变。
+原[gateway](../scripts/systemd/robot-gateway-left.service)和[S1](../scripts/systemd/robot-s1-left.service)模板仍引用arm-only服务与身份，不能直接启动用于bus1/bus2。状态链路已有下述全总线网关模板；S1身份与依赖留到TODO第2步对齐。S0正式发布及D15边界保持不变。
+
+## 只读状态页软件入口
+
+在现有`robot-rpc`中启用`status-web`构建`robot-status`，不增加crate、不改变`robot-gateway`默认构建，也不加入S0 0.0.1包。静态页直接内嵌，无前端构建工具。使用独立产物目录：
+
+```bash
+CARGO_TARGET_DIR="$PWD/target/verify-status" cargo build -p robot-rpc --features status-web --bin robot-status --bin robot-gateway
+target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
+```
+
+程序只读取配置和本机gRPC。访问`http://127.0.0.1:8080`后输入配置角色表中具有`read_state`权限的令牌；Bearer只放请求头，页面不持久化令牌。仓库角色表中的fake token只用于开发验证，不当作公网身份服务。远程查看仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
+
+页面只有`GET /`、`GET /api/state`、`GET /api/events`；后两者校验`read_state`，没有动作/配置写入路由。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取，SSE只保留最新快照并限制并发连接。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
+
+`xlerobot-status.toml`引用原总线TOML，以配置所在目录解析相对路径，身份、8/9槽位、关节名与ID沿原文件派生。默认500ms轮询、2000ms陈旧阈值只影响页面展示，不修改S0/S1的控制、超时和停止合同。轮子标为原始速度模式，不显示位置角度；尚无每电机扭矩读回。
+
+新的[bus1网关模板](../scripts/systemd/robot-gateway-bus1.service)、[bus2网关模板](../scripts/systemd/robot-gateway-bus2.service)和[状态页模板](../scripts/systemd/robot-status.service)只对齐配置与启动顺序，不自动启动S0/S1；本轮不安装、不enable或start。原arm-only模板继续供已有兼容入口使用，不改动它们。

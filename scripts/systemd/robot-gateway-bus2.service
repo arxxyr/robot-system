@@ -1,0 +1,41 @@
+# 全总线状态接入模板；不自动拉起S0/S1，不属于S0发布包。
+# 复用原网关，原生gRPC仍包含受鉴权的控制接口；Web入口仅调用GetState。
+[Unit]
+Description=Robot gateway for bus2
+After=network.target robot-s0-bus2.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=loosqk
+Group=loosqk
+WorkingDirectory=/home/loosqk/repo/robot/robot-system
+ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-gateway \
+    --robot-id xlerobot_bus2_full \
+    --rpc-roles-toml /etc/robot/rpc-roles.toml \
+    --config /etc/robot/xlerobot-bus2.toml \
+    --listen-addr 127.0.0.1:50062
+WatchdogSec=5s
+Restart=on-failure
+RestartSec=2s
+Environment=ROBOT_LOG_FORMAT=json
+Environment=RUST_LOG=info
+StandardOutput=journal
+StandardError=journal
+CPUAffinity=0-3
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

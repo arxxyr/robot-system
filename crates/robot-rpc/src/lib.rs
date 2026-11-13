@@ -31,6 +31,8 @@ pub mod rr_io_thread;
 pub mod set_enabled;
 pub mod state_convert;
 pub mod state_pool;
+#[cfg(feature = "status-web")]
+pub mod status_web;
 pub mod wire_credit;
 // v0.5 候选 E 段(8)（Spec D12 + P.2.7）：tonic loopback probe（READY 门槛 +
 // watchdog observer）/ worker liveness 面 + test-only freeze hook / control。

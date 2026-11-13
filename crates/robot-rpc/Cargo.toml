@@ -43,6 +43,8 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 # configs/rpc-roles.toml 加载。
 serde = { workspace = true }
+axum = { workspace = true, optional = true }
+async-stream = { workspace = true, optional = true }
 toml  = { workspace = true }
 # Error 派生。
 thiserror = { workspace = true }
@@ -73,6 +75,7 @@ tonic-prost-build   = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
+tower = { workspace = true }
 # W3 仅测试读取真实结构化补偿日志。
 serde_json = { workspace = true }
 # 段(4) client::layout 单测临时 config 文件。
@@ -116,6 +119,8 @@ robot-core = { workspace = true }
 # 增加、非生产路径放宽：`robot-gateway` 等生产二进制单独构建仍不带
 # `client`（不依赖 robot-cli），无 client-only runtime 影响。
 client = []
+# 只读HTTP/SSE状态页；独立工具，不改变robot-gateway默认构建。
+status-web = ["client", "dep:axum", "dep:async-stream"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
 # 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke
@@ -180,6 +185,11 @@ required-features = ["client"]
 name = "w3_gateway_owned"
 path = "tests/w3_gateway_owned.rs"
 required-features = ["client", "test-freeze-hook"]
+
+[[bin]]
+name = "robot-status"
+path = "src/bin/robot-status.rs"
+required-features = ["status-web"]
 
 [lints]
 workspace = true

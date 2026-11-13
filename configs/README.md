@@ -8,6 +8,7 @@
 |---|---|---|
 | 当前全身 S0 候选 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
 | 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
+| 只读状态页 | [xlerobot-status.toml](xlerobot-status.toml) | 引用原bus1/bus2配置，连接同机网关50061/50062；只读、loopback、不启动硬件，未纳入S0安装包 |
 | 现有 arm-only 部署 | [左臂](xlerobot-left-arm.toml)、[右臂](xlerobot-right-arm.toml)、[RPC 角色](rpc-roles.toml) | 仍被服务、部署工具和受监督 demo 使用，保留路径 |
 | 模拟与集成测试 | `xlerobot.toml`、`*-smoke.toml`、`clear-estop-e2e.toml` | 由对应测试明确选择；`xlerobot.toml` 是旧 schema/mock 示例，不是实机入口 |
 

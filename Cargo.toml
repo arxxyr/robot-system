@@ -96,6 +96,9 @@ tokio = { version = "1.54.1", default-features = false, features = ["macros", "r
 # tonic 0.14 的 router 与 prost codec 需分别显式启用。
 tonic = { version = "0.14.9", default-features = false, features = ["codegen", "transport", "router"] }
 tonic-prost = { version = "0.14.9", default-features = false }
+# 只读状态页面复用已锁定的HTTP栈；不进入控制器默认构建。
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+async-stream = "0.3.6"
 
 # 构建时代码生成：仅由 robot-rpc/build.rs 使用，不依赖系统 protoc。
 protoc-bin-vendored = "3.3.0"
@@ -113,6 +116,7 @@ re_log_encoding = { version = "=0.43.0", features = ["decoder"] }
 re_protos = { version = "=0.43.0", default-features = false }
 tempfile = "3.27.0"
 trybuild = "1.0.122"
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
 
 # 两个运行时 crate 保留已验证的严格 RR 本地修复，其余上游依赖由根锁文件解析。
 # 升级时须迁移补丁，不能用 registry 原包直接替换。

@@ -1,6 +1,6 @@
 # systemd 部署
 
-S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RPC 网关属于上层接口并调用 S1，**不是 S0 的启动依赖或安装内容**。
+S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RPC 网关属于上层：任务调用S1，状态及使能/急停接口接S0，**不是 S0 的启动依赖或安装内容**。
 
 ## 当前入口
 
@@ -13,6 +13,12 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 依赖为 `preflight → guard → S0`。preflight 成功后保留 `active/exited`，同次开机内另一侧启动不重复执行；该完成态只证明上次检查结束，不证明此刻物理安全。重启主机不等于电机断电。
 
 本机保留的 arm-only、S1 和 gateway 模板仍被兼容部署及测试调用，不能与 full S0 同时占用总线。三个 `*-freeze-test.service` 仅供隔离 smoke 渲染使用，不直接安装到实机。旧服务的停稳检查用于排除占用，不要求将其程序纳入 S0 产物清单。
+
+## 只读状态接入模板
+
+`robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`运行只读HTTP/SSE页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
+
+这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET接口、只调用`GetState`，不能将原网关本身称为禁写服务。构建、认证和查看方式见[状态页入口](../../docs/control_plan.md#只读状态页软件入口)。
 
 ## 安装与回滚
 

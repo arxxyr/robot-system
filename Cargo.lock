@@ -381,6 +381,8 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -388,7 +390,10 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
+ "serde_json",
+ "serde_path_to_error",
  "sync_wrapper",
+ "tokio",
  "tower",
  "tower-layer",
  "tower-service",
@@ -4511,6 +4516,8 @@ dependencies = [
 name = "robot-rpc"
 version = "0.0.1"
 dependencies = [
+ "async-stream",
+ "axum",
  "blake3",
  "crossbeam-channel",
  "flatbuffers",
@@ -4532,6 +4539,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tower",
  "tracing",
  "uuid",
 ]
