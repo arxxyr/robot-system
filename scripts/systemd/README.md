@@ -32,7 +32,7 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 开发自测用`uv run --no-project python`；本轮准备好的启动入口使用已核对的固定Python。准备完成后再确认现场并启动：先两个网关，再Web；观察20秒，核实际unit/可执行程序、HTTP两源身份与8/9槽位、真实cgroup限额和所有Web线程CPU范围。真实反馈缺失或被拒收应保留原因，服务及资源通过不等于关节反馈健康。失败只清理本轮三个新服务；通过后可保留运行，自启另行安排。
 
-Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前只读websocket入口)。本项目不安装或重载Nginx。最终URL明确后再验外网WSS，不能以Orin本机HTTP成功代替。
+Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前只读websocket入口)。本项目不安装或重载Nginx。外网URL与验收结果见[当前状态](../../docs/s0_hal_status.md#通讯与控制todo)；本机HTTP、外网WSS与有效设备反馈分别验收。`Type=simple`的start成功不等于HTTP已监听，验收需在有限预算内等待就绪，再开始观察；不能因首次连接拒绝立即判定程序启动失败。
 
 ## 安装与回滚
 

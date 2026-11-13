@@ -1,10 +1,10 @@
 # 对外通讯与控制方案
 
-本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前已实现WebSocket只读状态页并去掉Web令牌输入和校验；真实状态部署、动作控制与相机预览仍待实施，不改变S0 0.0.1发布内容。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
+本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前WebSocket只读状态页已部署，不要求Web令牌；有效关节反馈仍待核对，动作控制与相机预览尚未实施，不改变S0 0.0.1发布内容。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
 
 ## 通讯链路
 
-下图为完整目标链路；当前Web只接状态查询，控制路径尚未接入页面，外网入口尚未部署。
+下图为完整目标链路；当前Web只接状态查询，外网入口由用户维护，控制路径尚未接入页面。
 
 ```mermaid
 flowchart TD
@@ -89,15 +89,15 @@ target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
 
 程序只读取配置和本机gRPC。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
 
-Orin候选的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/api/state`、`/api/ws`，WebSocket使用HTTP/1.1并传递`Upgrade`和`Connection: upgrade`，关闭代理缓冲，读取超时可设60秒；具体行为见[Nginx官方说明](https://nginx.org/en/docs/http/websocket.html)。外网使用HTTPS/WSS，最终访问URL由用户提供后再验证。本项目不安装或重载用户的Nginx，不转发gRPC端口。
+Orin的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/api/state`、`/api/ws`，WebSocket使用HTTP/1.1并传递`Upgrade`和`Connection: upgrade`，关闭代理缓冲，读取超时可设60秒；具体行为见[Nginx官方说明](https://nginx.org/en/docs/http/websocket.html)。已配置的外网地址见[当前状态](s0_hal_status.md#通讯与控制todo)，各域名使用同源WSS。本项目不安装或重载用户的Nginx，不转发gRPC端口。
 
 入口只有`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404。WebSocket立即返回最新快照并持续更新，收到客户端Text/Binary消息以1008关闭，不提供动作或配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
 
 `xlerobot-status.toml`引用原总线TOML，以配置所在目录解析相对路径，身份、8/9槽位、关节名与ID沿原文件派生。默认500ms轮询、2000ms陈旧阈值只影响页面展示，不修改S0/S1的控制、超时和停止合同。轮子标为原始速度模式，不显示位置角度；尚无每电机扭矩读回。
 
-新的[bus1网关模板](../scripts/systemd/robot-gateway-bus1.service)、[bus2网关模板](../scripts/systemd/robot-gateway-bus2.service)和[状态页模板](../scripts/systemd/robot-status.service)只对齐配置与启动顺序，不自动启动S0/S1；本轮不安装、不enable或start。原arm-only模板继续供已有兼容入口使用，不改动它们。
+新的[bus1网关模板](../scripts/systemd/robot-gateway-bus1.service)、[bus2网关模板](../scripts/systemd/robot-gateway-bus2.service)和[状态页模板](../scripts/systemd/robot-status.service)只对齐配置与启动顺序，不自动启动S0/S1；沿现有安装器部署，开机自启需单独安排。原arm-only模板继续供已有兼容入口使用，不改动它们。
 
-`robot-status`独立于S0/S1进程，单独重启和回收。状态页unit设置CPU0–3、合计半核CPU预算、128MiB内存软限制、256MiB硬限制及32个OS任务上限，避开S0通讯核4/5。参数是初始部署预算，尚未安装验证其实际限额和峰值；后续接图像时沿同一独立服务约束实测，不把Web工作加入RT线程。
+`robot-status`独立于S0/S1进程，单独重启和回收。状态页unit设置CPU0–3、合计半核CPU预算、128MiB内存软限制、256MiB硬限制及32个OS任务上限，避开S0通讯核4/5。实际限额已在Orin核对，当前状态查询样本不代表未来图像负载峰值；后续接图像时沿同一独立服务约束实测，不把Web工作加入RT线程。
 
 ## 后续相机预览
 
