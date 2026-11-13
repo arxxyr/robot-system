@@ -15,16 +15,12 @@
 //!   `now_ns` 构造一帧 hold `JointCommand` body bytes（target = bias,
 //!   `ControlMode::Position`, `on_timeout = cfg.on_timeout`，
 //!   `deadline_ns = now_ns + cfg.deadline_ms * 1e6`）。
-//! - [`parse_anchor_from_state_bytes`]：纯字节解码 + fail-fast 断言
-//!   （fbs verify 失败 / position_rad 缺失 / joint count 错位 / state
-//!   stamp 过期）。v0.5 候选 E 段(5) 起内部委托 crate 私有
-//!   `check_state_frame`（同一份校验逻辑与 [`crate::state_cache`] 的
-//!   `latest_fresh` 共享；cache 路径额外带 `expected_layout` 校验）。
+//! - [`parse_anchor_from_state_bytes`]：校验解码、配置布局、新鲜度、位置数量及
+//!   有限值；与 [`crate::state_cache`] 的 `latest_fresh` 共用
+//!   `check_state_frame`，不跳过布局校验。
 //! - [`read_anchor_from_s0_state`]：泛型 over `LatestSubscriber<JointState>`
 //!   的 polling loop；测试用 `MockSubscriber`，binary 用
-//!   `Iceoryx2Subscriber`。三条 fail-fast 错误路径：超时 / stale /
-//!   joint count 错位（B1 outline §4.2 + §9 决策 #2 锁定 —— 不 fallback
-//!   `bias = 0.0`）。
+//!   `Iceoryx2Subscriber`。坏帧立即失败，不等待后续帧或回退到零位。
 //!
 //! ## 执行边界
 //!
@@ -516,17 +512,10 @@ pub fn build_hardware_hold_command(
 
 /// `read_anchor_from_s0_state` / `parse_anchor_from_state_bytes` 失败原因。
 ///
-/// 三条 fail-fast 路径（B1 outline §7.1 / §9 决策 #2 锁定）：
-/// - [`AnchorError::Timeout`]：`anchor_timeout_ms` 内没收到任何 sample。
-/// - [`AnchorError::Stale`]：拿到 sample 但 `state.stamp_ns` 比 `now`
-///   旧超过 `max_stale_ms`（疑似 S0 已 freeze / panic）。
-/// - [`AnchorError::JointCountMismatch`]：state `position_rad` 长度与
-///   `expected_joints` 不一致（hardware section 配置漂移）。
+/// 启动锚定失败时不建立保持目标；无帧有界等待，坏帧立即失败。
 ///
-/// 另两条非 fail-fast 但仍 Err 的路径：
-/// - [`AnchorError::MissingPositionField`]：state body 没有 `position_rad`
-///   字段（schema bug 或 publisher 错误）。
-/// - [`AnchorError::Decode`]：fbs verify 失败 / view error。
+/// 解码、布局、新鲜度、位置字段、关节数量或有限值不满足时，启动入口均以
+/// exit 4 退出；不会以零位或后续有效帧替代坏帧。
 #[derive(Debug, Error)]
 pub enum AnchorError {
     /// `anchor_timeout_ms` 内未收到任何 S0 state sample。
@@ -544,13 +533,12 @@ pub enum AnchorError {
     /// state.`position_rad` 长度跟 hardware section 配的 joint 数不一致。
     #[error("joint count mismatch: hardware section expects {expected}, S0 state has {got}")]
     JointCountMismatch { expected: usize, got: usize },
-    /// `JointState.layout_id` 与 S1 config 派生值不等（v0.5 候选 E 段(5)
-    /// 加；D1 联动）。**启动锚定路径不产**本 variant（
-    /// [`read_anchor_from_s0_state`] 传 `expected_layout = None`，锚定
-    /// 语义 0 改）；仅 crate 私有 `check_state_frame` 带 `Some(expected)`
-    /// 时（state cache 路径）可能产生，经 `From` 保留类型完整性。
+    /// `JointState.layout_id` 与 S1 配置派生值不等。
     #[error("layout_id mismatch: S1 config derives {expected:#018x}, S0 state carries {got:#018x}")]
     LayoutMismatch { expected: u64, got: u64 },
+    /// 首个非有限位置的下标；不允许 NaN 或正负无穷进入保持目标。
+    #[error("S0 position_rad[{index}] is not finite")]
+    NonFinitePosition { index: usize },
     /// state body 完全没 `position_rad` 字段（publisher bug）。
     #[error("S0 state sample has no position_rad field")]
     MissingPositionField,
@@ -568,21 +556,26 @@ impl From<TransportError> for AnchorError {
     }
 }
 
-/// 直接对一帧已收到的 `JointState` body bytes 做 anchor 提取 + 三条
-/// fail-fast 断言。供单元测试 / `read_anchor_from_s0_state` 内部复用。
+/// 从一帧 `JointState` 提取启动锚点；布局、数量、新鲜度和有限值必须全部通过。
+/// 供单元测试与 `read_anchor_from_s0_state` 共用。
 ///
 /// 注意 `bytes` 是 `JointState` body bytes（`build_joint_state`
 /// 输出），**不是** wire sample（不含 `FrameHeader`）。
 pub fn parse_anchor_from_state_bytes(
     bytes: &[u8],
     expected_joints: usize,
+    expected_layout: u64,
     now_ns: u64,
     max_stale_ns: u64,
 ) -> Result<Vec<f64>, AnchorError> {
-    // 启动锚定语义 0 改（v0.5 候选 E 段(5)）：`expected_layout = None`
-    // —— 锚定不校 layout（AC-E3 exit 码表未含 layout 路径）；layout 校验
-    // 仅 state cache 路径（`latest_fresh`）启用。
-    check_state_frame(bytes, expected_joints, None, now_ns, max_stale_ns).map_err(AnchorError::from)
+    check_state_frame(
+        bytes,
+        expected_joints,
+        expected_layout,
+        now_ns,
+        max_stale_ns,
+    )
+    .map_err(AnchorError::from)
 }
 
 // ============================================================================
@@ -597,7 +590,7 @@ pub fn parse_anchor_from_state_bytes(
 pub(crate) enum FrameCheckError {
     /// fbs verify / root 解码失败。
     Decode(String),
-    /// `JointState.layout_id != expected`（仅 `expected_layout = Some` 时）。
+    /// `JointState.layout_id != expected_layout`。
     LayoutMismatch { expected: u64, got: u64 },
     /// `stamp_ns == 0` 或 `now_ns - stamp_ns > max_stale_ns`。
     Stale {
@@ -609,6 +602,8 @@ pub(crate) enum FrameCheckError {
     MissingPositionField,
     /// `position_rad.len() != expected_joints`。
     JointCountMismatch { expected: usize, got: usize },
+    /// `position_rad` 首个非有限数值的下标。
+    NonFinitePosition { index: usize },
 }
 
 impl From<FrameCheckError> for AnchorError {
@@ -631,6 +626,7 @@ impl From<FrameCheckError> for AnchorError {
             FrameCheckError::JointCountMismatch { expected, got } => {
                 Self::JointCountMismatch { expected, got }
             }
+            FrameCheckError::NonFinitePosition { index } => Self::NonFinitePosition { index },
         }
     }
 }
@@ -642,7 +638,7 @@ impl From<FrameCheckError> for AnchorError {
 /// **校验顺序**（单因短路）：
 ///
 /// 1. fbs `root::<JointState>` verify → [`FrameCheckError::Decode`]
-/// 2. `expected_layout = Some(l)` 且 `layout_id != l` →
+/// 2. `layout_id != expected_layout` →
 ///    [`FrameCheckError::LayoutMismatch`]（D1 联动；配置级错误优先于
 ///    时序级错误）
 /// 3. `stamp_ns == 0 || now_ns - stamp_ns > max_stale_ns` →
@@ -650,22 +646,22 @@ impl From<FrameCheckError> for AnchorError {
 /// 4. 无 `position_rad` → [`FrameCheckError::MissingPositionField`]
 /// 5. `position_rad.len() != expected_joints` →
 ///    [`FrameCheckError::JointCountMismatch`]
-///
-/// `expected_layout = None` 跳过第 2 步 = 启动锚定既有语义（bit 等价）。
+/// 6. 任一位置不是有限值 → [`FrameCheckError::NonFinitePosition`]
 pub(crate) fn check_state_frame(
     bytes: &[u8],
     expected_joints: usize,
-    expected_layout: Option<u64>,
+    expected_layout: u64,
     now_ns: u64,
     max_stale_ns: u64,
 ) -> Result<Vec<f64>, FrameCheckError> {
     let js = root::<FbJointState<'_>>(bytes).map_err(|e| FrameCheckError::Decode(e.to_string()))?;
 
-    if let Some(expected) = expected_layout {
-        let got = js.layout_id();
-        if got != expected {
-            return Err(FrameCheckError::LayoutMismatch { expected, got });
-        }
+    let got = js.layout_id();
+    if got != expected_layout {
+        return Err(FrameCheckError::LayoutMismatch {
+            expected: expected_layout,
+            got,
+        });
     }
 
     let stamp_ns = js.stamp_ns();
@@ -688,8 +684,10 @@ pub(crate) fn check_state_frame(
         });
     }
 
-    let positions: Vec<f64> = pos_vec.iter().collect();
-    Ok(positions)
+    if let Some(index) = pos_vec.iter().position(|value| !value.is_finite()) {
+        return Err(FrameCheckError::NonFinitePosition { index });
+    }
+    Ok(pos_vec.iter().collect())
 }
 
 // ============================================================================
@@ -701,7 +699,7 @@ pub(crate) fn check_state_frame(
 ///
 /// **行为**（B1 outline §4.2 + §7.1）：
 /// - 在 `timeout` 内反复 `subscriber.latest()`：
-///   - `Ok(Some(lease))`：执行 [`parse_anchor_from_state_bytes`] 三条
+///   - `Ok(Some(lease))`：执行 [`parse_anchor_from_state_bytes`] 的全部
 ///     fail-fast 断言；通过 → 返 `Ok(bias)`；任一失败立即 `Err`。
 ///   - `Ok(None)`：还没 sample，sleep `poll_interval` 后重试。
 ///   - `Err`：transport 错误，立即 `Err(AnchorError::Transport)`（这
@@ -724,6 +722,7 @@ pub(crate) fn check_state_frame(
 pub fn read_anchor_from_s0_state<S, C>(
     subscriber: &mut S,
     expected_joints: usize,
+    expected_layout: u64,
     clock: &C,
     timeout: Duration,
     max_stale: Duration,
@@ -748,6 +747,7 @@ where
             return parse_anchor_from_state_bytes(
                 body_bytes,
                 expected_joints,
+                expected_layout,
                 now_ns,
                 max_stale_ns,
             );
@@ -2581,7 +2581,7 @@ hold_strategy      = "anchor"
         let positions = [1.5, -2.5, 0.0];
         let bytes = fresh_state_bytes(&positions, 100);
         let bias = parse_anchor_from_state_bytes(
-            &bytes, /* expected_joints */ 3, /* now_ns */ 150,
+            &bytes, /* expected_joints */ 3, 0xBEEF, /* now_ns */ 150,
             /* max_stale_ns */ 1_000,
         )
         .unwrap();
@@ -2589,10 +2589,38 @@ hold_strategy      = "anchor"
     }
 
     #[test]
+    fn parse_anchor_rejects_wrong_layout_before_stale_or_positions() {
+        let bytes = fresh_state_bytes(&[f64::NAN], 0);
+        let err = parse_anchor_from_state_bytes(&bytes, 1, 0xCAFE, 100, 1_000).unwrap_err();
+        assert!(matches!(
+            err,
+            AnchorError::LayoutMismatch {
+                expected: 0xCAFE,
+                got: 0xBEEF,
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_anchor_rejects_each_nonfinite_position_with_its_index() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for index in 0..8 {
+                let mut positions = [0.0; 8];
+                positions[index] = value;
+                let bytes = fresh_state_bytes(&positions, 100);
+                let err = parse_anchor_from_state_bytes(&bytes, 8, 0xBEEF, 150, 1_000).unwrap_err();
+                assert!(
+                    matches!(err, AnchorError::NonFinitePosition { index: got } if got == index)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn parse_anchor_rejects_stale_sample() {
         let bytes = fresh_state_bytes(&[1.0], /* stamp_ns */ 1_000);
         let err = parse_anchor_from_state_bytes(
-            &bytes, 1, /* now_ns */ 5_000, /* max_stale_ns */ 1_000,
+            &bytes, 1, 0xBEEF, /* now_ns */ 5_000, /* max_stale_ns */ 1_000,
         )
         .unwrap_err();
         assert!(
@@ -2607,7 +2635,7 @@ hold_strategy      = "anchor"
         // stamp_ns == 0 视为 stale（FlatBuffers 默认值；publisher 没显式 set）。
         let bytes = fresh_state_bytes(&[1.0], /* stamp_ns */ 0);
         let err = parse_anchor_from_state_bytes(
-            &bytes, 1, /* now_ns */ 100, /* max_stale_ns */ 1_000,
+            &bytes, 1, 0xBEEF, /* now_ns */ 100, /* max_stale_ns */ 1_000,
         )
         .unwrap_err();
         assert!(
@@ -2620,7 +2648,7 @@ hold_strategy      = "anchor"
     fn parse_anchor_rejects_joint_count_mismatch() {
         let bytes = fresh_state_bytes(&[1.0, 2.0], 100);
         let err = parse_anchor_from_state_bytes(
-            &bytes, /* expected_joints */ 3, /* now_ns */ 150,
+            &bytes, /* expected_joints */ 3, 0xBEEF, /* now_ns */ 150,
             /* max_stale_ns */ 1_000,
         )
         .unwrap_err();
@@ -2644,7 +2672,7 @@ hold_strategy      = "anchor"
         // stamp_ns = 0 触发 Stale，已被 parse_anchor_rejects_zero_stamp
         // 覆盖。
         let bytes = vec![0u8; 1];
-        let err = parse_anchor_from_state_bytes(&bytes, 1, 100, 1_000).unwrap_err();
+        let err = parse_anchor_from_state_bytes(&bytes, 1, 0xBEEF, 100, 1_000).unwrap_err();
         assert!(matches!(err, AnchorError::Decode(_)), "got {err:?}");
     }
 
@@ -2660,7 +2688,7 @@ hold_strategy      = "anchor"
             StaleAction::Hold,
             0,
         );
-        let err = parse_anchor_from_state_bytes(&cmd_bytes, 1, 200, 1_000).unwrap_err();
+        let err = parse_anchor_from_state_bytes(&cmd_bytes, 1, 0xCAFE, 200, 1_000).unwrap_err();
         // 不强制必须是 Decode；JointCommand bytes 解成 JointState 时
         // 可能 verify 通过（结构兼容）但语义不对（position_rad 缺失），
         // 也可能 Decode；两条路径都接受。
@@ -2703,6 +2731,7 @@ hold_strategy      = "anchor"
         let bias = read_anchor_from_s0_state(
             &mut sub,
             /* expected_joints */ 2,
+            0xBEEF,
             &clock,
             /* timeout */ Duration::from_secs(1),
             /* max_stale */ Duration::from_millis(200),
@@ -2722,6 +2751,7 @@ hold_strategy      = "anchor"
         let err = read_anchor_from_s0_state(
             &mut sub,
             /* expected_joints */ 1,
+            0xBEEF,
             &clock,
             /* timeout */ Duration::from_millis(50),
             /* max_stale */ Duration::from_millis(200),
@@ -2748,6 +2778,7 @@ hold_strategy      = "anchor"
         let err = read_anchor_from_s0_state(
             &mut sub,
             1,
+            0xBEEF,
             &clock,
             Duration::from_secs(1),
             Duration::from_millis(200),
@@ -2772,6 +2803,7 @@ hold_strategy      = "anchor"
         let err = read_anchor_from_s0_state(
             &mut sub,
             /* expected_joints */ 3,
+            0xBEEF,
             &clock,
             Duration::from_secs(1),
             Duration::from_millis(200),
@@ -2788,6 +2820,67 @@ hold_strategy      = "anchor"
             ),
             "expected JointCountMismatch, got {err:?}"
         );
+    }
+
+    #[test]
+    fn read_anchor_invalid_first_frame_does_not_retry_with_valid_frame() {
+        use robot_transport::sample::SampleLease;
+
+        struct SequenceSubscriber {
+            frames: std::vec::IntoIter<SampleLease<markers::JointState>>,
+            calls: usize,
+        }
+
+        impl LatestSubscriber<markers::JointState> for SequenceSubscriber {
+            fn latest(
+                &mut self,
+            ) -> Result<Option<SampleLease<markers::JointState>>, TransportError> {
+                self.calls += 1;
+                Ok(self.frames.next())
+            }
+        }
+
+        let now = 1_000_000;
+        for (layout, value) in [
+            (0xCAFE, 0.0),
+            (0xBEEF, f64::NAN),
+            (0xBEEF, f64::INFINITY),
+            (0xBEEF, f64::NEG_INFINITY),
+        ] {
+            let channel = MockChannel::<markers::JointState>::new();
+            let mut subscriber = channel.subscriber();
+            let mut positions = [0.0; 8];
+            positions[6] = value;
+            let bad = build_joint_state(layout, now, &positions, &[], &[], "");
+            publish_state(&channel, &bad, now);
+            let first = subscriber.latest().unwrap().unwrap();
+            publish_state(&channel, &fresh_state_bytes(&[0.0; 8], now), now);
+            let second = subscriber.latest().unwrap().unwrap();
+            let mut sequence = SequenceSubscriber {
+                frames: vec![first, second].into_iter(),
+                calls: 0,
+            };
+            let clock = MockClock::new(MonoRawNs(now));
+            let result = read_anchor_from_s0_state(
+                &mut sequence,
+                8,
+                0xBEEF,
+                &clock,
+                Duration::from_secs(1),
+                Duration::from_millis(200),
+                Duration::from_millis(10),
+            );
+            match layout {
+                0xCAFE => assert!(matches!(result, Err(AnchorError::LayoutMismatch { .. }))),
+                _ => assert!(matches!(
+                    result,
+                    Err(AnchorError::NonFinitePosition { index: 6 })
+                )),
+            }
+            assert_eq!(sequence.calls, 1, "坏帧不得等待后续有效帧");
+            assert_eq!(sequence.frames.len(), 1);
+            assert_eq!(clock.now(), MonoRawNs(now), "坏帧失败不得消耗等待预算");
+        }
     }
 
     // ----- parse_hardware_section_from_toml -----

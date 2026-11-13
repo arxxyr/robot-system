@@ -88,6 +88,7 @@ fn anchor_then_tick_loop_publishes_hold_commands_with_monotonic_deadline() {
     let bias = read_anchor_from_s0_state(
         &mut state_sub,
         /* expected_joints */ 3,
+        LAYOUT_ID,
         &clock,
         Duration::from_secs(1),
         Duration::from_millis(200),
@@ -207,7 +208,8 @@ fn lib_api_surface_supports_full_anchor_to_hold_pipeline() {
     let body = build_joint_state(LAYOUT_ID, now_ns - 10_000, &positions, &[], &[], "");
 
     // 直接 parse_anchor_from_state_bytes（绕开 subscriber 路径）。
-    let bias = parse_anchor_from_state_bytes(&body, 3, now_ns, 1_000_000).expect("parse anchor");
+    let bias = parse_anchor_from_state_bytes(&body, 3, LAYOUT_ID, now_ns, 1_000_000)
+        .expect("parse anchor");
     assert_eq!(bias, vec![1.0, 2.0, 3.0]);
 
     // build_hold_command + verify 字段。
@@ -285,6 +287,7 @@ fn bus1_fresh_anchor_holds_all_eight_joints_and_rejects_stale_or_arm_only_state(
     let bias = read_anchor_from_s0_state(
         &mut state_ch.subscriber(),
         hardware.joints.len(),
+        layout_id,
         &MockClock::new(MonoRawNs(now_ns)),
         Duration::from_millis(cfg.anchor_timeout_ms),
         Duration::from_millis(cfg.max_stale_ms),
@@ -309,12 +312,12 @@ fn bus1_fresh_anchor_holds_all_eight_joints_and_rejects_stale_or_arm_only_state(
         "",
     );
     assert!(matches!(
-        parse_anchor_from_state_bytes(&stale, 8, now_ns, max_stale_ns),
+        parse_anchor_from_state_bytes(&stale, 8, layout_id, now_ns, max_stale_ns),
         Err(AnchorError::Stale { .. })
     ));
     let arm_only = build_joint_state(layout_id, now_ns, &positions[..6], &[], &[], "");
     assert!(matches!(
-        parse_anchor_from_state_bytes(&arm_only, 8, now_ns, max_stale_ns),
+        parse_anchor_from_state_bytes(&arm_only, 8, layout_id, now_ns, max_stale_ns),
         Err(AnchorError::JointCountMismatch {
             expected: 8,
             got: 6

@@ -5,7 +5,7 @@
 //!
 //! - 启动期读一次 `/<r>/s0/<hw>/state` 锚定当前位置作 hold bias
 //!   （[`coordinator::read_anchor_from_s0_state`] / fail-fast：超时
-//!   / stale / joint count 错位均退出非 0；不 fallback bias=0）。
+//!   / stale / layout 或 joint count 错位 / 非有限位置均退出非 0；不 fallback bias=0）。
 //! - **v0.5 候选 E 段(5)** 加：锚定成功后起**常驻** state cache 线程
 //!   （[`robot_s1::state_cache`]，同 topic；Scripted `scripted_start_pose`
 //!   = 提交时当前位的唯一来源；spawn 失败 = 启动失败 fail-fast，**先于**
@@ -473,13 +473,14 @@ fn run(args: &Args) -> Result<(), i32> {
         }
     };
 
-    // ---- 启动锚定（fail-fast：timeout / stale / joint count 不 fallback）----
+    // ---- 启动锚定：校验配置布局与有限位置，坏帧不重试、不回退 ----
     install_signal_handlers();
     let clock = SystemClock::new();
     let bias = anchor_or_fail(
         &node,
         &topic_state,
         &hardware,
+        derived_layout,
         &cfg,
         &clock,
         args.poll_interval,
@@ -1165,12 +1166,13 @@ fn spawn_s1_rr_server_threads(
     })
 }
 
-/// 启动锚定专属包装：把 [`AnchorError`] 三条 fail-fast 路径映射到 exit
+/// 启动锚定专属包装：把 [`AnchorError`] 的失败路径映射到 exit
 /// code 4，并打印结构化日志。
 fn anchor_or_fail<C: RobotClock>(
     node: &iceoryx2::node::Node<IxService>,
     topic_state: &str,
     hardware: &HardwareSection,
+    expected_layout: u64,
     cfg: &CoordinatorConfig,
     clock: &C,
     poll_interval: Duration,
@@ -1190,6 +1192,7 @@ fn anchor_or_fail<C: RobotClock>(
     coordinator::read_anchor_from_s0_state(
         &mut state_sub,
         hardware.joints.len(),
+        expected_layout,
         clock,
         Duration::from_millis(cfg.anchor_timeout_ms),
         Duration::from_millis(cfg.max_stale_ms),

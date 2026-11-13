@@ -11,7 +11,7 @@
 //!   **失败响应不代表没上扭**（deadline 不回滚副作用）——故从**第一次
 //!   enable 尝试起**，任何退出路径都必经收尾：
 //!   * 成功路径：disable 必须**确认**（RPC Ok + readback 模式离开
-//!     Enabled）；未确认 → 立即 `EStop` 并判 FAIL；
+//!     Enabled；hold 则必须为新帧 Safe/TorqueOffConfirmed/fault0）；未确认 → 立即 `EStop` 并判 FAIL；
 //!   * 失败路径：有已知未终态 action 先 best-effort cancel → `EStop` →
 //!     FAIL；双臂 phase 右侧 enable 结果不确定 → **双侧 `EStop`**（左已上
 //!     扭）；`EStop` 自身失败并进报告并点名人工断电，不吞。
@@ -23,7 +23,7 @@
 //!   / `estop_timeout` 包裹，本 bin 不重复。）
 //! - **实际运动证据**（round 1 P0-3）：`Completed(Success)` 不构成"电机动过"
 //!   ——Scripted 完成由时钟推进、S0 写失败只计 metric、最终位置可能一直是
-//!   旧 anchor。每个上扭 phase 带 [`MotionWitness`]：以**新鲜样本**
+//!   旧 anchor。每个探针 phase 带 [`MotionWitness`]：以**新鲜样本**
 //!   （`stamp_ns` 严格推进才计入）观测探针关节，**出程**必须真实到达
 //!   `anchor+offset ∓ 容差`、**回程**回落 anchor ± 容差；容差有硬上限且
 //!   `offset ≥ 2.5×容差`（两判据阈值不相交，卡死在中间点不可能双过）。
@@ -38,6 +38,7 @@
 //! | phase | 上扭 | 判据 |
 //! |---|---|---|
 //! | `read-state` | 否 | `GetState` 可达 + `layout_id` == config 派生 + `stamp_ns` 在推进 |
+//! | `hold` | 是 | 仅左侧，以实际 S1 锚点保持20秒；不提交任务，严格确认断扭 |
 //! | `single-arm` | 是 | enable → 探针 → `Completed(Success)` + **witness 出程/回程证据** → disable 确认 |
 //! | `dual-arm`   | 是 | 双侧 enable → `run_chunk_pair` → `PairResult::Success` + **双侧 witness** → 双侧 disable 确认 |
 //! | `grippers`   | 是 | 同 dual-arm，探针关节 = 双侧 `*_gripper`（D6 Scripted 同车） |
@@ -57,6 +58,8 @@ use std::time::Duration;
 
 use tonic::transport::Channel;
 
+#[cfg(feature = "supervised-s0")]
+use robot_core::time::RobotClock;
 use robot_core::time::SystemClock;
 use robot_rpc::client::dual_arm_workflow::{
     ActionSpec, ArmEndpoint, ArmPair, ArmRpcError, OutcomeKind, PairConfig, PairResult, Side,
@@ -177,6 +180,7 @@ AC-E12 安全边界五条（全部满足才允许上扭 phase）：
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     ReadState,
+    Hold,
     SingleArm,
     DualArm,
     Grippers,
@@ -187,12 +191,13 @@ impl Phase {
     fn parse(s: &str) -> Result<Self, String> {
         match s {
             "read-state" => Ok(Self::ReadState),
+            "hold" => Ok(Self::Hold),
             "single-arm" => Ok(Self::SingleArm),
             "dual-arm" => Ok(Self::DualArm),
             "grippers" => Ok(Self::Grippers),
             "all" => Ok(Self::All),
             other => Err(format!(
-                "--phase: unknown {other:?} (read-state|single-arm|dual-arm|grippers|all)"
+                "--phase: unknown {other:?} (read-state|hold|single-arm|dual-arm|grippers|all)"
             )),
         }
     }
@@ -232,7 +237,7 @@ fn validate_probe_geometry(offset_rad: f64, tolerance_rad: f64) -> Result<(), St
 
 struct Args {
     phase: Phase,
-    /// `single-arm` 的目标臂；其余 phase 忽略。
+    /// `single-arm` 的目标臂；`hold` 固定为 left。
     side: Side,
     left_gateway: String,
     right_gateway: String,
@@ -245,6 +250,8 @@ struct Args {
     /// 探针关节名（缺省 = joints 里首个含 `wrist_roll` 的；找不到则要求显式）。
     probe_joint: Option<String>,
     settle_tolerance_rad: f64,
+    /// 本次 S1 anchored 日志中的固定 bias 数组；外壳负责 PID/Invocation 绑定。
+    hold_anchor_rad: Option<String>,
     ack_safety_checklist: bool,
 }
 
@@ -259,6 +266,11 @@ impl Args {
     #[allow(clippy::too_many_lines)]
     fn parse() -> Result<Self, String> {
         let raw: Vec<String> = std::env::args().skip(1).collect();
+        Self::parse_from(&raw)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn parse_from(raw: &[String]) -> Result<Self, String> {
         let mut args = Self {
             phase: Phase::ReadState,
             side: Side::Left,
@@ -272,55 +284,62 @@ impl Args {
             probe_offset_rad: DEFAULT_PROBE_OFFSET_RAD,
             probe_joint: None,
             settle_tolerance_rad: DEFAULT_SETTLE_TOLERANCE_RAD,
+            hold_anchor_rad: None,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
+        let mut probe_option_seen = false;
         let mut i = 0;
         while i < raw.len() {
             match raw[i].as_str() {
                 "--phase" => {
-                    args.phase = Phase::parse(value(&raw, &mut i, "--phase")?)?;
+                    args.phase = Phase::parse(value(raw, &mut i, "--phase")?)?;
                     phase_seen = true;
                 }
                 "--side" => {
-                    args.side = match value(&raw, &mut i, "--side")? {
+                    args.side = match value(raw, &mut i, "--side")? {
                         "left" => Side::Left,
                         "right" => Side::Right,
                         other => return Err(format!("--side: unknown {other:?} (left|right)")),
                     };
                 }
                 "--left-gateway" => {
-                    args.left_gateway = normalize_endpoint(value(&raw, &mut i, "--left-gateway")?);
+                    args.left_gateway = normalize_endpoint(value(raw, &mut i, "--left-gateway")?);
                 }
                 "--right-gateway" => {
-                    args.right_gateway =
-                        normalize_endpoint(value(&raw, &mut i, "--right-gateway")?);
+                    args.right_gateway = normalize_endpoint(value(raw, &mut i, "--right-gateway")?);
                 }
                 "--left-config" => {
-                    args.left_config = PathBuf::from(value(&raw, &mut i, "--left-config")?);
+                    args.left_config = PathBuf::from(value(raw, &mut i, "--left-config")?);
                 }
                 "--right-config" => {
-                    args.right_config = PathBuf::from(value(&raw, &mut i, "--right-config")?);
+                    args.right_config = PathBuf::from(value(raw, &mut i, "--right-config")?);
                 }
                 "--left-hardware-id" => {
-                    args.left_hardware_id = value(&raw, &mut i, "--left-hardware-id")?.into();
+                    args.left_hardware_id = value(raw, &mut i, "--left-hardware-id")?.into();
                 }
                 "--right-hardware-id" => {
-                    args.right_hardware_id = value(&raw, &mut i, "--right-hardware-id")?.into();
+                    args.right_hardware_id = value(raw, &mut i, "--right-hardware-id")?.into();
                 }
-                "--token" => args.token = value(&raw, &mut i, "--token")?.into(),
+                "--token" => args.token = value(raw, &mut i, "--token")?.into(),
                 "--probe-offset-rad" => {
-                    args.probe_offset_rad = value(&raw, &mut i, "--probe-offset-rad")?
+                    probe_option_seen = true;
+                    args.probe_offset_rad = value(raw, &mut i, "--probe-offset-rad")?
                         .parse()
                         .map_err(|e| format!("--probe-offset-rad: {e}"))?;
                 }
                 "--probe-joint" => {
-                    args.probe_joint = Some(value(&raw, &mut i, "--probe-joint")?.into());
+                    probe_option_seen = true;
+                    args.probe_joint = Some(value(raw, &mut i, "--probe-joint")?.into());
                 }
                 "--settle-tolerance-rad" => {
-                    args.settle_tolerance_rad = value(&raw, &mut i, "--settle-tolerance-rad")?
+                    probe_option_seen = true;
+                    args.settle_tolerance_rad = value(raw, &mut i, "--settle-tolerance-rad")?
                         .parse()
                         .map_err(|e| format!("--settle-tolerance-rad: {e}"))?;
+                }
+                "--hold-anchor-rad" => {
+                    args.hold_anchor_rad = Some(value(raw, &mut i, "--hold-anchor-rad")?.into());
                 }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
@@ -333,6 +352,18 @@ impl Args {
         }
         if args.token.is_empty() {
             return Err("--token (or env ROBOT_TOKEN) is required".into());
+        }
+        if args.phase == Phase::Hold {
+            if !cfg!(feature = "supervised-s0") {
+                return Err("hold 需要 supervised-s0 feature".into());
+            }
+            if args.side != Side::Left || probe_option_seen || args.hold_anchor_rad.is_none() {
+                return Err(
+                    "hold 仅支持左侧，必须提供 --hold-anchor-rad，禁止探针或容差覆盖".into(),
+                );
+            }
+        } else if args.hold_anchor_rad.is_some() {
+            return Err("--hold-anchor-rad 仅用于 hold".into());
         }
         validate_probe_geometry(args.probe_offset_rad, args.settle_tolerance_rad)?;
         Ok(args)
@@ -358,13 +389,14 @@ USAGE:
 
 PHASE:
   read-state    只读：GetState 双臂（layout 校验 + stamp 推进）；不上扭
+  hold          仅左侧固定保持20秒；S1唯一发布命令，不提交探针任务
   single-arm    单臂探针（--side left|right）：enable → 出→回 + 运动证据 → disable 确认
   dual-arm      双臂 run_chunk_pair 探针（协议级 cancel/EStop 收尾 + 双侧运动证据）
   grippers      双夹爪探针（D6 Scripted 同车；关节 = *_gripper）
   all           串行全部（read-state → single-arm×2 → dual-arm → grippers）
 
 OPTIONS:
-  --side <left|right>            single-arm 的目标臂（默认 left）
+  --side <left|right>            single-arm 的目标臂；hold仅left（默认 left）
   --left-gateway <ADDR>          默认 127.0.0.1:50051
   --right-gateway <ADDR>         默认 127.0.0.1:50052
   --left-config <PATH>           默认 /etc/robot/xlerobot-left-arm.toml
@@ -372,6 +404,7 @@ OPTIONS:
   --left-hardware-id <ID>        默认 left_arm
   --right-hardware-id <ID>       默认 right_arm
   --token <TOKEN>                operator+ token（或 env ROBOT_TOKEN）
+  --hold-anchor-rad <JSON>       本次S1启动锚点数组；hold必填，固定±4raw
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
   --settle-tolerance-rad <F>     回落容差（默认 {DEFAULT_SETTLE_TOLERANCE_RAD}；上限 {MAX_SETTLE_TOLERANCE_RAD} 且 offset ≥ {TOLERANCE_SEPARATION}×容差）
@@ -604,6 +637,108 @@ impl MotionWitness {
 // 一条臂的运行时（tonic client + layout + 身份）
 // ============================================================================
 
+#[cfg(feature = "supervised-s0")]
+const HOLD_DURATION: Duration = Duration::from_secs(20);
+#[cfg(feature = "supervised-s0")]
+const HOLD_FRESH_NS: u64 = 200_000_000;
+
+/// 仅 hold 使用：不重采目标，不将校准边界容差用作保持精度。
+#[cfg(feature = "supervised-s0")]
+struct HoldCheck {
+    robot_id: String,
+    anchor_raw: Vec<i32>,
+    last_stamp_ns: u64,
+}
+
+#[cfg(feature = "supervised-s0")]
+impl HoldCheck {
+    fn new(robot_id: String, anchor_rad: &[f64], joints: usize) -> Result<Self, String> {
+        if robot_id.is_empty() || anchor_rad.len() != joints || joints == 0 {
+            return Err("hold 锚点必须完整匹配配置关节表及机器人身份".into());
+        }
+        Ok(Self {
+            robot_id,
+            anchor_raw: Self::raw_positions(anchor_rad)?,
+            last_stamp_ns: 0,
+        })
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "复用原 Feetech f32 换算，先拒绝非有限及不可表示值"
+    )]
+    fn raw_positions(positions: &[f64]) -> Result<Vec<i32>, String> {
+        positions
+            .iter()
+            .map(|position| {
+                if !position.is_finite() || position.abs() > f64::from(f32::MAX) {
+                    return Err("hold 位置非有限或不可表示".into());
+                }
+                let raw = robot_adapter_feetech::rad_to_raw(*position as f32);
+                if !(0..=4095).contains(&raw) {
+                    return Err("hold 位置超出12位范围".into());
+                }
+                Ok(raw)
+            })
+            .collect()
+    }
+
+    fn observe(&mut self, state: &RobotState, hardware_id: &str, now: u64) -> Result<(), String> {
+        if state.robot_id != self.robot_id || state.hardware_id != hardware_id {
+            return Err("hold 状态 robot_id/hardware_id 不匹配".into());
+        }
+        if state.stamp_ns == 0
+            || now
+                .checked_sub(state.stamp_ns)
+                .is_none_or(|age| age > HOLD_FRESH_NS)
+        {
+            return Err("hold 状态来自未来或超过200ms".into());
+        }
+        if state.stamp_ns < self.last_stamp_ns {
+            return Err("hold 状态时间戳回退".into());
+        }
+        if state.fault_code != 0 || state.mode == S0Mode::Fault as i32 {
+            return Err(format!(
+                "hold 状态故障：mode={}, fault={}",
+                state.mode, state.fault_code
+            ));
+        }
+        Self::raw_positions(&state.position_rad)?;
+        self.last_stamp_ns = state.stamp_ns;
+        Ok(())
+    }
+
+    fn check_position(&self, state: &RobotState) -> Result<(), String> {
+        let positions = Self::raw_positions(&state.position_rad)?;
+        if positions.len() != self.anchor_raw.len() {
+            return Err("hold 状态与固定锚点长度不匹配".into());
+        }
+        for (slot, (actual, target)) in positions.iter().zip(&self.anchor_raw).enumerate() {
+            if (actual - target).abs() > 4 {
+                return Err(format!(
+                    "hold 固定S1锚点偏差超过4raw：slot={slot}, actual={actual}, target={target}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn torque_on(state: &RobotState) -> bool {
+        use robot_rpc::proto::{S0ControlLink, S0OutputMode, S0SafetyState};
+        state.mode == S0Mode::Enabled as i32
+            && state.control_link == S0ControlLink::Ok as i32
+            && state.output_mode == S0OutputMode::Active as i32
+            && state.safety_state == S0SafetyState::TorqueOn as i32
+            && state.fault_code == 0
+    }
+
+    fn torque_off(state: &RobotState) -> bool {
+        state.mode == S0Mode::Safe as i32
+            && state.safety_state == robot_rpc::proto::S0SafetyState::TorqueOffConfirmed as i32
+            && state.fault_code == 0
+    }
+}
+
 struct SideRt {
     side: Side,
     hardware_id: String,
@@ -611,6 +746,8 @@ struct SideRt {
     client: RobotControlClient<Channel>,
     token: String,
     seq: AtomicU64,
+    #[cfg(feature = "supervised-s0")]
+    hold_check: Option<HoldCheck>,
 }
 
 /// 独立采样端（witness 用；克隆 channel，双臂 phase 与协议 RPC 并行采样）。
@@ -680,6 +817,8 @@ impl SideRt {
             client: RobotControlClient::new(channel),
             token: token.to_string(),
             seq: AtomicU64::new(0),
+            #[cfg(feature = "supervised-s0")]
+            hold_check: None,
         })
     }
 
@@ -733,6 +872,10 @@ impl SideRt {
             state.stamp_ns,
             &state.position_rad,
         )?;
+        #[cfg(feature = "supervised-s0")]
+        if let Some(check) = &mut self.hold_check {
+            check.observe(&state, &self.hardware_id, SystemClock::new().now().0)?;
+        }
         Ok(state)
     }
 
@@ -785,12 +928,23 @@ impl TorqueOps for SideRt {
     }
 
     async fn enable(&mut self) -> Result<(), String> {
+        #[cfg(feature = "supervised-s0")]
+        let initial_stamp = self.hold_check.as_ref().map(|check| check.last_stamp_ns);
         self.set_enabled(true, "enable").await?;
         let deadline = std::time::Instant::now() + ENABLE_WAIT;
         let mut last_mode = S0Mode::Unspecified as i32;
         while std::time::Instant::now() < deadline {
             let state = self.get_state_raw().await?;
             last_mode = state.mode;
+            #[cfg(feature = "supervised-s0")]
+            if let Some(check) = &self.hold_check {
+                check.check_position(&state)?;
+                if HoldCheck::torque_on(&state) && Some(state.stamp_ns) > initial_stamp {
+                    return Ok(());
+                }
+                tokio::time::sleep(STATUS_POLL).await;
+                continue;
+            }
             if state.mode == S0Mode::Enabled as i32 {
                 return Ok(());
             }
@@ -804,17 +958,26 @@ impl TorqueOps for SideRt {
     }
 
     async fn disable_confirmed(&mut self) -> Result<(), String> {
+        #[cfg(feature = "supervised-s0")]
+        let initial_stamp = self.hold_check.as_ref().map(|check| check.last_stamp_ns);
         self.set_enabled(false, "disable").await?;
         // readback：模式必须离开 Enabled（round 1 P0-1 "disable 未确认"）。
         let deadline = std::time::Instant::now() + DISABLE_CONFIRM_WAIT;
         loop {
             let state = self.get_state_raw().await?;
-            if state.mode != S0Mode::Enabled as i32 {
+            let confirmed = state.mode != S0Mode::Enabled as i32;
+            #[cfg(feature = "supervised-s0")]
+            let confirmed = if initial_stamp.is_some() {
+                HoldCheck::torque_off(&state) && Some(state.stamp_ns) > initial_stamp
+            } else {
+                confirmed
+            };
+            if confirmed {
                 return Ok(());
             }
             if std::time::Instant::now() >= deadline {
                 return Err(format!(
-                    "{}: still Enabled {DISABLE_CONFIRM_WAIT:?} after SetEnabled(false)",
+                    "{}: disable 状态未确认，SetEnabled(false) 后已等待 {DISABLE_CONFIRM_WAIT:?}",
                     self.label()
                 ));
             }
@@ -1432,7 +1595,101 @@ async fn phase_read_state(rt: &mut SideRt) -> Result<(), String> {
     Ok(())
 }
 
-/// 单臂探针：prep（不上扭）→ 上扭区段 body → 统一 finalizer。
+/// 左侧原位保持：核对实际 S1 锚点 → 固定20秒 → 原 finalizer；不提交任务。
+#[cfg(feature = "supervised-s0")]
+async fn phase_hold(rt: &mut SideRt, args: &Args) -> Result<(), String> {
+    let config_path = args.left_config.clone();
+    let config_text = tokio::task::spawn_blocking(move || std::fs::read_to_string(config_path))
+        .await
+        .map_err(|e| format!("hold 配置读取任务失败：{e}"))?
+        .map_err(|e| format!("hold 读取配置：{e}"))?;
+    let config: toml::Value =
+        toml::from_str(&config_text).map_err(|e| format!("hold 解析配置：{e}"))?;
+    let robot_id = config
+        .get("robot")
+        .and_then(|robot| robot.get("id"))
+        .and_then(toml::Value::as_str)
+        .ok_or("hold 配置缺少 robot.id")?;
+    let anchor: Vec<f64> = serde_json::from_str(
+        args.hold_anchor_rad
+            .as_deref()
+            .ok_or("hold 缺少实际S1锚点")?,
+    )
+    .map_err(|e| format!("hold 锚点数组无效：{e}"))?;
+    let check = HoldCheck::new(robot_id.into(), &anchor, rt.layout.joints.len())?;
+    println!("HOLD_ANCHOR_RAW={:?}", check.anchor_raw);
+    rt.hold_check = Some(check);
+    // 启用前只读：固定锚点不能用当前反馈替换，两帧均须已断扭且来源推进。
+    let before = rt.get_state_raw().await?;
+    check_hold_pre_enable(rt, &before)?;
+    tokio::time::sleep(STATUS_POLL).await;
+    let current = rt.get_state_raw().await?;
+    check_hold_pre_enable(rt, &current)?;
+    if current.stamp_ns <= before.stamp_ns {
+        return Err("hold 启用前状态来源没有推进".into());
+    }
+    println!("[hold] side=left duration_ms=20000 tolerance_raw=4 anchor_rad={anchor:?}");
+
+    // 沿用原 enable/finalizer：第一次启用尝试之后，任何错误都必经 EStop。
+    let body = async {
+        staged(PROD_STAGE_BUDGETS.enable, "hold enable stage", rt.enable()).await?;
+        let clock = SystemClock::new();
+        let start_ns = clock.now().0;
+        let end_ns =
+            start_ns + u64::try_from(HOLD_DURATION.as_nanos()).map_err(|_| "hold 时长不可表示")?;
+        let mut samples = 0usize;
+        loop {
+            let remaining = Duration::from_nanos(end_ns.saturating_sub(clock.now().0));
+            if remaining <= STATUS_POLL {
+                tokio::time::sleep(remaining).await;
+                break;
+            }
+            tokio::time::sleep(STATUS_POLL).await;
+            let previous_stamp = rt
+                .hold_check
+                .as_ref()
+                .ok_or("hold 校验器缺失")?
+                .last_stamp_ns;
+            // 最后一轮 RPC 不得把20秒保持窗拖长；超时仍按失败收尾。
+            let remaining = Duration::from_nanos(end_ns.saturating_sub(clock.now().0));
+            let state = staged(remaining, "hold state stage", rt.get_state_raw()).await?;
+            if state.stamp_ns <= previous_stamp || !HoldCheck::torque_on(&state) {
+                return Err("hold 来源未推进或未保持 Enabled/Ok/Active/TorqueOn".into());
+            }
+            rt.hold_check
+                .as_ref()
+                .ok_or("hold 校验器缺失")?
+                .check_position(&state)?;
+            samples += 1;
+        }
+        if samples < MIN_WITNESS_SAMPLES {
+            return Err("hold 新鲜反馈样本不足".into());
+        }
+        println!(
+            "[hold] samples={samples} elapsed_ns={}",
+            clock.now().0 - start_ns
+        );
+        Ok(())
+    }
+    .await
+    .map_err(BodyFailure::plain);
+    finalize_single(rt, body, PROD_STAGE_BUDGETS).await?;
+    println!("[hold] side=left fixed_anchor_hold_20s + Safe/TorqueOffConfirmed/fault0 PASS");
+    println!("HOLD_PASS");
+    Ok(())
+}
+
+#[cfg(feature = "supervised-s0")]
+fn check_hold_pre_enable(rt: &SideRt, state: &RobotState) -> Result<(), String> {
+    if !HoldCheck::torque_off(state) {
+        return Err("hold 启用前必须为 Safe/TorqueOffConfirmed/fault0".into());
+    }
+    rt.hold_check
+        .as_ref()
+        .ok_or("hold 校验器缺失")?
+        .check_position(state)
+}
+
 async fn phase_single_arm(rt: &mut SideRt, args: &Args) -> Result<(), String> {
     let probe = Probe::resolve(
         &rt.layout,
@@ -1709,6 +1966,7 @@ async fn connect_side(args: &Args, side: Side) -> Result<SideRt, String> {
 async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
     let name = match phase {
         Phase::ReadState => "read-state".to_string(),
+        Phase::Hold => "hold/left".to_string(),
         Phase::SingleArm => format!(
             "single-arm/{}",
             if side == Side::Left { "left" } else { "right" }
@@ -1718,6 +1976,20 @@ async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
         Phase::All => unreachable!("all 在 main 展开"),
     };
     let result = match phase {
+        Phase::Hold => {
+            #[cfg(feature = "supervised-s0")]
+            {
+                let step = async {
+                    let mut rt = connect_side(args, Side::Left).await?;
+                    phase_hold(&mut rt, args).await
+                };
+                step.await
+            }
+            #[cfg(not(feature = "supervised-s0"))]
+            {
+                Err("hold 需要 supervised-s0 feature".into())
+            }
+        }
         Phase::ReadState => {
             // 双侧都读；一侧失败即 FAIL（read-state 也用于确认双栈健康）。
             let mut out = Ok(());
@@ -1851,6 +2123,192 @@ mod tests {
     use std::collections::VecDeque;
 
     use super::*;
+
+    #[cfg(feature = "supervised-s0")]
+    mod hold_tests {
+        use super::*;
+
+        fn state() -> RobotState {
+            RobotState {
+                robot_id: "robot".into(),
+                hardware_id: "left".into(),
+                layout_id: 0xDEAD_BEEF,
+                stamp_ns: 1_000_000_000,
+                position_rad: vec![0.0; 6],
+                mode: S0Mode::Safe as i32,
+                safety_state: robot_rpc::proto::S0SafetyState::TorqueOffConfirmed as i32,
+                ..RobotState::default()
+            }
+        }
+
+        fn check() -> HoldCheck {
+            HoldCheck::new("robot".into(), &[0.0; 6], 6).unwrap()
+        }
+
+        fn args(extra: &[&str]) -> Vec<String> {
+            [
+                "--phase",
+                "hold",
+                "--token",
+                "test-only",
+                "--hold-anchor-rad",
+                "[0,0,0,0,0,0]",
+            ]
+            .into_iter()
+            .chain(extra.iter().copied())
+            .map(str::to_string)
+            .collect()
+        }
+
+        #[test]
+        fn hold_requires_left_fixed_target_and_rejects_probe_or_duration_overrides() {
+            Args::parse_from(&args(&[])).unwrap();
+            for extra in [
+                vec!["--side", "right"],
+                vec!["--probe-offset-rad", "0.05"],
+                vec!["--probe-joint", "wrist"],
+                vec!["--settle-tolerance-rad", "0.02"],
+                vec!["--duration", "21"],
+            ] {
+                assert!(Args::parse_from(&args(&extra)).is_err());
+            }
+            assert!(
+                Args::parse_from(&["--phase", "hold", "--token", "test-only"].map(str::to_string))
+                    .is_err()
+            );
+            assert_eq!(HOLD_DURATION, Duration::from_secs(20));
+            assert!(Phase::Hold.enables_torque());
+        }
+
+        #[test]
+        fn anchor_rejects_shape_nonfinite_and_unrepresentable_raw() {
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX, 10.0] {
+                assert!(HoldCheck::new("robot".into(), &[bad; 6], 6).is_err());
+            }
+            assert!(HoldCheck::new("robot".into(), &[0.0; 5], 6).is_err());
+            assert!(HoldCheck::new(String::new(), &[0.0; 6], 6).is_err());
+        }
+
+        #[test]
+        fn hold_uses_original_four_raw_boundary_for_every_joint() {
+            for slot in 0..6 {
+                for delta in [-4, 4] {
+                    let mut sample = state();
+                    sample.position_rad[slot] =
+                        f64::from(robot_adapter_feetech::raw_to_rad(2047 + delta));
+                    check().check_position(&sample).unwrap();
+                }
+                for delta in [-5, 5] {
+                    let mut sample = state();
+                    sample.position_rad[slot] =
+                        f64::from(robot_adapter_feetech::raw_to_rad(2047 + delta));
+                    assert!(check().check_position(&sample).is_err());
+                }
+            }
+        }
+
+        #[test]
+        fn hold_rejects_wrong_identity_layout_and_bad_position() {
+            let mut sample = state();
+            sample.robot_id = "other".into();
+            assert!(check().observe(&sample, "left", sample.stamp_ns).is_err());
+            sample = state();
+            assert!(check().observe(&sample, "other", sample.stamp_ns).is_err());
+            sample.layout_id += 1;
+            assert!(validate_state_layout(&layout(), &sample).is_err());
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                sample = state();
+                sample.position_rad[2] = bad;
+                assert!(check().observe(&sample, "left", sample.stamp_ns).is_err());
+            }
+            sample = state();
+            sample.position_rad.pop();
+            assert!(
+                check_state_shape("left", &layout(), sample.stamp_ns, &sample.position_rad)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn hold_rejects_stale_future_zero_and_regressing_source() {
+            let sample = state();
+            check()
+                .observe(&sample, "left", sample.stamp_ns + HOLD_FRESH_NS)
+                .unwrap();
+            for now in [sample.stamp_ns - 1, sample.stamp_ns + HOLD_FRESH_NS + 1] {
+                assert!(check().observe(&sample, "left", now).is_err());
+            }
+            let mut zero = sample.clone();
+            zero.stamp_ns = 0;
+            assert!(check().observe(&zero, "left", 0).is_err());
+            let mut guard = check();
+            guard.observe(&sample, "left", sample.stamp_ns).unwrap();
+            let mut earlier = sample.clone();
+            earlier.stamp_ns -= 1;
+            assert!(guard.observe(&earlier, "left", sample.stamp_ns).is_err());
+        }
+
+        #[test]
+        fn hold_never_accepts_fault_or_merely_non_enabled_as_torque_off() {
+            use robot_rpc::proto::{S0ControlLink, S0OutputMode, S0SafetyState};
+            let sample = state();
+            assert!(HoldCheck::torque_off(&sample));
+            for mode in [
+                S0Mode::Unspecified,
+                S0Mode::Ready,
+                S0Mode::Fault,
+                S0Mode::Stopping,
+            ] {
+                let mut bad = sample.clone();
+                bad.mode = mode as i32;
+                assert!(!HoldCheck::torque_off(&bad));
+            }
+            for safety in [
+                S0SafetyState::TorqueUnknown,
+                S0SafetyState::TorqueOn,
+                S0SafetyState::StopCommanded,
+                S0SafetyState::StopFailed,
+                S0SafetyState::AdapterUncertain,
+            ] {
+                let mut bad = sample.clone();
+                bad.safety_state = safety as i32;
+                assert!(!HoldCheck::torque_off(&bad));
+            }
+            let mut bad = sample.clone();
+            bad.fault_code = 1;
+            assert!(!HoldCheck::torque_off(&bad));
+            assert!(check().observe(&bad, "left", bad.stamp_ns).is_err());
+            let mut enabled = sample;
+            enabled.mode = S0Mode::Enabled as i32;
+            enabled.safety_state = S0SafetyState::TorqueOn as i32;
+            enabled.control_link = S0ControlLink::Ok as i32;
+            enabled.output_mode = S0OutputMode::Active as i32;
+            assert!(HoldCheck::torque_on(&enabled));
+            enabled.output_mode = S0OutputMode::Hold as i32;
+            assert!(!HoldCheck::torque_on(&enabled));
+        }
+
+        #[test]
+        fn hold_finalizer_never_submits_or_cancels_a_task() {
+            run(async {
+                let mut ops = ScriptedOps::new("left");
+                finalize_single(&mut ops, Ok(()), tb()).await.unwrap();
+                assert_eq!(ops.calls, ["disable"]);
+                ops.calls.clear();
+                assert!(
+                    finalize_single(&mut ops, Err(BodyFailure::plain("hold stale".into())), tb())
+                        .await
+                        .is_err()
+                );
+                assert_eq!(ops.calls, ["estop"]);
+                ops.calls.clear();
+                ops.disable_r
+                    .push_back(Scripted::Err("not TorqueOffConfirmed".into()));
+                assert!(finalize_single(&mut ops, Ok(()), tb()).await.is_err());
+                assert_eq!(ops.calls, ["disable", "estop"]);
+            });
+        }
+    }
 
     fn layout() -> HardwareLayout {
         HardwareLayout {
@@ -2005,6 +2463,7 @@ mod tests {
     fn torque_phases_require_the_checklist() {
         assert!(!Phase::ReadState.enables_torque());
         for p in [
+            Phase::Hold,
             Phase::SingleArm,
             Phase::DualArm,
             Phase::Grippers,

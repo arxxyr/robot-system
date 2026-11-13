@@ -853,9 +853,16 @@ mod node_lifetime_tests {
         drop(observer);
         drop(subscriber);
         drop(publisher);
+        // Linux 在 exit_mm 的 clear_child_tid 唤醒 join，随后 release_task 才移除
+        // thread_group；/proc 快照可短暂滞后。仅有界等待可见性收敛，不放宽线程集判据。
+        let exit_deadline = clock.now() + DurationNs::from_secs(1);
+        let mut remaining_threads = owned_thread_ids();
+        while remaining_threads != initial_threads && clock.now() < exit_deadline {
+            std::thread::sleep(Duration::from_millis(1));
+            remaining_threads = owned_thread_ids();
+        }
         assert_eq!(
-            owned_thread_ids(),
-            initial_threads,
+            remaining_threads, initial_threads,
             "工厂镜像线程必须真实回收"
         );
         assert_eq!(owned_node_directories(1), subscriber_directories);

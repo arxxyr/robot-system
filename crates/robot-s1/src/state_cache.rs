@@ -12,11 +12,9 @@
 //!   subscriber（句柄 `!Send`），poll `latest()` → 把最新一帧 **owned body
 //!   bytes** 写进 keep-last slot（convert-on-read，沿
 //!   `robot-rpc::state_pool` 模板）。
-//! - [`StateCacheHandle::latest_fresh`]：读路径以调用方 `now` 做**三重
-//!   校验**（`joint_count` 匹配 + `layout_id == 派生值`〔D1 联动〕+
-//!   `max_stale_ms` 新鲜度），与启动锚定共享同一份 crate 私有
-//!   `check_state_frame`（锚定路径不校 layout，语义 0 改）。
-//! - **失败语义**：无帧 / stale / layout 不匹配 / joint count 错位 →
+//! - [`StateCacheHandle::latest_fresh`]：校验配置布局、关节数量、有限位置和
+//!   `max_stale_ms` 新鲜度，与启动锚定共用 `check_state_frame`。
+//! - **失败语义**：无帧 / stale / layout 不匹配 / joint count 错位 / 非有限位置 →
 //!   [`StaleOrMissing`] → coordinator 把 Scripted submit 拒为
 //!   `ActionStartError::Rejected`（wire `FailedPrecondition`），**绝不**
 //!   fallback 到启动 `anchor_bias`（静默跳变危险）。
@@ -163,6 +161,9 @@ pub enum StaleOrMissing {
     /// `position_rad.len()` 与 `hardware.joints.len()` 不等。
     #[error("joint count mismatch: hardware section expects {expected}, S0 state has {got}")]
     JointCountMismatch { expected: usize, got: usize },
+    /// `position_rad` 首个非有限数值的下标。
+    #[error("S0 position_rad[{index}] is not finite")]
+    NonFinitePosition { index: usize },
     /// body 无 `position_rad` 字段（publisher bug）。
     #[error("S0 state sample has no position_rad field")]
     MissingPositionField,
@@ -191,6 +192,7 @@ impl From<FrameCheckError> for StaleOrMissing {
             FrameCheckError::JointCountMismatch { expected, got } => {
                 Self::JointCountMismatch { expected, got }
             }
+            FrameCheckError::NonFinitePosition { index } => Self::NonFinitePosition { index },
         }
     }
 }
@@ -303,12 +305,12 @@ impl StateCacheHandle {
     }
 
     /// 读路径：以 `now`（调用方时钟，与 S0 同源 `CLOCK_MONOTONIC_RAW`）
-    /// 评估最新帧 → 通过三重校验返关节位置（长度 == `expected_joints`）。
+    /// 评估最新帧 → 全部校验通过后返回有限关节位置。
     ///
     /// 校验 = crate 私有 `check_state_frame`（与启动锚定共享）+
-    /// `expected_layout = Some(cfg.expected_layout)`：
+    /// `expected_layout = cfg.expected_layout`：
     /// 无帧 → [`StaleOrMissing::NoFrame`]；解码 / layout / stale /
-    /// 缺字段 / joint count 依次短路（详 `check_state_frame` doc）。
+    /// 缺字段 / joint count / 非有限位置依次短路（详 `check_state_frame` doc）。
     ///
     /// # Errors
     ///
@@ -322,7 +324,7 @@ impl StateCacheHandle {
         check_state_frame(
             &frame.body,
             self.cfg.expected_joints,
-            Some(self.cfg.expected_layout),
+            self.cfg.expected_layout,
             now.0,
             self.cfg.max_stale_ns(),
         )
@@ -694,6 +696,29 @@ mod tests {
     }
 
     #[test]
+    fn latest_fresh_rejects_nonfinite_latest_instead_of_reusing_valid_frame() {
+        let handle = StateCacheHandle {
+            cfg: cfg(),
+            slot: Arc::new(CacheSlot::default()),
+            liveness: Arc::new(StateCacheLiveness::default()),
+            stop: Arc::new(AtomicBool::new(false)),
+            thread: None,
+        };
+        let now = MonoRawNs(5_000_000_000);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let valid = build_joint_state(LAYOUT, now.0, &[0.1; JOINTS], &[], &[], "");
+            handle.slot.store(&valid, now);
+            assert_eq!(handle.latest_fresh(now).unwrap(), vec![0.1; JOINTS]);
+            let invalid = build_joint_state(LAYOUT, now.0, &[0.1, value, 0.1], &[], &[], "");
+            handle.slot.store(&invalid, now);
+            assert_eq!(
+                handle.latest_fresh(now),
+                Err(StaleOrMissing::NonFinitePosition { index: 1 })
+            );
+        }
+    }
+
+    #[test]
     fn latest_fresh_rejects_stale_frame() {
         let ch = MockChannel::<markers::JointState>::new();
         let handle = spawn_mock(&ch, cfg());
@@ -949,6 +974,10 @@ mod tests {
                     expected: 3,
                     got: 2,
                 },
+            ),
+            (
+                FrameCheckError::NonFinitePosition { index: 7 },
+                StaleOrMissing::NonFinitePosition { index: 7 },
             ),
         ];
         for (from, want) in cases {
