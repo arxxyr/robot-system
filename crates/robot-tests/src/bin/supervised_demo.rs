@@ -11,7 +11,7 @@
 //!   **失败响应不代表没上扭**（deadline 不回滚副作用）——故从**第一次
 //!   enable 尝试起**，任何退出路径都必经收尾：
 //!   * 成功路径：disable 必须**确认**（RPC Ok + readback 模式离开
-//!     Enabled；hold 则必须为新帧 Safe/TorqueOffConfirmed/fault0）；未确认 → 立即 `EStop` 并判 FAIL；
+//!     Enabled；hold/单关节定位必须为新帧 Safe/TorqueOffConfirmed/fault0）；未确认 → 立即 `EStop` 并判 FAIL；
 //!   * 失败路径：有已知未终态 action 先 best-effort cancel → `EStop` →
 //!     FAIL；双臂 phase 右侧 enable 结果不确定 → **双侧 `EStop`**（左已上
 //!     扭）；`EStop` 自身失败并进报告并点名人工断电，不吞。
@@ -39,6 +39,7 @@
 //! |---|---|---|
 //! | `read-state` | 否 | `GetState` 可达 + `layout_id` == config 派生 + `stamp_ns` 在推进 |
 //! | `hold` | 是 | 仅左侧，以实际 S1 锚点保持20秒；不提交任务，严格确认断扭 |
+//! | `single-joint` | 是 | 仅左侧，提交一次单关节目标；实测到位后断扭，不回程 |
 //! | `single-arm` | 是 | enable → 探针 → `Completed(Success)` + **witness 出程/回程证据** → disable 确认 |
 //! | `dual-arm`   | 是 | 双侧 enable → `run_chunk_pair` → `PairResult::Success` + **双侧 witness** → 双侧 disable 确认 |
 //! | `grippers`   | 是 | 同 dual-arm，探针关节 = 双侧 `*_gripper`（D6 Scripted 同车） |
@@ -134,6 +135,9 @@ const SAMPLER_ABORT_JOIN: Duration = Duration::from_secs(1);
 struct StageBudgets {
     /// enable 阶段（`SetEnabled` RPC + 轮询到 Enabled）总预算。
     enable: Duration,
+    /// 提交回执的本地等待上限；不替代任务的执行期限。
+    #[cfg(feature = "supervised-s0")]
+    submit: Duration,
     /// disable 确认阶段（`SetEnabled(false)` + readback）总预算。
     disable: Duration,
     /// settle 阶段（静置 + 回程采样 + 终判）总预算。
@@ -142,7 +146,9 @@ struct StageBudgets {
 
 /// 生产预算 = 内层健康路径上限 + 一次 [`CLIENT_HARD_TIMEOUT`] 的穿透余量。
 const PROD_STAGE_BUDGETS: StageBudgets = StageBudgets {
-    enable: Duration::from_secs(9),  // 4 (SetEnabled) + 5 (ENABLE_WAIT)
+    enable: Duration::from_secs(9), // 4 (SetEnabled) + 5 (ENABLE_WAIT)
+    #[cfg(feature = "supervised-s0")]
+    submit: CLIENT_HARD_TIMEOUT,
     disable: Duration::from_secs(6), // 4 (SetEnabled) + 2 (readback)
     settle: Duration::from_secs(10), // 0.6 静置 + 2×4 采样 + 余量
 };
@@ -181,6 +187,7 @@ AC-E12 安全边界五条（全部满足才允许上扭 phase）：
 enum Phase {
     ReadState,
     Hold,
+    SingleJoint,
     SingleArm,
     DualArm,
     Grippers,
@@ -192,12 +199,13 @@ impl Phase {
         match s {
             "read-state" => Ok(Self::ReadState),
             "hold" => Ok(Self::Hold),
+            "single-joint" => Ok(Self::SingleJoint),
             "single-arm" => Ok(Self::SingleArm),
             "dual-arm" => Ok(Self::DualArm),
             "grippers" => Ok(Self::Grippers),
             "all" => Ok(Self::All),
             other => Err(format!(
-                "--phase: unknown {other:?} (read-state|hold|single-arm|dual-arm|grippers|all)"
+                "--phase: unknown {other:?} (read-state|hold|single-joint|single-arm|dual-arm|grippers|all)"
             )),
         }
     }
@@ -252,6 +260,11 @@ struct Args {
     settle_tolerance_rad: f64,
     /// 本次 S1 anchored 日志中的固定 bias 数组；外壳负责 PID/Invocation 绑定。
     hold_anchor_rad: Option<String>,
+    joint_name: Option<String>,
+    target_position_rad: Option<f64>,
+    target_offset_raw: Option<i32>,
+    duration_ms: Option<u32>,
+    task_timeout_ms: Option<u64>,
     ack_safety_checklist: bool,
 }
 
@@ -285,6 +298,11 @@ impl Args {
             probe_joint: None,
             settle_tolerance_rad: DEFAULT_SETTLE_TOLERANCE_RAD,
             hold_anchor_rad: None,
+            joint_name: None,
+            target_position_rad: None,
+            target_offset_raw: None,
+            duration_ms: None,
+            task_timeout_ms: None,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
@@ -341,6 +359,37 @@ impl Args {
                 "--hold-anchor-rad" => {
                     args.hold_anchor_rad = Some(value(raw, &mut i, "--hold-anchor-rad")?.into());
                 }
+                "--joint-name" => {
+                    args.joint_name = Some(value(raw, &mut i, "--joint-name")?.into());
+                }
+                "--target-position-rad" => {
+                    args.target_position_rad = Some(
+                        value(raw, &mut i, "--target-position-rad")?
+                            .parse()
+                            .map_err(|e| format!("--target-position-rad: {e}"))?,
+                    );
+                }
+                "--target-offset-raw" => {
+                    args.target_offset_raw = Some(
+                        value(raw, &mut i, "--target-offset-raw")?
+                            .parse()
+                            .map_err(|e| format!("--target-offset-raw: {e}"))?,
+                    );
+                }
+                "--duration-ms" => {
+                    args.duration_ms = Some(
+                        value(raw, &mut i, "--duration-ms")?
+                            .parse()
+                            .map_err(|e| format!("--duration-ms: {e}"))?,
+                    );
+                }
+                "--task-timeout-ms" => {
+                    args.task_timeout_ms = Some(
+                        value(raw, &mut i, "--task-timeout-ms")?
+                            .parse()
+                            .map_err(|e| format!("--task-timeout-ms: {e}"))?,
+                    );
+                }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown option {other:?}")),
@@ -362,8 +411,39 @@ impl Args {
                     "hold 仅支持左侧，必须提供 --hold-anchor-rad，禁止探针或容差覆盖".into(),
                 );
             }
+        } else if args.phase == Phase::SingleJoint {
+            if !cfg!(feature = "supervised-s0") || args.side != Side::Left || probe_option_seen {
+                return Err("single-joint 需要 supervised-s0，仅支持 left，禁止旧探针参数".into());
+            }
+            if args.hold_anchor_rad.is_none()
+                || args
+                    .joint_name
+                    .as_deref()
+                    .is_none_or(|name| name.trim().is_empty())
+                || args.target_position_rad.is_some() == args.target_offset_raw.is_some()
+                || args.target_position_rad.is_some_and(|position| {
+                    !position.is_finite() || position.abs() > f64::from(f32::MAX)
+                })
+                || args.target_offset_raw == Some(0)
+                || args.duration_ms.is_none_or(|duration| duration == 0)
+                || args.task_timeout_ms.is_none_or(|timeout| {
+                    timeout <= u64::from(args.duration_ms.unwrap_or(0))
+                        || timeout.checked_mul(1_000_000).is_none()
+                })
+            {
+                return Err("single-joint 必须显式提供 joint-name、互斥的 target-position-rad/target-offset-raw、duration-ms、task-timeout-ms 和 hold-anchor-rad".into());
+            }
         } else if args.hold_anchor_rad.is_some() {
-            return Err("--hold-anchor-rad 仅用于 hold".into());
+            return Err("--hold-anchor-rad 仅用于 hold 或 single-joint".into());
+        }
+        if args.phase != Phase::SingleJoint
+            && (args.joint_name.is_some()
+                || args.target_position_rad.is_some()
+                || args.target_offset_raw.is_some()
+                || args.duration_ms.is_some()
+                || args.task_timeout_ms.is_some())
+        {
+            return Err("单关节目标与时长参数仅用于 single-joint".into());
         }
         validate_probe_geometry(args.probe_offset_rad, args.settle_tolerance_rad)?;
         Ok(args)
@@ -390,6 +470,7 @@ USAGE:
 PHASE:
   read-state    只读：GetState 双臂（layout 校验 + stamp 推进）；不上扭
   hold          仅左侧固定保持20秒；S1唯一发布命令，不提交探针任务
+  single-joint  仅左侧8关节总线；一次单关节定位、实测到位后断扭，不回程
   single-arm    单臂探针（--side left|right）：enable → 出→回 + 运动证据 → disable 确认
   dual-arm      双臂 run_chunk_pair 探针（协议级 cancel/EStop 收尾 + 双侧运动证据）
   grippers      双夹爪探针（D6 Scripted 同车；关节 = *_gripper）
@@ -404,7 +485,12 @@ OPTIONS:
   --left-hardware-id <ID>        默认 left_arm
   --right-hardware-id <ID>       默认 right_arm
   --token <TOKEN>                operator+ token（或 env ROBOT_TOKEN）
-  --hold-anchor-rad <JSON>       本次S1启动锚点数组；hold必填，固定±4raw
+  --hold-anchor-rad <JSON>       本次S1启动锚点数组；hold/single-joint必填，固定±4raw
+  --joint-name <NAME>           single-joint必填，按当前配置选择关节
+  --target-position-rad <RAD>   single-joint必填，绝对位置rad
+  --target-offset-raw <RAW>     或相对本次S1锚点的raw偏移；与绝对rad目标互斥
+  --duration-ms <MS>            single-joint必填，正整数运动时长
+  --task-timeout-ms <MS>        single-joint必填，覆盖运动、到位超时和请求余量
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
   --settle-tolerance-rad <F>     回落容差（默认 {DEFAULT_SETTLE_TOLERANCE_RAD}；上限 {MAX_SETTLE_TOLERANCE_RAD} 且 offset ≥ {TOLERANCE_SEPARATION}×容差）
@@ -642,8 +728,9 @@ const HOLD_DURATION: Duration = Duration::from_secs(20);
 #[cfg(feature = "supervised-s0")]
 const HOLD_FRESH_NS: u64 = 200_000_000;
 
-/// 仅 hold 使用：不重采目标，不将校准边界容差用作保持精度。
+/// hold 与单关节定位共用的身份、源时间和原始计数检查；不将校准边界容差用作保持精度。
 #[cfg(feature = "supervised-s0")]
+#[derive(Clone)]
 struct HoldCheck {
     robot_id: String,
     anchor_raw: Vec<i32>,
@@ -739,6 +826,336 @@ impl HoldCheck {
     }
 }
 
+/// 本次显式单目标请求；完整数组只用于观测，绝不编码为旧全向量请求。
+#[cfg(feature = "supervised-s0")]
+struct SingleJointPlan {
+    hardware_id: String,
+    joint_name: String,
+    joint_idx: usize,
+    target_position_rad: f64,
+    duration_ms: u32,
+    task_timeout_ms: u64,
+    expected_raw: Vec<i32>,
+    limits: Vec<SingleJointLimit>,
+}
+
+/// 启用前读取同一候选配置的运动边界；执行期仍由 S1 独立守门。
+#[cfg(feature = "supervised-s0")]
+struct SingleJointLimit {
+    min: f64,
+    max: f64,
+    velocity: f64,
+}
+
+#[cfg(feature = "supervised-s0")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "复核 S0 实际 f32 编码，转换前先检查有限范围"
+)]
+fn check_single_joint_limits(limits: &[SingleJointLimit], positions: &[f64]) -> Result<(), String> {
+    if limits.len() != positions.len() {
+        return Err("单关节配置范围与位置维度不匹配".into());
+    }
+    for (limit, &position) in limits.iter().zip(positions) {
+        if !position.is_finite()
+            || position.abs() > f64::from(f32::MAX)
+            || position < limit.min
+            || position > limit.max
+            || f64::from(position as f32) < limit.min
+            || f64::from(position as f32) > limit.max
+        {
+            return Err("单关节位置或实际f32编码值超出候选S1配置范围".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "supervised-s0")]
+fn motion_config(
+    config: &toml::Value,
+    layout: &HardwareLayout,
+) -> Result<(Vec<SingleJointLimit>, u32, u32), String> {
+    let section = config
+        .get("s1")
+        .and_then(|s1| s1.get("single_joint"))
+        .and_then(toml::Value::as_table)
+        .ok_or("候选配置缺少 s1.single_joint")?;
+    if section.len() != 4
+        || section.keys().any(|key| {
+            ![
+                "max_duration_ms",
+                "settle_timeout_ms",
+                "stable_window_ms",
+                "joints",
+            ]
+            .contains(&key.as_str())
+        })
+    {
+        return Err("s1.single_joint 字段缺失或未知".into());
+    }
+    let positive_ms = |key: &str| {
+        section
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .ok_or_else(|| format!("s1.single_joint.{key} 必须为正u32"))
+    };
+    let max_duration = positive_ms("max_duration_ms")?;
+    let settle = positive_ms("settle_timeout_ms")?;
+    if positive_ms("stable_window_ms")? >= settle {
+        return Err("稳定窗口必须小于到位超时".into());
+    }
+    let joints = section
+        .get("joints")
+        .and_then(toml::Value::as_array)
+        .ok_or("s1.single_joint.joints 缺失")?;
+    if joints.len() != layout.joints.len() {
+        return Err("候选单关节配置未完整覆盖当前布局".into());
+    }
+    let mut limits = Vec::with_capacity(joints.len());
+    for name in &layout.joints {
+        let matching: Vec<_> = joints
+            .iter()
+            .filter(|joint| joint.get("name").and_then(toml::Value::as_str) == Some(name.as_str()))
+            .collect();
+        if matching.len() != 1 {
+            return Err(format!("候选单关节配置缺少或重复关节：{name}"));
+        }
+        let joint = matching[0].as_table().ok_or("单关节约束不是表")?;
+        if joint.len() != 5
+            || joint.keys().any(|key| {
+                ![
+                    "name",
+                    "min_position_rad",
+                    "max_position_rad",
+                    "max_velocity_rad_s",
+                    "tolerance_rad",
+                ]
+                .contains(&key.as_str())
+            })
+        {
+            return Err("单关节运动约束字段缺失或未知".into());
+        }
+        let number = |key: &str| {
+            joint
+                .get(key)
+                .and_then(|value| value.to_string().parse::<f64>().ok())
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| format!("{name}.{key} 不是有限数值"))
+        };
+        let (min, max, velocity, tolerance) = (
+            number("min_position_rad")?,
+            number("max_position_rad")?,
+            number("max_velocity_rad_s")?,
+            number("tolerance_rad")?,
+        );
+        if min >= max || velocity <= 0.0 || tolerance < 0.0 {
+            return Err(format!("{name} 的范围、速率或容差无效"));
+        }
+        limits.push(SingleJointLimit { min, max, velocity });
+    }
+    Ok((limits, max_duration, settle))
+}
+
+#[cfg(feature = "supervised-s0")]
+impl SingleJointPlan {
+    fn prepare(
+        args: &Args,
+        layout: &HardwareLayout,
+        anchor: &[f64],
+        config: &toml::Value,
+    ) -> Result<Self, String> {
+        if args.side != Side::Left || layout.joints.len() != 8 || anchor.len() != 8 {
+            return Err("single-joint 仅支持当前左侧8关节完整布局".into());
+        }
+        let profile = config.get("s1").and_then(|s1| s1.get("profile"));
+        if profile
+            .and_then(|profile| profile.get("command_mode"))
+            .and_then(toml::Value::as_str)
+            != Some("joint_position")
+            || !profile
+                .and_then(|profile| profile.get("backends"))
+                .and_then(toml::Value::as_array)
+                .is_some_and(|backends| {
+                    backends
+                        .iter()
+                        .any(|backend| backend.as_str() == Some("scripted"))
+                })
+        {
+            return Err("候选S1必须显式使用scripted和joint_position".into());
+        }
+        let joint_name = args.joint_name.as_deref().ok_or("缺少 joint-name")?;
+        let joint_idx = layout
+            .joints
+            .iter()
+            .position(|name| name == joint_name)
+            .ok_or("joint-name 不在当前左侧配置内")?;
+        let anchor_raw = HoldCheck::raw_positions(anchor)?;
+        let target = match (args.target_position_rad, args.target_offset_raw) {
+            (Some(target), None) => target,
+            (None, Some(offset)) => {
+                let raw = anchor_raw[joint_idx]
+                    .checked_add(offset)
+                    .filter(|raw| (0..=4095).contains(raw))
+                    .ok_or("单关节raw目标溢出或超出12位范围")?;
+                f64::from(robot_adapter_feetech::raw_to_rad(raw))
+            }
+            _ => return Err("单关节绝对目标与raw偏移必须提供且互斥".into()),
+        };
+        let duration_ms = args.duration_ms.ok_or("缺少 duration-ms")?;
+        let task_timeout_ms = args.task_timeout_ms.ok_or("缺少 task-timeout-ms")?;
+        let (limits, max_duration, settle_ms) = motion_config(config, layout)?;
+        if duration_ms == 0 || duration_ms > max_duration {
+            return Err("单关节时长超出候选S1配置".into());
+        }
+        let required_ms = u64::from(duration_ms)
+            .checked_add(u64::from(settle_ms))
+            .ok_or("single-joint 期限预算溢出")?;
+        if task_timeout_ms <= required_ms {
+            return Err("task-timeout-ms 必须大于运动时长与到位超时之和，预留请求开销".into());
+        }
+        check_single_joint_motion(anchor[joint_idx], target, duration_ms)?;
+        let mut expected_raw = anchor_raw.clone();
+        expected_raw[joint_idx] = HoldCheck::raw_positions(&[target])?[0];
+        if (expected_raw[joint_idx] - anchor_raw[joint_idx]).abs() <= 8 {
+            return Err("初末位置的±4raw验收区间相交，不能证明定位动作".into());
+        }
+        let plan = Self {
+            hardware_id: args.left_hardware_id.clone(),
+            joint_name: joint_name.into(),
+            joint_idx,
+            target_position_rad: target,
+            duration_ms,
+            task_timeout_ms,
+            expected_raw,
+            limits,
+        };
+        plan.check_start(anchor)?;
+        Ok(plan)
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "复核已通过范围检查的 S0 f32 运动距离"
+    )]
+    fn check_start(&self, positions: &[f64]) -> Result<(), String> {
+        check_single_joint_limits(&self.limits, positions)?;
+        let mut target = positions.to_vec();
+        target[self.joint_idx] = self.target_position_rad;
+        check_single_joint_limits(&self.limits, &target)?;
+        let start = positions[self.joint_idx];
+        check_single_joint_motion(start, self.target_position_rad, self.duration_ms)?;
+        let distance = (self.target_position_rad - start)
+            .abs()
+            .max((f64::from(self.target_position_rad as f32) - f64::from(start as f32)).abs());
+        if distance / (f64::from(self.duration_ms) / 1000.0) > self.limits[self.joint_idx].velocity
+        {
+            return Err("单关节所需速率超过候选S1配置".into());
+        }
+        Ok(())
+    }
+
+    fn action_spec(&self) -> ActionSpec {
+        use robot_msg::msg::{SingleJointPositionPayload, SingleJointPositionPayloadArgs};
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let hardware_id = builder.create_string(&self.hardware_id);
+        let joint_name = builder.create_string(&self.joint_name);
+        let root = SingleJointPositionPayload::create(
+            &mut builder,
+            &SingleJointPositionPayloadArgs {
+                hardware_id: Some(hardware_id),
+                joint_name: Some(joint_name),
+                target_position_rad: self.target_position_rad,
+                duration_ms: self.duration_ms,
+            },
+        );
+        builder.finish(root, None);
+        ActionSpec {
+            kind: robot_rpc::client::dual_arm_workflow::ActionKindWire::Scripted,
+            payload_schema_id: robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+            payload: builder.finished_data().to_vec(),
+        }
+    }
+}
+
+#[cfg(feature = "supervised-s0")]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "与 S0 实际 f32 位置编码一致，先校验有限值"
+)]
+fn check_single_joint_motion(start: f64, target: f64, duration_ms: u32) -> Result<(), String> {
+    if duration_ms == 0
+        || !start.is_finite()
+        || !target.is_finite()
+        || start.abs() > f64::from(f32::MAX)
+        || target.abs() > f64::from(f32::MAX)
+    {
+        return Err("单关节起点、目标或时长无效".into());
+    }
+    let encoded_start = f64::from(start as f32);
+    let encoded_target = f64::from(target as f32);
+    let distance = (target - start)
+        .abs()
+        .max((encoded_target - encoded_start).abs());
+    if distance > MAX_PROBE_OFFSET_RAD
+        || distance / (f64::from(duration_ms) / 1000.0) > MAX_SLOPE_RAD_PER_S
+    {
+        return Err("单关节目标超出原0.087rad幅度或0.14rad/s速率硬限制".into());
+    }
+    Ok(())
+}
+
+/// 每个执行期样本都必须推进；所有位置观测沿原±4raw，不扩大容差。
+#[cfg(feature = "supervised-s0")]
+struct SingleJointCheck {
+    source: HoldCheck,
+    layout_id: u64,
+    joint_idx: usize,
+    expected_raw: Vec<i32>,
+}
+
+#[cfg(feature = "supervised-s0")]
+impl SingleJointCheck {
+    fn observe(
+        &mut self,
+        state: &RobotState,
+        hardware_id: &str,
+        now: u64,
+        final_sample: bool,
+    ) -> Result<(), String> {
+        if state.layout_id != self.layout_id {
+            return Err("single-joint 反馈 layout 不匹配".into());
+        }
+        if state.stamp_ns <= self.source.last_stamp_ns {
+            return Err("single-joint 来源未推进".into());
+        }
+        self.source.observe(state, hardware_id, now)?;
+        if !HoldCheck::torque_on(state) {
+            return Err("single-joint 未保持 Enabled/Ok/Active/TorqueOn/fault0".into());
+        }
+        let raw = HoldCheck::raw_positions(&state.position_rad)?;
+        if raw.len() != self.expected_raw.len() {
+            return Err("single-joint 反馈关节数量变化".into());
+        }
+        for (idx, &actual) in raw.iter().enumerate() {
+            let target = self.expected_raw[idx];
+            let start = self.source.anchor_raw[idx];
+            let valid = if idx == self.joint_idx && !final_sample {
+                actual >= start.min(target) - 4 && actual <= start.max(target) + 4
+            } else {
+                (actual - target).abs() <= 4
+            };
+            if !valid {
+                return Err(format!(
+                    "single-joint 位置越界：slot={idx}, actual_raw={actual}, start_raw={start}, target_raw={target}, final={final_sample}"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 struct SideRt {
     side: Side,
     hardware_id: String,
@@ -746,6 +1163,7 @@ struct SideRt {
     client: RobotControlClient<Channel>,
     token: String,
     seq: AtomicU64,
+    last_submission_id: Option<String>,
     #[cfg(feature = "supervised-s0")]
     hold_check: Option<HoldCheck>,
 }
@@ -817,6 +1235,7 @@ impl SideRt {
             client: RobotControlClient::new(channel),
             token: token.to_string(),
             seq: AtomicU64::new(0),
+            last_submission_id: None,
             #[cfg(feature = "supervised-s0")]
             hold_check: None,
         })
@@ -916,7 +1335,13 @@ trait TorqueOps {
     /// `EStop`（有界；失败也返回——调用方把结果并进报告，绝不因此中断收尾）。
     async fn estop(&mut self, reason: &str) -> Result<(), String>;
 
-    async fn submit_scripted(&mut self, payload: Vec<u8>) -> Result<String, String>;
+    async fn submit_action(&mut self, spec: ActionSpec, timeout_ms: u64) -> Result<String, String>;
+    #[cfg(feature = "supervised-s0")]
+    fn known_submission_id(&self) -> Option<&str>;
+    #[cfg(feature = "supervised-s0")]
+    async fn checked_state(&mut self) -> Result<RobotState, String>;
+    #[cfg(feature = "supervised-s0")]
+    fn now_ns(&self) -> u64;
     async fn poll_status(&mut self, action_id: &str) -> Result<TaskSnapshot, String>;
     async fn cancel(&mut self, action_id: &str) -> Result<(), String>;
     async fn sample(&mut self) -> Result<StateSample, String>;
@@ -998,9 +1423,12 @@ impl TorqueOps for SideRt {
         .map(|_ack| ())
     }
 
-    async fn submit_scripted(&mut self, payload: Vec<u8>) -> Result<String, String> {
-        let spec = ActionSpec::scripted(payload);
-        let meta = self.meta("single-probe");
+    async fn submit_action(&mut self, spec: ActionSpec, timeout_ms: u64) -> Result<String, String> {
+        let single_joint =
+            spec.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
+        let mut meta = self.meta("single-probe");
+        meta.timeout_ms = timeout_ms;
+        self.last_submission_id = Some(meta.request_id.clone());
         let handle = bounded(
             format!("{} InvokeTask", self.label()),
             self.client
@@ -1014,7 +1442,25 @@ impl TorqueOps for SideRt {
                 })),
         )
         .await?;
+        if single_joint && self.last_submission_id.as_deref() != Some(handle.action_id.as_str()) {
+            return Err("InvokeTask 回执 action_id 与本次 request_id 不匹配".into());
+        }
         Ok(handle.action_id)
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    fn known_submission_id(&self) -> Option<&str> {
+        self.last_submission_id.as_deref()
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    async fn checked_state(&mut self) -> Result<RobotState, String> {
+        self.get_state_raw().await
+    }
+
+    #[cfg(feature = "supervised-s0")]
+    fn now_ns(&self) -> u64 {
+        SystemClock::new().now().0
     }
 
     async fn poll_status(&mut self, action_id: &str) -> Result<TaskSnapshot, String> {
@@ -1100,7 +1546,7 @@ async fn single_arm_torque_body<O: TorqueOps>(
     println!("[single-arm] side={} Enabled", ops.side_label());
 
     let action_id = ops
-        .submit_scripted(payload)
+        .submit_action(ActionSpec::scripted(payload), RPC_TIMEOUT_MS)
         .await
         .map_err(BodyFailure::plain)?;
     println!(
@@ -1175,6 +1621,110 @@ async fn single_arm_torque_body<O: TorqueOps>(
     })
     .await
     .map_err(BodyFailure::plain)
+}
+
+/// 单向一次定位；任何上扭后的返回都交给同一个 finalizer，不重试或回程。
+#[cfg(feature = "supervised-s0")]
+async fn single_joint_torque_body<O: TorqueOps>(
+    ops: &mut O,
+    plan: &SingleJointPlan,
+    check: &mut SingleJointCheck,
+    budgets: StageBudgets,
+) -> Result<(), BodyFailure> {
+    staged(budgets.enable, "single-joint enable stage", ops.enable())
+        .await
+        .map_err(BodyFailure::plain)?;
+    // 启用后再取完整健康帧；动作前依然检查原幅度与速率硬上限。
+    let state = ops.checked_state().await.map_err(BodyFailure::plain)?;
+    check
+        .observe(&state, &plan.hardware_id, ops.now_ns(), false)
+        .map_err(BodyFailure::plain)?;
+    plan.check_start(&state.position_rad)
+        .map_err(BodyFailure::plain)?;
+
+    let task_started_ns = ops.now_ns();
+    let result = staged(
+        budgets.submit,
+        "single-joint submit stage",
+        ops.submit_action(plan.action_spec(), plan.task_timeout_ms),
+    )
+    .await;
+    let action_id = match result {
+        Ok(id) => id,
+        Err(message) => {
+            return Err(BodyFailure {
+                message,
+                // request_id 就是 S1 的 action_id；未知回执也不得重发原请求。
+                cancel_target: ops.known_submission_id().map(str::to_owned),
+            });
+        }
+    };
+    println!("[single-joint] submitted action_id={action_id}");
+    let mut terminal_seen = false;
+    let mut samples = 0usize;
+    let poll = async {
+        loop {
+            tokio::time::sleep(STATUS_POLL).await;
+            let state = ops
+                .checked_state()
+                .await
+                .map_err(|message| BodyFailure::with_cancel(message, action_id.clone()))?;
+            check
+                .observe(&state, &plan.hardware_id, ops.now_ns(), false)
+                .map_err(|message| BodyFailure::with_cancel(message, action_id.clone()))?;
+            let status = ops
+                .poll_status(&action_id)
+                .await
+                .map_err(|message| BodyFailure::with_cancel(message, action_id.clone()))?;
+            samples += 1;
+            if let TaskPhase::Terminal(terminal) = status.phase {
+                terminal_seen = true;
+                if terminal != TerminalState::Completed || status.outcome != OutcomeKind::Success {
+                    return Err(BodyFailure::plain(format!(
+                        "single-joint 任务未成功：terminal={terminal:?}, outcome={:?}, failure={:?}",
+                        status.outcome, status.failure_reason
+                    )));
+                }
+                let success_received_ns = ops.now_ns();
+                if success_received_ns.saturating_sub(task_started_ns)
+                    < u64::from(plan.duration_ms) * 1_000_000
+                {
+                    return Err(BodyFailure::plain(
+                        "single-joint 成功回执早于显式运动时长".into(),
+                    ));
+                }
+                // 成功回执之外，再读取一帧源时间晚于该回执的全部位置，之后才断扭。
+                tokio::time::sleep(STATUS_POLL).await;
+                let state = ops.checked_state().await.map_err(BodyFailure::plain)?;
+                if state.stamp_ns <= success_received_ns {
+                    return Err(BodyFailure::plain(
+                        "single-joint 最终反馈并非成功回执后的新源帧".into(),
+                    ));
+                }
+                check
+                    .observe(&state, &plan.hardware_id, ops.now_ns(), true)
+                    .map_err(BodyFailure::plain)?;
+                println!(
+                    "SINGLE_JOINT_FINAL_RAW={:?}",
+                    HoldCheck::raw_positions(&state.position_rad).map_err(BodyFailure::plain)?
+                );
+                samples += 1;
+                println!(
+                    "SINGLE_JOINT_TASK action_id={action_id} elapsed_ns={} samples={samples}",
+                    ops.now_ns().saturating_sub(task_started_ns)
+                );
+                return Ok(());
+            }
+        }
+    };
+    let exec_budget = Duration::from_millis(plan.task_timeout_ms);
+    match tokio::time::timeout(exec_budget, poll).await {
+        Ok(result) => result,
+        Err(_) => Err(BodyFailure {
+            message: "single-joint 执行或最终读回超过任务观察预算".into(),
+            cancel_target: (!terminal_seen).then_some(action_id),
+        }),
+    }
 }
 
 /// **统一 fail-closed finalizer（单臂）**：body 的任何结果都必经此处。
@@ -1597,7 +2147,10 @@ async fn phase_read_state(rt: &mut SideRt) -> Result<(), String> {
 
 /// 左侧原位保持：核对实际 S1 锚点 → 固定20秒 → 原 finalizer；不提交任务。
 #[cfg(feature = "supervised-s0")]
-async fn phase_hold(rt: &mut SideRt, args: &Args) -> Result<(), String> {
+async fn read_fixed_anchor(
+    args: &Args,
+    joints: usize,
+) -> Result<(toml::Value, Vec<f64>, HoldCheck), String> {
     let config_path = args.left_config.clone();
     let config_text = tokio::task::spawn_blocking(move || std::fs::read_to_string(config_path))
         .await
@@ -1616,7 +2169,13 @@ async fn phase_hold(rt: &mut SideRt, args: &Args) -> Result<(), String> {
             .ok_or("hold 缺少实际S1锚点")?,
     )
     .map_err(|e| format!("hold 锚点数组无效：{e}"))?;
-    let check = HoldCheck::new(robot_id.into(), &anchor, rt.layout.joints.len())?;
+    let check = HoldCheck::new(robot_id.into(), &anchor, joints)?;
+    Ok((config, anchor, check))
+}
+
+#[cfg(feature = "supervised-s0")]
+async fn phase_hold(rt: &mut SideRt, args: &Args) -> Result<(), String> {
+    let (_, anchor, check) = read_fixed_anchor(args, rt.layout.joints.len()).await?;
     println!("HOLD_ANCHOR_RAW={:?}", check.anchor_raw);
     rt.hold_check = Some(check);
     // 启用前只读：固定锚点不能用当前反馈替换，两帧均须已断扭且来源推进。
@@ -1688,6 +2247,47 @@ fn check_hold_pre_enable(rt: &SideRt, state: &RobotState) -> Result<(), String> 
         .as_ref()
         .ok_or("hold 校验器缺失")?
         .check_position(state)
+}
+
+#[cfg(feature = "supervised-s0")]
+async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> {
+    let (config, anchor, check) = read_fixed_anchor(args, rt.layout.joints.len()).await?;
+    let plan = SingleJointPlan::prepare(args, &rt.layout, &anchor, &config)?;
+    println!("SINGLE_JOINT_ANCHOR_RAW={:?}", check.anchor_raw);
+    println!("SINGLE_JOINT_EXPECTED_RAW={:?}", plan.expected_raw);
+    println!(
+        "[single-joint] hardware={} joint={} target_position_rad={:.17} duration_ms={} task_timeout_ms={}",
+        plan.hardware_id,
+        plan.joint_name,
+        plan.target_position_rad,
+        plan.duration_ms,
+        plan.task_timeout_ms
+    );
+    rt.hold_check = Some(check);
+    let before = rt.get_state_raw().await?;
+    check_hold_pre_enable(rt, &before)?;
+    plan.check_start(&before.position_rad)?;
+    tokio::time::sleep(STATUS_POLL).await;
+    let current = rt.get_state_raw().await?;
+    check_hold_pre_enable(rt, &current)?;
+    plan.check_start(&current.position_rad)?;
+    if current.stamp_ns <= before.stamp_ns {
+        return Err("single-joint 启用前两帧来源没有推进".into());
+    }
+    let mut check = SingleJointCheck {
+        source: rt
+            .hold_check
+            .as_ref()
+            .ok_or("单关节固定锚点检查器缺失")?
+            .clone(),
+        layout_id: rt.layout.layout_id,
+        joint_idx: plan.joint_idx,
+        expected_raw: plan.expected_raw.clone(),
+    };
+    let body = single_joint_torque_body(rt, &plan, &mut check, PROD_STAGE_BUDGETS).await;
+    finalize_single(rt, body, PROD_STAGE_BUDGETS).await?;
+    println!("SINGLE_JOINT_PASS");
+    Ok(())
 }
 
 async fn phase_single_arm(rt: &mut SideRt, args: &Args) -> Result<(), String> {
@@ -1967,6 +2567,7 @@ async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
     let name = match phase {
         Phase::ReadState => "read-state".to_string(),
         Phase::Hold => "hold/left".to_string(),
+        Phase::SingleJoint => "single-joint/left".to_string(),
         Phase::SingleArm => format!(
             "single-arm/{}",
             if side == Side::Left { "left" } else { "right" }
@@ -1976,18 +2577,22 @@ async fn run_phase(args: &Args, phase: Phase, side: Side) -> PhaseOutcome {
         Phase::All => unreachable!("all 在 main 展开"),
     };
     let result = match phase {
-        Phase::Hold => {
+        Phase::Hold | Phase::SingleJoint => {
             #[cfg(feature = "supervised-s0")]
             {
                 let step = async {
                     let mut rt = connect_side(args, Side::Left).await?;
-                    phase_hold(&mut rt, args).await
+                    if phase == Phase::SingleJoint {
+                        phase_single_joint(&mut rt, args).await
+                    } else {
+                        phase_hold(&mut rt, args).await
+                    }
                 };
                 step.await
             }
             #[cfg(not(feature = "supervised-s0"))]
             {
-                Err("hold 需要 supervised-s0 feature".into())
+                Err("hold/single-joint 需要 supervised-s0 feature".into())
             }
         }
         Phase::ReadState => {
@@ -2464,6 +3069,7 @@ mod tests {
         assert!(!Phase::ReadState.enables_torque());
         for p in [
             Phase::Hold,
+            Phase::SingleJoint,
             Phase::SingleArm,
             Phase::DualArm,
             Phase::Grippers,
@@ -2598,9 +3204,11 @@ mod tests {
         Ok(T),
         Err(String),
         Hang,
+        #[cfg(feature = "supervised-s0")]
+        Late(T, Duration, Arc<AtomicBool>),
     }
 
-    impl<T> Scripted<T> {
+    impl<T: Send + 'static> Scripted<T> {
         async fn resolve(self) -> Result<T, String> {
             match self {
                 Self::Ok(v) => Ok(v),
@@ -2608,6 +3216,16 @@ mod tests {
                 Self::Hang => {
                     tokio::time::sleep(Duration::from_secs(3600)).await;
                     Err("unreachable: hang resolved".into())
+                }
+                #[cfg(feature = "supervised-s0")]
+                Self::Late(value, delay, completed) => {
+                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        completed.store(true, Ordering::SeqCst);
+                        let _ = sender.send(value);
+                    });
+                    receiver.await.map_err(|error| error.to_string())
                 }
             }
         }
@@ -2624,6 +3242,13 @@ mod tests {
         disable_r: VecDeque<Scripted<()>>,
         estop_r: VecDeque<Scripted<()>>,
         submit_r: VecDeque<Scripted<String>>,
+        submitted: Vec<(ActionSpec, u64)>,
+        #[cfg(feature = "supervised-s0")]
+        raw_state_r: VecDeque<Scripted<RobotState>>,
+        #[cfg(feature = "supervised-s0")]
+        raw_state_now: u64,
+        #[cfg(feature = "supervised-s0")]
+        status_now: Option<u64>,
         status_r: VecDeque<Scripted<TaskSnapshot>>,
         cancel_r: VecDeque<Scripted<()>>,
         sample_r: VecDeque<Scripted<StateSample>>,
@@ -2642,6 +3267,13 @@ mod tests {
                 disable_r: VecDeque::new(),
                 estop_r: VecDeque::new(),
                 submit_r: VecDeque::new(),
+                submitted: Vec::new(),
+                #[cfg(feature = "supervised-s0")]
+                raw_state_r: VecDeque::new(),
+                #[cfg(feature = "supervised-s0")]
+                raw_state_now: 0,
+                #[cfg(feature = "supervised-s0")]
+                status_now: None,
                 status_r: VecDeque::new(),
                 cancel_r: VecDeque::new(),
                 sample_r: VecDeque::new(),
@@ -2696,9 +3328,14 @@ mod tests {
             Self::pop(&mut self.estop_r).resolve().await
         }
 
-        async fn submit_scripted(&mut self, _payload: Vec<u8>) -> Result<String, String> {
+        async fn submit_action(
+            &mut self,
+            spec: ActionSpec,
+            timeout_ms: u64,
+        ) -> Result<String, String> {
             tokio::task::yield_now().await;
             self.calls.push("submit".into());
+            self.submitted.push((spec, timeout_ms));
             self.submit_r
                 .pop_front()
                 .unwrap_or_else(|| Scripted::Ok("action-1".into()))
@@ -2706,9 +3343,36 @@ mod tests {
                 .await
         }
 
+        #[cfg(feature = "supervised-s0")]
+        fn known_submission_id(&self) -> Option<&str> {
+            (!self.submitted.is_empty()).then_some("action-1")
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        async fn checked_state(&mut self) -> Result<RobotState, String> {
+            self.calls.push("state".into());
+            let state = self
+                .raw_state_r
+                .pop_front()
+                .unwrap_or_else(|| Scripted::Err("raw state queue exhausted".into()))
+                .resolve()
+                .await?;
+            self.raw_state_now = self.raw_state_now.max(state.stamp_ns);
+            Ok(state)
+        }
+
+        #[cfg(feature = "supervised-s0")]
+        fn now_ns(&self) -> u64 {
+            self.raw_state_now
+        }
+
         async fn poll_status(&mut self, _id: &str) -> Result<TaskSnapshot, String> {
             tokio::task::yield_now().await;
             self.calls.push("status".into());
+            #[cfg(feature = "supervised-s0")]
+            if let Some(now) = self.status_now {
+                self.raw_state_now = now;
+            }
             self.status_r
                 .pop_front()
                 .unwrap_or_else(|| Scripted::Err("status queue exhausted".into()))
@@ -2738,6 +3402,8 @@ mod tests {
     fn tb() -> StageBudgets {
         StageBudgets {
             enable: Duration::from_millis(500),
+            #[cfg(feature = "supervised-s0")]
+            submit: Duration::from_millis(500),
             disable: Duration::from_millis(500),
             settle: Duration::from_secs(2),
         }
@@ -3194,6 +3860,458 @@ mod tests {
             assert!(err.contains("double EStop"), "{err}");
         });
     }
+    #[cfg(feature = "supervised-s0")]
+    mod single_joint_tests {
+        use super::*;
+
+        fn raw_args() -> Vec<String> {
+            [
+                "--phase",
+                "single-joint",
+                "--side",
+                "left",
+                "--token",
+                "test-only",
+                "--joint-name",
+                "j4",
+                "--target-offset-raw",
+                "24",
+                "--duration-ms",
+                "20000",
+                "--task-timeout-ms",
+                "25000",
+                "--hold-anchor-rad",
+                "[0,0,0,0,0,0,0,0]",
+                "--ack-safety-checklist",
+            ]
+            .map(str::to_string)
+            .to_vec()
+        }
+
+        fn layout() -> HardwareLayout {
+            HardwareLayout {
+                joints: (0..8).map(|i| format!("j{i}")).collect(),
+                motor_ids: (1..=8).collect(),
+                layout_id: 42,
+            }
+        }
+
+        fn config() -> toml::Value {
+            use std::fmt::Write as _;
+
+            let mut text = "[s1.profile]\nbackends=['scripted']\ncommand_mode='joint_position'\n[s1.single_joint]\nmax_duration_ms=20000\nsettle_timeout_ms=800\nstable_window_ms=200\n".to_string();
+            for i in 0..8 {
+                writeln!(text, "[[s1.single_joint.joints]]\nname='j{i}'\nmin_position_rad=-1.0\nmax_position_rad=1.0\nmax_velocity_rad_s=0.1\ntolerance_rad=0.001")
+                    .expect("写入测试配置字符串");
+            }
+            toml::from_str(&text).unwrap()
+        }
+
+        fn plan() -> SingleJointPlan {
+            SingleJointPlan::prepare(
+                &Args::parse_from(&raw_args()).unwrap(),
+                &layout(),
+                &[0.0; 8],
+                &config(),
+            )
+            .unwrap()
+        }
+
+        fn check() -> SingleJointCheck {
+            let mut source = HoldCheck::new("robot".into(), &[0.0; 8], 8).unwrap();
+            source.last_stamp_ns = 1_000_000_000;
+            SingleJointCheck {
+                source,
+                layout_id: 42,
+                joint_idx: 4,
+                expected_raw: plan().expected_raw,
+            }
+        }
+
+        fn state(step: u64, selected_offset: i32) -> RobotState {
+            let mut positions = vec![0.0; 8];
+            positions[4] = f64::from(robot_adapter_feetech::raw_to_rad(2047 + selected_offset));
+            RobotState {
+                robot_id: "robot".into(),
+                hardware_id: "left_arm".into(),
+                layout_id: 42,
+                stamp_ns: 1_000_000_000 + step * 100_000_000,
+                position_rad: positions,
+                mode: S0Mode::Enabled as i32,
+                control_link: robot_rpc::proto::S0ControlLink::Ok as i32,
+                output_mode: robot_rpc::proto::S0OutputMode::Active as i32,
+                safety_state: robot_rpc::proto::S0SafetyState::TorqueOn as i32,
+                ..RobotState::default()
+            }
+        }
+
+        fn ops() -> ScriptedOps {
+            let mut ops = ScriptedOps::new("left");
+            ops.raw_state_r.extend([
+                Scripted::Ok(state(1, 0)),
+                Scripted::Ok(state(201, 24)),
+                Scripted::Ok(state(202, 24)),
+            ]);
+            ops.status_r.push_back(Scripted::Ok(success_snapshot()));
+            ops
+        }
+
+        async fn execute(
+            ops: &mut ScriptedOps,
+            plan: &SingleJointPlan,
+            budgets: StageBudgets,
+        ) -> Result<(), String> {
+            let body = single_joint_torque_body(ops, plan, &mut check(), budgets).await;
+            finalize_single(ops, body, budgets).await
+        }
+
+        #[test]
+        fn single_joint_arguments_are_explicit_and_left_only() {
+            let valid = raw_args();
+            assert_eq!(Args::parse_from(&valid).unwrap().phase, Phase::SingleJoint);
+            for flag in [
+                "--joint-name",
+                "--target-offset-raw",
+                "--duration-ms",
+                "--task-timeout-ms",
+                "--hold-anchor-rad",
+            ] {
+                let mut missing = valid.clone();
+                let index = missing.iter().position(|value| value == flag).unwrap();
+                missing.drain(index..=index + 1);
+                assert!(Args::parse_from(&missing).is_err(), "{flag}");
+            }
+            for extra in [
+                ["--side", "right"],
+                ["--probe-joint", "j4"],
+                ["--target-position-rad", "0.05"],
+                ["--duration-ms", "0"],
+                ["--task-timeout-ms", "20000"],
+                ["--task-timeout-ms", "18446744073709551615"],
+            ] {
+                let mut invalid = valid.clone();
+                invalid.extend(extra.map(str::to_string));
+                assert!(Args::parse_from(&invalid).is_err(), "{extra:?}");
+            }
+            for phase in ["hold", "single-arm", "all"] {
+                let mut invalid = valid.clone();
+                invalid[1] = phase.into();
+                assert!(Args::parse_from(&invalid).is_err());
+            }
+            let mut absolute = valid;
+            let index = absolute
+                .iter()
+                .position(|value| value == "--target-offset-raw")
+                .unwrap();
+            absolute[index] = "--target-position-rad".into();
+            absolute[index + 1] = "-0.04".into();
+            assert!(Args::parse_from(&absolute).is_ok());
+            for bad in ["NaN", "inf", "-inf", "1e100"] {
+                absolute[index + 1] = bad.into();
+                assert!(Args::parse_from(&absolute).is_err());
+            }
+        }
+
+        #[test]
+        fn single_joint_spec_is_only_new_schema_and_original_raw_conversion() {
+            let plan = plan();
+            let spec = plan.action_spec();
+            assert_eq!(
+                spec.kind,
+                robot_rpc::client::dual_arm_workflow::ActionKindWire::Scripted
+            );
+            assert_eq!(spec.payload_schema_id, 0x040F);
+            let payload =
+                flatbuffers::root::<robot_msg::msg::SingleJointPositionPayload<'_>>(&spec.payload)
+                    .unwrap();
+            assert_eq!(payload.hardware_id(), "left_arm");
+            assert_eq!(payload.joint_name(), "j4");
+            assert_eq!(payload.duration_ms(), 20000);
+            assert_eq!(
+                payload.target_position_rad().to_bits(),
+                f64::from(robot_adapter_feetech::raw_to_rad(2071)).to_bits()
+            );
+            assert_eq!(
+                plan.expected_raw,
+                [2047, 2047, 2047, 2047, 2071, 2047, 2047, 2047]
+            );
+            assert_eq!(ActionSpec::scripted(vec![]).payload_schema_id, 0x040B);
+        }
+
+        #[test]
+        fn single_joint_rejects_config_range_rate_and_budget_before_enable() {
+            let mut args = Args::parse_from(&raw_args()).unwrap();
+            let layout = layout();
+            let good = config();
+            args.task_timeout_ms = Some(20800);
+            assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &good).is_err());
+            args.task_timeout_ms = Some(20801);
+            assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &good).is_ok());
+            for (field, value) in [
+                ("max_position_rad", 0.01),
+                ("max_velocity_rad_s", 0.0001),
+                ("tolerance_rad", -1.0),
+            ] {
+                let mut bad = good.clone();
+                bad["s1"]["single_joint"]["joints"][4][field] = toml::Value::Float(value);
+                assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &bad).is_err());
+            }
+            let mut bad = good.clone();
+            bad["s1"]["single_joint"]["joints"][0]["min_position_rad"] = toml::Value::Float(0.01);
+            assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &bad).is_err());
+            for name in ["j4", "unknown"] {
+                let mut bad = good.clone();
+                bad["s1"]["single_joint"]["joints"][0]["name"] = name.into();
+                assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &bad).is_err());
+            }
+            let mut bad = good.clone();
+            bad["s1"]["single_joint"]["stable_window_ms"] = toml::Value::Integer(800);
+            assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &bad).is_err());
+            let mut short = layout.clone();
+            short.joints.pop();
+            assert!(SingleJointPlan::prepare(&args, &short, &[0.0; 8], &good).is_err());
+            args.target_offset_raw = Some(8);
+            assert!(SingleJointPlan::prepare(&args, &layout, &[0.0; 8], &good).is_err());
+            assert!(check_single_joint_motion(0.0, 0.088, 20000).is_err());
+            assert!(check_single_joint_motion(0.0, 0.05, 100).is_err());
+            let limits = [SingleJointLimit {
+                min: -0.1,
+                max: 0.1,
+                velocity: 1.0,
+            }];
+            assert!(check_single_joint_limits(&limits, &[0.1]).is_err());
+            assert!(check_single_joint_limits(&limits, &[-0.1]).is_err());
+        }
+
+        #[test]
+        fn single_joint_observer_enforces_source_ready_corridor_and_all_joints() {
+            let mut good = check();
+            for (step, offset) in [(1, -4), (2, 28)] {
+                let sample = state(step, offset);
+                good.observe(&sample, "left_arm", sample.stamp_ns, false)
+                    .unwrap();
+            }
+            for (slot, offset) in [(0, 5), (4, -5), (4, 29)] {
+                let mut sample = state(1, 12);
+                sample.position_rad[slot] =
+                    f64::from(robot_adapter_feetech::raw_to_rad(2047 + offset));
+                assert!(
+                    check()
+                        .observe(&sample, "left_arm", sample.stamp_ns, false)
+                        .is_err()
+                );
+            }
+            for stamp in [0, 1_000_000_000, 900_000_000, 1_200_000_000] {
+                let mut sample = state(1, 0);
+                sample.stamp_ns = stamp;
+                assert!(
+                    check()
+                        .observe(&sample, "left_arm", 1_100_000_000, false)
+                        .is_err()
+                );
+            }
+            assert!(
+                check()
+                    .observe(&state(1, 0), "left_arm", 1_400_000_000, false)
+                    .is_err()
+            );
+            for field in 0..8 {
+                let mut sample = state(1, 0);
+                match field {
+                    0 => sample.robot_id = "wrong".into(),
+                    1 => sample.hardware_id = "wrong".into(),
+                    2 => sample.layout_id = 0,
+                    3 => sample.mode = S0Mode::Safe as i32,
+                    4 => sample.control_link = 0,
+                    5 => sample.output_mode = 0,
+                    6 => sample.safety_state = 0,
+                    _ => sample.fault_code = 1,
+                }
+                assert!(
+                    check()
+                        .observe(&sample, "left_arm", sample.stamp_ns, false)
+                        .is_err()
+                );
+            }
+            assert!(
+                check()
+                    .observe(&state(1, 0), "left_arm", 1_100_000_000, true)
+                    .is_err()
+            );
+            assert!(
+                check()
+                    .observe(&state(1, 20), "left_arm", 1_100_000_000, true)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn single_joint_success_uses_one_task_then_fresh_final_sample_and_disable() {
+            run(async {
+                let mut ops = ops();
+                execute(&mut ops, &plan(), tb()).await.unwrap();
+                assert_eq!(
+                    ops.calls,
+                    [
+                        "enable", "state", "submit", "state", "status", "state", "disable"
+                    ]
+                );
+                assert_eq!(ops.submitted.len(), 1);
+                assert_eq!(ops.submitted[0].1, 25000);
+                assert_eq!(ops.submitted[0].0.payload_schema_id, 0x040F);
+            });
+        }
+
+        #[test]
+        fn single_joint_success_status_without_final_position_or_freshness_estops() {
+            for final_state in [state(202, 0), state(201, 24)] {
+                run(async {
+                    let mut ops = ops();
+                    ops.raw_state_r[2] = Scripted::Ok(final_state);
+                    assert!(execute(&mut ops, &plan(), tb()).await.is_err());
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                    assert!(
+                        !ops.calls
+                            .iter()
+                            .any(|call| call.starts_with("cancel") || call == "disable")
+                    );
+                });
+            }
+        }
+
+        #[test]
+        fn single_joint_final_feedback_must_be_newer_than_success_receipt() {
+            run(async {
+                let mut ops = ops();
+                ops.status_now = Some(21_150_000_000);
+                let mut cached = state(202, 24);
+                cached.stamp_ns = 21_125_000_000;
+                ops.raw_state_r[2] = Scripted::Ok(cached);
+                let error = execute(&mut ops, &plan(), tb()).await.unwrap_err();
+                assert!(error.contains("成功回执后的新源帧"), "{error}");
+                assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                assert!(
+                    !ops.calls
+                        .iter()
+                        .any(|call| call.starts_with("cancel") || call == "disable")
+                );
+            });
+        }
+
+        #[test]
+        fn single_joint_active_drift_or_status_failure_cancels_then_estops() {
+            for drift in [false, true] {
+                run(async {
+                    let mut ops = ops();
+                    if drift {
+                        let mut bad = state(2, 12);
+                        bad.position_rad[0] = f64::from(robot_adapter_feetech::raw_to_rad(2052));
+                        ops.raw_state_r[1] = Scripted::Ok(bad);
+                    } else {
+                        ops.status_r[0] = Scripted::Err("status unknown".into());
+                    }
+                    ops.cancel_r
+                        .push_back(Scripted::Err("cancel unknown".into()));
+                    assert!(execute(&mut ops, &plan(), tb()).await.is_err());
+                    assert_eq!(
+                        &ops.calls[ops.calls.len() - 2..],
+                        ["cancel:action-1", "estop"]
+                    );
+                    assert_eq!(ops.submitted.len(), 1);
+                });
+            }
+        }
+
+        #[test]
+        fn single_joint_terminal_failure_and_unconfirmed_disable_are_failures() {
+            run(async {
+                let mut ops = ops();
+                ops.status_r[0] = Scripted::Ok(TaskSnapshot {
+                    phase: TaskPhase::Terminal(TerminalState::Cancelled),
+                    ..success_snapshot()
+                });
+                assert!(execute(&mut ops, &plan(), tb()).await.is_err());
+                assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                assert!(
+                    !ops.calls
+                        .iter()
+                        .any(|call| call.starts_with("cancel") || call == "disable")
+                );
+            });
+            run(async {
+                let mut ops = ops();
+                ops.disable_r
+                    .push_back(Scripted::Err("not TorqueOffConfirmed".into()));
+                assert!(execute(&mut ops, &plan(), tb()).await.is_err());
+                assert_eq!(&ops.calls[ops.calls.len() - 2..], ["disable", "estop"]);
+            });
+        }
+
+        #[test]
+        fn single_joint_late_enable_or_submit_ack_never_resumes_or_retries() {
+            for late_submit in [false, true] {
+                run(async {
+                    let mut ops = ops();
+                    let completed = Arc::new(AtomicBool::new(false));
+                    if late_submit {
+                        ops.submit_r.push_back(Scripted::Late(
+                            "action-1".into(),
+                            Duration::from_millis(60),
+                            Arc::clone(&completed),
+                        ));
+                    } else {
+                        ops.enable_r.push_back(Scripted::Late(
+                            (),
+                            Duration::from_millis(60),
+                            Arc::clone(&completed),
+                        ));
+                    }
+                    let budgets = StageBudgets {
+                        enable: Duration::from_millis(20),
+                        submit: Duration::from_millis(20),
+                        ..tb()
+                    };
+                    assert!(execute(&mut ops, &plan(), budgets).await.is_err());
+                    let calls = ops.calls.clone();
+                    tokio::time::sleep(Duration::from_millis(90)).await;
+                    assert!(completed.load(Ordering::SeqCst));
+                    assert_eq!(ops.calls, calls);
+                    assert_eq!(
+                        ops.calls
+                            .iter()
+                            .filter(|call| call.as_str() == "enable")
+                            .count(),
+                        1
+                    );
+                    assert_eq!(ops.submitted.len(), usize::from(late_submit));
+                    assert_eq!(ops.calls.last().map(String::as_str), Some("estop"));
+                    if late_submit {
+                        assert_eq!(
+                            &ops.calls[ops.calls.len() - 2..],
+                            ["cancel:action-1", "estop"]
+                        );
+                    }
+                });
+            }
+        }
+
+        #[test]
+        fn single_joint_execution_timeout_keeps_known_action_for_finalizer() {
+            run(async {
+                let mut ops = ops();
+                ops.status_r[0] = Scripted::Hang;
+                let mut plan = plan();
+                plan.task_timeout_ms = 150;
+                assert!(execute(&mut ops, &plan, tb()).await.is_err());
+                assert_eq!(
+                    &ops.calls[ops.calls.len() - 2..],
+                    ["cancel:action-1", "estop"]
+                );
+                assert_eq!(ops.submitted.len(), 1);
+            });
+        }
+    }
+
     /// 单臂全绿链路（含 witness 出→回证据 + disable 确认，零 `EStop`）。
     #[test]
     fn single_arm_happy_path_with_motion_evidence() {
