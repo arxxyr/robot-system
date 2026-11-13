@@ -16,9 +16,11 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 ## 只读状态接入模板
 
-`robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`运行只读HTTP/SSE页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
+`robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`独立运行只读HTTP/WebSocket页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
 
-这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET接口、只调用`GetState`，不能将原网关本身称为禁写服务。当前构建方式见[HTTP/SSE软件基线](../../docs/control_plan.md#当前只读软件基线httpsse)；后续WebSocket、Orin部署和外部接入管理按同文档的目标方案实施，当前unit及代码尚未迁移。
+这些是未安装的模板，不在S0安装器、发布矩阵或自启清单内。模板路径仍需在以后安装前冻结核对，不直接复制覆盖当前正式安装。原网关保留原生控制RPC；新增网页只提供状态GET与只读WebSocket、只调用`GetState`，不能将原网关本身称为禁写服务。当前构建方式见[只读WebSocket入口](../../docs/control_plan.md#当前只读websocket入口)；Orin真实状态部署及Nginx外网接入仍待验收，Web不设置token，外部接入管理由用户已有系统承担。
+
+状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；模板已静态检查，实际限额及峰值需在后续部署验收，不等于已在运行实例生效。
 
 ## 安装与回滚
 

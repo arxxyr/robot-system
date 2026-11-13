@@ -9,10 +9,10 @@
     :root { --ink: #19334b; --muted: #62758a; --line: #dce5ec; --paper: #fff; --bg: #f4f7fa; --blue: #205b90; --green: #246d51; --amber: #946000; --red: #a63d39; }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-    button, input { font: inherit; }
+    button { font: inherit; }
     button { border: 1px solid transparent; border-radius: 7px; padding: 9px 17px; cursor: pointer; font-weight: 600; white-space: nowrap; }
     button:disabled { cursor: default; opacity: .55; }
-    button:focus-visible, input:focus-visible { outline: 3px solid #91b9db; outline-offset: 3px; }
+    button:focus-visible { outline: 3px solid #91b9db; outline-offset: 3px; }
     .primary { color: #fff; background: var(--blue); }
     .primary:hover:not(:disabled) { background: #174b79; }
     .secondary { color: var(--ink); background: #fff; border-color: var(--line); }
@@ -33,11 +33,7 @@
     .connection[data-tone="warn"] .dot { background: #c08b28; }
     .connection[data-tone="bad"] .dot { background: #b34b48; }
     .access { border: 1px solid var(--line); border-radius: 11px; background: var(--paper); padding: 19px 22px; margin-bottom: 26px; }
-    form { display: flex; align-items: end; gap: 11px; }
-    .token-field { flex: 1; max-width: 430px; }
-    label { display: block; font-size: 13px; font-weight: 650; margin-bottom: 6px; }
-    input { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid #b9c9d7; border-radius: 6px; background: #fff; color: var(--ink); }
-    input::placeholder { color: #8b99a7; }
+    .connection-actions { display: flex; align-items: center; gap: 11px; }
     .access-note { color: var(--muted); margin: 9px 0 0; font-size: 12px; }
     #notice { font-size: 13px; margin: 12px 0 0; color: var(--red); overflow-wrap: anywhere; }
     #notice:empty { display: none; }
@@ -82,8 +78,8 @@
     .bus-foot { padding: 10px 22px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
     footer { margin-top: 23px; color: var(--muted); font-size: 12px; }
     footer p { margin: 4px 0; }
-    @media (max-width: 900px) { .buses { grid-template-columns: 1fr; } .token-field { max-width: none; } }
-    @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } form { flex-wrap: wrap; } .token-field { flex-basis: 100%; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
+    @media (max-width: 900px) { .buses { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } .connection-actions { flex-wrap: wrap; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
   </style>
 </head>
 <body>
@@ -94,12 +90,11 @@
       <div id="connection" class="connection" data-tone="neutral" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">尚未连接</span></div>
     </div>
     <section class="access" aria-label="只读访问">
-      <form id="connect-form">
-        <div class="token-field"><label for="token">访问令牌</label><input id="token" type="password" placeholder="输入具有状态读取权限的令牌" autocomplete="off" autocapitalize="none" spellcheck="false" required></div>
-        <button id="connect" class="primary" type="submit">连接查看</button>
+      <div class="connection-actions">
+        <button id="connect" class="primary" type="button">连接查看</button>
         <button id="disconnect" class="secondary" type="button" disabled>断开查看</button>
-      </form>
-      <p class="access-note">令牌仅用于当前连接，断开后清除，不写入浏览器存储。</p>
+      </div>
+      <p class="access-note">连接后持续接收状态；断开查看不会改变机器人状态。</p>
       <p id="notice" role="alert"></p>
     </section>
     <section aria-label="总线状态">
@@ -111,7 +106,7 @@
   <script>
     (() => {
       'use strict';
-      const elements = Object.fromEntries(['connect-form', 'token', 'connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses'].map(id => [id, document.getElementById(id)]));
+      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses'].map(id => [id, document.getElementById(id)]));
       const modeText = { Safe: 'Safe · 安全态', Ready: 'Ready · 就绪', Enabled: 'Enabled · 已使能', Fault: 'Fault · 故障', Stopping: 'Stopping · 停止中' };
       const linkText = { Ok: '正常', Lost: '已丢失' };
       const outputText = { Active: '执行输出', Hold: '保持', Zero: '零输出', Stop: '停止输出' };
@@ -144,7 +139,7 @@
       function statusOf(bus) {
         if (bus.data_status !== 'fresh') return Object.hasOwn(statusText, bus.data_status) ? bus.data_status : 'invalid';
         const age = ageOf(bus);
-        if (!connected || age === null || age > snapshot.stale_after_ms) return 'stale';
+        if (!connected || typeof bus.stamp_ns !== 'string' || !/^[1-9]\d*$/.test(bus.stamp_ns) || age === null || age > snapshot.stale_after_ms) return 'stale';
         return 'fresh';
       }
       function ageText(age) {
@@ -195,7 +190,7 @@
 
         let note = '';
         if (bus.error) note = String(bus.error);
-        else if (!connected) note = '状态流已断开，以下内容为最后一次反馈。';
+        else if (!connected) note = activeSession ? '等待有效状态反馈，以下旧数据仅供参考。' : '状态流已断开，以下内容为最后一次反馈。';
         else if (status === 'stale') note = '源数据未及时推进，当前实际状态未确认。';
         else if (status === 'unavailable') note = '尚无有效状态样本，不能判断设备是否上扭。';
         else if (status === 'invalid') note = '状态身份、布局或数据校验未通过。';
@@ -249,89 +244,67 @@
           if (!bus || typeof bus.id !== 'string' || typeof bus.robot_id !== 'string' || typeof bus.hardware_id !== 'string' || typeof bus.layout_id !== 'string' || !Array.isArray(bus.joints) || bus.joints.length > 256) throw new Error('总线数据格式无效。');
           if (bus.joints.some(joint => !joint || typeof joint.name !== 'string' || !Number.isInteger(joint.motor_id))) throw new Error('关节数据格式无效。');
         }
+        for (const bus of value.buses) {
+          const previous = snapshot?.buses.find(old => old.id === bus.id && old.robot_id === bus.robot_id && old.hardware_id === bus.hardware_id && old.layout_id === bus.layout_id);
+          const previousAge = previous ? ageOf(previous) : null;
+          if (previous && bus.stamp_ns !== null && bus.stamp_ns === previous.stamp_ns && previousAge !== null && Number.isFinite(bus.age_ms) && bus.age_ms >= 0) {
+            bus.age_ms = Math.max(bus.age_ms, previousAge);
+          }
+        }
         snapshot = value;
         receivedAt = performance.now();
-        render();
-      }
-      function checkResponse(response) {
-        if (response.status === 401) throw new Error('令牌无效或未提供，请重新输入。');
-        if (response.status === 403) throw new Error('该令牌没有状态读取权限。');
-        if (!response.ok) throw new Error(`状态服务返回 HTTP ${response.status}，请稍后重新连接。`);
-      }
-      async function readEvents(response, session) {
-        if (!response.body) throw new Error('浏览器无法读取状态流。');
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        try {
-          while (activeSession === session) {
-            const result = await reader.read();
-            if (result.done) break;
-            buffer += decoder.decode(result.value, { stream: true });
-            if (buffer.length > 524288) throw new Error('状态流数据超出页面容量。');
-            let match;
-            while ((match = /\r?\n\r?\n/.exec(buffer))) {
-              const block = buffer.slice(0, match.index);
-              buffer = buffer.slice(match.index + match[0].length);
-              let event = 'message';
-              const data = [];
-              for (const line of block.split(/\r?\n/)) {
-                if (line.startsWith('event:')) event = line.slice(6).trim();
-                if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
-              }
-              if (event === 'state' && data.length && activeSession === session) receiveSnapshot(JSON.parse(data.join('\n')));
-            }
-          }
-        } finally {
-          await reader.cancel().catch(() => {});
-          reader.releaseLock();
-        }
-        if (activeSession === session) throw new Error('状态流已中断，请重新连接；最后反馈不能代表当前状态。');
       }
       function closeSession() {
         const previous = activeSession;
         activeSession = null;
         connected = false;
-        if (previous) {
-          previous.controller.abort();
-          previous.token = '';
+        if (previous && previous.socket.readyState < WebSocket.CLOSING) {
+          previous.socket.close(1000, '停止查看');
         }
-        elements.token.value = '';
         elements.connect.disabled = false;
         elements.disconnect.disabled = true;
-        elements.token.disabled = false;
         render();
       }
-      elements['connect-form'].addEventListener('submit', async event => {
-        event.preventDefault();
-        const session = { token: elements.token.value.trim(), controller: new AbortController() };
-        if (!session.token) return;
+      function failSession(session, message) {
+        if (activeSession !== session) return;
         closeSession();
-        activeSession = session;
+        setConnection('连接已中断', 'bad');
+        elements.notice.textContent = message;
+      }
+      elements.connect.addEventListener('click', () => {
+        closeSession();
         elements.notice.textContent = '';
         elements.connect.disabled = true;
         elements.disconnect.disabled = false;
-        elements.token.disabled = true;
         setConnection('正在连接状态服务', 'warn');
-        const options = () => ({ headers: { Authorization: `Bearer ${session.token}` }, signal: session.controller.signal, cache: 'no-store', credentials: 'omit' });
         try {
-          const first = await fetch('/api/state', options());
-          checkResponse(first);
-          const initial = await first.json();
-          if (activeSession !== session) return;
-          receiveSnapshot(initial);
-          const response = await fetch('/api/events', options());
-          checkResponse(response);
-          if (activeSession !== session) return;
-          connected = true;
-          setConnection('状态流已连接', 'good');
-          render();
-          await readEvents(response, session);
+          const url = new URL('/api/ws', window.location.href);
+          url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+          const session = { socket: new WebSocket(url) };
+          activeSession = session;
+          session.socket.onopen = () => {
+            if (activeSession !== session) return;
+            setConnection('已连接，等待状态数据', 'warn');
+          };
+          session.socket.onmessage = event => {
+            if (activeSession !== session) return;
+            try {
+              if (typeof event.data !== 'string') throw new Error('状态服务返回了非文本数据。');
+              if (event.data.length > 524288) throw new Error('状态数据超出页面容量。');
+              receiveSnapshot(JSON.parse(event.data));
+              connected = true;
+              setConnection('状态流已连接', 'good');
+              render();
+            } catch (error) {
+              failSession(session, error instanceof SyntaxError ? '状态服务返回了无效数据，请重新连接。' : error.message || '状态数据无效。');
+            }
+          };
+          session.socket.onerror = () => failSession(session, '无法连接状态服务，请手动重新连接。');
+          session.socket.onclose = () => failSession(session, '状态流已中断，请重新连接；最后反馈不能代表当前状态。');
         } catch (error) {
-          if (activeSession !== session) return;
           closeSession();
           setConnection('连接已中断', 'bad');
-          elements.notice.textContent = error instanceof SyntaxError ? '状态服务返回了无效数据，请重新连接。' : error.message || '无法连接状态服务。';
+          elements.notice.textContent = error.message || '无法连接状态服务。';
         }
       });
       elements.disconnect.addEventListener('click', () => {

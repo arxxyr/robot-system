@@ -3,6 +3,8 @@
 [Unit]
 Description=Robot read-only status page
 After=network.target robot-gateway-bus1.service robot-gateway-bus2.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -13,11 +15,18 @@ ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-status \
     --config /etc/robot/xlerobot-status.toml
 Restart=on-failure
 RestartSec=2s
+TimeoutStopSec=5s
 Environment=ROBOT_LOG_FORMAT=json
 Environment=RUST_LOG=info
 StandardOutput=journal
 StandardError=journal
 CPUAffinity=0-3
+# 独立Web进程的初始资源预算；不占用S0通讯核4/5，不修改S0/S1服务。
+# CPUQuota是合计半核预算；TasksMax统计OS线程/进程，不是异步任务数。
+CPUQuota=50%
+MemoryHigh=128M
+MemoryMax=256M
+TasksMax=32
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=read-only

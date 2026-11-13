@@ -8,34 +8,15 @@ use crate::proto::{
 };
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
+use futures_util::StreamExt;
 use robot_core::time::{MockClock, MonoRawNs};
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::{connect_async, tungstenite};
 use tonic::{Request as RpcRequest, Response as RpcResponse, Status};
 use tower::ServiceExt;
-
-fn test_roles() -> Arc<RoleTable> {
-    Arc::new(
-        load_role_table(
-            r#"
-[tokens]
-"status-test-viewer" = "viewer"
-"status-test-no-read" = "operator"
-[roles.viewer]
-capabilities = ["read_state"]
-[roles.operator]
-capabilities = []
-[roles.maintainer]
-capabilities = ["clear_estop"]
-[roles.admin]
-capabilities = ["clear_estop"]
-"#,
-        )
-        .unwrap(),
-    )
-}
 
 fn source(bus: u8, endpoint: String) -> Source {
     let config_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
@@ -158,7 +139,6 @@ fn invalid_identity_layout_clock_and_values_never_replace_valid_state() {
 fn config_rejects_remote_duplicate_sources_and_bad_budgets() {
     let parse = |listen: &str, endpoint: &str, stale: u64| ConfigFile {
         listen: listen.parse().unwrap(),
-        rpc_roles_toml: "roles.toml".into(),
         poll_interval_ms: 500,
         stale_after_ms: stale,
         rpc_timeout_ms: 500,
@@ -183,29 +163,36 @@ fn config_rejects_remote_duplicate_sources_and_bad_budgets() {
     assert!(validate_file(&config).is_err());
 }
 
-fn web_state() -> (WebState, watch::Sender<Snapshot>, watch::Sender<bool>) {
+fn web_state() -> (
+    WebState,
+    watch::Sender<Snapshot>,
+    watch::Sender<bool>,
+    mpsc::Receiver<WsConnection>,
+) {
     let snapshot = Snapshot {
         stale_after_ms: 2000,
         buses: vec![SourceState::new(source(1, String::new())).view(1, 2000)],
     };
     let (tx, rx) = watch::channel(snapshot);
     let (stop, stopped) = watch::channel(false);
+    let (connections, incoming) = mpsc::channel(MAX_STREAMS);
     (
         WebState {
             latest: rx,
-            roles: test_roles(),
             streams: Arc::new(Semaphore::new(MAX_STREAMS)),
+            connections,
             shutdown: stopped,
             clock: Arc::new(MockClock::new(MonoRawNs(1))),
         },
         tx,
         stop,
+        incoming,
     )
 }
 
 #[tokio::test]
 async fn http_recomputes_stale_when_watch_has_not_changed() {
-    let (mut state, latest, _stop) = web_state();
+    let (mut state, latest, _stop, _incoming) = web_state();
     let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000_000)));
     state.clock = clock.clone();
     let mut source = SourceState::new(source(1, String::new()));
@@ -218,7 +205,7 @@ async fn http_recomputes_stale_when_watch_has_not_changed() {
         .unwrap();
     clock.set(MonoRawNs(4_000_000_000));
     let response = router(state)
-        .oneshot(request("GET", "/api/state", Some("status-test-viewer")))
+        .oneshot(request("GET", "/api/state"))
         .await
         .unwrap();
     let body = to_bytes(response.into_body(), 16_384).await.unwrap();
@@ -227,46 +214,22 @@ async fn http_recomputes_stale_when_watch_has_not_changed() {
     assert_eq!(body["buses"][0]["age_ms"], 3000);
 }
 
-fn request(method: &str, path: &str, token: Option<&str>) -> Request<Body> {
-    let mut builder = Request::builder().method(method).uri(path);
-    if let Some(token) = token {
-        builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
-    }
-    builder.body(Body::empty()).unwrap()
+fn request(method: &str, path: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(path)
+        .body(Body::empty())
+        .unwrap()
 }
 
 #[tokio::test]
-async fn http_auth_read_only_routes_and_stream_capacity() {
-    let (state, _latest, stop) = web_state();
+async fn http_without_token_remains_read_only_and_removes_sse() {
+    let (state, _latest, _stop, _incoming) = web_state();
     let app = router(state.clone());
-    for path in ["/api/state", "/api/events"] {
+    for path in ["/api/state", "/api/ws"] {
         assert_eq!(
             app.clone()
-                .oneshot(request("GET", path, None))
-                .await
-                .unwrap()
-                .status(),
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            app.clone()
-                .oneshot(request("GET", path, Some("bad")))
-                .await
-                .unwrap()
-                .status(),
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            app.clone()
-                .oneshot(request("GET", path, Some("status-test-no-read")))
-                .await
-                .unwrap()
-                .status(),
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            app.clone()
-                .oneshot(request("POST", path, Some("status-test-viewer")))
+                .oneshot(request("POST", path))
                 .await
                 .unwrap()
                 .status(),
@@ -275,48 +238,35 @@ async fn http_auth_read_only_routes_and_stream_capacity() {
     }
     let response = app
         .clone()
-        .oneshot(request("GET", "/api/state", Some("status-test-viewer")))
+        .oneshot(request("GET", "/api/state"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(
+        response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+        "nosniff"
+    );
     let body = to_bytes(response.into_body(), 16_384).await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["buses"][0]["data_status"], "unavailable");
     for path in ["/api/enable", "/api/estop", "/api/move", "/api/clear-estop"] {
         assert_eq!(
             app.clone()
-                .oneshot(request("POST", path, Some("status-test-viewer")))
+                .oneshot(request("POST", path))
                 .await
                 .unwrap()
                 .status(),
             StatusCode::NOT_FOUND
         );
     }
-    let mut responses = Vec::new();
-    for _ in 0..MAX_STREAMS {
-        let response = app
-            .clone()
-            .oneshot(request("GET", "/api/events", Some("status-test-viewer")))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        responses.push(response);
-    }
-    assert_eq!(state.streams.available_permits(), 0);
     assert_eq!(
-        app.clone()
-            .oneshot(request("GET", "/api/events", Some("status-test-viewer")))
+        app.oneshot(request("GET", "/api/events"))
             .await
             .unwrap()
             .status(),
-        StatusCode::TOO_MANY_REQUESTS
+        StatusCode::NOT_FOUND
     );
-    responses.pop();
-    assert_eq!(state.streams.available_permits(), 1);
-    stop.send(true).unwrap();
-    drop(responses);
-    assert_eq!(state.streams.available_permits(), MAX_STREAMS);
 }
 
 #[derive(Clone)]
@@ -424,9 +374,9 @@ async fn start_fake(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, shutdown) = tokio::sync::oneshot::channel();
-    let incoming = async_stream::stream! {
-        loop { yield listener.accept().await.map(|(stream, _)| stream); }
-    };
+    let incoming = futures_util::stream::unfold(listener, |listener| async {
+        Some((listener.accept().await.map(|(stream, _)| stream), listener))
+    });
     let task = tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(RobotControlServer::new(fake))
@@ -441,14 +391,221 @@ async fn start_fake(
 
 async fn http_get(address: SocketAddr, path: &str) -> String {
     let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
-    socket.write_all(format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer status-test-viewer\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+    socket
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
+        .await
+        .unwrap();
     let mut output = String::new();
     socket.read_to_string(&mut output).await.unwrap();
     output
 }
 
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn next_json(socket: &mut WsClient) -> serde_json::Value {
+    let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let tungstenite::Message::Text(text) = message else {
+        panic!("首帧必须是JSON文本")
+    };
+    serde_json::from_str(&text).unwrap()
+}
+
+async fn next_close(socket: &mut WsClient) -> Option<tungstenite::protocol::CloseFrame> {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match socket.next().await.unwrap().unwrap() {
+                tungstenite::Message::Close(frame) => return frame,
+                tungstenite::Message::Text(_) => {}
+                message => panic!("预期关闭帧，实际为{message:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+async fn wait_permits(streams: &Semaphore, expected: usize) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while streams.available_permits() != expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+async fn start_router(
+    state: WebState,
+    incoming: mpsc::Receiver<WsConnection>,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let connections = tokio::spawn(manage_connections(incoming, state.clone()));
+        let mut shutdown = state.shutdown.clone();
+        axum::serve(listener, router(state))
+            .with_graceful_shutdown(async move {
+                let _ = shutdown.changed().await;
+            })
+            .await
+            .unwrap();
+        connections.await.unwrap().unwrap();
+    });
+    (address, task)
+}
+
 #[tokio::test]
-async fn fake_grpc_to_http_and_sse_never_calls_control() {
+async fn websocket_snapshot_age_ping_and_read_only_policy() {
+    let (mut state, latest, stop, incoming) = web_state();
+    let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000_000)));
+    state.clock = clock.clone();
+    let streams = Arc::clone(&state.streams);
+    let (address, task) = start_router(state, incoming).await;
+    let url = format!("ws://{address}/api/ws");
+    let (mut socket, _) = connect_async(&url).await.unwrap();
+    let first = next_json(&mut socket).await;
+    assert_eq!(first["buses"][0]["data_status"], "unavailable");
+    assert!(first["buses"][0]["stamp_ns"].is_null());
+    socket
+        .send(tungstenite::Message::Ping(b"check".as_slice().into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        tungstenite::Message::Pong(b"check".as_slice().into()),
+    );
+    let mut source = SourceState::new(source(1, String::new()));
+    source.accept(Ok(sample(&source.source, clock.now().0)), clock.now().0);
+    let snapshot = Snapshot {
+        stale_after_ms: 2000,
+        buses: vec![source.view(clock.now().0, 2000)],
+    };
+    latest.send(snapshot.clone()).unwrap();
+    assert_eq!(
+        next_json(&mut socket).await["buses"][0]["data_status"],
+        "fresh"
+    );
+    clock.set(MonoRawNs(4_000_000_000));
+    latest.send(snapshot).unwrap();
+    let aged = next_json(&mut socket).await;
+    assert_eq!(aged["buses"][0]["data_status"], "stale");
+    assert_eq!(aged["buses"][0]["age_ms"], 3000);
+    assert_eq!(aged["buses"][0]["stamp_ns"], "1000000000");
+    socket
+        .send(tungstenite::Message::Text(r#"{"enable":true}"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        next_close(&mut socket).await.unwrap().code,
+        tungstenite::protocol::frame::coding::CloseCode::Policy
+    );
+    wait_permits(&streams, MAX_STREAMS).await;
+    let (mut binary, _) = connect_async(&url).await.unwrap();
+    next_json(&mut binary).await;
+    binary
+        .send(tungstenite::Message::Binary(vec![1, 2, 3].into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        next_close(&mut binary).await.unwrap().code,
+        tungstenite::protocol::frame::coding::CloseCode::Policy
+    );
+    wait_permits(&streams, MAX_STREAMS).await;
+    let (mut oversized, _) = connect_async(&url).await.unwrap();
+    next_json(&mut oversized).await;
+    oversized
+        .send(tungstenite::Message::Binary(
+            vec![0; WS_MAX_INPUT_BYTES + 1].into(),
+        ))
+        .await
+        .unwrap();
+    wait_permits(&streams, MAX_STREAMS).await;
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn websocket_capacity_disconnect_and_shutdown_reclaim_connections() {
+    let (state, _latest, stop, incoming) = web_state();
+    let streams = Arc::clone(&state.streams);
+    let (address, task) = start_router(state, incoming).await;
+    let url = format!("ws://{address}/api/ws");
+    let mut sockets = Vec::new();
+    for _ in 0..MAX_STREAMS {
+        let (mut socket, _) = connect_async(&url).await.unwrap();
+        next_json(&mut socket).await;
+        sockets.push(socket);
+    }
+    assert_eq!(streams.available_permits(), 0);
+    let rejected = connect_async(&url).await.unwrap_err();
+    let tungstenite::Error::Http(response) = rejected else {
+        panic!("应返回HTTP连接上限")
+    };
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let mut closing = sockets.pop().unwrap();
+    closing.close(None).await.unwrap();
+    next_close(&mut closing).await;
+    wait_permits(&streams, 1).await;
+    let (mut replacement, _) = connect_async(&url).await.unwrap();
+    next_json(&mut replacement).await;
+    sockets.push(replacement);
+    stop.send(true).unwrap();
+    // 客户端保持打开且不协助收尾；服务器必须自行退出并归还全部许可。
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(streams.available_permits(), MAX_STREAMS);
+    for mut socket in sockets {
+        assert!(next_close(&mut socket).await.is_none());
+    }
+}
+
+#[tokio::test]
+async fn blocked_websocket_io_is_bounded_and_shutdown_cancellable() {
+    let (stop, mut shutdown) = watch::channel(false);
+    assert!(
+        !tokio::time::timeout(
+            Duration::from_secs(2),
+            bounded_ws_io(
+                std::future::pending::<Result<(), axum::Error>>(),
+                &mut shutdown
+            ),
+        )
+        .await
+        .unwrap()
+    );
+    stop.send(true).unwrap();
+    assert!(
+        !tokio::time::timeout(
+            Duration::from_millis(100),
+            bounded_ws_io(
+                std::future::pending::<Result<(), axum::Error>>(),
+                &mut shutdown
+            ),
+        )
+        .await
+        .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn fake_grpc_to_http_and_websocket_never_calls_control() {
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
     let fake = FakeGateway {
         state: Arc::new(Mutex::new(Some(sample(
@@ -466,9 +623,8 @@ async fn fake_grpc_to_http_and_sse_never_calls_control() {
     let (stop, shutdown) = tokio::sync::oneshot::channel();
     let config = StatusConfig {
         listen: address,
-        roles: test_roles(),
-        poll_interval_ms: 100,
-        stale_after_ms: 2000,
+        poll_interval_ms: 10_000,
+        stale_after_ms: 10_000,
         rpc_timeout_ms: 500,
         sources: vec![source(1, endpoint)],
     };
@@ -487,36 +643,50 @@ async fn fake_grpc_to_http_and_sse_never_calls_control() {
     })
     .await
     .unwrap();
-    let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
-    socket.write_all(format!("GET /api/events HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer status-test-viewer\r\n\r\n").as_bytes()).await.unwrap();
-    let output = tokio::time::timeout(Duration::from_secs(5), async {
-        let mut output = Vec::new();
-        let mut chunk = [0; 4096];
-        loop {
-            let count = socket.read(&mut chunk).await.unwrap();
-            assert!(count > 0, "SSE在首个事件之前断开");
-            output.extend_from_slice(&chunk[..count]);
-            assert!(output.len() <= 16_384);
-            if String::from_utf8_lossy(&output).contains("event: state") {
-                break String::from_utf8(output).unwrap();
-            }
-        }
-    })
-    .await
-    .unwrap();
-    assert!(output.contains("200 OK") && output.contains("event: state"));
-    // 客户端保持SSE连接，服务端仍须在预算内关闭，而非依赖客户端先断开。
+    let (mut socket, response) = connect_async(format!("ws://{address}/api/ws"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+    let snapshot = next_json(&mut socket).await;
+    assert_eq!(snapshot["buses"][0]["data_status"], "fresh");
+    assert_eq!(
+        snapshot["buses"][0]["robot_id"],
+        source(1, String::new()).robot_id
+    );
+    let reads_before = fake.reads.load(Ordering::Relaxed);
+    let mut additional = Vec::new();
+    for _ in 1..MAX_STREAMS {
+        let (mut client, _) = connect_async(format!("ws://{address}/api/ws"))
+            .await
+            .unwrap();
+        next_json(&mut client).await;
+        additional.push(client);
+    }
+    // 连接只读取同一个watch快照，不按客户端数量增加GetState调用。
+    assert_eq!(fake.reads.load(Ordering::Relaxed), reads_before);
+    for message in [
+        tungstenite::Message::Text(r#"{"enable":true}"#.into()),
+        tungstenite::Message::Binary(vec![1].into()),
+    ] {
+        let mut client = additional.pop().unwrap();
+        client.send(message).await.unwrap();
+        assert_eq!(
+            next_close(&mut client).await.unwrap().code,
+            tungstenite::protocol::frame::coding::CloseCode::Policy
+        );
+    }
+    assert_eq!(fake.controls.load(Ordering::Relaxed), 0);
+    // 保持连接且不读数据，关闭仍须回收连接和源轮询。
     stop.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(5), web)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
-    let mut trailing = Vec::new();
-    tokio::time::timeout(Duration::from_secs(5), socket.read_to_end(&mut trailing))
-        .await
-        .unwrap()
-        .unwrap();
+    assert!(next_close(&mut socket).await.is_none());
+    for mut client in additional {
+        assert!(next_close(&mut client).await.is_none());
+    }
     drop(socket);
     fake_stop.send(()).unwrap();
     fake_task.await.unwrap();
@@ -572,10 +742,9 @@ async fn browser_preview_fake_sources() {
     }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    eprintln!("只读假状态预览：http://{address}，测试token=status-test-viewer，120秒自动退出");
+    eprintln!("只读假状态预览：http://{address}，120秒自动退出");
     let config = StatusConfig {
         listen: address,
-        roles: test_roles(),
         poll_interval_ms: 500,
         stale_after_ms: 2000,
         rpc_timeout_ms: 500,

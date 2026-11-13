@@ -2,7 +2,6 @@
 # 路径相对此文件。设备身份和关节表从原总线配置读取。
 # HTTP和gRPC均限定loopback；远程查看使用SSH端口转发。
 listen = "127.0.0.1:8080"
-rpc_roles_toml = "rpc-roles.toml"
 poll_interval_ms = 500
 # 仅为页面的新鲜度阈值，不修改S0看门狗或停止判据。
 stale_after_ms = 2000

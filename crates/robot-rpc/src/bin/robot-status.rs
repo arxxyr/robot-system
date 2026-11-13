@@ -11,7 +11,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.as_slice() == ["--help"] || args.as_slice() == ["-h"] {
         println!(
-            "robot-status --config <状态配置.toml>\n只读HTTP/SSE状态页；不会启动机器人服务或发送控制命令。"
+            "robot-status --config <状态配置.toml>\n只读HTTP/WebSocket状态页；不会启动机器人服务或发送控制命令。"
         );
         return;
     }

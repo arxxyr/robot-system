@@ -1,10 +1,9 @@
-//! 本机gRPC的只读HTTP/SSE视图；配置派生布局，源时钟判断数据新鲜度。
+//! 本机gRPC的只读HTTP/WebSocket视图；配置派生布局，源时钟判断数据新鲜度。
 //!
 //! 固定轮询任务拥有连接，只保留最新快照；浏览器连接不产生额外RPC。
 //! 本模块没有控制RPC、UART或systemd调用，不把服务可达当作电机状态。
 
 use std::collections::HashSet;
-use std::convert::Infallible;
 use std::future::{Future, IntoFuture};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -12,16 +11,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::{Json, Router};
+use futures_util::SinkExt;
 use robot_core::time::{RobotClock, SystemClock};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
+use tokio::task::JoinSet;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::auth::{Capability, RoleTable, load_role_table};
 use crate::client::layout::{HardwareLayout, load_hardware_layout, validate_state_layout};
 use crate::proto::robot_control_client::RobotControlClient;
 use crate::proto::{
@@ -31,12 +31,16 @@ use crate::proto::{
 const MAX_SOURCES: usize = 2;
 const MAX_STREAMS: usize = 8;
 const HTTP_SHUTDOWN_BUDGET: Duration = Duration::from_secs(2);
+const WS_IO_BUDGET: Duration = Duration::from_millis(500);
+const WS_READ_BUFFER_BYTES: usize = 4096;
+const WS_MAX_INPUT_BYTES: usize = 1024;
+const WS_MAX_SNAPSHOT_BYTES: usize = 65_536;
+const WS_MAX_WRITE_BUFFER_BYTES: usize = 131_072;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigFile {
     listen: SocketAddr,
-    rpc_roles_toml: PathBuf,
     poll_interval_ms: u64,
     stale_after_ms: u64,
     rpc_timeout_ms: u64,
@@ -84,7 +88,6 @@ struct Source {
 /// 已校验的只读状态配置；所有文件读取均在启动期完成。
 pub struct StatusConfig {
     listen: SocketAddr,
-    roles: Arc<RoleTable>,
     poll_interval_ms: u64,
     stale_after_ms: u64,
     rpc_timeout_ms: u64,
@@ -98,9 +101,6 @@ impl StatusConfig {
         let file: ConfigFile = toml::from_str(&body).map_err(|error| error.to_string())?;
         validate_file(&file)?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
-        let roles_text = std::fs::read_to_string(base.join(&file.rpc_roles_toml))
-            .map_err(|error| format!("角色文件读取失败：{error}"))?;
-        let roles = Arc::new(load_role_table(&roles_text).map_err(|error| error.to_string())?);
         let mut sources = Vec::with_capacity(file.sources.len());
         let mut robot_ids = HashSet::new();
         for entry in file.sources {
@@ -136,7 +136,6 @@ impl StatusConfig {
         }
         Ok(Self {
             listen: file.listen,
-            roles,
             poll_interval_ms: file.poll_interval_ms,
             stale_after_ms: file.stale_after_ms,
             rpc_timeout_ms: file.rpc_timeout_ms,
@@ -380,61 +379,143 @@ fn enum_name<T: TryFrom<i32> + std::fmt::Debug>(value: i32) -> String {
 #[derive(Clone)]
 struct WebState {
     latest: watch::Receiver<Snapshot>,
-    roles: Arc<RoleTable>,
     streams: Arc<Semaphore>,
+    connections: mpsc::Sender<WsConnection>,
     shutdown: watch::Receiver<bool>,
     clock: Arc<dyn RobotClock>,
 }
 
-fn authorize(headers: &HeaderMap, roles: &RoleTable) -> Result<(), StatusCode> {
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|token| !token.is_empty())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    let role = roles.lookup_token(token).ok_or(StatusCode::UNAUTHORIZED)?;
-    if roles.role_has_capability(role, Capability::ReadState) {
-        Ok(())
-    } else {
-        Err(StatusCode::FORBIDDEN)
-    }
+struct WsConnection {
+    socket: WebSocket,
+    permit: OwnedSemaphorePermit,
 }
 
-async fn state_json(State(state): State<WebState>, headers: HeaderMap) -> Response {
-    if let Err(status) = authorize(&headers, &state.roles) {
-        return status.into_response();
-    }
+async fn state_json(State(state): State<WebState>) -> Response {
     Json(state.latest.borrow().at_time(state.clock.now().0)).into_response()
 }
 
-async fn state_events(State(state): State<WebState>, headers: HeaderMap) -> Response {
-    if let Err(status) = authorize(&headers, &state.roles) {
-        return status.into_response();
+async fn state_socket(State(state): State<WebState>, upgrade: WebSocketUpgrade) -> Response {
+    if *state.shutdown.borrow() {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     let Ok(permit) = Arc::clone(&state.streams).try_acquire_owned() else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
+    upgrade
+        .read_buffer_size(WS_READ_BUFFER_BYTES)
+        .write_buffer_size(0)
+        .max_write_buffer_size(WS_MAX_WRITE_BUFFER_BYTES)
+        .max_message_size(WS_MAX_INPUT_BYTES)
+        .max_frame_size(WS_MAX_INPUT_BYTES)
+        .on_upgrade(move |socket| async move {
+            // Axum负责握手；升级完成后立即转交，所有持续连接任务由管理器持有。
+            let _ = state.connections.try_send(WsConnection { socket, permit });
+        })
+}
+
+async fn websocket_loop(connection: WsConnection, state: WebState) {
+    let WsConnection { mut socket, permit } = connection;
+    let _permit = permit;
     let mut latest = state.latest;
     let mut shutdown = state.shutdown;
-    let stream = async_stream::stream! {
-        let _permit = permit;
-        loop {
-            if *shutdown.borrow() { break; }
+    let mut send_snapshot = true;
+    let mut close_frame = None;
+    loop {
+        if *shutdown.borrow() {
+            break;
+        }
+        if send_snapshot {
             let snapshot = latest.borrow_and_update().at_time(state.clock.now().0);
-            match Event::default().event("state").json_data(&snapshot) {
-                Ok(event) => yield Ok::<_, Infallible>(event),
-                Err(_) => break,
-            }
-            tokio::select! {
-                result = latest.changed() => if result.is_err() { break; },
-                _ = shutdown.changed() => break,
+            let Ok(json) = serde_json::to_string(&snapshot) else {
+                break;
+            };
+            if json.len() > WS_MAX_SNAPSHOT_BYTES
+                || !bounded_ws_io(socket.send(Message::Text(json.into())), &mut shutdown).await
+            {
+                break;
             }
         }
-    };
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+        send_snapshot = false;
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            result = latest.changed() => {
+                if result.is_err() { break; }
+                send_snapshot = true;
+            },
+            message = socket.recv() => match message {
+                Some(Ok(Message::Text(_) | Message::Binary(_))) => {
+                    close_frame = Some(CloseFrame {
+                        code: close_code::POLICY,
+                        reason: "只读状态连接不接受应用消息".into(),
+                    });
+                    break;
+                }
+                Some(Ok(Message::Ping(_) | Message::Pong(_))) => {
+                    // 官方协议栈已生成Pong；及时flush，不等待下一次状态采样。
+                    if !bounded_ws_io(socket.flush(), &mut shutdown).await { break; }
+                    tokio::task::yield_now().await;
+                }
+                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
+            }
+        }
+    }
+    // 关闭不等对端无限确认；发完Close并flush后释放socket和连接许可。
+    let _ = tokio::time::timeout(WS_IO_BUDGET, async {
+        if let Some(frame) = close_frame {
+            let _ = socket.send(Message::Close(Some(frame))).await;
+        }
+        let _ = socket.close().await;
+    })
+    .await;
+}
+
+async fn bounded_ws_io(
+    operation: impl Future<Output = Result<(), axum::Error>>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> bool {
+    if *shutdown.borrow() {
+        return false;
+    }
+    tokio::select! {
+        _ = shutdown.changed() => false,
+        result = tokio::time::timeout(WS_IO_BUDGET, operation) => matches!(result, Ok(Ok(()))),
+    }
+}
+
+async fn manage_connections(
+    mut connections: mpsc::Receiver<WsConnection>,
+    state: WebState,
+) -> Result<(), String> {
+    let mut tasks = JoinSet::new();
+    let mut shutdown = state.shutdown.clone();
+    while !*shutdown.borrow() {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            connection = connections.recv(), if tasks.len() < MAX_STREAMS => match connection {
+                Some(connection) => { tasks.spawn(websocket_loop(connection, state.clone())); }
+                None => break,
+            },
+            result = tasks.join_next(), if !tasks.is_empty() => {
+                if let Some(Err(error)) = result {
+                    tracing::warn!(%error, "只读WebSocket连接任务异常");
+                }
+            }
+        }
+    }
+    // 先拒收后关闭已升级连接，队列内尚未运行的socket直接释放。
+    connections.close();
+    while connections.try_recv().is_ok() {}
+    if tokio::time::timeout(HTTP_SHUTDOWN_BUDGET, async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await
+    .is_err()
+    {
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+        return Err("WebSocket关闭超过2秒预算，连接任务已取消并回收".into());
+    }
+    Ok(())
 }
 
 fn router(state: WebState) -> Router {
@@ -444,7 +525,7 @@ fn router(state: WebState) -> Router {
             axum::routing::get(|| async { Html(include_str!("status_web.html")) }),
         )
         .route("/api/state", axum::routing::get(state_json))
-        .route("/api/events", axum::routing::get(state_events))
+        .route("/api/ws", axum::routing::get(state_socket))
         .layer(axum::middleware::from_fn(
             |request: axum::extract::Request, next: axum::middleware::Next| async {
                 let mut response = next.run(request).await;
@@ -461,7 +542,7 @@ fn router(state: WebState) -> Router {
         .with_state(state)
 }
 
-/// 在给定本机监听器上提供只读页面；关闭时终止并回收唯一轮询任务。
+/// 在给定本机监听器上提供只读页面；关闭时回收轮询及已升级WebSocket任务。
 /// HTTP协作收尾最多等待2秒，超时返回错误，由CLI退出结束残余连接；
 /// 本函数不宣称强制销毁Axum内部已派生的连接任务。
 pub async fn serve(
@@ -491,14 +572,16 @@ pub async fn serve(
     let (latest_tx, latest_rx) = watch::channel(initial);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let http_shutdown = shutdown_rx.clone();
+    let (connections_tx, connections_rx) = mpsc::channel(MAX_STREAMS);
     let state = WebState {
         latest: latest_rx,
-        roles: Arc::clone(&config.roles),
         streams: Arc::new(Semaphore::new(MAX_STREAMS)),
+        connections: connections_tx,
         shutdown: shutdown_rx.clone(),
         clock: Arc::clone(&clock),
     };
     let poll = tokio::spawn(poll_sources(config, latest_tx, clock, shutdown_rx));
+    let connections = tokio::spawn(manage_connections(connections_rx, state.clone()));
     let signal = shutdown_tx.clone();
     let server = axum::serve(listener, router(state))
         .with_graceful_shutdown(async move {
@@ -508,8 +591,10 @@ pub async fn serve(
         .into_future();
     let result = finish_http(server, http_shutdown).await;
     let _ = shutdown_tx.send(true);
-    poll.await
-        .map_err(|error| format!("状态轮询任务异常：{error}"))??;
+    // 先收齐两个任务结果，再传播错误；不能因其中一个失败而遗留另一个。
+    let (poll, connections) = tokio::join!(poll, connections);
+    poll.map_err(|error| format!("状态轮询任务异常：{error}"))??;
+    connections.map_err(|error| format!("状态连接管理任务异常：{error}"))??;
     result
 }
 

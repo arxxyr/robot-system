@@ -1,16 +1,16 @@
 # 对外通讯与控制方案
 
-本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前仅完成HTTP/JSON＋SSE只读软件基线；WebSocket、去掉Web令牌入口及动作控制尚未开发。本次只更新文档和TODO，不修改代码、配置或S0 0.0.1，不部署、不操作硬件。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
+本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前已实现WebSocket只读状态页并去掉Web令牌输入和校验；真实状态部署、动作控制与相机预览仍待实施，不改变S0 0.0.1发布内容。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
 
 ## 通讯链路
 
-下图为目标链路，不能作为已经部署或支持WebSocket的证明。
+下图为完整目标链路；当前Web只接状态查询，控制路径尚未接入页面，外网入口尚未部署。
 
 ```mermaid
 flowchart TD
     UI[浏览器] <-->|HTTPS页面 / WSS交互| NG[Nginx 外网入口]
     subgraph ORIN[机器人 Orin]
-        WEB[Web服务：复用现有robot-rpc入口]
+        WEB[独立Web进程 robot-status]
         RPC[现有bus1 / bus2 gRPC网关]
         S1[S1 coordinator与scripted]
         S0[S0 HAL]
@@ -29,11 +29,11 @@ flowchart TD
     NG <-->|HTTP / WebSocket转发| WEB
 ```
 
-- Web页面与后端都部署在Orin，沿现有`robot-rpc`扩展；HTTP加载页面，WebSocket承载状态、控制请求、回执及任务事件。先迁移只读状态，再按TODO接控制，不同时维护SSE与WebSocket两套长期推送实现，不增加crate或另一套网关框架。
+- Web页面与后端都部署在Orin，沿现有`robot-rpc`中的独立`robot-status`程序运行；HTTP加载页面，WebSocket目前只推送状态，控制请求、回执及任务事件按TODO后续接入。旧SSE推送已删除，不增加crate或另一套网关框架。
 - Web后端调用同机现有gRPC；外部程序或CLI继续沿既有gRPC使用方式。浏览器只提交目标与时长，不实现运动插值、连续电机控制帧或串口读写。WebSocket转换复用既有业务语义，不重新定义动作、任务和停止协议。
 - 机器人本机继续使用iceoryx2和FlatBuffers。状态查询、使能、断扭、急停不经过S1；位置任务由S1执行，再交S0。每条总线只有一个S0串口所有者、命令流和停止域，Web和网关不进入RT线程，也不成为S0启动依赖。
 - Nginx只负责外网HTTPS/WSS入口及转发，不运行机器人业务、保存任务或执行动作。内部gRPC保持本机监听，不另开公网控制端口；当前Web也限定loopback，跨主机可用既有网络上的SSH转发，实际路径与Nginx网络模式在部署前核对。
-- **Web接入管理交给用户已有的外部系统。** 项目页面不再要求输入访问token，不另建登录、令牌签发、账号或接入权限系统；后续迁移时去掉现有Web的令牌表单与Bearer访问校验。本次未删除这些代码。内部既有RPC调用约定与机器人控制校验不因文档更新而改变，浏览器不承担内部RPC凭据配置。
+- **Web接入管理交给用户已有的外部系统。** 已删除Web令牌表单、Bearer访问校验及其角色表配置，不另建登录、令牌签发、账号或接入权限系统。当前`GetState`本就不要求令牌；内部既有控制RPC的权限、元数据和机器人控制校验保持原实现，浏览器不承担内部RPC凭据配置。
 - 每个动作沿既有`CommandMeta`、请求标识、权限、截止时间和幂等规则。超时先查询原任务；结果未知不自动重发。截止时间由机器人侧时钟换算，不使用浏览器时钟代替`RobotClock`。
 - 浏览器断连不等于电机已停。首版仅有限时长的单次定位，不做连续拖动或长按点动；本机S1/S0按既有心跳和命令超时合同处理。重连查询真实状态，不续发旧目标。
 
@@ -78,19 +78,27 @@ flowchart TD
 
 原[gateway](../scripts/systemd/robot-gateway-left.service)和[S1](../scripts/systemd/robot-s1-left.service)模板仍引用arm-only服务与身份，不能直接启动用于bus1/bus2。状态链路已有下述全总线网关模板；S1身份与依赖留到TODO第2步对齐。S0正式发布及D15边界保持不变。
 
-## 当前只读软件基线（HTTP/SSE）
+## 当前只读WebSocket入口
 
-本节描述尚未迁移的现有实现，不是最终WebSocket和外部接入管理方案。在现有`robot-rpc`中启用`status-web`构建`robot-status`，不改变`robot-gateway`默认构建，也不加入S0 0.0.1包。静态页直接内嵌，无前端构建工具。使用独立产物目录：
+在现有`robot-rpc`中启用`status-web`构建`robot-status`，不改变`robot-gateway`默认构建，也不加入S0 0.0.1包。静态页直接内嵌，无前端构建工具。使用独立产物目录：
 
 ```bash
 CARGO_TARGET_DIR="$PWD/target/verify-status" cargo build -p robot-rpc --features status-web --bin robot-status --bin robot-gateway
 target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
 ```
 
-程序只读取配置和本机gRPC。当前`http://127.0.0.1:8080`仍显示令牌输入框，API仍检查`read_state`；这些是待移除的Web接入实现，不是未来部署的令牌要求。文档更新没有让现有程序自动免令牌。远程查看基线可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
+程序只读取配置和本机gRPC。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
 
-页面只有`GET /`、`GET /api/state`、`GET /api/events`；后两者校验`read_state`，没有动作/配置写入路由。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取，SSE只保留最新快照并限制并发连接。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
+入口只有`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404。WebSocket立即返回最新快照并持续更新，收到客户端Text/Binary消息以1008关闭，不提供动作或配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
 
 `xlerobot-status.toml`引用原总线TOML，以配置所在目录解析相对路径，身份、8/9槽位、关节名与ID沿原文件派生。默认500ms轮询、2000ms陈旧阈值只影响页面展示，不修改S0/S1的控制、超时和停止合同。轮子标为原始速度模式，不显示位置角度；尚无每电机扭矩读回。
 
 新的[bus1网关模板](../scripts/systemd/robot-gateway-bus1.service)、[bus2网关模板](../scripts/systemd/robot-gateway-bus2.service)和[状态页模板](../scripts/systemd/robot-status.service)只对齐配置与启动顺序，不自动启动S0/S1；本轮不安装、不enable或start。原arm-only模板继续供已有兼容入口使用，不改动它们。
+
+`robot-status`独立于S0/S1进程，单独重启和回收。状态页unit设置CPU0–3、合计半核CPU预算、128MiB内存软限制、256MiB硬限制及32个OS任务上限，避开S0通讯核4/5。参数是初始部署预算，尚未安装验证其实际限额和峰值；后续接图像时沿同一独立服务约束实测，不把Web工作加入RT线程。
+
+## 后续相机预览
+
+复用已有RGB的`ImageHeader`与图像数据通讯链路，参考[只读观测订阅](../crates/robot-viz/src/input.rs)，不再次打开相机、不改变内部采集帧率或分辨率。当前`GetState`不含图像，网页图像出口尚未实现。
+
+Web侧只保留最新帧，及时归还共享内存样本，在非RT任务中降分辨率和编码；对外帧率与分辨率由配置设置，允许1Hz或更低的预览频率。慢客户端丢旧帧，不排队积压或反压内部采集。图像使用独立连接，不与状态及后续控制消息共用发送队列；具体编码和出口到实施时再选择，不预建流媒体框架。验收需核对内部状态/RGB时序与资源占用，不能仅凭独立进程断言零影响。
