@@ -99,6 +99,8 @@ tonic-prost = { version = "0.14.9", default-features = false }
 # 只读状态页面复用已锁定的HTTP栈；不进入控制器默认构建。
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+# 仅供独立Web预览编码，不进入S0/S1或默认网关构建。
+jpeg-encoder = "0.7.1"
 
 # 构建时代码生成：仅由 robot-rpc/build.rs 使用，不依赖系统 protoc。
 protoc-bin-vendored = "3.3.0"

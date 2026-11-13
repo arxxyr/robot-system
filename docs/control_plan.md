@@ -1,6 +1,6 @@
 # 对外通讯与控制方案
 
-本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前0.1.0的WebSocket只读状态页已部署，不要求Web令牌；两总线有效关节反馈和外网接入已验证，动作控制与相机预览尚未实施。实施顺序与验证结果只维护在[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
+本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前0.1.0的WebSocket只读状态页已部署，不要求Web令牌；两总线有效关节反馈和外网接入已验证。低帧率相机预览已有开发实现，动作控制尚未接入；安装与验收边界见[当前状态的TODO](s0_hal_status.md#通讯与控制todo)。
 
 ## 通讯链路
 
@@ -89,11 +89,11 @@ CARGO_TARGET_DIR="$PWD/target/verify-status" cargo build -p robot-rpc --features
 target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
 ```
 
-程序只读取配置和本机gRPC。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
+程序只读取配置、本机gRPC和已有RGB观测镜像。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
 
-Orin的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/api/state`、`/api/ws`，WebSocket使用HTTP/1.1并传递`Upgrade`和`Connection: upgrade`，关闭代理缓冲，读取超时可设60秒；具体行为见[Nginx官方说明](https://nginx.org/en/docs/http/websocket.html)。已配置的外网地址见[当前状态](s0_hal_status.md#通讯与控制todo)，各域名使用同源WSS。本项目不安装或重载用户的Nginx，不转发gRPC端口。
+Orin的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/api/state`、`/api/ws`以及相机的`/api/cameras`和`/api/cameras/{id}/frame`，WebSocket使用HTTP/1.1并传递`Upgrade`和`Connection: upgrade`，关闭代理缓冲，读取超时可设60秒；具体行为见[Nginx官方说明](https://nginx.org/en/docs/http/websocket.html)。已配置的外网地址见[当前状态](s0_hal_status.md#通讯与控制todo)，各域名使用同源WSS。本项目不安装或重载用户的Nginx，不转发gRPC端口。
 
-入口只有`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404。WebSocket立即返回最新快照并持续更新，收到客户端Text/Binary消息以1008关闭，不提供动作或配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
+状态入口为`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404；相机使用下述独立HTTP入口。WebSocket立即返回最新快照并持续更新，收到客户端Text/Binary消息以1008关闭，不提供动作或配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
 
 `xlerobot-status.toml`引用原总线TOML，以配置所在目录解析相对路径，身份、8/9槽位、关节名与ID沿原文件派生。默认500ms轮询、2000ms陈旧阈值只影响页面展示，不修改S0/S1的控制、超时和停止合同。轮子标为原始速度模式，不显示位置角度；尚无每电机扭矩读回。
 
@@ -101,8 +101,12 @@ Orin的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/
 
 `robot-status`独立于S0/S1进程，单独重启和回收。状态页unit设置CPU0–3、合计半核CPU预算、128MiB内存软限制、256MiB硬限制及32个OS任务上限，避开S0通讯核4/5。实际限额已在Orin核对，当前状态查询样本不代表未来图像负载峰值；后续接图像时沿同一独立服务约束实测，不把Web工作加入RT线程。
 
-## 后续相机预览
+## 相机预览
 
-复用已有RGB的`ImageHeader`与图像数据通讯链路，参考[只读观测订阅](../crates/robot-viz/src/input.rs)，不再次打开相机、不改变内部采集帧率或分辨率。当前`GetState`不含图像，网页图像出口尚未实现。
+复用已有RGB的`ImageHeader`与图像数据通讯链路，只打开既有观测镜像，不创建正式topic、不再次打开相机或改变采集参数。相机身份和topic由状态源引用的原总线TOML中`robot.id`与`sensor.id`派生，当前为头部、左腕、右腕三路；`GetState`仍不含图像。
 
-Web侧只保留最新帧，及时归还共享内存样本，在非RT任务中降分辨率和编码；对外帧率与分辨率由配置设置，允许1Hz或更低的预览频率。慢客户端丢旧帧，不排队积压或反压内部采集。图像使用独立连接，不与状态及后续控制消息共用发送队列；具体编码和出口到实施时再选择，不预建流媒体框架。验收需核对内部状态/RGB时序与资源占用，不能仅凭独立进程断言零影响。
+`xlerobot-status.toml`的`[preview]`控制预览：`enabled`、`interval_ms`（1000–60000）、`max_width`（1–640）、`max_height`（1–480）、`jpeg_quality`（1–95）和`stale_after_ms`（不小于interval，至多120000）。默认示例为1Hz、320×240、质量70和3秒陈旧阈值；缩图保持比例、不放大。旧配置缺少该表时默认禁用，不新增订阅。
+
+`GET /api/cameras`返回启用状态、刷新间隔及相机列表；`GET /api/cameras/{id}/frame`返回最新JPEG及`X-Frame-Stamp-Ns`、`X-Frame-Age-Ms`、`X-Frame-Width/Height`。未知相机返回404，无帧、校验失败或源帧陈旧返回503，所有响应禁止缓存。源时间戳保留字符串，重复收到同帧不会续鲜。网页“查看画面”独立于状态连接；每路单请求、3秒超时，暂停、切后台和离开页面时取消读取并回收图片URL。
+
+一个普通线程拥有三路订阅，有界丢弃旧帧，只将最新帧缩小复制成自有像素后立即归还共享内存，再编码JPEG；浏览器数量不增加编码或内部订阅。每路只缓存最新JPEG，图像请求不进入状态WebSocket队列。独立Web进程继续沿原CPU、内存和任务预算；真实负载及内部状态/RGB时序仍须在部署验收中核对，软件通过不能据此宣称零影响。
