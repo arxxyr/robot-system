@@ -76,9 +76,24 @@
     .position small { display: block; font-size: 11px; color: var(--muted); }
     .bus[data-fresh="false"] .position { color: var(--muted); }
     .bus-foot { padding: 10px 22px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .camera-section { margin-top: 28px; }
+    .camera-actions { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .camera-actions p { margin: 0; color: var(--muted); font-size: 12px; }
+    .cameras { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .camera { border: 1px solid var(--line); border-radius: 11px; background: var(--paper); overflow: hidden; }
+    .camera-heading { padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .camera h3 { margin: 0; font-size: 15px; }
+    .camera-frame { aspect-ratio: 4 / 3; background: #eaf0f5; position: relative; display: grid; place-items: center; overflow: hidden; }
+    .camera-frame img { width: 100%; height: 100%; object-fit: contain; position: absolute; }
+    .camera-frame img[hidden] { display: none; }
+    .camera-placeholder { padding: 20px; color: var(--muted); text-align: center; font-size: 13px; }
+    .camera-meta { margin: 0; padding: 10px 15px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    #camera-notice { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+    #camera-notice:empty { display: none; }
     footer { margin-top: 23px; color: var(--muted); font-size: 12px; }
     footer p { margin: 4px 0; }
-    @media (max-width: 900px) { .buses { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .buses { grid-template-columns: 1fr; } .cameras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .cameras { grid-template-columns: 1fr; } .camera-actions { align-items: flex-start; flex-direction: column; gap: 8px; } }
     @media (max-width: 560px) { .topbar { padding: 15px 18px; } main { padding: 24px 16px; } .title-row { flex-direction: column; gap: 5px; } .connection { margin-top: 2px; } .access { padding: 16px; } .connection-actions { flex-wrap: wrap; } button { flex: 1; } .bus-heading, .metrics { padding-left: 16px; padding-right: 16px; } .state-note { margin-left: 16px; margin-right: 16px; } th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; } th, td { padding-left: 9px; padding-right: 9px; } .readonly { font-size: 12px; } }
   </style>
 </head>
@@ -86,7 +101,7 @@
   <header><div class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>robot-system</div><span class="readonly">只读监控 · 不下发控制命令</span></div></header>
   <main>
     <div class="title-row">
-      <div><h1>机器人状态</h1><p class="subtitle">查看总线反馈、关节位置与保护状态。</p></div>
+      <div><h1>机器人状态</h1><p class="subtitle">查看总线反馈、关节位置、保护状态与相机画面。</p></div>
       <div id="connection" class="connection" data-tone="neutral" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">尚未连接</span></div>
     </div>
     <section class="access" aria-label="只读访问">
@@ -101,12 +116,18 @@
       <div class="section-row"><h2>总线与关节</h2><span id="summary">等待状态数据</span></div>
       <div id="buses" class="buses"><div class="empty"><strong>尚未连接状态源</strong><p>连接后，按当前机器人配置显示设备及反馈。没有反馈时保留“未知”。</p></div></div>
     </section>
+    <section class="camera-section" aria-label="相机预览">
+      <div class="section-row"><h2>相机画面</h2><span id="camera-summary">低帧率预览</span></div>
+      <div class="camera-actions"><button id="camera-toggle" class="secondary" type="button" aria-pressed="false">查看画面</button><p>画面独立连接；暂停或切到后台时停止读取。</p></div>
+      <p id="camera-notice" role="status">点击“查看画面”读取当前配置的相机。</p>
+      <div id="cameras" class="cameras"></div>
+    </section>
     <footer><p>总线级扭矩状态不等于逐电机独立确认；服务在线或软件处于 Safe 均不代表已经断扭。</p><p>“陈旧”表示最后一次反馈，仅供参考；此页面不提供使能、运动或急停操作。</p></footer>
   </main>
   <script>
     (() => {
       'use strict';
-      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses'].map(id => [id, document.getElementById(id)]));
+      const elements = Object.fromEntries(['connect', 'disconnect', 'connection', 'connection-text', 'notice', 'summary', 'buses', 'camera-toggle', 'camera-summary', 'camera-notice', 'cameras'].map(id => [id, document.getElementById(id)]));
       const modeText = { Safe: 'Safe · 安全态', Ready: 'Ready · 就绪', Enabled: 'Enabled · 已使能', Fault: 'Fault · 故障', Stopping: 'Stopping · 停止中' };
       const linkText = { Ok: '正常', Lost: '已丢失' };
       const outputText = { Active: '执行输出', Hold: '保持', Zero: '零输出', Stop: '停止输出' };
@@ -117,6 +138,8 @@
       let snapshot = null;
       let receivedAt = 0;
       let connected = false;
+      let preview = null;
+      let cameraCards = [];
 
       function node(tag, className, value) {
         const result = document.createElement(tag);
@@ -314,9 +337,160 @@
         elements.notice.textContent = '';
         setConnection('已断开查看', 'neutral');
       });
+      function clearCameraImage(camera) {
+        camera.image.hidden = true;
+        camera.image.removeAttribute('src');
+        if (camera.url) URL.revokeObjectURL(camera.url);
+        if (camera.pendingUrl) URL.revokeObjectURL(camera.pendingUrl);
+        camera.url = null;
+        camera.pendingUrl = null;
+      }
+      function cameraAge(camera) {
+        return camera.stamp ? camera.age + Math.max(0, performance.now() - camera.receivedAt) : null;
+      }
+      function renderCameraAge(camera) {
+        const age = cameraAge(camera);
+        const fresh = preview && !camera.error && age !== null && age <= preview.config?.stale_after_ms && camera.url;
+        camera.badge.textContent = fresh ? '画面新鲜' : camera.error ? '无可用画面' : age !== null ? '画面陈旧' : '等待画面';
+        camera.badge.dataset.tone = fresh ? 'good' : 'warn';
+        camera.image.hidden = !fresh;
+        camera.placeholder.hidden = Boolean(fresh);
+        camera.placeholder.textContent = camera.error || (age !== null ? '画面已陈旧，等待新的图像。' : '等待首帧');
+        camera.meta.textContent = camera.stamp ? `${camera.width} × ${camera.height} · ${ageText(age)} · 源时间 ${camera.stamp}` : '尚无有效图像';
+      }
+      function stopPreview(message) {
+        const previous = preview;
+        preview = null;
+        previous?.controller.abort();
+        for (const camera of cameraCards) {
+          clearTimeout(camera.timer);
+          camera.controller?.abort();
+          clearCameraImage(camera);
+          camera.error = '画面已暂停';
+          renderCameraAge(camera);
+        }
+        elements['camera-toggle'].textContent = '查看画面';
+        elements['camera-toggle'].setAttribute('aria-pressed', 'false');
+        elements['camera-notice'].textContent = message;
+      }
+      function makeCamera(definition) {
+        const article = node('article', 'camera');
+        const heading = node('div', 'camera-heading');
+        const badge = node('span', 'badge', '等待画面');
+        badge.dataset.tone = 'warn';
+        heading.append(node('h3', '', definition.label), badge);
+        const frame = node('div', 'camera-frame');
+        const image = node('img');
+        image.alt = `${definition.label}画面`;
+        image.hidden = true;
+        const placeholder = node('div', 'camera-placeholder', '等待首帧');
+        frame.append(image, placeholder);
+        const meta = node('p', 'camera-meta', '尚无有效图像');
+        article.append(heading, frame, meta);
+        elements.cameras.append(article);
+        return { id: definition.id, image, placeholder, badge, meta, stamp: null, age: 0, receivedAt: 0, error: null, url: null, pendingUrl: null, controller: null, timer: null };
+      }
+      async function readCamera(session, camera) {
+        if (preview !== session) return;
+        const controller = new AbortController();
+        camera.controller = controller;
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const startedAt = performance.now();
+        try {
+          const response = await fetch(`/api/cameras/${encodeURIComponent(camera.id)}/frame`, { cache: 'no-store', signal: controller.signal });
+          if (!response.ok) {
+            let detail;
+            try { detail = await response.json(); } catch (_) { /* 保留HTTP状态说明。 */ }
+            throw new Error(typeof detail?.error === 'string' ? detail.error : `画面读取失败（HTTP ${response.status}）`);
+          }
+          const stamp = response.headers.get('X-Frame-Stamp-Ns');
+          const ageHeader = response.headers.get('X-Frame-Age-Ms');
+          const age = ageHeader === null || ageHeader.trim() === '' ? NaN : Number(ageHeader);
+          const width = Number(response.headers.get('X-Frame-Width'));
+          const height = Number(response.headers.get('X-Frame-Height'));
+          if (!/^[1-9]\d*$/.test(stamp || '') || !Number.isFinite(age) || age < 0 || !Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1 || response.headers.get('Content-Type')?.split(';')[0].trim() !== 'image/jpeg') throw new Error('相机图像或源时间信息无效。');
+          if (camera.stamp && BigInt(stamp) < BigInt(camera.stamp)) throw new Error('图像源时间回退，等待新的图像。');
+          const blob = await response.blob();
+          if (!blob.size || blob.size > 1048576) throw new Error('相机图像大小无效。');
+          if (preview !== session) return;
+          // 旧帧不续年龄；网络传输耗时也计入显示年龄。
+          const downloadedAt = performance.now();
+          const receivedAge = age + Math.max(0, downloadedAt - startedAt);
+          const previousAge = cameraAge(camera);
+          const frameAge = stamp === camera.stamp && previousAge !== null ? Math.max(receivedAge, previousAge) : receivedAge;
+          if (frameAge > session.config.stale_after_ms) throw new Error('图像已陈旧，等待新的图像。');
+          camera.pendingUrl = URL.createObjectURL(blob);
+          const decoded = new Image();
+          decoded.src = camera.pendingUrl;
+          await decoded.decode();
+          if (preview !== session) return;
+          if (decoded.naturalWidth !== width || decoded.naturalHeight !== height) throw new Error('图像尺寸与源信息不一致。');
+          if (camera.url) URL.revokeObjectURL(camera.url);
+          camera.url = camera.pendingUrl;
+          camera.pendingUrl = null;
+          camera.image.src = camera.url;
+          camera.age = frameAge + Math.max(0, performance.now() - downloadedAt);
+          camera.receivedAt = performance.now();
+          camera.stamp = stamp;
+          camera.width = width;
+          camera.height = height;
+          camera.error = null;
+        } catch (error) {
+          if (preview !== session) return;
+          camera.error = controller.signal.aborted ? '图像读取超时，等待下次更新。' : error.message || '相机暂不可用。';
+          clearCameraImage(camera);
+        } finally {
+          clearTimeout(timeout);
+          if (camera.controller === controller) camera.controller = null;
+          if (preview === session) {
+            renderCameraAge(camera);
+            // 每路仅在本次读取结束后预约下一帧，不积压请求。
+            camera.timer = setTimeout(() => readCamera(session, camera), session.config.interval_ms);
+          }
+        }
+      }
+      async function startPreview() {
+        if (document.hidden) return;
+        const session = { controller: new AbortController(), config: null };
+        preview = session;
+        elements['camera-toggle'].textContent = '暂停画面';
+        elements['camera-toggle'].setAttribute('aria-pressed', 'true');
+        elements['camera-notice'].textContent = '正在读取相机配置…';
+        const timeout = setTimeout(() => session.controller.abort(), 3000);
+        try {
+          const response = await fetch('/api/cameras', { cache: 'no-store', signal: session.controller.signal });
+          if (!response.ok) throw new Error(`相机配置读取失败（HTTP ${response.status}）。`);
+          const config = await response.json();
+          if (preview !== session) return;
+          if (!config || typeof config.enabled !== 'boolean' || !Array.isArray(config.cameras) || config.cameras.length > 8 || !Number.isInteger(config.interval_ms) || config.interval_ms < 100 || config.interval_ms > 60000 || !Number.isFinite(config.stale_after_ms) || config.stale_after_ms < config.interval_ms || config.stale_after_ms > 600000) throw new Error('相机配置格式无效。');
+          if (!config.enabled || !config.cameras.length) { stopPreview('服务端尚未启用相机预览。'); return; }
+          const ids = new Set();
+          for (const camera of config.cameras) {
+            if (!camera || typeof camera.id !== 'string' || !camera.id || ids.has(camera.id) || typeof camera.label !== 'string' || !camera.label) throw new Error('相机列表格式无效。');
+            ids.add(camera.id);
+          }
+          session.config = config;
+          elements.cameras.replaceChildren();
+          cameraCards = config.cameras.map(makeCamera);
+          elements['camera-summary'].textContent = `${cameraCards.length} 路 · 最快每 ${(config.interval_ms / 1000).toLocaleString('zh-CN')} 秒更新`;
+          elements['camera-notice'].textContent = '';
+          for (const camera of cameraCards) void readCamera(session, camera);
+        } catch (error) {
+          if (preview === session) stopPreview(session.controller.signal.aborted ? '相机配置读取超时，请重新查看。' : error.message || '无法读取相机配置。');
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      elements['camera-toggle'].addEventListener('click', () => {
+        if (preview) stopPreview('画面已暂停；点击“查看画面”继续。');
+        else void startPreview();
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && preview) stopPreview('页面已切到后台，画面暂停；返回后可重新查看。');
+      });
       // 仅推进展示年龄，不把页面计时或重复收包当成新的设备采样。
-      const ageTimer = setInterval(render, 500);
-      window.addEventListener('pagehide', () => { clearInterval(ageTimer); closeSession(); });
+      const ageTimer = setInterval(() => { render(); for (const camera of cameraCards) renderCameraAge(camera); }, 500);
+      window.addEventListener('pagehide', () => { clearInterval(ageTimer); closeSession(); stopPreview('画面已暂停。'); });
     })();
   </script>
 </body>

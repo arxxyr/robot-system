@@ -1,4 +1,4 @@
-//! 只读状态页入口；只连接本机gRPC，不创建S0/S1或访问设备。
+//! 只读状态与相机预览入口；读取本机gRPC和RGB镜像，不创建S0/S1或访问设备。
 
 use std::path::Path;
 
@@ -11,7 +11,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.as_slice() == ["--help"] || args.as_slice() == ["-h"] {
         println!(
-            "robot-status --config <状态配置.toml>\n只读HTTP/WebSocket状态页；不会启动机器人服务或发送控制命令。"
+            "robot-status --config <状态配置.toml>\n只读状态与相机预览；不会启动机器人服务或发送控制命令。"
         );
         return;
     }

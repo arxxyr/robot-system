@@ -1,4 +1,4 @@
-//! 本机gRPC的只读HTTP/WebSocket视图；配置派生布局，源时钟判断数据新鲜度。
+//! 本机gRPC状态与RGB镜像的只读Web视图；配置派生布局，源时钟判断新鲜度。
 //!
 //! 固定轮询任务拥有连接，只保留最新快照；浏览器连接不产生额外RPC。
 //! 本模块没有控制RPC、UART或systemd调用，不把服务可达当作电机状态。
@@ -28,6 +28,9 @@ use crate::proto::{
     GetStateRequest, RobotState, S0ControlLink, S0Mode, S0OutputMode, S0SafetyState,
 };
 
+#[path = "status_camera.rs"]
+mod camera;
+
 const MAX_SOURCES: usize = 2;
 const MAX_STREAMS: usize = 8;
 const HTTP_SHUTDOWN_BUDGET: Duration = Duration::from_secs(2);
@@ -44,6 +47,8 @@ struct ConfigFile {
     poll_interval_ms: u64,
     stale_after_ms: u64,
     rpc_timeout_ms: u64,
+    #[serde(default)]
+    preview: camera::Config,
     sources: Vec<SourceFile>,
 }
 
@@ -60,6 +65,15 @@ struct SourceFile {
 struct RobotConfig {
     robot: RobotIdentity,
     hardware: Vec<HardwareIdentity>,
+    #[serde(default)]
+    sensor: Vec<SensorIdentity>,
+}
+
+#[derive(Deserialize)]
+struct SensorIdentity {
+    hardware_id: String,
+    id: String,
+    adapter: String,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +106,8 @@ pub struct StatusConfig {
     stale_after_ms: u64,
     rpc_timeout_ms: u64,
     sources: Vec<Source>,
+    preview: camera::Config,
+    cameras: Vec<camera::CameraSource>,
 }
 
 impl StatusConfig {
@@ -102,6 +118,8 @@ impl StatusConfig {
         validate_file(&file)?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let mut sources = Vec::with_capacity(file.sources.len());
+        let mut cameras = Vec::new();
+        let mut camera_ids = HashSet::new();
         let mut robot_ids = HashSet::new();
         for entry in file.sources {
             let path = base.join(&entry.config);
@@ -124,6 +142,33 @@ impl StatusConfig {
             {
                 return Err("混合模式须使用现有ID1..9布局".into());
             }
+            for sensor in &robot.sensor {
+                if sensor.adapter != "opencv_v4l2" {
+                    continue;
+                }
+                if sensor.hardware_id != hardware.id || sensor.id.trim().is_empty() {
+                    return Err("相机所属hardware不匹配或身份为空".into());
+                }
+                let id = format!("{}:{}", entry.id, sensor.id);
+                let topic = format!("/{}/sensors/{}/color", robot.robot.id, sensor.id);
+                robot_transport::iceoryx2::observer_topic(&topic)
+                    .map_err(|error| format!("相机topic无效：{error}"))?;
+                if !camera_ids.insert(id.clone()) || cameras.len() >= 3 {
+                    return Err("相机身份重复或超过当前三路预览上限".into());
+                }
+                let label = match sensor.id.as_str() {
+                    "head_color" => "头部相机".to_owned(),
+                    "left_wrist_color" => "左腕相机".to_owned(),
+                    "right_wrist_color" => "右腕相机".to_owned(),
+                    _ => format!("{} · {}", entry.label, sensor.id),
+                };
+                cameras.push(camera::CameraSource {
+                    id,
+                    label,
+                    topic,
+                    frame_id: sensor.id.clone(),
+                });
+            }
             sources.push(Source {
                 id: entry.id,
                 label: entry.label,
@@ -140,6 +185,8 @@ impl StatusConfig {
             stale_after_ms: file.stale_after_ms,
             rpc_timeout_ms: file.rpc_timeout_ms,
             sources,
+            preview: file.preview,
+            cameras,
         })
     }
 
@@ -163,6 +210,7 @@ fn validate_http_listen(address: SocketAddr) -> Result<(), String> {
 
 fn validate_file(file: &ConfigFile) -> Result<(), String> {
     validate_http_listen(file.listen)?;
+    file.preview.validate()?;
     if !(100..=10_000).contains(&file.poll_interval_ms)
         || !(50..=5_000).contains(&file.rpc_timeout_ms)
         || !(file.poll_interval_ms..=60_000).contains(&file.stale_after_ms)
@@ -431,6 +479,7 @@ struct WebState {
     connections: mpsc::Sender<WsConnection>,
     shutdown: watch::Receiver<bool>,
     clock: Arc<dyn RobotClock>,
+    cameras: camera::CameraState,
 }
 
 struct WsConnection {
@@ -567,6 +616,7 @@ async fn manage_connections(
 }
 
 fn router(state: WebState) -> Router {
+    let cameras = camera::router(state.cameras.clone());
     Router::new()
         .route(
             "/",
@@ -574,6 +624,8 @@ fn router(state: WebState) -> Router {
         )
         .route("/api/state", axum::routing::get(state_json))
         .route("/api/ws", axum::routing::get(state_socket))
+        .with_state(state)
+        .merge(cameras)
         .layer(axum::middleware::from_fn(
             |request: axum::extract::Request, next: axum::middleware::Next| async {
                 let mut response = next.run(request).await;
@@ -587,7 +639,6 @@ fn router(state: WebState) -> Router {
                 response
             },
         ))
-        .with_state(state)
 }
 
 /// 在给定回环或IPv4私网监听器上提供只读页面；关闭时回收轮询及WebSocket任务。
@@ -614,12 +665,23 @@ pub async fn serve(
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let http_shutdown = shutdown_rx.clone();
     let (connections_tx, connections_rx) = mpsc::channel(MAX_STREAMS);
+    let cameras = camera::CameraState::new(config.preview.clone(), config.cameras.clone());
+    let camera_worker = if config.preview.enabled {
+        Some(
+            cameras
+                .start(shutdown_rx.clone())
+                .map_err(|error| error.to_string())?,
+        )
+    } else {
+        None
+    };
     let state = WebState {
         latest: latest_rx,
         streams: Arc::new(Semaphore::new(MAX_STREAMS)),
         connections: connections_tx,
         shutdown: shutdown_rx.clone(),
         clock: Arc::clone(&clock),
+        cameras,
     };
     let poll = tokio::spawn(poll_sources(config, latest_tx, clock, shutdown_rx));
     let connections = tokio::spawn(manage_connections(connections_rx, state.clone()));
@@ -632,10 +694,23 @@ pub async fn serve(
         .into_future();
     let result = finish_http(server, http_shutdown).await;
     let _ = shutdown_tx.send(true);
-    // 先收齐两个任务结果，再传播错误；不能因其中一个失败而遗留另一个。
-    let (poll, connections) = tokio::join!(poll, connections);
+    // 先回收轮询、连接和相机线程，再传播错误。
+    let camera_join = async move {
+        match camera_worker {
+            Some(worker) => tokio::task::spawn_blocking(move || {
+                worker
+                    .join()
+                    .map_err(|_| "相机预览线程异常退出".to_owned())?
+            })
+            .await
+            .map_err(|error| format!("相机预览线程回收异常：{error}"))?,
+            None => Ok(()),
+        }
+    };
+    let (poll, connections, camera) = tokio::join!(poll, connections, camera_join);
     poll.map_err(|error| format!("状态轮询任务异常：{error}"))??;
     connections.map_err(|error| format!("状态连接管理任务异常：{error}"))??;
+    camera?;
     result
 }
 

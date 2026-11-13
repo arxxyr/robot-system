@@ -56,6 +56,16 @@ fn real_bus_layouts_and_wheel_identity_come_from_config() {
     )
     .unwrap();
     assert_eq!(config.sources.len(), 2);
+    assert!(config.preview.enabled);
+    assert_eq!(config.cameras.len(), 3);
+    assert_eq!(config.cameras[0].id, "bus1:head_color");
+    assert_eq!(
+        config.cameras[0].topic,
+        "/xlerobot_bus1_full/sensors/head_color/color"
+    );
+    assert_eq!(config.cameras[0].frame_id, "head_color");
+    assert_eq!(config.cameras[1].id, "bus1:left_wrist_color");
+    assert_eq!(config.cameras[2].id, "bus2:right_wrist_color");
     let left = source(1, "http://127.0.0.1:50061".into());
     let right = source(2, "http://127.0.0.1:50062".into());
     assert_eq!(left.layout.joints.len(), 8);
@@ -265,6 +275,7 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
         poll_interval_ms: 500,
         stale_after_ms: stale,
         rpc_timeout_ms: 500,
+        preview: camera::Config::default(),
         sources: vec![SourceFile {
             id: "bus1".into(),
             label: "左侧".into(),
@@ -317,6 +328,26 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
 }
 
 #[test]
+fn config_without_preview_keeps_camera_subscription_disabled() {
+    let config: ConfigFile = toml::from_str(
+        r#"
+listen = "127.0.0.1:8080"
+poll_interval_ms = 500
+stale_after_ms = 2000
+rpc_timeout_ms = 500
+[[sources]]
+id = "bus1"
+label = "左侧"
+config = "xlerobot-bus1.toml"
+endpoint = "http://127.0.0.1:50061"
+"#,
+    )
+    .unwrap();
+    assert!(!config.preview.enabled);
+    assert!(validate_file(&config).is_ok());
+}
+
+#[test]
 fn deployment_roles_load_without_control_credentials() {
     use crate::auth::{Capability, Role, load_role_table};
 
@@ -341,7 +372,7 @@ fn deployment_roles_load_without_control_credentials() {
     }
 }
 
-fn web_state() -> (
+pub(super) fn web_state() -> (
     WebState,
     watch::Sender<Snapshot>,
     watch::Sender<bool>,
@@ -361,6 +392,7 @@ fn web_state() -> (
             connections,
             shutdown: stopped,
             clock: Arc::new(MockClock::new(MonoRawNs(1))),
+            cameras: camera::CameraState::new(camera::Config::default(), Vec::new()),
         },
         tx,
         stop,
@@ -805,6 +837,8 @@ async fn fake_grpc_to_http_and_websocket_never_calls_control() {
         stale_after_ms: 10_000,
         rpc_timeout_ms: 500,
         sources: vec![source(1, endpoint)],
+        preview: camera::Config::default(),
+        cameras: Vec::new(),
     };
     let web = tokio::spawn(serve(listener, config, async {
         let _ = shutdown.await;
@@ -927,6 +961,8 @@ async fn browser_preview_fake_sources() {
         stale_after_ms: 2000,
         rpc_timeout_ms: 500,
         sources,
+        preview: camera::Config::default(),
+        cameras: Vec::new(),
     };
     serve(
         listener,

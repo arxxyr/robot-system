@@ -46,6 +46,7 @@ serde = { workspace = true }
 axum = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+jpeg-encoder = { workspace = true, optional = true }
 toml  = { workspace = true }
 # Error 派生。
 thiserror = { workspace = true }
@@ -122,7 +123,7 @@ robot-core = { workspace = true }
 # `client`（不依赖 robot-cli），无 client-only runtime 影响。
 client = []
 # 只读HTTP/WebSocket状态页；独立工具，不改变robot-gateway默认构建。
-status-web = ["client", "dep:axum", "dep:futures-util", "dep:serde_json"]
+status-web = ["client", "dep:axum", "dep:futures-util", "dep:serde_json", "dep:jpeg-encoder"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
 # 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke

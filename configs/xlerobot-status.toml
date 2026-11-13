@@ -7,6 +7,15 @@ poll_interval_ms = 500
 stale_after_ms = 2000
 rpc_timeout_ms = 500
 
+# 只影响网页预览；不改内部采集参数。每路默认1Hz、最长320×240，保持比例。
+[preview]
+enabled = true
+interval_ms = 1000
+max_width = 320
+max_height = 240
+jpeg_quality = 70
+stale_after_ms = 3000
+
 [[sources]]
 id = "bus1"
 label = "左臂与头部"
