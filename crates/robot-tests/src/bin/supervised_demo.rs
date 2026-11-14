@@ -81,6 +81,10 @@ use robot_rpc::proto::{
 #[path = "../supervised_mixed.rs"]
 mod supervised_mixed;
 
+#[cfg(feature = "supervised-s0")]
+#[path = "../supervised_web.rs"]
+mod supervised_web;
+
 // ============================================================================
 // 数值硬 gate（AC-E12 ③；改动必须回 Spec）
 // ============================================================================
@@ -271,6 +275,8 @@ struct Args {
     task_timeout_ms: Option<u64>,
     cancel_after_ms: Option<u32>,
     single_joint_max_offset_rad: Option<f64>,
+    web_url: Option<String>,
+    web_bus_id: Option<String>,
     ack_safety_checklist: bool,
 }
 
@@ -311,6 +317,8 @@ impl Args {
             task_timeout_ms: None,
             cancel_after_ms: None,
             single_joint_max_offset_rad: None,
+            web_url: None,
+            web_bus_id: None,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
@@ -418,6 +426,18 @@ impl Args {
                     validate_single_joint_budget(budget)?;
                     args.single_joint_max_offset_rad = Some(budget);
                 }
+                "--web-url" => {
+                    if args.web_url.is_some() {
+                        return Err("--web-url 不得重复".into());
+                    }
+                    args.web_url = Some(value(raw, &mut i, "--web-url")?.into());
+                }
+                "--web-bus-id" => {
+                    if args.web_bus_id.is_some() {
+                        return Err("--web-bus-id 不得重复".into());
+                    }
+                    args.web_bus_id = Some(value(raw, &mut i, "--web-bus-id")?.into());
+                }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown option {other:?}")),
@@ -478,6 +498,18 @@ impl Args {
         {
             return Err("单关节目标与时长参数仅用于 single-joint".into());
         }
+        if args.web_url.is_some() || args.web_bus_id.is_some() {
+            if !cfg!(feature = "supervised-s0") || args.phase != Phase::SingleJoint {
+                return Err("Web提交仅用于supervised-s0的single-joint".into());
+            }
+            let (Some(url), Some(bus_id)) = (&args.web_url, &args.web_bus_id) else {
+                return Err("--web-url和--web-bus-id必须成对指定".into());
+            };
+            #[cfg(feature = "supervised-s0")]
+            supervised_web::Config::new(url, bus_id)?;
+            #[cfg(not(feature = "supervised-s0"))]
+            let _ = (url, bus_id);
+        }
         validate_probe_geometry(args.probe_offset_rad, args.settle_tolerance_rad)?;
         Ok(args)
     }
@@ -532,6 +564,8 @@ OPTIONS:
   --duration-ms <MS>            single-joint必填，正整数运动时长
   --task-timeout-ms <MS>        single-joint必填，覆盖运动、到位超时和请求余量
   --cancel-after-ms <MS>        single-joint可选；任务中途仅取消一次，验证最后发布目标保持后断扭
+  --web-url <ws://IP:PORT/api/ws> single-joint可选；仅任务提交走已有Web，其余监督与收尾不变
+  --web-bus-id <ID>              与web-url成对指定，沿Web状态配置的总线标识
   --single-joint-max-offset-rad <RAD>  仅single-joint显式计划幅度预算，默认0.087；最大π/6（30°）
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
@@ -1692,6 +1726,8 @@ struct SideRt {
     seq: AtomicU64,
     last_submission_id: Option<String>,
     #[cfg(feature = "supervised-s0")]
+    web_submission: Option<supervised_web::Session>,
+    #[cfg(feature = "supervised-s0")]
     hold_check: Option<HoldCheck>,
     #[cfg(feature = "supervised-s0")]
     command_observer: Option<CommandObserver>,
@@ -1767,6 +1803,8 @@ impl SideRt {
             token: token.to_string(),
             seq: AtomicU64::new(0),
             last_submission_id: None,
+            #[cfg(feature = "supervised-s0")]
+            web_submission: None,
             #[cfg(feature = "supervised-s0")]
             hold_check: None,
             #[cfg(feature = "supervised-s0")]
@@ -1969,6 +2007,17 @@ impl TorqueOps for SideRt {
     }
 
     async fn submit_action(&mut self, spec: ActionSpec, timeout_ms: u64) -> Result<String, String> {
+        #[cfg(feature = "supervised-s0")]
+        if let Some(web) = &mut self.web_submission {
+            let minimum_stamp_ns = self
+                .hold_check
+                .as_ref()
+                .ok_or("Web提交缺少已验证的本次启动锚点")?
+                .last_stamp_ns;
+            return web
+                .submit(spec, minimum_stamp_ns, &mut self.last_submission_id)
+                .await;
+        }
         let single_joint =
             spec.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
         let mut meta = self.meta("single-probe");
@@ -2251,7 +2300,7 @@ async fn single_joint_torque_body<O: TorqueOps>(
         Err(message) => {
             return Err(BodyFailure {
                 message,
-                // request_id 就是 S1 的 action_id；未知回执也不得重发原请求。
+                // 保留已知的S1任务ID；Web回执未知时同样不得重发原请求。
                 cancel_target: ops.known_submission_id().map(str::to_owned),
             });
         }
@@ -3162,6 +3211,19 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
         plan.max_offset_rad
     );
     rt.hold_check = Some(check);
+    if let (Some(url), Some(bus_id)) = (&args.web_url, &args.web_bus_id) {
+        let config = supervised_web::Config::new(url, bus_id)?;
+        let robot_id = &rt.hold_check.as_ref().ok_or("固定锚点检查器缺失")?.robot_id;
+        rt.web_submission = Some(
+            supervised_web::Session::connect(
+                config,
+                robot_id,
+                &plan.hardware_id,
+                rt.layout.layout_id,
+            )
+            .await?,
+        );
+    }
     let before = rt.get_state_raw().await?;
     check_hold_pre_enable(rt, &before)?;
     plan.check_start(&before.position_rad)?;
@@ -3213,6 +3275,7 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
     }
     let body = single_joint_torque_body(rt, &plan, &mut check, PROD_STAGE_BUDGETS).await;
     let result = finalize_single(rt, body, PROD_STAGE_BUDGETS).await;
+    rt.web_submission = None;
     rt.task_events = None;
     rt.command_observer = None;
     result?;
@@ -5868,6 +5931,24 @@ mod tests {
                     assert!(ops.command_r.is_empty());
                 });
             }
+        }
+
+        #[test]
+        fn web_submission_arguments_are_paired_and_single_joint_only() {
+            let mut args = raw_args();
+            args.extend(["--web-url".into(), "ws://10.0.1.40:8080/api/ws".into()]);
+            assert!(Args::parse_from(&args).is_err());
+            args.extend(["--web-bus-id".into(), "bus1".into()]);
+            assert!(Args::parse_from(&args).is_ok());
+            let phase = args
+                .iter()
+                .position(|value| value == "single-joint")
+                .unwrap();
+            args[phase] = "hold".into();
+            assert!(Args::parse_from(&args).is_err());
+            args[phase] = "single-joint".into();
+            args.extend(["--web-bus-id".into(), "bus1".into()]);
+            assert!(Args::parse_from(&args).is_err());
         }
 
         #[test]

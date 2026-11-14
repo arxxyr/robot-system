@@ -208,6 +208,9 @@ tokio     = { workspace = true, optional = true, features = ["process", "io-util
 # v0.5 候选 A (5/5) robotctl_smoke optional dep：json_output_round_trip phase
 # 真 parse robotctl `--json` stdout（AC-7）。**仅** robotctl-smoke feature 用。
 serde_json = { workspace = true, optional = true }
+# 受监督单关节验收复用现有WebSocket依赖，仅替换任务提交传输。
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 
 # v0.4 候选 2 round 2 (4/4) ik_backend_smoke optional deps：
 # - robot-kinematics：trait crate（ArmIkSolver / Pose / IkError 等共享
@@ -355,7 +358,7 @@ sd-watchdog-smoke = [
 #   同款并存先例）。
 supervised-demo = ["dep:tokio", "dep:tonic", "dep:robot-rpc", "robot-rpc/client"]
 # 同步附着默认 S0，仅使用现有 IPC 和 Feetech 纯换算，不打开串口。
-supervised-s0 = ["supervised-demo", "dep:robot-s0", "dep:serde_json", "dep:robot-adapter-feetech"]
+supervised-s0 = ["supervised-demo", "dep:robot-s0", "dep:serde_json", "dep:robot-adapter-feetech", "dep:tokio-tungstenite", "dep:futures-util"]
 real-hw = ["robot-adapter-feetech?/real-hw"]
 
 [lints]

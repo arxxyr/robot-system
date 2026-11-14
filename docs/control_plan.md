@@ -111,6 +111,10 @@ flowchart TD
 
 **网页使能暂不开放。** 原S1的Idle目标可保留启动锚点；S0上扭时的当前位置同步不能保证后续S1目标没有陈旧。现有维护入口会核真实S1启动锚点及混合命令镜像，网页不能仅靠GetState新鲜就替代这一步。上线前先准备已有S1、控制网关与该检查入口，本轮不改S0/S1或另建管理框架。
 
+受监督验收复用原`supervised_demo --phase single-joint`，可成对指定`--web-url`和`--web-bus-id`，仅将一次定位提交改走已有WebSocket。Web握手在原启用前两帧检查之前完成；启用后在原提交期限内等待身份、layout和活动状态匹配的共享快照，再发一次请求。用真实Web回执的任务ID接回原gRPC任务观察、独立到位检查及断扭收尾；超时或未知不退回gRPC重发。监督连接收到回执后关闭，页面仍复用原后台。Web任务预算沿既有`时长＋到位超时＋5000ms`，本轮为25800ms；原监督观察仍25000ms，现场GO不续期。
+
+本轮准备仅左腕往返，各20秒，回程用本轮首次原点。每段原gRPC确认完成并断扭、锁存后，最多5秒等待共享Web确认同一任务完成，才退出该段S1；未知或超时沿原失败收尾，不启动回程。始终只运行一个`robot-status.service`：试验配置暂接原左侧维护网关，右侧仍只读；成功后先恢复候选只读配置，再退出临时控制进程、执行原整机停止检查并恢复保护待机。失败先停止试验Web，未知结果不重试；安装、回滚与实机均须在脚本和预检完成后按当次现场确认执行。资源限额、三路相机共享缓存、正式网关和S0配置不变。
+
 ## 当前WebSocket入口
 
 在现有`robot-rpc`中启用`status-web`构建`robot-status`，不改变`robot-gateway`默认构建，也不加入S0 0.0.1包。静态页直接内嵌，无前端构建工具。使用独立产物目录：
@@ -120,11 +124,11 @@ CARGO_TARGET_DIR="$PWD/target/verify-status" cargo build -p robot-rpc --features
 target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
 ```
 
-程序只读取配置、本机gRPC和已有RGB观测镜像。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
+程序读取配置、本机gRPC和已有RGB观测镜像；显式控制也复用同机gRPC。`http://127.0.0.1:8080`不要求输入token，页面通过同源`/api/ws`接收JSON快照；HTTPS页面自动使用WSS。远程查看可仅转发HTTP端口，例如`ssh -L 8080:127.0.0.1:8080 robot-mesh`；页面后端和两个网关必须运行在同一主机，不能将gRPC经远端转发后比较不同时钟域。
 
 Orin的HTTP上游为`http://10.0.1.40:8080`。用户侧Nginx原样转发`/`、`/api/state`、`/api/ws`、`/api/resources`以及相机的`/api/cameras`和`/api/cameras/{id}/frame`，WebSocket使用HTTP/1.1并传递`Upgrade`和`Connection: upgrade`，关闭代理缓冲，读取超时可设60秒；具体行为见[Nginx官方说明](https://nginx.org/en/docs/http/websocket.html)。已配置的外网地址见[当前状态](s0_hal_status.md#通讯与控制todo)，各域名使用同源WSS。本项目不安装或重载用户的Nginx，不转发gRPC端口。
 
-状态入口为`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404；资源与相机使用下述独立HTTP入口。WebSocket立即返回最新快照并持续更新，收到客户端Text/Binary消息以1008关闭，不提供动作或配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
+状态入口为`GET /`、`GET /api/state`与`GET /api/ws`，原`/api/events`返回404；资源与相机使用下述独立HTTP入口。WebSocket立即返回最新快照并持续更新；控制关闭时，客户端Text/Binary消息以1008关闭；显式开启后仅按上节处理控制Text请求，仍无配置写入。固定轮询任务按配置调用`GetState`，浏览器数量不增加RPC读取。最多8个WebSocket连接，每连接只取最新快照，写入最多等待500毫秒；输入帧/消息上限1KiB，输出快照上限64KiB。断开和退出回收任务；无首帧、连接失败、源时间戳重复/回退、布局或身份错配分别保留真实状态，不用收包时间续鲜。
 
 `xlerobot-status.toml`引用原总线TOML，以配置所在目录解析相对路径，身份、8/9槽位、关节名与ID沿原文件派生。默认500ms轮询、2000ms陈旧阈值只影响页面展示，不修改S0/S1的控制、超时和停止合同。轮子标为原始速度模式，不显示位置角度；尚无每电机扭矩读回。
 

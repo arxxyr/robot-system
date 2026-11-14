@@ -4613,6 +4613,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "flatbuffers",
+ "futures-util",
  "hdrhistogram",
  "iceoryx2",
  "iceoryx2-bb-posix",
@@ -4630,6 +4631,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "toml 1.2.1+spec-1.1.0",
  "tonic",
  "tracing",
