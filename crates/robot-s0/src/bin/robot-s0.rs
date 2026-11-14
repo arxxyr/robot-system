@@ -1464,6 +1464,34 @@ fn finish_runtime_owned(
             failures: &report.failures,
             residual_empty: report.residual.is_empty(),
         });
+    if code != 0 {
+        // 主线程记录原关闭结果；不改变退出判据，也不在执行器线程格式化日志。
+        for (kind, outcome) in &report.joined {
+            if let Err(payload) = outcome
+                && let Some(error) = payload.downcast_ref::<robot_core::error::RobotError>()
+            {
+                tracing::error!(worker = kind.name(), %error, "S0辅助线程关闭失败");
+            }
+        }
+        tracing::error!(
+            run_result = ?result,
+            insert_error = ?insert_error,
+            shutdown_ticket = ticket.is_some(),
+            ipc_clean = true_ipc,
+            ipc_exit = ?ipc,
+            executor_clean = executor_exit_clean(executor.as_ref(), meta.executor.as_ref()),
+            snapshot_publish_errors = meta.executor.as_ref().map(ExecutorMetricsRef::snapshot_publish_errors),
+            writer_clean = writer_exit_clean(&writer, &res.writer_shared),
+            io_cleanup_failed = meta.io.as_ref().map(|metrics| metrics.cleanup_failed.load(Ordering::Acquire)),
+            runtime_sample_fault = ?shared.first_runtime_sample_fault(),
+            ack = gate_ack,
+            clear_retired = gate_clear,
+            flushed = gate_flushed,
+            failures = ?report.failures,
+            residual = report.residual.bitmap(),
+            "S0关闭未通过，保留错误退出"
+        );
+    }
     #[cfg(feature = "test-comm-fault-hook")]
     {
         meta.publish_failure_probe.ipc_joined = report.ipc_joined;

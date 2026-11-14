@@ -227,6 +227,75 @@ fn camera_startup_gap_recovers_only_after_every_camera_has_a_fresh_frame() {
 }
 
 #[test]
+fn camera_forced_reap_keeps_error_exit_and_reports_original_shutdown_facts() {
+    // 人为卡住假相机的协作释放，验证关闭诊断，不推定实机失败原因。
+    let mut process = Process::spawn_with_camera(CameraFixture::StuckOnStop);
+    process.wait_camera_started();
+    std::fs::write(process.camera_file("camera-go"), b"go").unwrap();
+    process.wait_ready(5000);
+    let directory = process.directory.as_ref().unwrap().path().to_path_buf();
+    let check_protection = || {
+        for name in ["latch", "latch.bak"] {
+            assert_eq!(std::fs::read(directory.join(name)).unwrap(), b"0\n");
+        }
+        for name in ["rx_trust_marker", "rx_trust_marker.bak"] {
+            assert!(
+                !directory.join("trust").join(name).exists(),
+                "原static信任夹具不得因相机清理写入RX授权"
+            );
+        }
+    };
+    check_protection();
+
+    let pid = i32::try_from(process.child.id()).unwrap();
+    // SAFETY：只停止本测试持有、已READY的独立mock daemon，不接触硬件服务。
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    assert_eq!(process.wait_exit(RUNTIME_EXIT_TIMEOUT_MS), 1);
+
+    let log = process.log();
+    assert!(
+        log.contains("相机辅助进程已强制终止并回收"),
+        "须保留原相机清理错误，不能只剩线程Err：{log}"
+    );
+    let diagnostic = log
+        .lines()
+        .find(|line| line.contains("S0关闭未通过，保留错误退出"))
+        .unwrap_or_else(|| panic!("错误退出缺少原关闭诊断：{log}"));
+    for fact in [
+        "io_cleanup_failed=true",
+        "ipc_clean=true",
+        "executor_clean=true",
+        "writer_clean=true",
+        "ack=true",
+        "clear_retired=true",
+        "flushed=1",
+        "failures=[Panicked(Io)]",
+        "residual=0",
+    ] {
+        assert!(diagnostic.contains(fact), "缺少真实关闭事实{fact}：{log}");
+    }
+    assert!(process.camera_file("camera-stop-requested").is_file());
+    assert!(
+        !process.camera_file("camera-stopped").exists(),
+        "卡住释放的夹具不能伪造正常finally"
+    );
+    let helper_pid: u32 = std::fs::read_to_string(process.camera_file("camera-pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        !std::path::PathBuf::from(format!("/proc/{helper_pid}")).exists(),
+        "强制终止的假相机必须已由原IO线程回收：{log}"
+    );
+    let stopped = process.page.snapshot();
+    assert_eq!(stopped.stop_bitmap, 0xff);
+    assert_eq!(stopped.residual_bitmap, 0);
+    assert_eq!(stopped.exit_residual_bitmap, 0);
+    assert_eq!(stopped.fired_checkpoint, 0);
+    check_protection();
+}
+
+#[test]
 fn dirty_boot_with_delayed_camera_keeps_timely_ack_until_absolute_deadline() {
     let mut process = Process::spawn_inner(
         6,

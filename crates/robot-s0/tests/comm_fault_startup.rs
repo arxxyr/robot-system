@@ -36,6 +36,7 @@ enum CameraFixture {
     Frames,
     Eof,
     NoFrames,
+    StuckOnStop,
 }
 
 impl CameraFixture {
@@ -44,6 +45,7 @@ impl CameraFixture {
             Self::Frames => "frames",
             Self::Eof => "eof",
             Self::NoFrames => "no-frames",
+            Self::StuckOnStop => "stuck-on-stop",
         }
     }
 }
@@ -62,6 +64,10 @@ stream_index = int(directory.name.rsplit('-', 1)[1])
 mode = Path(sys.argv[sys.argv.index('--device') + 1]).name
 
 def stop(_signum, _frame):
+    if mode == 'stuck-on-stop':
+        (directory / 'camera-stop-requested').write_text('requested')
+        while True:
+            time.sleep(0.01)
     raise SystemExit(0)
 
 signal.signal(signal.SIGTERM, stop)
