@@ -1,4 +1,4 @@
-//! 只读资源、状态与相机预览入口；读取procfs、本机gRPC和RGB镜像，不访问设备。
+//! 状态、相机与显式启用的控制Web入口；复用本机gRPC和RGB镜像，不直接访问设备。
 
 use std::path::Path;
 
@@ -11,7 +11,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.as_slice() == ["--help"] || args.as_slice() == ["-h"] {
         println!(
-            "robot-status --config <状态配置.toml>\n只读资源、状态与相机预览；不会启动机器人服务或发送控制命令。"
+            "robot-status --config <状态配置.toml>\n状态、资源与相机预览；控制默认关闭，显式配置后复用本机gRPC，不启动机器人服务。"
         );
         return;
     }
@@ -33,7 +33,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    tracing::info!(address = %config.listen_addr(), "只读状态页开始监听");
+    tracing::info!(address = %config.listen_addr(), "状态Web开始监听");
     if let Err(error) = serve(listener, config, shutdown_signal()).await {
         eprintln!("状态页退出失败：{error}");
         std::process::exit(1);

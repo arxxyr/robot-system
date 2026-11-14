@@ -63,6 +63,23 @@
     .state-note { margin: 0 22px 15px; padding: 9px 11px; border-radius: 6px; background: #f5f8fb; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
     .state-note[data-tone="warn"] { background: #fff7e9; color: var(--amber); }
     .state-note[data-tone="bad"] { background: #fff1ef; color: var(--red); }
+    .control-panel { border-top: 1px solid var(--line); padding: 18px 22px; }
+    .control-panel h4 { margin: 0; font-size: 14px; }
+    .control-panel p { margin: 8px 0; font-size: 12px; overflow-wrap: anywhere; }
+    .control-scope, .control-limits, .control-enable-note { color: var(--muted); }
+    .control-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, .8fr); gap: 10px; }
+    .control-field { min-width: 0; color: var(--muted); font-size: 12px; }
+    .control-field span { display: block; margin-bottom: 4px; }
+    .control-field input, .control-field select { width: 100%; min-width: 0; border: 1px solid #c9d7e2; border-radius: 6px; padding: 8px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; }
+    .control-field input:focus-visible, .control-field select:focus-visible { outline: 3px solid #91b9db; outline-offset: 2px; }
+    .control-field input:disabled, .control-field select:disabled { color: var(--muted); background: #f4f7fa; }
+    .control-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+    .control-actions button { padding: 7px 11px; font-size: 12px; flex: none; }
+    .control-actions .danger { color: var(--red); border-color: #e4b4b1; background: #fff4f2; }
+    .control-task { padding: 8px 10px; background: #f4f7fa; border-radius: 6px; }
+    .control-result[data-tone="bad"] { color: var(--red); }
+    .control-result[data-tone="warn"] { color: var(--amber); }
+    @media (max-width: 560px) { .control-panel { padding: 16px; } .control-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .control-field:first-child { grid-column: 1 / -1; } }
     .table-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
     table { border-collapse: collapse; width: 100%; font-size: 13px; }
     thead { background: #f7f9fb; }
@@ -214,7 +231,7 @@
   </style>
 </head>
 <body>
-  <header><div class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>robot-system</div><span class="readonly">只读监控 · 不下发控制命令</span></div></header>
+  <header><div class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>robot-system</div><span id="access-mode" class="readonly">只读监控 · 未开放动作</span></div></header>
   <main>
     <div class="monitor-toolbar">
       <div class="toolbar-main">
@@ -297,7 +314,7 @@
       <p id="camera-notice" role="status">点击“查看画面”读取当前配置的相机。</p>
       <div id="cameras" class="cameras"></div>
     </section>
-    <footer><p>总线级扭矩状态不等于逐电机独立确认；服务在线或软件处于 Safe 均不代表已经断扭。</p><p>“超时”表示未及时收到新数据，最后一次反馈仅供参考；此页面不提供使能、运动或急停操作。</p></footer>
+    <footer><p>总线级扭矩状态不等于逐电机独立确认；服务在线或软件处于 Safe 均不代表已经断扭。</p><p>控制仅在服务端明确开放后可用；本页不启动 S1 或网关，也不自动使能。断线和未知结果不会自动重发命令。</p></footer>
   </main>
   <script>
     (() => {
@@ -322,6 +339,11 @@
       let cameraCards = [];
       const busCards = new Map();
       let busOrder = [];
+      // 每条总线只保存本页面最后一次请求；任务事实来自服务端共享快照。
+      const controlRequests = new Map();
+      const controlOperations = ['move', 'cancel', 'disable', 'estop', 'clear_estop'];
+      const controlTaskStates = ['pending', 'executing', 'completed', 'failed', 'cancelled', 'unknown'];
+      const controlOperationText = { move: '定位', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
       const networkCards = new Map();
       let networkOrder = [];
       const robotServiceCards = new Map();
@@ -515,6 +537,172 @@
       }
       function busKey(bus) { return JSON.stringify([bus.id, bus.robot_id, bus.hardware_id, bus.layout_id]); }
       function jointKey(joint) { return JSON.stringify([joint.motor_id, joint.name]); }
+      function controlView(bus) {
+        const value = bus.control;
+        if (!value || typeof value.enabled !== 'boolean' || typeof value.process_id !== 'string' || !value.process_id || typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) || typeof value.busy !== 'boolean' || !Number.isSafeInteger(value.max_duration_ms) || value.max_duration_ms < 1 || !Array.isArray(value.joints) || value.joints.length > 256) return null;
+        const names = new Set();
+        for (const joint of value.joints) {
+          if (!joint || typeof joint.name !== 'string' || names.has(joint.name) || !bus.joints.some(item => item.name === joint.name && item.mode === 'position') || ![joint.min_position_rad, joint.max_position_rad, joint.max_velocity_rad_s, joint.tolerance_rad].every(Number.isFinite) || joint.min_position_rad > joint.max_position_rad || joint.max_velocity_rad_s <= 0 || joint.tolerance_rad < 0) return null;
+          names.add(joint.name);
+        }
+        if (value.task !== null && value.task !== undefined && (typeof value.task.action_id !== 'string' || !controlTaskStates.includes(value.task.state))) return null;
+        return value;
+      }
+      function validControlResult(value) {
+        return value?.type === 'control_result' && typeof value.request_id === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(value.request_id) && typeof value.bus_id === 'string' && Object.hasOwn(controlOperationText, value.operation) && ['accepted', 'rejected', 'unknown'].includes(value.status) && typeof value.message === 'string' && typeof value.revision === 'string' && /^\d{1,20}$/.test(value.revision) && (value.action_id === null || typeof value.action_id === 'string');
+      }
+      function receiveControlResult(result, processId = null) {
+        if (!validControlResult(result)) throw new Error('控制回执格式无效，命令结果未确认。');
+        const request = controlRequests.get(result.bus_id);
+        if (!request || request.request_id !== result.request_id || (processId && request.process_id !== processId)) return;
+        request.result = result;
+        request.status = result.status;
+      }
+      function controlField(label, input) {
+        const field = node('label', 'control-field');
+        field.append(node('span', '', label), input);
+        return field;
+      }
+      function makeControl(bus) {
+        const panel = node('section', 'control-panel');
+        panel.setAttribute('aria-label', `${bus.label || bus.id}控制`);
+        const heading = node('div', 'bus-title-row');
+        const badge = node('span', 'badge', '只读');
+        heading.append(node('h4', '', '单关节控制'), badge);
+        const scope = node('p', 'control-scope', `操作范围为本总线全部 ${bus.joints.length} 个电机；仅所选位置关节运动，轮子目标保持零速。`);
+        const form = node('form', 'control-form');
+        const joint = node('select', 'control-joint');
+        const target = node('input', 'control-target');
+        target.type = 'number'; target.step = 'any'; target.required = true;
+        const duration = node('input', 'control-duration');
+        duration.type = 'number'; duration.min = '0.001'; duration.step = '0.001'; duration.required = true;
+        form.append(controlField('位置关节', joint), controlField('绝对目标角度（°）', target), controlField('运动时长（秒）', duration));
+        form.addEventListener('submit', event => event.preventDefault());
+        const limits = node('p', 'control-limits');
+        const actions = node('div', 'control-actions');
+        const buttons = {};
+        for (const [operation, text, className] of [['move', '执行定位', 'primary'], ['cancel', '取消任务', 'secondary'], ['enable', '总线使能', 'secondary'], ['disable', '总线断扭', 'secondary'], ['estop', '急停', 'danger'], ['clear_estop', '解除急停', 'secondary']]) {
+          const button = node('button', className, text);
+          button.type = 'button'; button.dataset.operation = operation;
+          button.disabled = true;
+          buttons[operation] = button;
+          actions.append(button);
+        }
+        const enableNote = node('p', 'control-enable-note', '使能请使用已验证的维护入口；本页不提供使能。');
+        const task = node('p', 'control-task', '当前无共享任务。');
+        const result = node('p', 'control-result'); result.setAttribute('role', 'status');
+        panel.append(heading, scope, form, limits, actions, enableNote, task, result);
+        const control = { panel, badge, form, joint, target, duration, limits, actions, buttons, enableNote, task, result, scope, signature: null, busId: bus.id };
+        joint.addEventListener('change', () => {
+          const current = snapshot?.buses.find(item => item.id === control.busId);
+          const selected = current?.joints.find(item => item.name === joint.value);
+          target.value = selected && Number.isFinite(selected.position_rad) ? String(selected.position_rad * 180 / Math.PI) : '';
+          if (current) updateControl(control, current);
+        });
+        for (const input of [target, duration]) input.addEventListener('input', () => {
+          const current = snapshot?.buses.find(item => item.id === control.busId);
+          if (current) updateControl(control, current);
+        });
+        for (const operation of controlOperations) buttons[operation].addEventListener('click', () => sendControl(control, operation));
+        return control;
+      }
+      function controlTarget(control, config) {
+        const joint = config.joints.find(item => item.name === control.joint.value);
+        const target = control.target.valueAsNumber * Math.PI / 180;
+        const duration = Math.round(control.duration.valueAsNumber * 1000);
+        if (!joint || !Number.isFinite(target) || target < joint.min_position_rad || target > joint.max_position_rad || !Number.isSafeInteger(duration) || duration < 1 || duration > config.max_duration_ms) return null;
+        return { joint: joint.name, target_position_rad: target, duration_ms: duration };
+      }
+      function updateControl(control, bus) {
+        const config = controlView(bus);
+        const enabled = config?.enabled === true;
+        for (const item of [control.form, control.limits, control.actions, control.enableNote, control.task, control.scope]) setProperty(item, 'hidden', !enabled);
+        const online = enabled && connected && activeSession?.socket.readyState === WebSocket.OPEN;
+        const fresh = statusOf(bus) === 'fresh';
+        const signature = JSON.stringify([config?.process_id, config?.joints, config?.max_duration_ms]);
+        if (signature !== control.signature) {
+          const previous = control.joint.value;
+          const options = (config?.joints || []).map(joint => {
+            const option = node('option', '', jointLabel(joint.name)); option.value = joint.name; return option;
+          });
+          control.joint.replaceChildren(...options);
+          if (options.some(option => option.value === previous)) control.joint.value = previous;
+          else {
+            const selected = bus.joints.find(item => item.name === control.joint.value);
+            control.target.value = selected && Number.isFinite(selected.position_rad) ? String(selected.position_rad * 180 / Math.PI) : '';
+          }
+          if (!control.duration.value && config) control.duration.value = String(Math.min(20000, config.max_duration_ms) / 1000);
+          control.signature = signature;
+        }
+        const selected = config?.joints.find(joint => joint.name === control.joint.value);
+        if (selected) {
+          setAttribute(control.target, 'min', selected.min_position_rad * 180 / Math.PI);
+          setAttribute(control.target, 'max', selected.max_position_rad * 180 / Math.PI);
+        }
+        setAttribute(control.duration, 'max', config ? config.max_duration_ms / 1000 : null);
+        setText(control.limits, selected ? `目标范围 ${(selected.min_position_rad * 180 / Math.PI).toFixed(1)}° 至 ${(selected.max_position_rad * 180 / Math.PI).toFixed(1)}°；到位容差 ±${(selected.tolerance_rad * 180 / Math.PI).toFixed(2)}°；最长 ${config.max_duration_ms / 1000} 秒。` : '当前没有开放的位置关节。');
+        const request = controlRequests.get(bus.id);
+        if (request?.status === 'pending' && (request.process_id !== config?.process_id || performance.now() - request.startedAt > 10000)) {
+          request.status = 'unknown';
+          request.result = null;
+        }
+        const sameContext = request?.process_id === config?.process_id;
+        const terminalObserved = sameContext && request?.result?.action_id && request.result.action_id === config?.task?.action_id && ['completed', 'failed', 'cancelled'].includes(config.task.state);
+        const awaitingSnapshot = sameContext && request?.result && BigInt(config.revision) < BigInt(request.result.revision);
+        const pending = sameContext && (request?.status === 'pending' || (request?.status === 'unknown' && !terminalObserved) || awaitingSnapshot);
+        const taskActive = config?.task && ['pending', 'executing', 'unknown'].includes(config.task.state);
+        const canChange = online && !document.hidden && fresh && !config.busy && !taskActive && !pending;
+        const canMove = canChange && bus.mode === 'Enabled' && bus.safety_state === 'TorqueOn' && bus.output_mode === 'Active' && bus.control_link === 'Ok' && bus.fault_code === 0;
+        for (const input of [control.joint, control.target, control.duration]) setProperty(input, 'disabled', !canChange);
+        setProperty(control.buttons.move, 'disabled', !canMove || !controlTarget(control, config));
+        const awaitingOperation = operation => request?.status === 'pending' && request.operation === operation;
+        setProperty(control.buttons.cancel, 'disabled', !online || awaitingOperation('cancel') || !config?.task || !['pending', 'executing', 'unknown'].includes(config.task.state));
+        setProperty(control.buttons.disable, 'disabled', !online || awaitingOperation('disable'));
+        setProperty(control.buttons.estop, 'disabled', !online || awaitingOperation('estop'));
+        setProperty(control.buttons.clear_estop, 'disabled', !canChange);
+        // 旧 S1 启动锚点不能作为新一轮上扭凭据；网页本轮始终不提供使能。
+        setProperty(control.buttons.enable, 'disabled', true);
+        setText(control.enableNote, config?.enable_reason || '使能请使用已验证的维护入口；本页不提供使能。');
+        setText(control.badge, !enabled ? '只读' : !online ? '控制已断开' : pending ? '请求结果待确认' : config.task?.state === 'unknown' ? '任务结果未知' : config.busy ? '请求处理中' : taskActive ? '任务执行中' : '控制已开放');
+        setAttribute(control.badge, 'data-tone', !enabled ? 'neutral' : online && !config.busy && !taskActive && !pending ? 'good' : 'warn');
+        const task = config?.task;
+        const taskLabel = { pending: '任务已提交，等待执行', executing: '任务执行中', completed: '任务已到位', failed: '任务失败', cancelled: '任务已取消，保持最后目标；尚不等于断扭', unknown: '任务结果未知，不自动重发' };
+        setText(control.task, task ? `${taskLabel[task.state]}${['pending', 'executing'].includes(task.state) && Number.isFinite(task.progress) ? ` · ${(task.progress * 100).toFixed(0)}%` : ''}${task.error ? ` · ${task.error}` : ''}` : '当前无共享任务。');
+        const outcome = request?.result || config?.last_result;
+        let message = !enabled ? '服务端未开放控制，当前仅监控。' : !online ? '控制连接不可用；不会自动重发命令。' : !fresh ? '设备反馈超时；定位和解除急停不可用，停止操作仍可请求。' : !canMove && !taskActive ? '定位前需由维护入口完成使能；本页不会自动使能或解除急停。' : '';
+        let tone = 'neutral';
+        if (request?.status === 'unknown' && !sameContext) { message = '旧控制进程的请求结果未确认；现已收到新的控制上下文。新操作使用当前版本，旧命令不会重发。'; tone = 'warn'; }
+        else if (request?.status === 'pending') { message = `${controlOperationText[request.operation]}已发送，等待回执；不会重发。`; tone = 'warn'; }
+        else if (request?.status === 'unknown' && !request.result) { message = '上次命令结果未知；不会自动重发。请核对共享任务与实际反馈。'; tone = 'warn'; }
+        else if (outcome && validControlResult(outcome)) {
+          const status = { accepted: '请求已受理', rejected: '请求被拒绝', unknown: '请求结果未知，不会重发' }[outcome.status];
+          message = `${controlOperationText[outcome.operation]}：${status}。${outcome.message}`;
+          if (outcome.status === 'accepted' && ['disable', 'estop'].includes(outcome.operation)) message += ' 实际断扭以总线反馈为准。';
+          if (outcome.status === 'unknown' && terminalObserved) message += ' 同一任务随后已报告终态；旧请求不重发，可明确提交新的操作。';
+          tone = outcome.status === 'rejected' ? 'bad' : outcome.status === 'unknown' ? 'warn' : 'neutral';
+        }
+        setText(control.result, message);
+        setAttribute(control.result, 'data-tone', tone);
+      }
+      function sendControl(control, operation) {
+        const bus = snapshot?.buses.find(item => item.id === control.busId);
+        if (!bus || !controlOperations.includes(operation)) return;
+        updateControl(control, bus);
+        const config = controlView(bus);
+        if (!config?.enabled || control.buttons[operation].disabled || activeSession?.socket.readyState !== WebSocket.OPEN) return;
+        if (operation === 'clear_estop' && !window.confirm(`确认解除“${bus.label || bus.id}”的急停锁存？解除不会自动使能电机。`)) return;
+        const request = { type: 'control', request_id: crypto.randomUUID(), bus_id: bus.id, process_id: config.process_id, revision: config.revision, operation };
+        if (operation === 'move') {
+          const target = controlTarget(control, config);
+          if (!target) return;
+          Object.assign(request, target);
+        }
+        if (operation === 'clear_estop') request.confirmation = 'CONFIRM_CLEAR_ESTOP';
+        controlRequests.set(bus.id, { ...request, startedAt: performance.now(), status: 'pending', result: null });
+        try { activeSession.socket.send(JSON.stringify(request)); }
+        catch { controlRequests.get(bus.id).status = 'unknown'; }
+        updateControl(control, bus);
+      }
       function makeJoint(joint) {
         const row = node('tr');
         const name = node('td');
@@ -554,8 +742,9 @@
         const body = node('tbody');
         table.append(head, body);
         wrap.append(table);
-        article.append(heading, metrics, note, wrap, node('div', 'bus-foot', `${bus.hardware_id} · 布局 ${bus.layout_id}`));
-        return { article, title, badge, fields, note, table, positionHeading, body, joints: new Map(), jointOrder: [] };
+        const control = makeControl(bus);
+        article.append(heading, metrics, note, wrap, control.panel, node('div', 'bus-foot', `${bus.hardware_id} · 布局 ${bus.layout_id}`));
+        return { article, title, badge, fields, note, table, positionHeading, body, control, joints: new Map(), jointOrder: [] };
       }
       function updateBus(card, bus) {
         const status = statusOf(bus);
@@ -601,11 +790,13 @@
           for (const key of card.joints.keys()) if (!order.includes(key)) card.joints.delete(key);
           card.jointOrder = order;
         }
+        updateControl(card.control, bus);
       }
       function render() {
         if (document.hidden) return;
         renderGlobalFeedback();
         renderOverviewBuses();
+        setText(document.getElementById('access-mode'), snapshot?.buses.some(bus => controlView(bus)?.enabled) ? '监控与控制 · 动作需明确操作' : '只读监控 · 未开放动作');
         if (activeView !== 'joints' || !snapshot) return;
         const order = snapshot.buses.map(busKey);
         for (const bus of snapshot.buses) {
@@ -635,7 +826,10 @@
           if (previous && bus.stamp_ns !== null && bus.stamp_ns === previous.stamp_ns && previousAge !== null && Number.isFinite(bus.age_ms) && bus.age_ms >= 0) {
             bus.age_ms = Math.max(bus.age_ms, previousAge);
           }
+          const control = controlView(bus);
+          if (control && validControlResult(control.last_result)) receiveControlResult(control.last_result, control.process_id);
         }
+        for (const id of controlRequests.keys()) if (!value.buses.some(bus => bus.id === id)) controlRequests.delete(id);
         snapshot = value;
         receivedAt = performance.now();
       }
@@ -936,6 +1130,9 @@
         const previous = activeSession;
         activeSession = null;
         connected = false;
+        for (const request of controlRequests.values()) {
+          if (request.status === 'pending') { request.status = 'unknown'; request.result = null; }
+        }
         stopResources();
         if (previous && previous.socket.readyState < WebSocket.CLOSING) {
           previous.socket.close(1000, '停止查看');
@@ -971,9 +1168,13 @@
             try {
               if (typeof event.data !== 'string') throw new Error('状态服务返回了非文本数据。');
               if (event.data.length > 524288) throw new Error('状态数据超出页面容量。');
-              receiveSnapshot(JSON.parse(event.data));
-              connected = true;
-              setConnection('状态流已连接', 'good');
+              const value = JSON.parse(event.data);
+              if (value?.type === 'control_result') receiveControlResult(value);
+              else {
+                receiveSnapshot(value);
+                connected = true;
+                setConnection('状态流已连接', 'good');
+              }
               render();
             } catch (error) {
               failSession(session, error instanceof SyntaxError ? '状态服务返回了无效数据，请重新连接。' : error.message || '状态数据无效。');

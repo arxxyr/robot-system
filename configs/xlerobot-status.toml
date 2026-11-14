@@ -1,4 +1,4 @@
-# 只读状态页；同机读取两个网关，不启动S0/S1、不访问电机。
+# 状态与控制Web；本配置默认只读，不启动S0/S1或直接访问设备。
 # 路径相对此文件。设备身份和关节表从原总线配置读取。
 # HTTP默认loopback，也可配置显式IPv4私网地址供Nginx访问；gRPC仍限定loopback。
 listen = "127.0.0.1:8080"
@@ -6,6 +6,10 @@ poll_interval_ms = 500
 # 仅为页面的新鲜度阈值，不修改S0看门狗或停止判据。
 stale_after_ms = 2000
 rpc_timeout_ms = 500
+
+# 仅软件候选显式启用；正式部署仍关闭。内部权限沿现有gRPC，不向浏览器提供凭据。
+[control]
+enabled = false
 
 # 只影响网页预览；不改内部采集参数。每路默认1Hz、最长320×240，保持比例。
 [preview]
@@ -21,9 +25,12 @@ id = "bus1"
 label = "左臂与头部"
 config = "xlerobot-bus1.toml"
 endpoint = "http://127.0.0.1:50061"
+# 控制候选按需引用同一份运动约束；单独添加此项不会开启控制。
+# control = { motion_config = "xlerobot-bus1-motion.toml" }
 
 [[sources]]
 id = "bus2"
 label = "右臂与底盘"
 config = "xlerobot-bus2.toml"
 endpoint = "http://127.0.0.1:50062"
+# control = { motion_config = "xlerobot-bus2-motion.toml" }

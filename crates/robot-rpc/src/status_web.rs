@@ -1,8 +1,8 @@
-//! 本机gRPC状态与RGB镜像的只读Web视图；配置派生布局，源时钟判断新鲜度。
+//! 本机gRPC状态、可选单关节控制与RGB镜像Web视图；源时钟判断新鲜度。
 //!
 //! 固定轮询任务拥有连接，只保留最新快照；浏览器连接不产生额外RPC。
 //! 整机procfs资源由独立普通线程共享采样缓存，HTTP查询不触发文件IO。
-//! 本模块没有控制RPC、UART或systemd调用，不把服务可达当作电机状态。
+//! 控制默认关闭；开启后复用固定轮询连接，不访问UART或调用systemd。
 
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
@@ -13,13 +13,13 @@ use std::time::Duration;
 
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::{Json, Router};
 use futures_util::SinkExt;
 use robot_core::time::{RobotClock, SystemClock};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
 use tokio::task::JoinSet;
 use tonic::transport::{Channel, Endpoint};
 
@@ -28,6 +28,9 @@ use crate::proto::robot_control_client::RobotControlClient;
 use crate::proto::{
     GetStateRequest, RobotState, S0ControlLink, S0Mode, S0OutputMode, S0SafetyState,
 };
+
+#[path = "status_control.rs"]
+mod control;
 
 #[path = "status_camera.rs"]
 mod camera;
@@ -52,6 +55,8 @@ struct ConfigFile {
     rpc_timeout_ms: u64,
     #[serde(default)]
     preview: camera::Config,
+    #[serde(default)]
+    control: control::FileConfig,
     sources: Vec<SourceFile>,
 }
 
@@ -62,6 +67,8 @@ struct SourceFile {
     label: String,
     config: PathBuf,
     endpoint: String,
+    #[serde(default)]
+    control: Option<control::SourceConfig>,
 }
 
 #[derive(Deserialize)]
@@ -100,9 +107,10 @@ struct Source {
     hardware_id: String,
     mixed_raw: bool,
     layout: HardwareLayout,
+    motion: Option<control::MotionConfig>,
 }
 
-/// 已校验的只读状态配置；所有文件读取均在启动期完成。
+/// 已校验的状态与可选控制配置；所有文件读取均在启动期完成。
 pub struct StatusConfig {
     listen: SocketAddr,
     poll_interval_ms: u64,
@@ -111,6 +119,8 @@ pub struct StatusConfig {
     sources: Vec<Source>,
     preview: camera::Config,
     cameras: Vec<camera::CameraSource>,
+    control_enabled: bool,
+    control_token: Option<String>,
 }
 
 impl StatusConfig {
@@ -172,7 +182,7 @@ impl StatusConfig {
                     frame_id: sensor.id.clone(),
                 });
             }
-            sources.push(Source {
+            let mut source = Source {
                 id: entry.id,
                 label: entry.label,
                 endpoint: entry.endpoint,
@@ -180,8 +190,29 @@ impl StatusConfig {
                 hardware_id: hardware.id.clone(),
                 mixed_raw: hardware.feetech_bus2_mixed_raw,
                 layout,
-            });
+                motion: None,
+            };
+            if let Some(control) = entry.control {
+                source.motion = Some(control::MotionConfig::load(
+                    &base.join(control.motion_config),
+                    &source,
+                )?);
+            }
+            sources.push(source);
         }
+        let control_token = if file.control.enabled {
+            if !sources.iter().any(|source| source.motion.is_some()) {
+                return Err("开启Web控制必须引用至少一个总线运动配置".into());
+            }
+            Some(
+                std::env::var("ROBOT_TOKEN")
+                    .ok()
+                    .filter(|token| !token.trim().is_empty())
+                    .ok_or("开启Web控制需要服务端ROBOT_TOKEN；浏览器不传令牌")?,
+            )
+        } else {
+            None
+        };
         Ok(Self {
             listen: file.listen,
             poll_interval_ms: file.poll_interval_ms,
@@ -190,7 +221,14 @@ impl StatusConfig {
             sources,
             preview: file.preview,
             cameras,
+            control_enabled: file.control.enabled,
+            control_token,
         })
+    }
+
+    #[must_use]
+    pub const fn control_enabled(&self) -> bool {
+        self.control_enabled
     }
 
     #[must_use]
@@ -293,6 +331,7 @@ struct BusView {
     safety_state: Option<String>,
     fault_code: Option<u32>,
     joints: Vec<JointView>,
+    control: control::View,
 }
 
 #[derive(Clone, Serialize)]
@@ -330,6 +369,7 @@ struct SourceState {
     last: Option<RobotState>,
     invalid: bool,
     error: Option<String>,
+    control: control::ControlState,
 }
 
 impl SourceState {
@@ -340,6 +380,7 @@ impl SourceState {
             last: None,
             invalid: false,
             error: Some("等待首个有效状态".into()),
+            control: control::ControlState::new(false, ""),
         }
     }
 
@@ -464,6 +505,7 @@ impl SourceState {
                 .map(|last| enum_name::<S0SafetyState>(last.safety_state)),
             fault_code: self.reported.as_ref().map(|last| last.fault_code),
             joints,
+            control: self.control.view(self.source.motion.as_ref()),
         }
     }
 }
@@ -484,18 +526,26 @@ struct WebState {
     clock: Arc<dyn RobotClock>,
     cameras: camera::CameraState,
     resources: resources::ResourcesState,
+    commands: mpsc::Sender<control::Envelope>,
+    control_enabled: bool,
 }
 
 struct WsConnection {
     socket: WebSocket,
     permit: OwnedSemaphorePermit,
+    same_origin: bool,
 }
 
 async fn state_json(State(state): State<WebState>) -> Response {
     Json(state.latest.borrow().at_time(state.clock.now().0)).into_response()
 }
 
-async fn state_socket(State(state): State<WebState>, upgrade: WebSocketUpgrade) -> Response {
+async fn state_socket(
+    State(state): State<WebState>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let same_origin = same_origin(&headers);
     if *state.shutdown.borrow() {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
@@ -510,17 +560,26 @@ async fn state_socket(State(state): State<WebState>, upgrade: WebSocketUpgrade) 
         .max_frame_size(WS_MAX_INPUT_BYTES)
         .on_upgrade(move |socket| async move {
             // Axum负责握手；升级完成后立即转交，所有持续连接任务由管理器持有。
-            let _ = state.connections.try_send(WsConnection { socket, permit });
+            let _ = state.connections.try_send(WsConnection {
+                socket,
+                permit,
+                same_origin,
+            });
         })
 }
 
 async fn websocket_loop(connection: WsConnection, state: WebState) {
-    let WsConnection { mut socket, permit } = connection;
+    let WsConnection {
+        mut socket,
+        permit,
+        same_origin,
+    } = connection;
     let _permit = permit;
     let mut latest = state.latest;
     let mut shutdown = state.shutdown;
     let mut send_snapshot = true;
     let mut close_frame = None;
+    let mut pending: Option<oneshot::Receiver<control::Reply>> = None;
     loop {
         if *shutdown.borrow() {
             break;
@@ -543,7 +602,32 @@ async fn websocket_loop(connection: WsConnection, state: WebState) {
                 if result.is_err() { break; }
                 send_snapshot = true;
             },
+            reply = async { match pending.as_mut() { Some(reply) => reply.await.ok(), None => std::future::pending().await } }, if pending.is_some() => {
+                pending = None;
+                if let Some(reply) = reply {
+                    if !send_control_reply(&mut socket, reply, &mut shutdown).await { break; }
+                } else { break; }
+            },
             message = socket.recv() => match message {
+                Some(Ok(Message::Text(text))) if state.control_enabled => {
+                    let Ok(request) = serde_json::from_str::<control::Request>(&text) else {
+                        if !send_control_reply(&mut socket, control::Reply::rejected(None, 0, "控制消息格式无效，未发送"), &mut shutdown).await { break; }
+                        continue;
+                    };
+                    let message = if !same_origin { Some("控制请求须来自同源页面，未发送") }
+                        else if pending.is_some() { Some("本连接已有待处理请求，未发送") } else { None };
+                    if let Some(message) = message {
+                        if !send_control_reply(&mut socket, control::Reply::rejected(Some(&request), 0, message), &mut shutdown).await { break; }
+                        continue;
+                    }
+                    let (reply, received) = oneshot::channel();
+                    match state.commands.try_send(control::Envelope { request, reply }) {
+                        Ok(()) => pending = Some(received),
+                        Err(error) => {
+                            if !send_control_reply(&mut socket, control::Reply::rejected(Some(&error.into_inner().request), 0, "共享控制入口繁忙或已关闭，未发送"), &mut shutdown).await { break; }
+                        }
+                    }
+                }
                 Some(Ok(Message::Text(_) | Message::Binary(_))) => {
                     close_frame = Some(CloseFrame {
                         code: close_code::POLICY,
@@ -657,20 +741,13 @@ pub async fn serve(
 ) -> Result<(), String> {
     validate_http_listen(listener.local_addr().map_err(|error| error.to_string())?)?;
     let clock: Arc<dyn RobotClock> = Arc::new(SystemClock::new());
-    let initial = Snapshot {
-        stale_after_ms: config.stale_after_ms,
-        buses: config
-            .sources
-            .iter()
-            .cloned()
-            .map(SourceState::new)
-            .map(|source| source.view(clock.now().0, config.stale_after_ms))
-            .collect(),
-    };
+    let process_id = uuid::Uuid::now_v7().to_string();
+    let initial = initial_snapshot(&config, clock.now().0, &process_id);
     let (latest_tx, latest_rx) = watch::channel(initial);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let http_shutdown = shutdown_rx.clone();
     let (connections_tx, connections_rx) = mpsc::channel(MAX_STREAMS);
+    let (commands_tx, commands_rx) = mpsc::channel(control::MAILBOX_CAPACITY);
     let cameras = camera::CameraState::new(config.preview.clone(), config.cameras.clone());
     let camera_worker = if config.preview.enabled {
         Some(
@@ -706,8 +783,17 @@ pub async fn serve(
         clock: Arc::clone(&clock),
         cameras,
         resources,
+        commands: commands_tx,
+        control_enabled: config.control_enabled,
     };
-    let poll = tokio::spawn(poll_sources(config, latest_tx, clock, shutdown_rx));
+    let poll = tokio::spawn(poll_sources(
+        config,
+        latest_tx,
+        clock,
+        shutdown_rx,
+        commands_rx,
+        process_id,
+    ));
     let connections = tokio::spawn(manage_connections(connections_rx, state.clone()));
     let signal = shutdown_tx.clone();
     let server = axum::serve(listener, router(state))
@@ -746,6 +832,22 @@ pub async fn serve(
     result
 }
 
+fn initial_snapshot(config: &StatusConfig, now_ns: u64, process_id: &str) -> Snapshot {
+    Snapshot {
+        stale_after_ms: config.stale_after_ms,
+        buses: config
+            .sources
+            .iter()
+            .cloned()
+            .map(|source| {
+                let mut source = SourceState::new(source);
+                source.control = control::ControlState::new(config.control_enabled, process_id);
+                source.view(now_ns, config.stale_after_ms)
+            })
+            .collect(),
+    }
+}
+
 async fn finish_http(
     server: impl Future<Output = std::io::Result<()>>,
     mut shutdown: watch::Receiver<bool>,
@@ -767,6 +869,8 @@ async fn poll_sources(
     latest: watch::Sender<Snapshot>,
     clock: Arc<dyn RobotClock>,
     mut shutdown: watch::Receiver<bool>,
+    mut commands: mpsc::Receiver<control::Envelope>,
+    process_id: String,
 ) -> Result<(), String> {
     let timeout = Duration::from_millis(config.rpc_timeout_ms);
     let mut sources: Vec<(SourceState, RobotControlClient<Channel>)> = config
@@ -777,20 +881,36 @@ async fn poll_sources(
                 .map_err(|error| error.to_string())?
                 .connect_timeout(timeout)
                 .timeout(timeout);
-            Ok((
-                SourceState::new(source),
-                RobotControlClient::new(endpoint.connect_lazy()),
-            ))
+            let mut source = SourceState::new(source);
+            source.control = control::ControlState::new(config.control_enabled, &process_id);
+            Ok((source, RobotControlClient::new(endpoint.connect_lazy())))
         })
         .collect::<Result<_, String>>()?;
     let mut interval = tokio::time::interval(Duration::from_millis(config.poll_interval_ms));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
+        if *shutdown.borrow() {
+            break;
+        }
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = interval.tick() => {},
+            command = commands.recv() => {
+                let Some(command) = command else { break; };
+                let reply = if let Some((source, client)) = sources.iter_mut().find(|(source, _)| source.source.id == command.request.bus_id) {
+                    let state = source.view(clock.now().0, config.stale_after_ms);
+                    source.control.dispatch(command.request, &source.source, &state, control::RpcContext { client,
+                        token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown }).await
+                } else { control::Reply::rejected(Some(&command.request), 0, "未知总线，未发送") };
+                let _ = command.reply.send(reply);
+                publish_snapshot(&sources, &latest, clock.now().0, config.stale_after_ms);
+                continue;
+            },
         }
         for (source, client) in &mut sources {
+            if *shutdown.borrow() {
+                return Ok(());
+            }
             let request = GetStateRequest {
                 hardware_id: source.source.hardware_id.clone(),
             };
@@ -803,22 +923,71 @@ async fn poll_sources(
                 },
             };
             source.accept(result, clock.now().0);
+            source
+                .control
+                .poll_task(client, timeout, &mut shutdown)
+                .await;
         }
-        let now_ns = clock.now().0;
-        let snapshot = Snapshot {
-            stale_after_ms: config.stale_after_ms,
-            buses: sources
-                .iter()
-                .map(|(source, _)| source.view(now_ns, config.stale_after_ms))
-                .collect(),
-        };
-        if latest.send(snapshot).is_err() {
+        if !publish_snapshot(&sources, &latest, clock.now().0, config.stale_after_ms) {
             break;
         }
     }
     Ok(())
 }
 
+fn publish_snapshot(
+    sources: &[(SourceState, RobotControlClient<Channel>)],
+    latest: &watch::Sender<Snapshot>,
+    now_ns: u64,
+    stale_after_ms: u64,
+) -> bool {
+    latest
+        .send(Snapshot {
+            stale_after_ms,
+            buses: sources
+                .iter()
+                .map(|(source, _)| source.view(now_ns, stale_after_ms))
+                .collect(),
+        })
+        .is_ok()
+}
+
+fn same_origin(headers: &HeaderMap) -> bool {
+    let (Some(origin), Some(host)) = (
+        headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()),
+        headers.get(header::HOST).and_then(|v| v.to_str().ok()),
+    ) else {
+        return false;
+    };
+    let Ok(uri) = origin.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    matches!(uri.scheme_str(), Some("http" | "https"))
+        && uri
+            .authority()
+            .is_some_and(|authority| authority.as_str().eq_ignore_ascii_case(host))
+        && matches!(
+            uri.path_and_query()
+                .map(axum::http::uri::PathAndQuery::as_str),
+            None | Some("/")
+        )
+}
+
+async fn send_control_reply(
+    socket: &mut WebSocket,
+    reply: control::Reply,
+    shutdown: &mut watch::Receiver<bool>,
+) -> bool {
+    let Ok(text) = serde_json::to_string(&reply) else {
+        return false;
+    };
+    bounded_ws_io(socket.send(Message::Text(text.into())), shutdown).await
+}
+
 #[cfg(test)]
 #[path = "status_web_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "status_control_integration_tests.rs"]
+mod control_integration_tests;

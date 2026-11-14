@@ -12,7 +12,7 @@
 | 右侧单关节运动片段 | [xlerobot-bus2-motion.toml](xlerobot-bus2-motion.toml) | 仅含右臂6个位置关节的运动约束，供原维护工具与bus2合成候选；三轮目标保持raw 0，不配置轮位置范围，不单独安装 |
 | 单关节软件夹具 | [single-joint-smoke.toml](single-joint-smoke.toml) | 两关节mock配置，只用于新载荷、限位、取消和到位测试；其中数值不是XLeRobot实机运动参数 |
 | 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
-| 只读状态页 | [xlerobot-status.toml](xlerobot-status.toml) | 独立HTTP/WebSocket服务，引用原bus1/bus2配置及同机网关50061/50062；无Web token，HTTP默认回环、部署可指定IPv4私网地址，gRPC始终回环；不启动硬件，未纳入S0安装包 |
+| 状态与控制Web（默认只读） | [xlerobot-status.toml](xlerobot-status.toml) | 独立HTTP/WebSocket服务，共享bus1/bus2的同机gRPC连接；`[control].enabled=false`保持只读，无浏览器token；HTTP可指定IPv4私网地址，gRPC始终回环，不启动机器人服务，未纳入S0安装包 |
 | 只读部署角色 | [rpc-roles-status.toml](rpc-roles-status.toml) | 候选网关使用空凭据表与viewer/read_state，沿既有GetState免令牌语义；不授予控制权限，不覆盖原rpc-roles.toml |
 | 现有 arm-only 部署 | [左臂](xlerobot-left-arm.toml)、[右臂](xlerobot-right-arm.toml)、[RPC 角色](rpc-roles.toml) | 仍被服务、部署工具和受监督 demo 使用，保留路径 |
 | 模拟与集成测试 | `xlerobot.toml`、`*-smoke.toml`、`clear-estop-e2e.toml` | 由对应测试明确选择；`xlerobot.toml` 是旧 schema/mock 示例，不是实机入口 |
@@ -34,3 +34,9 @@
 用`uv run --no-project python scripts/build_package.py --list`列出选项；构建时指定`--package <选项>`、`--target-dir <隔离Cargo缓存绝对路径>`和`--output-dir <输出绝对路径>`。已有组件的包组合只改矩阵，新增硬件能力仍须实现和验证相应适配器。
 
 打包要求源码干净，使用根Cargo版本、当前提交和实际nightly身份，核对Cargo输出的生产feature及ARM64 ELF。包包含程序、所选配置和unit模板、helper、VERSION及SHA清单；不包含校准、固定Python环境或保护状态。模板保留现有安装布局，须经候选冻结和现场预检后安装。命名为`robot-system-v<版本>+<7位提交SHA>-<选项>.tar.gz`，同名产物拒绝覆盖；生成包不创建Git标签或启动服务。
+
+## Web控制候选
+
+现有状态配置的`[control].enabled`缺省为`false`。软件候选显式启用时，各`[[sources]]`通过`control = { motion_config = "xlerobot-bus1-motion.toml" }`引用该侧已有运动片段；右侧对应bus2片段，不复制限位或±20raw容差。服务端沿既有`ROBOT_TOKEN`与gRPC角色校验，凭据不发给浏览器；正式只读网关不会因Web开关获得控制权限。
+
+控制仍复用一个Web进程、每源一条gRPC连接和共享任务快照，不按页面创建S1、网关、采样或任务订阅。网页使能暂不开放：现有S1可能保持旧启动锚点，必须先沿原维护入口完成真实锚点及混合命令检查。启用控制配置不替代运行入口准备、部署或当次实机授权。

@@ -31,6 +31,7 @@ fn source(bus: u8, endpoint: String) -> Source {
         hardware_id: hardware.id.clone(),
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
+        motion: None,
     }
 }
 
@@ -276,11 +277,13 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
         stale_after_ms: stale,
         rpc_timeout_ms: 500,
         preview: camera::Config::default(),
+        control: control::FileConfig::default(),
         sources: vec![SourceFile {
             id: "bus1".into(),
             label: "左侧".into(),
             config: "bus1.toml".into(),
             endpoint: endpoint.into(),
+            control: None,
         }],
     };
     for listen in [
@@ -323,6 +326,7 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
         label: "右侧".into(),
         config: "bus2.toml".into(),
         endpoint: "http://127.0.0.1:50061".into(),
+        control: None,
     });
     assert!(validate_file(&config).is_err());
 }
@@ -394,6 +398,8 @@ pub(super) fn web_state() -> (
             clock: Arc::new(MockClock::new(MonoRawNs(1))),
             cameras: camera::CameraState::new(camera::Config::default(), Vec::new()),
             resources: resources::ResourcesState::new(Arc::new(MockClock::new(MonoRawNs(1)))),
+            commands: mpsc::channel(control::MAILBOX_CAPACITY).0,
+            control_enabled: false,
         },
         tx,
         stop,
@@ -840,6 +846,8 @@ async fn fake_grpc_to_http_and_websocket_never_calls_control() {
         sources: vec![source(1, endpoint)],
         preview: camera::Config::default(),
         cameras: Vec::new(),
+        control_enabled: false,
+        control_token: None,
     };
     let web = tokio::spawn(serve(listener, config, async {
         let _ = shutdown.await;
@@ -964,6 +972,8 @@ async fn browser_preview_fake_sources() {
         sources,
         preview: camera::Config::default(),
         cameras: Vec::new(),
+        control_enabled: false,
+        control_token: None,
     };
     serve(
         listener,
