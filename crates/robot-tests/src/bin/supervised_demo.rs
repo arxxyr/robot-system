@@ -277,6 +277,7 @@ struct Args {
     single_joint_max_offset_rad: Option<f64>,
     web_url: Option<String>,
     web_bus_id: Option<String>,
+    web_enable: bool,
     ack_safety_checklist: bool,
 }
 
@@ -319,6 +320,7 @@ impl Args {
             single_joint_max_offset_rad: None,
             web_url: None,
             web_bus_id: None,
+            web_enable: false,
             ack_safety_checklist: false,
         };
         let mut phase_seen = false;
@@ -438,6 +440,12 @@ impl Args {
                     }
                     args.web_bus_id = Some(value(raw, &mut i, "--web-bus-id")?.into());
                 }
+                "--web-enable" => {
+                    if args.web_enable {
+                        return Err("--web-enable 不得重复".into());
+                    }
+                    args.web_enable = true;
+                }
                 "--ack-safety-checklist" => args.ack_safety_checklist = true,
                 "-h" | "--help" => return Err("HELP".into()),
                 other => return Err(format!("unknown option {other:?}")),
@@ -498,7 +506,7 @@ impl Args {
         {
             return Err("单关节目标与时长参数仅用于 single-joint".into());
         }
-        if args.web_url.is_some() || args.web_bus_id.is_some() {
+        if args.web_url.is_some() || args.web_bus_id.is_some() || args.web_enable {
             if !cfg!(feature = "supervised-s0") || args.phase != Phase::SingleJoint {
                 return Err("Web提交仅用于supervised-s0的single-joint".into());
             }
@@ -566,6 +574,7 @@ OPTIONS:
   --cancel-after-ms <MS>        single-joint可选；任务中途仅取消一次，验证最后发布目标保持后断扭
   --web-url <ws://IP:PORT/api/ws> single-joint可选；仅任务提交走已有Web，其余监督与收尾不变
   --web-bus-id <ID>              与web-url成对指定，沿Web状态配置的总线标识
+  --web-enable                   使能也走本次Web连接；拒绝或未知不回退直接RPC
   --single-joint-max-offset-rad <RAD>  仅single-joint显式计划幅度预算，默认0.087；最大π/6（30°）
   --probe-offset-rad <F>         探针偏移（默认 {DEFAULT_PROBE_OFFSET_RAD}；硬上限 {MAX_PROBE_OFFSET_RAD}，超限拒绝）
   --probe-joint <NAME>           探针关节名（默认自动选 *wrist_roll*）
@@ -1728,6 +1737,8 @@ struct SideRt {
     #[cfg(feature = "supervised-s0")]
     web_submission: Option<supervised_web::Session>,
     #[cfg(feature = "supervised-s0")]
+    web_enable: bool,
+    #[cfg(feature = "supervised-s0")]
     hold_check: Option<HoldCheck>,
     #[cfg(feature = "supervised-s0")]
     command_observer: Option<CommandObserver>,
@@ -1805,6 +1816,8 @@ impl SideRt {
             last_submission_id: None,
             #[cfg(feature = "supervised-s0")]
             web_submission: None,
+            #[cfg(feature = "supervised-s0")]
+            web_enable: false,
             #[cfg(feature = "supervised-s0")]
             hold_check: None,
             #[cfg(feature = "supervised-s0")]
@@ -1938,6 +1951,19 @@ impl TorqueOps for SideRt {
     async fn enable(&mut self) -> Result<(), String> {
         #[cfg(feature = "supervised-s0")]
         let initial_stamp = self.hold_check.as_ref().map(|check| check.last_stamp_ns);
+        #[cfg(feature = "supervised-s0")]
+        if self.web_enable {
+            let web = self.web_submission.as_mut().ok_or("本次Web使能连接缺失")?;
+            tokio::time::timeout(
+                CLIENT_HARD_TIMEOUT,
+                web.enable(initial_stamp.ok_or("Web使能缺少本次锚点时间")?),
+            )
+            .await
+            .map_err(|_| "Web使能结果未知，不重试；转原断扭收尾")??;
+        } else {
+            self.set_enabled(true, "enable").await?;
+        }
+        #[cfg(not(feature = "supervised-s0"))]
         self.set_enabled(true, "enable").await?;
         let deadline = std::time::Instant::now() + ENABLE_WAIT;
         let mut last_mode = S0Mode::Unspecified as i32;
@@ -3211,6 +3237,7 @@ async fn phase_single_joint(rt: &mut SideRt, args: &Args) -> Result<(), String> 
         plan.max_offset_rad
     );
     rt.hold_check = Some(check);
+    rt.web_enable = args.web_enable;
     if let (Some(url), Some(bus_id)) = (&args.web_url, &args.web_bus_id) {
         let config = supervised_web::Config::new(url, bus_id)?;
         let robot_id = &rt.hold_check.as_ref().ok_or("固定锚点检查器缺失")?.robot_id;
@@ -4820,7 +4847,7 @@ mod tests {
             assert!(started.elapsed() < Duration::from_secs(1), "必须墙钟有界");
             assert!(err.contains("exec stage"), "{err}");
             assert!(
-                ops.calls.contains(&"cancel:action-1".to_string()),
+                ops.calls.iter().any(|call| call == "cancel:action-1"),
                 "超时必须保留 action id 并 cancel：{:?}",
                 ops.calls
             );
@@ -4867,8 +4894,8 @@ mod tests {
             .await
             .expect("串行会死等——必须并发完成");
             assert!(out.is_err());
-            assert!(left.calls.contains(&"estop".to_string()));
-            assert!(right.calls.contains(&"estop".to_string()));
+            assert!(left.calls.iter().any(|call| call == "estop"));
+            assert!(right.calls.iter().any(|call| call == "estop"));
         });
     }
 
@@ -5935,11 +5962,19 @@ mod tests {
 
         #[test]
         fn web_submission_arguments_are_paired_and_single_joint_only() {
+            let mut enable_only = raw_args();
+            enable_only.push("--web-enable".into());
+            assert!(Args::parse_from(&enable_only).is_err());
             let mut args = raw_args();
             args.extend(["--web-url".into(), "ws://10.0.1.40:8080/api/ws".into()]);
             assert!(Args::parse_from(&args).is_err());
             args.extend(["--web-bus-id".into(), "bus1".into()]);
             assert!(Args::parse_from(&args).is_ok());
+            args.push("--web-enable".into());
+            assert!(Args::parse_from(&args).unwrap().web_enable);
+            args.push("--web-enable".into());
+            assert!(Args::parse_from(&args).is_err());
+            args.pop();
             let phase = args
                 .iter()
                 .position(|value| value == "single-joint")

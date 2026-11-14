@@ -32,6 +32,7 @@ fn source(bus: u8, endpoint: String) -> Source {
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
+        enable_alignment_tolerance_rad: None,
     }
 }
 

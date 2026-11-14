@@ -262,8 +262,7 @@ fn checked_motion_target(
     Ok(target)
 }
 
-#[cfg(feature = "backend-scripted")]
-fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {
+pub(crate) fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {
     position.is_finite()
         && position.abs() <= f64::from(f32::MAX)
         && position >= limit.min_position_rad
@@ -274,7 +273,6 @@ fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {
 
 /// 沿 S0 位置命令的实际 f32 编码，再提升以供同一轨迹、保持及到位比较使用。
 /// 范围校验同时检查转换前后；此转换不裁剪越界值。
-#[cfg(feature = "backend-scripted")]
 #[allow(clippy::cast_possible_truncation)]
 pub(crate) fn position_for_s0(position: f64) -> f64 {
     f64::from(position as f32)

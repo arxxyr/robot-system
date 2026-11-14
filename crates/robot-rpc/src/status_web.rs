@@ -29,6 +29,8 @@ use crate::proto::{
     GetStateRequest, RobotState, S0ControlLink, S0Mode, S0OutputMode, S0SafetyState,
 };
 
+#[path = "status_command.rs"]
+mod command;
 #[path = "status_control.rs"]
 mod control;
 
@@ -108,6 +110,7 @@ struct Source {
     mixed_raw: bool,
     layout: HardwareLayout,
     motion: Option<control::MotionConfig>,
+    enable_alignment_tolerance_rad: Option<f64>,
 }
 
 /// 已校验的状态与可选控制配置；所有文件读取均在启动期完成。
@@ -125,6 +128,10 @@ pub struct StatusConfig {
 
 impl StatusConfig {
     /// 路径以状态配置所在目录为基准，身份及布局只从原机器人TOML派生。
+    #[allow(
+        clippy::too_many_lines,
+        reason = "保持原配置的启动期单次读取与关联校验顺序"
+    )]
     pub fn load(path: &Path) -> Result<Self, String> {
         let body = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
         let file: ConfigFile = toml::from_str(&body).map_err(|error| error.to_string())?;
@@ -191,8 +198,11 @@ impl StatusConfig {
                 mixed_raw: hardware.feetech_bus2_mixed_raw,
                 layout,
                 motion: None,
+                enable_alignment_tolerance_rad: None,
             };
             if let Some(control) = entry.control {
+                control.validate()?;
+                source.enable_alignment_tolerance_rad = control.enable_alignment_tolerance_rad;
                 source.motion = Some(control::MotionConfig::load(
                     &base.join(control.motion_config),
                     &source,
@@ -370,6 +380,7 @@ struct SourceState {
     invalid: bool,
     error: Option<String>,
     control: control::ControlState,
+    commands: Option<command::Mirrors>,
 }
 
 impl SourceState {
@@ -381,6 +392,7 @@ impl SourceState {
             invalid: false,
             error: Some("等待首个有效状态".into()),
             control: control::ControlState::new(false, ""),
+            commands: None,
         }
     }
 
@@ -477,6 +489,26 @@ impl SourceState {
                 }
             })
             .collect();
+        let mut control = self.control.view(self.source.motion.as_ref());
+        if control.enabled && !control.busy {
+            let enable = if self.source.enable_alignment_tolerance_rad.is_none() {
+                Err("未配置使能原位对齐容差".to_owned())
+            } else if data_status == "fresh" {
+                self.commands
+                    .as_ref()
+                    .ok_or_else(|| "S1命令镜像未开启".to_owned())
+                    .and_then(|commands| {
+                        let state = self.last.as_ref().ok_or("尚无完整反馈")?;
+                        commands.check(&self.source, state, now_ns)
+                    })
+            } else {
+                Err("使能前需要新鲜、有效的完整反馈".to_owned())
+            };
+            control.can_enable = enable.is_ok();
+            control.enable_reason = enable
+                .err()
+                .unwrap_or_else(|| "原位已对齐；使能时仍会重新核对两帧".into());
+        }
         BusView {
             id: self.source.id.clone(),
             label: self.source.label.clone(),
@@ -505,7 +537,7 @@ impl SourceState {
                 .map(|last| enum_name::<S0SafetyState>(last.safety_state)),
             fault_code: self.reported.as_ref().map(|last| last.fault_code),
             joints,
-            control: self.control.view(self.source.motion.as_ref()),
+            control,
         }
     }
 }
@@ -868,9 +900,48 @@ async fn poll_sources(
     config: StatusConfig,
     latest: watch::Sender<Snapshot>,
     clock: Arc<dyn RobotClock>,
+    shutdown: watch::Receiver<bool>,
+    commands: mpsc::Receiver<control::Envelope>,
+    process_id: String,
+) -> Result<(), String> {
+    let mirrors = (config.control_enabled
+        && config
+            .sources
+            .iter()
+            .any(|source| source.enable_alignment_tolerance_rad.is_some()))
+    .then(|| command::Mirrors::new(config.sources.clone()));
+    let (stop_mirror, stopped) = watch::channel(false);
+    let worker = mirrors
+        .as_ref()
+        .map(|mirror| mirror.start(stopped))
+        .transpose()
+        .map_err(|error| format!("命令观测线程启动失败：{error}"))?;
+    let result = poll_sources_inner(
+        config, latest, clock, shutdown, commands, process_id, mirrors,
+    )
+    .await;
+    let _ = stop_mirror.send(true);
+    let joined = match worker {
+        Some(worker) => tokio::task::spawn_blocking(move || {
+            worker
+                .join()
+                .map_err(|_| "命令观测线程异常退出".to_owned())?
+        })
+        .await
+        .map_err(|error| format!("命令观测线程回收异常：{error}"))?,
+        None => Ok(()),
+    };
+    result.and(joined)
+}
+
+async fn poll_sources_inner(
+    config: StatusConfig,
+    latest: watch::Sender<Snapshot>,
+    clock: Arc<dyn RobotClock>,
     mut shutdown: watch::Receiver<bool>,
     mut commands: mpsc::Receiver<control::Envelope>,
     process_id: String,
+    mirrors: Option<command::Mirrors>,
 ) -> Result<(), String> {
     let timeout = Duration::from_millis(config.rpc_timeout_ms);
     let mut sources: Vec<(SourceState, RobotControlClient<Channel>)> = config
@@ -883,6 +954,7 @@ async fn poll_sources(
                 .timeout(timeout);
             let mut source = SourceState::new(source);
             source.control = control::ControlState::new(config.control_enabled, &process_id);
+            source.commands.clone_from(&mirrors);
             Ok((source, RobotControlClient::new(endpoint.connect_lazy())))
         })
         .collect::<Result<_, String>>()?;
@@ -900,7 +972,8 @@ async fn poll_sources(
                 let reply = if let Some((source, client)) = sources.iter_mut().find(|(source, _)| source.source.id == command.request.bus_id) {
                     let state = source.view(clock.now().0, config.stale_after_ms);
                     source.control.dispatch(command.request, &source.source, &state, control::RpcContext { client,
-                        token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown }).await
+                        token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown,
+                        commands: mirrors.as_ref(), clock: clock.as_ref() }).await
                 } else { control::Reply::rejected(Some(&command.request), 0, "未知总线，未发送") };
                 let _ = command.reply.send(reply);
                 publish_snapshot(&sources, &latest, clock.now().0, config.stale_after_ms);

@@ -1,4 +1,4 @@
-//! 受监督单关节任务的单次WebSocket提交；启用、观察和收尾沿原维护调用链。
+//! 受监督单关节任务的WebSocket使能与提交；观察和失败收尾沿原维护调用链。
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -61,6 +61,7 @@ pub(super) struct Session {
     robot_id: String,
     hardware_id: String,
     layout_id: String,
+    enable_attempted: bool,
 }
 
 struct Ready {
@@ -103,7 +104,97 @@ impl Session {
             robot_id: robot_id.into(),
             hardware_id: hardware_id.into(),
             layout_id: layout_id.to_string(),
+            enable_attempted: false,
         })
+    }
+
+    /// 本次使能仅发一次；未知结果不重发、不回退直接RPC，调用方执行原收尾。
+    pub(super) async fn enable(&mut self, minimum_stamp_ns: u64) -> Result<(), String> {
+        if self.enable_attempted {
+            return Err("本次Web使能已尝试，不得重发".into());
+        }
+        self.enable_attempted = true;
+        // 先移出连接；future取消或失败会关闭它，不能继续提交运动。
+        let mut socket = self.socket.take().ok_or("Web使能连接缺失")?;
+        let ready = loop {
+            let value = receive_json(&mut socket).await?;
+            if let Some(ready) = self.ready_for_enable(&value, minimum_stamp_ns)? {
+                break ready;
+            }
+            tokio::task::yield_now().await;
+        };
+        let expected_revision = ready
+            .revision
+            .checked_add(1)
+            .ok_or("Web版本耗尽，未发送使能")?
+            .to_string();
+        let request_id = uuidv7_compat();
+        let request = json!({
+            "type": "control", "operation": "enable", "request_id": request_id,
+            "bus_id": self.config.bus_id, "process_id": ready.process_id,
+            "revision": ready.revision.to_string(),
+        });
+        println!(
+            "WEB_ENABLE_REQUEST request_id={request_id} bus_id={}",
+            self.config.bus_id
+        );
+        socket
+            .send(Message::Text(request.to_string().into()))
+            .await
+            .map_err(|error| format!("Web使能发送结果未知，不重试：{error}"))?;
+        loop {
+            let value = receive_json(&mut socket).await?;
+            if value["type"] == "control_result" {
+                if value["request_id"] != request_id
+                    || value["bus_id"] != self.config.bus_id
+                    || value["operation"] != "enable"
+                    || value["status"] != "accepted"
+                    || value["revision"].as_str() != Some(expected_revision.as_str())
+                    || !value["action_id"].is_null()
+                {
+                    return Err(format!("Web使能未确认，不重试：{}", value["message"]));
+                }
+                println!("WEB_ENABLE_ACCEPTED request_id={request_id}");
+                self.socket = Some(socket);
+                return Ok(());
+            }
+            if self.bus(&value)?["control"]["process_id"] != ready.process_id {
+                return Err("Web进程变化，使能结果未知，不重试".into());
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn ready_for_enable(
+        &self,
+        value: &Value,
+        minimum_stamp_ns: u64,
+    ) -> Result<Option<Ready>, String> {
+        let bus = self.bus(value)?;
+        let control = &bus["control"];
+        if control["enabled"] != true || control["busy"] != false {
+            return Err("Web控制未开放或忙碌，未发送使能".into());
+        }
+        let stamp = bus["stamp_ns"].as_str().and_then(|v| v.parse::<u64>().ok());
+        if bus["data_status"] != "fresh"
+            || bus["mode"] != "Safe"
+            || bus["safety_state"] != "TorqueOffConfirmed"
+            || bus["fault_code"] != 0
+            || stamp.is_none_or(|v| v < minimum_stamp_ns)
+            || control["can_enable"] != true
+        {
+            return Ok(None);
+        }
+        let process_id = control["process_id"].as_str().ok_or("Web进程身份缺失")?;
+        robot_rpc::auth::validate_request_id(process_id).map_err(|e| e.to_string())?;
+        let revision = control["revision"]
+            .as_str()
+            .and_then(|v| v.parse().ok())
+            .ok_or("Web版本无效")?;
+        Ok(Some(Ready {
+            process_id: process_id.into(),
+            revision,
+        }))
     }
 
     /// 调用方原4秒提交期限覆盖等待快照、发送与回执；取消future会释放唯一连接。
@@ -409,6 +500,7 @@ mod tests {
             robot_id: "robot".into(),
             hardware_id: "arm".into(),
             layout_id: "42".into(),
+            enable_attempted: false,
         };
         assert!(session.ready(&snapshot("robot"), 101).unwrap().is_none());
         for field in [
@@ -443,6 +535,183 @@ mod tests {
         assert!(session.submit(spec(), 100, &mut known).await.is_err());
         finish(server).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn web_enable_and_move_share_one_connection_and_each_send_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+                .await
+                .unwrap();
+            let mut value = snapshot("robot");
+            value["buses"][0]["mode"] = json!("Safe");
+            value["buses"][0]["safety_state"] = json!("TorqueOffConfirmed");
+            value["buses"][0]["control"]["can_enable"] = json!(true);
+            socket
+                .send(Message::Text(value.to_string().into()))
+                .await
+                .unwrap();
+            let enable = receive_json(&mut socket).await.unwrap();
+            assert_eq!(enable["operation"], "enable");
+            assert_eq!(enable["revision"], "8");
+            let reply = json!({"type":"control_result", "request_id":enable["request_id"],
+                "bus_id":"bus1", "operation":"enable", "revision":"9", "status":"accepted"});
+            socket
+                .send(Message::Text(reply.to_string().into()))
+                .await
+                .unwrap();
+            value["buses"][0]["mode"] = json!("Enabled");
+            value["buses"][0]["safety_state"] = json!("TorqueOn");
+            value["buses"][0]["stamp_ns"] = json!("101");
+            value["buses"][0]["control"]["revision"] = json!("9");
+            socket
+                .send(Message::Text(value.to_string().into()))
+                .await
+                .unwrap();
+            let request = receive_json(&mut socket).await.unwrap();
+            assert_eq!(request["operation"], "move");
+            assert_eq!(request["revision"], "9");
+            assert_ne!(request["request_id"], enable["request_id"]);
+            let reply = json!({"type":"control_result", "request_id":request["request_id"],
+                "bus_id":"bus1", "operation":"move", "revision":"10", "status":"accepted",
+                "action_id":uuidv7_compat()});
+            socket
+                .send(Message::Text(reply.to_string().into()))
+                .await
+                .unwrap();
+            assert!(matches!(socket.next().await, Some(Ok(Message::Close(_)))));
+        });
+        let config = Config::new(&format!("ws://{address}/api/ws"), "bus1").unwrap();
+        let mut session = Session::connect(config, "robot", "arm", 42).await.unwrap();
+        tokio::time::timeout(CLIENT_HARD_TIMEOUT, session.enable(100))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(session.enable(100).await.is_err());
+        let mut known = None;
+        let action =
+            tokio::time::timeout(CLIENT_HARD_TIMEOUT, session.submit(spec(), 101, &mut known))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(known.as_deref(), Some(action.as_str()));
+        finish(server).await;
+    }
+
+    #[tokio::test]
+    async fn unknown_web_enable_closes_without_move_or_retry() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+                .await
+                .unwrap();
+            let mut value = snapshot("robot");
+            value["buses"][0]["mode"] = json!("Safe");
+            value["buses"][0]["safety_state"] = json!("TorqueOffConfirmed");
+            value["buses"][0]["control"]["can_enable"] = json!(true);
+            socket
+                .send(Message::Text(value.to_string().into()))
+                .await
+                .unwrap();
+            let request = receive_json(&mut socket).await.unwrap();
+            assert_eq!(request["operation"], "enable");
+            let reply = json!({"type":"control_result", "request_id":request["request_id"],
+                "bus_id":"bus1", "operation":"enable", "revision":"9", "status":"unknown"});
+            socket
+                .send(Message::Text(reply.to_string().into()))
+                .await
+                .unwrap();
+            assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+        });
+        let config = Config::new(&format!("ws://{address}/api/ws"), "bus1").unwrap();
+        let mut session = Session::connect(config, "robot", "arm", 42).await.unwrap();
+        assert!(
+            tokio::time::timeout(CLIENT_HARD_TIMEOUT, session.enable(100))
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert!(session.enable(100).await.is_err());
+        assert!(session.submit(spec(), 100, &mut None).await.is_err());
+        finish(server).await;
+    }
+
+    #[tokio::test]
+    async fn enable_budget_cancellation_drops_socket_and_never_retries() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sent, received) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+                .await
+                .unwrap();
+            let mut value = snapshot("robot");
+            value["buses"][0]["mode"] = json!("Safe");
+            value["buses"][0]["safety_state"] = json!("TorqueOffConfirmed");
+            value["buses"][0]["control"]["can_enable"] = json!(true);
+            socket
+                .send(Message::Text(value.to_string().into()))
+                .await
+                .unwrap();
+            assert_eq!(
+                receive_json(&mut socket).await.unwrap()["operation"],
+                "enable"
+            );
+            // 确定请求已发出后取消客户端future，等价预算超时的丢弃语义，无脆弱sleep。
+            sent.send(()).unwrap();
+            assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+        });
+        let config = Config::new(&format!("ws://{address}/api/ws"), "bus1").unwrap();
+        let mut session = Session::connect(config, "robot", "arm", 42).await.unwrap();
+        {
+            let enable = session.enable(100);
+            tokio::pin!(enable);
+            tokio::select! {
+                result = &mut enable => panic!("未回执不得完成：{result:?}"),
+                result = received => result.unwrap(),
+            }
+        }
+        assert!(session.enable(100).await.is_err());
+        assert!(session.submit(spec(), 100, &mut None).await.is_err());
+        finish(server).await;
+    }
+
+    #[tokio::test]
+    async fn exhausted_revision_never_sends_enable() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+                .await
+                .unwrap();
+            let mut value = snapshot("robot");
+            value["buses"][0]["mode"] = json!("Safe");
+            value["buses"][0]["safety_state"] = json!("TorqueOffConfirmed");
+            value["buses"][0]["control"]["can_enable"] = json!(true);
+            value["buses"][0]["control"]["revision"] = json!(u64::MAX.to_string());
+            socket
+                .send(Message::Text(value.to_string().into()))
+                .await
+                .unwrap();
+            assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+        });
+        let config = Config::new(&format!("ws://{address}/api/ws"), "bus1").unwrap();
+        let mut session = Session::connect(config, "robot", "arm", 42).await.unwrap();
+        assert!(
+            tokio::time::timeout(CLIENT_HARD_TIMEOUT, session.enable(100))
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("版本耗尽")
+        );
+        finish(server).await;
     }
 
     #[tokio::test]

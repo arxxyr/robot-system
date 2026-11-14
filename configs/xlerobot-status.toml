@@ -26,11 +26,12 @@ label = "左臂与头部"
 config = "xlerobot-bus1.toml"
 endpoint = "http://127.0.0.1:50061"
 # 控制候选按需引用同一份运动约束；单独添加此项不会开启控制。
-# control = { motion_config = "xlerobot-bus1-motion.toml" }
+# 使能前原位核对独立于到位容差；此值覆盖本机约4raw，未配置则禁止网页使能。
+# control = { motion_config = "xlerobot-bus1-motion.toml", enable_alignment_tolerance_rad = 0.0061365 }
 
 [[sources]]
 id = "bus2"
 label = "右臂与底盘"
 config = "xlerobot-bus2.toml"
 endpoint = "http://127.0.0.1:50062"
-# control = { motion_config = "xlerobot-bus2-motion.toml" }
+# control = { motion_config = "xlerobot-bus2-motion.toml", enable_alignment_tolerance_rad = 0.0061365 }

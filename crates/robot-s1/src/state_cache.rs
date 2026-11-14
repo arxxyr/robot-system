@@ -325,8 +325,8 @@ impl StateCacheHandle {
     /// 任一校验失败返 [`StaleOrMissing`]；调用方（coordinator）**不得**
     /// fallback 到 `anchor_bias`（Spec D3 第 1 条）。
     pub fn latest_fresh(&self, now: MonoRawNs) -> Result<Vec<f64>, StaleOrMissing> {
-        self.read_fresh_snapshot(|| now)
-            .map(|snapshot| snapshot.positions)
+        self.read_fresh_feedback(|| now)
+            .map(|(snapshot, _)| snapshot.positions)
     }
 
     /// 返回经过同一布局、新鲜度及有限值检查的完整反馈快照。
@@ -334,13 +334,23 @@ impl StateCacheHandle {
         &self,
         clock: &dyn RobotClock,
     ) -> Result<JointFeedbackSnapshot, StaleOrMissing> {
-        self.read_fresh_snapshot(|| clock.now())
+        self.read_fresh_feedback(|| clock.now())
+            .map(|(snapshot, _)| snapshot)
     }
 
-    fn read_fresh_snapshot(
+    /// 仅同帧确认 Safe、断扭及无故障时提供使能前的位置对齐快照。
+    pub(crate) fn latest_torque_off_positions(
+        &self,
+        clock: &dyn RobotClock,
+    ) -> Result<Option<Vec<f64>>, StaleOrMissing> {
+        self.read_fresh_feedback(|| clock.now())
+            .map(|(snapshot, torque_off)| torque_off.then_some(snapshot.positions))
+    }
+
+    fn read_fresh_feedback(
         &self,
         read_time: impl FnOnce() -> MonoRawNs,
-    ) -> Result<JointFeedbackSnapshot, StaleOrMissing> {
+    ) -> Result<(JointFeedbackSnapshot, bool), StaleOrMissing> {
         use robot_msg::msg::{
             JointState, S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState,
         };
@@ -361,7 +371,7 @@ impl StateCacheHandle {
         .map_err(StaleOrMissing::from)?;
         let state = flatbuffers::root::<JointState<'_>>(&frame.body)
             .map_err(|error| StaleOrMissing::Decode(error.to_string()))?;
-        Ok(JointFeedbackSnapshot {
+        let snapshot = JointFeedbackSnapshot {
             stamp_ns: state.stamp_ns(),
             positions,
             motion_ready: state.s0_mode() == S0Mode::Enabled
@@ -369,7 +379,11 @@ impl StateCacheHandle {
                 && state.s0_output_mode() == S0OutputMode::Active
                 && state.s0_safety_state() == S0SafetyState::TorqueOn
                 && state.s0_fault_code() == S0FaultCode::Unknown,
-        })
+        };
+        let torque_off = state.s0_mode() == S0Mode::Safe
+            && state.s0_safety_state() == S0SafetyState::TorqueOffConfirmed
+            && state.s0_fault_code() == S0FaultCode::Unknown;
+        Ok((snapshot, torque_off))
     }
 
     /// 线程 liveness 面（watchdog observer 读 `loop_tick_count`；test-only
@@ -691,6 +705,89 @@ mod tests {
     }
 
     // ----- ready 握手 + 读路径 -----
+
+    #[test]
+    fn torque_off_positions_require_same_frame_safe_confirmation_and_no_fault() {
+        use robot_core::time::MockClock;
+        use robot_msg::build_helpers::build_joint_state_with_s0;
+        use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
+
+        let handle = StateCacheHandle {
+            cfg: cfg(),
+            slot: Arc::new(CacheSlot::default()),
+            liveness: Arc::new(StateCacheLiveness::default()),
+            stop: Arc::new(AtomicBool::new(false)),
+            thread: None,
+        };
+        let now = MonoRawNs(5_000_000_000);
+        let clock = MockClock::new(now);
+        let states = [
+            (
+                S0Mode::Safe,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode::Unknown,
+                true,
+            ),
+            (
+                S0Mode::Enabled,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode::Unknown,
+                false,
+            ),
+            (
+                S0Mode::Unknown,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode::Unknown,
+                false,
+            ),
+            (
+                S0Mode::Safe,
+                S0SafetyState::StopCommanded,
+                S0FaultCode::Unknown,
+                false,
+            ),
+            (
+                S0Mode::Safe,
+                S0SafetyState::TorqueOn,
+                S0FaultCode::Unknown,
+                false,
+            ),
+            (
+                S0Mode::Safe,
+                S0SafetyState::TorqueUnknown,
+                S0FaultCode::Unknown,
+                false,
+            ),
+            (
+                S0Mode::Safe,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode(1),
+                false,
+            ),
+        ];
+        for (mode, safety, fault, accepted) in states {
+            let body = build_joint_state_with_s0(
+                LAYOUT,
+                now.0,
+                &[0.25; JOINTS],
+                &[],
+                &[],
+                "",
+                mode,
+                S0ControlLink::Unknown,
+                S0OutputMode::Unknown,
+                safety,
+                fault,
+            );
+            handle.slot.store(&body, now);
+            assert_eq!(
+                handle.latest_torque_off_positions(&clock).unwrap(),
+                accepted.then_some(vec![0.25; JOINTS]),
+                "mode={mode:?}, safety={safety:?}, fault={fault:?}",
+            );
+            assert!(!handle.latest_fresh_snapshot(&clock).unwrap().motion_ready);
+        }
+    }
 
     #[test]
     fn spawn_ready_then_latest_fresh_returns_positions() {

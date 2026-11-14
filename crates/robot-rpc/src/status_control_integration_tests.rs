@@ -10,7 +10,7 @@ use crate::proto::{
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{connect_async, tungstenite};
 use tonic::{Request as RpcRequest, Response as RpcResponse, Status};
@@ -35,6 +35,12 @@ struct Calls {
     cancelled: AtomicBool,
     completed: AtomicBool,
     status_unknown: AtomicBool,
+    torque_off: AtomicBool,
+    enable_unknown: AtomicBool,
+    mirror_mode: AtomicUsize,
+    restart_mirror_on_read: AtomicBool,
+    frozen_stamp_ns: AtomicU64,
+    mirror_sequence: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -62,9 +68,33 @@ impl RobotControl for FakeControl {
         request: RpcRequest<GetStateRequest>,
     ) -> Result<RpcResponse<RobotState>, Status> {
         self.calls.reads.fetch_add(1, Ordering::Relaxed);
+        if self
+            .calls
+            .restart_mirror_on_read
+            .swap(false, Ordering::Relaxed)
+        {
+            self.calls.mirror_mode.store(4, Ordering::Release);
+            tokio::time::timeout(Duration::from_millis(250), async {
+                while self.calls.mirror_mode.load(Ordering::Acquire) == 4 {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .map_err(|_| Status::unavailable("假镜像重建超时"))?;
+        }
         assert_eq!(request.into_inner().hardware_id, self.state.hardware_id);
         let mut state = self.state.clone();
-        state.stamp_ns = SystemClock::new().now().0;
+        let frozen_stamp_ns = self.calls.frozen_stamp_ns.load(Ordering::Acquire);
+        state.stamp_ns = if frozen_stamp_ns == 0 {
+            SystemClock::new().now().0
+        } else {
+            frozen_stamp_ns
+        };
+        if self.calls.torque_off.load(Ordering::Relaxed) {
+            state.mode = S0Mode::Safe as i32;
+            state.output_mode = S0OutputMode::Hold as i32;
+            state.safety_state = S0SafetyState::TorqueOffConfirmed as i32;
+        }
         Ok(RpcResponse::new(state))
     }
 
@@ -135,6 +165,10 @@ impl RobotControl for FakeControl {
         let command = request.into_inner();
         if command.enabled {
             self.calls.enables.fetch_add(1, Ordering::Relaxed);
+            self.calls.torque_off.store(false, Ordering::Relaxed);
+            if self.calls.enable_unknown.load(Ordering::Relaxed) {
+                return Err(Status::unavailable("假使能已执行但回执丢失"));
+            }
         } else {
             self.calls.disables.fetch_add(1, Ordering::Relaxed);
         }
@@ -195,6 +229,7 @@ fn source(bus: u8) -> Source {
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
+        enable_alignment_tolerance_rad: None,
     };
     source.motion = Some(
         control::MotionConfig::load(
@@ -207,6 +242,8 @@ fn source(bus: u8) -> Source {
 }
 
 struct Fixture {
+    #[cfg(target_os = "linux")]
+    sources: Vec<Source>,
     address: SocketAddr,
     calls: Vec<Arc<Calls>>,
     invoked: Arc<tokio::sync::Notify>,
@@ -214,10 +251,20 @@ struct Fixture {
     web_stop: oneshot::Sender<()>,
     web: tokio::task::JoinHandle<Result<(), String>>,
     gateways: Vec<(oneshot::Sender<()>, tokio::task::JoinHandle<()>)>,
+    mirrors: Option<(Arc<AtomicBool>, std::thread::JoinHandle<()>)>,
 }
 
 impl Fixture {
     async fn start(poll_ms: u64, hold_invoke: bool, rpc_timeout_ms: u64) -> Self {
+        Self::start_with_enable(poll_ms, hold_invoke, rpc_timeout_ms, false).await
+    }
+
+    async fn start_with_enable(
+        poll_ms: u64,
+        hold_invoke: bool,
+        rpc_timeout_ms: u64,
+        enable: bool,
+    ) -> Self {
         let mut sources = Vec::new();
         let mut calls = Vec::new();
         let mut gateways = Vec::new();
@@ -225,7 +272,12 @@ impl Fixture {
         let invoked = Arc::new(tokio::sync::Notify::new());
         for bus in 1..=2 {
             let mut source = source(bus);
+            if enable {
+                source.robot_id = format!("web_enable_{}", uuid::Uuid::now_v7().simple());
+                source.enable_alignment_tolerance_rad = Some(0.006_136_5);
+            }
             let count = Arc::new(Calls::default());
+            count.torque_off.store(enable, Ordering::Relaxed);
             let fake = FakeControl {
                 state: RobotState {
                     robot_id: source.robot_id.clone(),
@@ -270,6 +322,9 @@ impl Fixture {
         }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let mirrors = enable.then(|| spawn_mirrors(sources.clone(), calls.clone()));
+        #[cfg(target_os = "linux")]
+        let test_sources = sources.clone();
         let config = StatusConfig {
             listen: address,
             poll_interval_ms: poll_ms,
@@ -286,6 +341,8 @@ impl Fixture {
             let _ = shutdown.await;
         }));
         Self {
+            #[cfg(target_os = "linux")]
+            sources: test_sources,
             address,
             calls,
             invoked,
@@ -293,6 +350,7 @@ impl Fixture {
             web_stop,
             web,
             gateways,
+            mirrors,
         }
     }
 
@@ -330,7 +388,266 @@ impl Fixture {
                 .unwrap()
                 .unwrap();
         }
+        if let Some((stop, worker)) = self.mirrors {
+            stop.store(true, Ordering::Release);
+            tokio::task::spawn_blocking(move || worker.join().unwrap())
+                .await
+                .unwrap();
+        }
     }
+}
+
+/// 只在测试独立命名空间发布软件命令，通过生产transport生成观测镜像。
+fn spawn_mirrors(
+    sources: Vec<Source>,
+    calls: Vec<Arc<Calls>>,
+) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+    use iceoryx2::prelude::NodeBuilder;
+    use iceoryx2::service::ipc::Service;
+    use robot_msg::{markers, msg};
+    use robot_transport::Publisher;
+    use robot_transport::iceoryx2::{TopicClass, publisher};
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopped = Arc::clone(&stop);
+    let worker = std::thread::spawn(move || {
+        let mut config = iceoryx2::config::Config::default();
+        config.global.node.cleanup_dead_nodes_on_creation = false;
+        config.global.node.cleanup_dead_nodes_on_destruction = false;
+        let node = NodeBuilder::new()
+            .config(&config)
+            .create::<Service>()
+            .unwrap();
+        let open = |source: &Source| {
+            publisher::<markers::JointCommand>(
+                &node,
+                &format!("/{}/s1/{}/command", source.robot_id, source.hardware_id),
+                TopicClass::S0Command,
+            )
+            .unwrap()
+        };
+        let mut publishers: Vec<_> = sources.iter().map(|source| Some(open(source))).collect();
+        let mut seq = 1;
+        while !stopped.load(Ordering::Acquire) {
+            for (index, source) in sources.iter().enumerate() {
+                let mode = calls[index].mirror_mode.load(Ordering::Acquire);
+                if mode == 4 {
+                    drop(publishers[index].take());
+                    publishers[index] = Some(open(source));
+                    calls[index].mirror_mode.store(0, Ordering::Release);
+                }
+                let publisher = publishers[index].as_mut().unwrap();
+                let stamp =
+                    SystemClock
+                        .now()
+                        .0
+                        .saturating_sub(if mode == 2 { 300_000_000 } else { 0 });
+                let positions =
+                    vec![if mode == 3 { 0.02 } else { 0.0 }; source.layout.joints.len()];
+                let layout = source.layout.layout_id.wrapping_add(u64::from(mode == 1));
+                let body = if source.mixed_raw {
+                    robot_msg::build_helpers::build_mixed_joint_command(
+                        layout,
+                        &positions,
+                        &vec![0; positions.len()],
+                        stamp + 200_000_000,
+                        0,
+                        seq,
+                    )
+                } else {
+                    robot_msg::build_helpers::build_joint_command(
+                        layout,
+                        msg::ControlMode::Position,
+                        &positions,
+                        stamp + 200_000_000,
+                        0,
+                        msg::StaleAction::Hold,
+                        seq,
+                    )
+                };
+                let mut writer = publisher.loan(8192).unwrap();
+                writer.set_stamp_ns(stamp);
+                writer.set_seq(seq);
+                writer.set_source_id(2);
+                writer.set_body_bytes(&body);
+                writer.publish().unwrap();
+                calls[index].mirror_sequence.store(seq, Ordering::Release);
+            }
+            seq += 1;
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    });
+    (stop, worker)
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn enable_uses_real_mirror_guard_and_two_pages_dispatch_once() {
+    let fixture = Fixture::start_with_enable(20, false, 500, true).await;
+    let mut first = fixture.same_origin().await;
+    let initial = next_matching(&mut first, |snapshot| {
+        snapshot["buses"][0]["control"]["can_enable"] == true
+    })
+    .await;
+    let mut second = fixture.same_origin().await;
+    fresh(&mut second).await;
+    let request = command(&initial, "enable-once", "enable");
+    send(&mut first, &request).await;
+    send(&mut second, &request).await;
+    let accepted = reply(&mut first, "enable-once").await;
+    assert_eq!(accepted["status"], "accepted", "{accepted}");
+    assert_eq!(reply(&mut second, "enable-once").await, accepted);
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[0].clears.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[0].connections.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[1].enables.load(Ordering::Relaxed), 0);
+    drop((first, second));
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn unknown_enable_reply_is_not_replayed_to_gateway() {
+    let fixture = Fixture::start_with_enable(20, false, 500, true).await;
+    fixture.calls[0]
+        .enable_unknown
+        .store(true, Ordering::Relaxed);
+    let mut browser = fixture.same_origin().await;
+    let initial = next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][0]["control"]["can_enable"] == true
+    })
+    .await;
+    let request = command(&initial, "enable-unknown", "enable");
+    send(&mut browser, &request).await;
+    let unknown = reply(&mut browser, "enable-unknown").await;
+    assert_eq!(unknown["status"], "unknown", "{unknown}");
+    send(&mut browser, &request).await;
+    assert_eq!(reply(&mut browser, "enable-unknown").await, unknown);
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 1);
+    drop(browser);
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn invalid_mirror_layout_stale_and_offset_never_send_enable() {
+    let fixture = Fixture::start_with_enable(20, false, 500, true).await;
+    let mut browser = fixture.same_origin().await;
+    next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][0]["control"]["can_enable"] == true
+    })
+    .await;
+    for mode in [1, 2, 3] {
+        fixture.calls[0].mirror_mode.store(mode, Ordering::Release);
+        let snapshot = next_matching(&mut browser, |snapshot| {
+            snapshot["buses"][0]["data_status"] == "fresh"
+                && snapshot["buses"][0]["control"]["can_enable"] == false
+        })
+        .await;
+        let id = format!("mirror-reject-{mode}");
+        send(&mut browser, &command(&snapshot, &id, "enable")).await;
+        assert_eq!(reply(&mut browser, &id).await["status"], "rejected");
+        assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 0);
+        fixture.calls[0].mirror_mode.store(0, Ordering::Release);
+        next_matching(&mut browser, |snapshot| {
+            snapshot["buses"][0]["control"]["can_enable"] == true
+        })
+        .await;
+    }
+    drop(browser);
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn frozen_fresh_state_with_advancing_commands_never_enables() {
+    // 准备预算100ms短于200ms新鲜窗，拒绝必须来自未推进而非状态陈旧。
+    let fixture = Fixture::start_with_enable(20, false, 100, true).await;
+    let mut browser = fixture.same_origin().await;
+    let snapshot = next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][0]["control"]["can_enable"] == true
+    })
+    .await;
+    let calls = &fixture.calls[0];
+    let frozen_stamp_ns = SystemClock.now().0;
+    calls
+        .frozen_stamp_ns
+        .store(frozen_stamp_ns, Ordering::Release);
+    let reads_before = calls.reads.load(Ordering::Relaxed);
+    let commands_before = calls.mirror_sequence.load(Ordering::Acquire);
+    send(&mut browser, &command(&snapshot, "frozen-state", "enable")).await;
+    let rejected = reply(&mut browser, "frozen-state").await;
+    assert_eq!(rejected["status"], "rejected", "{rejected}");
+    assert!(
+        rejected["message"]
+            .as_str()
+            .unwrap()
+            .contains("未取得两份推进"),
+        "{rejected}"
+    );
+    assert!(
+        SystemClock.now().0 - frozen_stamp_ns < 200_000_000,
+        "测试结束时冻结帧仍须新鲜"
+    );
+    assert!(calls.reads.load(Ordering::Relaxed) >= reads_before + 2);
+    assert!(calls.mirror_sequence.load(Ordering::Acquire) > commands_before);
+    assert_eq!(calls.enables.load(Ordering::Relaxed), 0);
+    drop(browser);
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn publisher_replacement_during_enable_preparation_is_rejected() {
+    // 固定长轮询避免普通状态读取消费本次精确的一次故障注入。
+    let fixture = Fixture::start_with_enable(30_000, false, 500, true).await;
+    let mut browser = fixture.same_origin().await;
+    fresh(&mut browser).await;
+    let source = &fixture.sources[0];
+    let mirrors = command::Mirrors::new(vec![source.clone()]);
+    let (stop, mut stopped) = watch::channel(false);
+    let worker = mirrors.start(stopped.clone()).unwrap();
+    let mut client = RobotControlClient::new(
+        Endpoint::from_shared(source.endpoint.clone())
+            .unwrap()
+            .connect_lazy(),
+    );
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let state = client
+                .get_state(GetStateRequest {
+                    hardware_id: source.hardware_id.clone(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            if mirrors.check(source, &state, SystemClock.now().0).is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture.calls[0]
+        .restart_mirror_on_read
+        .store(true, Ordering::Relaxed);
+    let result = command::prepare_enable(
+        source,
+        &mirrors,
+        &mut client,
+        &SystemClock,
+        Duration::from_millis(500),
+        &mut stopped,
+    )
+    .await;
+    assert!(result.is_err(), "更换发布实例不能通过当前使能准备");
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 0);
+    stop.send(true).unwrap();
+    tokio::task::spawn_blocking(move || worker.join().unwrap().unwrap())
+        .await
+        .unwrap();
+    drop(browser);
+    fixture.finish().await;
 }
 
 async fn next_matching(browser: &mut Browser, matches: impl Fn(&Value) -> bool) -> Value {

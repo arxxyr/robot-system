@@ -1028,6 +1028,7 @@ where
 /// - `Idle` 保持 [`Coordinator::idle_hold_target`]：初值为启动锚点；Scripted
 ///   成功后保持末目标，新单关节请求中断时保持最后成功发布目标。
 ///   旧载荷及其他后端的中断仍重置为启动锚点。
+///   已配置单关节控制且 S0 新鲜反馈确认安全断扭时，先将保持目标对齐当前位置。
 /// - `Degraded` 与 `Idle` 共用终态保持目标；旧后端失败仍重置启动锚点。
 /// - 保持命令经 `Coordinator::hold_command` 构造；混合实例的轮 raw 固定为零。
 /// - `Executing` 调用 [`Coordinator::tick_action`]，透传当前 `cmd_seq` 作为 backend
@@ -1125,12 +1126,9 @@ where
             let mut published = false;
             match coordinator.current_state() {
                 CoordinatorState::Idle => {
-                    // Idle hold cmd：target = idle_hold_target（v0.5 候选 E
-                    // 段(5) D3 第 3 条显式解锁）。初值 = anchor_bias →
-                    // 首个 Success-Scripted 之前 sample-by-sample
-                    // bit-equivalent to B1 path（reviewer 阻断 4 锁定的
-                    // "no-active-action 路径必须等价 B1"仍成立）。
-                    let target = coordinator.idle_hold_target();
+                    // 仅已配置单关节控制、无任务且已确认断扭时对齐；
+                    // 上扭后保持已有目标，不随反馈追踪或回写启动锚点。
+                    let target = coordinator.idle_hold_target_for_tick(clock);
                     let body = coordinator.hold_command(&target, state.cmd_seq, now_ns);
                     publish_body::<markers::JointCommand, _>(
                         cmd_pub,
@@ -1598,9 +1596,8 @@ struct InnerState {
     fsm: CoordinatorState,
     current: Option<CurrentAction>,
     finished: VecDeque<(ActionId, ActionStatus)>,
-    /// `Idle` 状态 hold cmd 的 target（v0.5 候选 E 段(5)，Spec D3 第 3
-    /// 条穷尽式单一规则）。初值 = 启动 `anchor_bias`；`tick_action`
-    /// 终态处按 [`InnerState::apply_terminal_hold_target`] 更新 / reset。
+    /// 保持命令目标：初值为启动锚点，任务终态更新或重置。
+    /// 配置单关节控制时，仅 Idle 且确认安全断扭才对齐新鲜当前位置。
     /// `Degraded` 也读取本字段，使单关节任务失败后不会回拉启动锚点。
     idle_hold_target: Vec<f64>,
 }
@@ -1847,6 +1844,32 @@ impl Coordinator {
         self.lock_inner().idle_hold_target.clone()
     }
 
+    /// 使能前对齐复用同一状态缓存和命令流；坏帧、越界和上扭状态均不刷新。
+    /// Web 仍须核对实际发布的命令与新鲜反馈，不以本地目标更新作为使能确认。
+    fn idle_hold_target_for_tick(&self, clock: &dyn RobotClock) -> Vec<f64> {
+        let mut inner = self.lock_inner();
+        if let Some(config) = self.single_joint_config.as_ref()
+            && matches!(inner.fsm, CoordinatorState::Idle)
+            && inner.current.is_none()
+            && let Some(mut positions) = self
+                .lock_state_cache()
+                .as_ref()
+                .and_then(|cache| cache.latest_torque_off_positions(clock).ok().flatten())
+            && positions.len() == self.hardware.joints.len()
+            && positions.iter().enumerate().all(|(slot, &position)| {
+                self.hardware.is_wheel_slot(slot)
+                    || config.joints.iter().any(|limit| {
+                        limit.name == self.hardware.joints[slot]
+                            && crate::single_joint::valid_position(position, limit)
+                    })
+            })
+        {
+            self.hardware.clear_wheel_targets(&mut positions);
+            inner.idle_hold_target = positions;
+        }
+        inner.idle_hold_target.clone()
+    }
+
     fn hold_command(&self, positions: &[f64], seq: u64, now_ns: u64) -> Vec<u8> {
         build_hardware_hold_command(
             &self.config,
@@ -1873,8 +1896,7 @@ impl Coordinator {
     }
 
     /// 借用启动锚定的 `anchor_bias`（构造期传入，不再变）。
-    /// `Idle` / `Degraded` 状态下 [`run_action_tick_loop`] 用本值 build
-    /// hold cmd target。
+    /// 旧后端终态重置保持目标时仍使用本值，使能前对齐不回写启动锚点。
     #[must_use]
     pub fn anchor_bias(&self) -> &[f64] {
         &self.anchor_bias
@@ -4870,6 +4892,135 @@ backends = 42
             (coordinator, channel, clock)
         }
 
+        fn publish_alignment_frame(
+            coordinator: &Coordinator,
+            channel: &MockChannel<markers::JointState>,
+            layout: u64,
+            stamp_ns: u64,
+            positions: &[f64],
+        ) {
+            use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
+            let received = coordinator
+                .lock_state_cache()
+                .as_ref()
+                .unwrap()
+                .stats()
+                .frames_received;
+            let body = robot_msg::build_helpers::build_joint_state_with_s0(
+                layout,
+                stamp_ns,
+                positions,
+                &[],
+                &[],
+                "",
+                S0Mode::Safe,
+                S0ControlLink::Unknown,
+                S0OutputMode::Unknown,
+                S0SafetyState::TorqueOffConfirmed,
+                S0FaultCode::Unknown,
+            );
+            let mut publisher = channel.publisher();
+            let mut writer = publisher.loan(body.len() + 1024).unwrap();
+            writer.set_body_bytes(&body);
+            writer.set_stamp_ns(stamp_ns);
+            writer.publish().unwrap();
+            for _ in 0..2000 {
+                if coordinator
+                    .lock_state_cache()
+                    .as_ref()
+                    .unwrap()
+                    .stats()
+                    .frames_received
+                    > received
+                {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            panic!("使能前对齐帧未进入既有缓存");
+        }
+
+        #[test]
+        fn idle_alignment_tracks_only_confirmed_torque_off_and_keeps_startup_anchor() {
+            let (coordinator, channel, clock) = single_joint_fixture();
+            let anchor = coordinator.anchor_bias().to_vec();
+            // 初始反馈为上扭状态，即使当前位置已变化也不刷新旧保持目标。
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), anchor);
+            publish_alignment_frame(
+                &coordinator,
+                &channel,
+                LAYOUT,
+                clock.now().0,
+                &[0.125, 0.25],
+            );
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), [0.125, 0.25]);
+            assert_eq!(coordinator.anchor_bias(), anchor);
+            publish_motion_feedback(&coordinator, &channel, &clock, &[0.5, 0.75], true);
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), [0.125, 0.25]);
+        }
+
+        #[test]
+        fn idle_alignment_never_overwrites_active_or_degraded_hold() {
+            let (coordinator, channel, clock) = single_joint_fixture();
+            coordinator.submit(single_joint_request(), &clock).unwrap();
+            let hold = coordinator.idle_hold_target();
+            publish_alignment_frame(
+                &coordinator,
+                &channel,
+                LAYOUT,
+                clock.now().0,
+                &[0.125, 0.25],
+            );
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+            // 即使状态与任务不一致，也不得覆盖仍存活任务的目标。
+            coordinator.lock_inner().fsm = CoordinatorState::Idle;
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+            {
+                let mut inner = coordinator.lock_inner();
+                inner.current = None;
+                inner.fsm = CoordinatorState::Degraded {
+                    reason: "测试故障".into(),
+                };
+            }
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+        }
+
+        #[test]
+        fn idle_alignment_requires_opt_in_and_a_valid_fresh_pose_without_clamping() {
+            let (mut coordinator, channel, clock) = single_joint_fixture();
+            let config = coordinator.single_joint_config.take();
+            let hold = coordinator.idle_hold_target();
+            publish_alignment_frame(
+                &coordinator,
+                &channel,
+                LAYOUT,
+                clock.now().0,
+                &[0.125, 0.25],
+            );
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+            coordinator.single_joint_config = config;
+            for (layout, stamp, positions) in [
+                (LAYOUT ^ 1, clock.now().0, vec![0.125, 0.25]),
+                (LAYOUT, clock.now().0 - 201_000_000, vec![0.125, 0.25]),
+                (LAYOUT, clock.now().0 + 1, vec![0.125, 0.25]),
+                (LAYOUT, clock.now().0, vec![0.125]),
+                (LAYOUT, clock.now().0, vec![f64::NAN, 0.25]),
+                (LAYOUT, clock.now().0, vec![f64::INFINITY, 0.25]),
+                (LAYOUT, clock.now().0, vec![1.01, 0.25]),
+                (LAYOUT, clock.now().0, vec![-1.01, 0.25]),
+            ] {
+                publish_alignment_frame(&coordinator, &channel, layout, stamp, &positions);
+                assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+            }
+            // 原值在边界内，但沿 S0 f32 编码后越界也不能作为原位保持。
+            coordinator.single_joint_config.as_mut().unwrap().joints[0].max_position_rad = 0.1;
+            publish_alignment_frame(&coordinator, &channel, LAYOUT, clock.now().0, &[0.1, 0.25]);
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+            let cache = coordinator.take_state_cache().unwrap();
+            cache.join().unwrap();
+            assert_eq!(coordinator.idle_hold_target_for_tick(&clock), hold);
+        }
+
         fn tick_and_confirm_publish(c: &Coordinator, clock: &MockClock, seq: u64) -> Vec<f64> {
             let command = c.tick_action(clock, seq).expect("应发布完整目标");
             let target = decode_target(&command);
@@ -4936,6 +5087,24 @@ backends = 42
                 0.75,
                 duration_ms,
             )
+        }
+
+        #[test]
+        fn idle_alignment_keeps_mixed_wheels_raw_zero_in_configuration_slot_order() {
+            let (coordinator, channel, clock, mut positions) = mixed_single_joint_fixture();
+            let anchor = coordinator.anchor_bias().to_vec();
+            for (slot, position) in positions.iter_mut().enumerate() {
+                if !coordinator.hardware.is_wheel_slot(slot) {
+                    *position += 0.25;
+                }
+            }
+            publish_alignment_frame(&coordinator, &channel, LAYOUT, clock.now().0, &positions);
+            coordinator.hardware.clear_wheel_targets(&mut positions);
+            let aligned = coordinator.idle_hold_target_for_tick(&clock);
+            assert_eq!(aligned, positions);
+            assert_eq!(coordinator.anchor_bias(), anchor);
+            let command = coordinator.hold_command(&aligned, 11, clock.now().0);
+            assert_mixed_target(&command, &coordinator.hardware, &positions);
         }
 
         fn assert_mixed_target(body: &[u8], hardware: &HardwareSection, expected: &[f64]) {

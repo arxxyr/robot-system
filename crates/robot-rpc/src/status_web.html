@@ -73,6 +73,9 @@
     .control-field input, .control-field select { width: 100%; min-width: 0; border: 1px solid #c9d7e2; border-radius: 6px; padding: 8px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; }
     .control-field input:focus-visible, .control-field select:focus-visible { outline: 3px solid #91b9db; outline-offset: 2px; }
     .control-field input:disabled, .control-field select:disabled { color: var(--muted); background: #f4f7fa; }
+    .control-slider-field { grid-column: 1 / -1; }
+    .control-field .control-slider { padding: 0; border: 0; accent-color: var(--blue); touch-action: pan-y; }
+    .control-current { font-variant-numeric: tabular-nums; }
     .control-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
     .control-actions button { padding: 7px 11px; font-size: 12px; flex: none; }
     .control-actions .danger { color: var(--red); border-color: #e4b4b1; background: #fff4f2; }
@@ -341,7 +344,7 @@
       let busOrder = [];
       // 每条总线只保存本页面最后一次请求；任务事实来自服务端共享快照。
       const controlRequests = new Map();
-      const controlOperations = ['move', 'cancel', 'disable', 'estop', 'clear_estop'];
+      const controlOperations = ['move', 'cancel', 'enable', 'disable', 'estop', 'clear_estop'];
       const controlTaskStates = ['pending', 'executing', 'completed', 'failed', 'cancelled', 'unknown'];
       const controlOperationText = { move: '定位', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
       const networkCards = new Map();
@@ -539,7 +542,7 @@
       function jointKey(joint) { return JSON.stringify([joint.motor_id, joint.name]); }
       function controlView(bus) {
         const value = bus.control;
-        if (!value || typeof value.enabled !== 'boolean' || typeof value.process_id !== 'string' || !value.process_id || typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) || typeof value.busy !== 'boolean' || !Number.isSafeInteger(value.max_duration_ms) || value.max_duration_ms < 1 || !Array.isArray(value.joints) || value.joints.length > 256) return null;
+        if (!value || typeof value.enabled !== 'boolean' || typeof value.can_enable !== 'boolean' || typeof value.process_id !== 'string' || !value.process_id || typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) || typeof value.busy !== 'boolean' || !Number.isSafeInteger(value.max_duration_ms) || value.max_duration_ms < 1 || !Array.isArray(value.joints) || value.joints.length > 256) return null;
         const names = new Set();
         for (const joint of value.joints) {
           if (!joint || typeof joint.name !== 'string' || names.has(joint.name) || !bus.joints.some(item => item.name === joint.name && item.mode === 'position') || ![joint.min_position_rad, joint.max_position_rad, joint.max_velocity_rad_s, joint.tolerance_rad].every(Number.isFinite) || joint.min_position_rad > joint.max_position_rad || joint.max_velocity_rad_s <= 0 || joint.tolerance_rad < 0) return null;
@@ -574,10 +577,15 @@
         const joint = node('select', 'control-joint');
         const target = node('input', 'control-target');
         target.type = 'number'; target.step = 'any'; target.required = true;
+        const slider = node('input', 'control-slider');
+        slider.type = 'range'; slider.step = '0.1'; slider.disabled = true;
+        const sliderField = controlField('目标角度：拖动预览，松手执行一次', slider);
+        sliderField.classList.add('control-slider-field');
         const duration = node('input', 'control-duration');
         duration.type = 'number'; duration.min = '0.001'; duration.step = '0.001'; duration.required = true;
-        form.append(controlField('位置关节', joint), controlField('绝对目标角度（°）', target), controlField('运动时长（秒）', duration));
+        form.append(controlField('位置关节', joint), controlField('绝对目标角度（°）', target), controlField('运动时长（秒）', duration), sliderField);
         form.addEventListener('submit', event => event.preventDefault());
+        const currentPosition = node('p', 'control-current');
         const limits = node('p', 'control-limits');
         const actions = node('div', 'control-actions');
         const buttons = {};
@@ -588,35 +596,101 @@
           buttons[operation] = button;
           actions.append(button);
         }
-        const enableNote = node('p', 'control-enable-note', '使能请使用已验证的维护入口；本页不提供使能。');
+        const enableNote = node('p', 'control-enable-note');
         const task = node('p', 'control-task', '当前无共享任务。');
         const result = node('p', 'control-result'); result.setAttribute('role', 'status');
-        panel.append(heading, scope, form, limits, actions, enableNote, task, result);
-        const control = { panel, badge, form, joint, target, duration, limits, actions, buttons, enableNote, task, result, scope, signature: null, busId: bus.id };
+        panel.append(heading, scope, currentPosition, form, limits, actions, enableNote, task, result);
+        const control = { panel, badge, form, joint, target, slider, currentPosition, duration, limits, actions, buttons, enableNote, task, result, scope, signature: null, busId: bus.id, gesture: null, manualDuration: false };
         joint.addEventListener('change', () => {
+          cancelSlider(control);
           const current = snapshot?.buses.find(item => item.id === control.busId);
           const selected = current?.joints.find(item => item.name === joint.value);
           target.value = selected && Number.isFinite(selected.position_rad) ? String(selected.position_rad * 180 / Math.PI) : '';
-          if (current) updateControl(control, current);
+          if (current) { updateControlDuration(control, current); updateControl(control, current); }
         });
-        for (const input of [target, duration]) input.addEventListener('input', () => {
+        target.addEventListener('input', () => {
+          const current = snapshot?.buses.find(item => item.id === control.busId);
+          if (current) { updateControlDuration(control, current); updateControl(control, current); }
+        });
+        duration.addEventListener('input', () => {
+          control.manualDuration = true;
           const current = snapshot?.buses.find(item => item.id === control.busId);
           if (current) updateControl(control, current);
         });
+        slider.addEventListener('input', () => {
+          target.value = slider.value;
+          const current = snapshot?.buses.find(item => item.id === control.busId);
+          if (current) { updateControlDuration(control, current); updateControl(control, current); }
+        });
+        // change 也会在松手或按键时触发；只认手势结束，避免一次操作发送两次。
+        slider.addEventListener('pointerdown', event => {
+          if (!event.isPrimary || event.button !== 0 || !beginSlider(control, 'pointer', event.pointerId)) { event.preventDefault(); return; }
+          slider.setPointerCapture(event.pointerId);
+        });
+        slider.addEventListener('pointerup', event => finishSlider(control, 'pointer', event.pointerId));
+        slider.addEventListener('pointercancel', () => cancelSlider(control));
+        slider.addEventListener('lostpointercapture', () => cancelSlider(control));
+        const sliderKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
+        slider.addEventListener('keydown', event => {
+          if (event.key === 'Escape') { event.preventDefault(); cancelSlider(control); }
+          else if (sliderKeys.includes(event.key)) {
+            if (control.gesture?.kind === 'keyboard' && control.gesture.id === event.key) return;
+            if (event.repeat || !beginSlider(control, 'keyboard', event.key)) event.preventDefault();
+          }
+        });
+        slider.addEventListener('keyup', event => finishSlider(control, 'keyboard', event.key));
+        slider.addEventListener('blur', () => cancelSlider(control));
         for (const operation of controlOperations) buttons[operation].addEventListener('click', () => sendControl(control, operation));
         return control;
       }
+      function updateControlDuration(control, bus) {
+        if (control.manualDuration) return;
+        const config = controlView(bus);
+        const joint = config?.joints.find(item => item.name === control.joint.value);
+        const current = bus.joints.find(item => item.name === control.joint.value)?.position_rad;
+        const target = control.target.valueAsNumber * Math.PI / 180;
+        if (!joint || !Number.isFinite(current) || !Number.isFinite(target)) return;
+        const required = Math.ceil(Math.abs(target - current) / joint.max_velocity_rad_s * 1000) + 1;
+        control.duration.value = String(Math.max(Math.min(20000, config.max_duration_ms), required) / 1000);
+      }
+      function beginSlider(control, kind, id) {
+        const bus = snapshot?.buses.find(item => item.id === control.busId);
+        if (!bus) return false;
+        updateControl(control, bus);
+        const config = controlView(bus);
+        if (control.slider.disabled || control.gesture || !config) return false;
+        control.gesture = { kind, id, session: activeSession, processId: config.process_id, revision: config.revision, signature: control.signature, start: control.target.value, duration: control.duration.value };
+        return true;
+      }
+      function cancelSlider(control) {
+        const gesture = control.gesture;
+        if (!gesture) return;
+        control.gesture = null;
+        control.target.value = gesture.start;
+        control.slider.value = gesture.start;
+        control.duration.value = gesture.duration;
+      }
+      function finishSlider(control, kind, id) {
+        const bus = snapshot?.buses.find(item => item.id === control.busId);
+        if (!bus) { cancelSlider(control); return; }
+        updateControl(control, bus);
+        const gesture = control.gesture;
+        if (!gesture || gesture.kind !== kind || gesture.id !== id) return;
+        control.gesture = null;
+        if (control.target.valueAsNumber !== Number(gesture.start)) sendControl(control, 'move');
+      }
       function controlTarget(control, config) {
         const joint = config.joints.find(item => item.name === control.joint.value);
+        const current = snapshot?.buses.find(item => item.id === control.busId)?.joints.find(item => item.name === control.joint.value)?.position_rad;
         const target = control.target.valueAsNumber * Math.PI / 180;
         const duration = Math.round(control.duration.valueAsNumber * 1000);
-        if (!joint || !Number.isFinite(target) || target < joint.min_position_rad || target > joint.max_position_rad || !Number.isSafeInteger(duration) || duration < 1 || duration > config.max_duration_ms) return null;
+        if (!joint || !Number.isFinite(current) || !Number.isFinite(target) || target < joint.min_position_rad || target > joint.max_position_rad || !Number.isSafeInteger(duration) || duration < 1 || duration > config.max_duration_ms || Math.abs(target - current) > joint.max_velocity_rad_s * duration / 1000) return null;
         return { joint: joint.name, target_position_rad: target, duration_ms: duration };
       }
       function updateControl(control, bus) {
         const config = controlView(bus);
         const enabled = config?.enabled === true;
-        for (const item of [control.form, control.limits, control.actions, control.enableNote, control.task, control.scope]) setProperty(item, 'hidden', !enabled);
+        for (const item of [control.form, control.currentPosition, control.limits, control.actions, control.enableNote, control.task, control.scope]) setProperty(item, 'hidden', !enabled);
         const online = enabled && connected && activeSession?.socket.readyState === WebSocket.OPEN;
         const fresh = statusOf(bus) === 'fresh';
         const signature = JSON.stringify([config?.process_id, config?.joints, config?.max_duration_ms]);
@@ -638,9 +712,14 @@
         if (selected) {
           setAttribute(control.target, 'min', selected.min_position_rad * 180 / Math.PI);
           setAttribute(control.target, 'max', selected.max_position_rad * 180 / Math.PI);
+          setAttribute(control.slider, 'min', selected.min_position_rad * 180 / Math.PI);
+          setAttribute(control.slider, 'max', selected.max_position_rad * 180 / Math.PI);
         }
+        if (Number.isFinite(control.target.valueAsNumber)) setProperty(control.slider, 'value', control.target.value);
+        const position = bus.joints.find(joint => joint.name === control.joint.value)?.position_rad;
+        setText(control.currentPosition, `实测角度：${Number.isFinite(position) ? `${(position * 180 / Math.PI).toFixed(2)}°${fresh ? '' : '（最后反馈）'}` : '未知'}；目标为独立草稿，输入数值后点击执行，滑条松手执行。`);
         setAttribute(control.duration, 'max', config ? config.max_duration_ms / 1000 : null);
-        setText(control.limits, selected ? `目标范围 ${(selected.min_position_rad * 180 / Math.PI).toFixed(1)}° 至 ${(selected.max_position_rad * 180 / Math.PI).toFixed(1)}°；到位容差 ±${(selected.tolerance_rad * 180 / Math.PI).toFixed(2)}°；最长 ${config.max_duration_ms / 1000} 秒。` : '当前没有开放的位置关节。');
+        setText(control.limits, selected ? `目标范围 ${(selected.min_position_rad * 180 / Math.PI).toFixed(1)}° 至 ${(selected.max_position_rad * 180 / Math.PI).toFixed(1)}°；到位容差 ±${(selected.tolerance_rad * 180 / Math.PI).toFixed(2)}°；速度上限 ${(selected.max_velocity_rad_s * 180 / Math.PI).toFixed(2)}°/秒；最长 ${config.max_duration_ms / 1000} 秒。时长${control.manualDuration ? '已手动设置' : '按速度约束自动设置，可修改'}。` : '当前没有开放的位置关节。');
         const request = controlRequests.get(bus.id);
         if (request?.status === 'pending' && (request.process_id !== config?.process_id || performance.now() - request.startedAt > 10000)) {
           request.status = 'unknown';
@@ -653,23 +732,24 @@
         const taskActive = config?.task && ['pending', 'executing', 'unknown'].includes(config.task.state);
         const canChange = online && !document.hidden && fresh && !config.busy && !taskActive && !pending;
         const canMove = canChange && bus.mode === 'Enabled' && bus.safety_state === 'TorqueOn' && bus.output_mode === 'Active' && bus.control_link === 'Ok' && bus.fault_code === 0;
+        if (control.gesture && (!canMove || control.gesture.session !== activeSession || control.gesture.processId !== config?.process_id || control.gesture.revision !== config?.revision || control.gesture.signature !== control.signature)) cancelSlider(control);
         for (const input of [control.joint, control.target, control.duration]) setProperty(input, 'disabled', !canChange);
+        setProperty(control.slider, 'disabled', !canMove || !selected);
         setProperty(control.buttons.move, 'disabled', !canMove || !controlTarget(control, config));
         const awaitingOperation = operation => request?.status === 'pending' && request.operation === operation;
         setProperty(control.buttons.cancel, 'disabled', !online || awaitingOperation('cancel') || !config?.task || !['pending', 'executing', 'unknown'].includes(config.task.state));
         setProperty(control.buttons.disable, 'disabled', !online || awaitingOperation('disable'));
         setProperty(control.buttons.estop, 'disabled', !online || awaitingOperation('estop'));
         setProperty(control.buttons.clear_estop, 'disabled', !canChange);
-        // 旧 S1 启动锚点不能作为新一轮上扭凭据；网页本轮始终不提供使能。
-        setProperty(control.buttons.enable, 'disabled', true);
-        setText(control.enableNote, config?.enable_reason || '使能请使用已验证的维护入口；本页不提供使能。');
+        setProperty(control.buttons.enable, 'disabled', !canChange || config?.can_enable !== true);
+        setText(control.enableNote, config?.enable_reason || '使能先按当前反馈对齐目标；不会自动解除急停。');
         setText(control.badge, !enabled ? '只读' : !online ? '控制已断开' : pending ? '请求结果待确认' : config.task?.state === 'unknown' ? '任务结果未知' : config.busy ? '请求处理中' : taskActive ? '任务执行中' : '控制已开放');
         setAttribute(control.badge, 'data-tone', !enabled ? 'neutral' : online && !config.busy && !taskActive && !pending ? 'good' : 'warn');
         const task = config?.task;
         const taskLabel = { pending: '任务已提交，等待执行', executing: '任务执行中', completed: '任务已到位', failed: '任务失败', cancelled: '任务已取消，保持最后目标；尚不等于断扭', unknown: '任务结果未知，不自动重发' };
         setText(control.task, task ? `${taskLabel[task.state]}${['pending', 'executing'].includes(task.state) && Number.isFinite(task.progress) ? ` · ${(task.progress * 100).toFixed(0)}%` : ''}${task.error ? ` · ${task.error}` : ''}` : '当前无共享任务。');
         const outcome = request?.result || config?.last_result;
-        let message = !enabled ? '服务端未开放控制，当前仅监控。' : !online ? '控制连接不可用；不会自动重发命令。' : !fresh ? '设备反馈超时；定位和解除急停不可用，停止操作仍可请求。' : !canMove && !taskActive ? '定位前需由维护入口完成使能；本页不会自动使能或解除急停。' : '';
+        let message = !enabled ? '服务端未开放控制，当前仅监控。' : !online ? '控制连接不可用；不会自动重发命令。' : !fresh ? '设备反馈超时；定位和解除急停不可用，停止操作仍可请求。' : !canMove && !taskActive ? '定位前需明确解除急停并使能；提交目标不会自动使能或解除急停。' : '';
         let tone = 'neutral';
         if (request?.status === 'unknown' && !sameContext) { message = '旧控制进程的请求结果未确认；现已收到新的控制上下文。新操作使用当前版本，旧命令不会重发。'; tone = 'warn'; }
         else if (request?.status === 'pending') { message = `${controlOperationText[request.operation]}已发送，等待回执；不会重发。`; tone = 'warn'; }

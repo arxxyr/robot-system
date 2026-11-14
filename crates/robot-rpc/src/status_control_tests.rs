@@ -18,6 +18,7 @@ fn source(bus: u8) -> Source {
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
+        enable_alignment_tolerance_rad: Some(0.006_136_5),
     };
     source.motion = Some(
         MotionConfig::load(
@@ -72,7 +73,7 @@ fn original_motion_files_cover_position_joints_only() {
         let control = ControlState::new(true, "process").view(source.motion.as_ref());
         assert!(control.enabled);
         assert!(!control.can_enable);
-        assert!(control.enable_reason.contains("维护入口"));
+        assert!(control.enable_reason.contains("原位对齐"));
         assert!(
             control
                 .joints
@@ -99,6 +100,45 @@ fn duplicate_missing_or_wheel_motion_limits_are_rejected() {
     let mut invalid = original.clone();
     invalid.joints[0].max_velocity_rad_s = f64::NAN;
     assert!(invalid.validate(&source).is_err());
+}
+
+#[test]
+fn enable_alignment_never_accepts_out_of_range_original_or_encoded_positions() {
+    let source = source(1);
+    let mut motion = source.motion.clone().unwrap();
+    let mut positions = vec![0.0; source.layout.joints.len()];
+    positions[0] = motion.joints[0].max_position_rad + 0.001;
+    assert!(motion.check_positions(&source, &positions).is_err());
+    motion.joints[0].max_position_rad = 0.1;
+    positions[0] = 0.1;
+    // f64落在边界，但实际f32编码略大于0.1，仍应拒绝。
+    assert!(motion.check_positions(&source, &positions).is_err());
+    positions[0] = 0.09;
+    assert!(motion.check_positions(&source, &positions).is_ok());
+}
+
+#[test]
+fn enable_uses_fresh_probe_instead_of_cached_ui_hint_and_keeps_busy_gate() {
+    let source = source(1);
+    let mut control = ControlState::new(true, "process-1");
+    let state = view(&source);
+    assert!(!state.control.can_enable);
+    assert!(
+        control
+            .preflight(&request(Operation::Enable), &source, &state)
+            .is_ok()
+    );
+    control.task = Some(TaskView {
+        action_id: "busy".into(),
+        state: "unknown",
+        progress: None,
+        error: None,
+    });
+    assert!(
+        control
+            .preflight(&request(Operation::Enable), &source, &state)
+            .is_err()
+    );
 }
 
 #[test]
@@ -214,11 +254,13 @@ async fn enable_is_rejected_before_any_rpc_or_version_change() {
                 token: "test-only",
                 timeout: Duration::from_millis(1),
                 shutdown: &mut stopped,
+                commands: None,
+                clock: &robot_core::time::SystemClock,
             },
         )
         .await;
     assert_eq!(reply.status, "rejected");
-    assert!(reply.message.contains("启动锚点"));
+    assert!(reply.message.contains("命令镜像"));
     assert_eq!(control.revision, 0);
     assert!(control.last_request.is_none());
 }
@@ -247,6 +289,8 @@ async fn exact_replay_returns_cached_unknown_without_rpc() {
                 token: "test-only",
                 timeout: Duration::from_millis(1),
                 shutdown: &mut stopped,
+                commands: None,
+                clock: &robot_core::time::SystemClock,
             },
         )
         .await;

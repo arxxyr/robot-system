@@ -7,6 +7,7 @@ use flatbuffers::FlatBufferBuilder;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Channel;
 
+use super::command;
 use super::{BusView, Source};
 use crate::proto::robot_control_client::RobotControlClient;
 use crate::proto::{
@@ -14,6 +15,7 @@ use crate::proto::{
     EStopCommand, InvokeTaskCommand, SetEnabledCommand, TaskHandle, TaskHandleRef, TaskState,
     TaskStatus,
 };
+use robot_core::time::RobotClock;
 
 pub(super) const MAILBOX_CAPACITY: usize = 8;
 
@@ -28,6 +30,20 @@ pub(super) struct FileConfig {
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceConfig {
     pub motion_config: PathBuf,
+    #[serde(default)]
+    pub enable_alignment_tolerance_rad: Option<f64>,
+}
+
+impl SourceConfig {
+    pub(super) fn validate(&self) -> Result<(), String> {
+        if self
+            .enable_alignment_tolerance_rad
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            return Err("使能原位对齐容差必须是有限非负rad值".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -50,6 +66,35 @@ pub(super) struct JointLimit {
 }
 
 impl MotionConfig {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "先检查f64有限及f32范围，再核对实际编码值"
+    )]
+    pub(super) fn check_positions(&self, source: &Source, positions: &[f64]) -> Result<(), String> {
+        if positions.len() != source.layout.joints.len() {
+            return Err("原位位置维度与配置不一致".into());
+        }
+        for (slot, &position) in positions.iter().enumerate() {
+            if !position.is_finite() || position.abs() > f64::from(f32::MAX) {
+                return Err("原位位置含非有限或不可表示值".into());
+            }
+            if source.mixed_raw && matches!(source.layout.motor_ids[slot], 7..=9) {
+                continue;
+            }
+            let name = &source.layout.joints[slot];
+            let limit = self
+                .joints
+                .iter()
+                .find(|joint| &joint.name == name)
+                .ok_or_else(|| format!("{name}缺少位置范围配置"))?;
+            let range = limit.min_position_rad..=limit.max_position_rad;
+            if !range.contains(&position) || !range.contains(&f64::from(position as f32)) {
+                return Err(format!("{name}原位位置超出运动配置范围"));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn load(path: &Path, source: &Source) -> Result<Self, String> {
         #[derive(Deserialize)]
         struct Document {
@@ -235,7 +280,7 @@ impl TaskView {
 pub(super) struct View {
     pub enabled: bool,
     pub can_enable: bool,
-    pub enable_reason: &'static str,
+    pub enable_reason: String,
     pub process_id: String,
     pub revision: String,
     pub busy: bool,
@@ -250,6 +295,8 @@ pub(super) struct RpcContext<'a> {
     pub token: &'a str,
     pub timeout: Duration,
     pub shutdown: &'a mut tokio::sync::watch::Receiver<bool>,
+    pub commands: Option<&'a command::Mirrors>,
+    pub clock: &'a dyn RobotClock,
 }
 
 pub(super) struct ControlState {
@@ -279,7 +326,12 @@ impl ControlState {
         View {
             enabled: self.enabled && motion.is_some(),
             can_enable: false,
-            enable_reason: "使能请使用已验证的维护入口；Web不能核对S1启动锚点",
+            enable_reason: if self.task.as_ref().is_some_and(TaskView::busy) {
+                "总线已有进行中或结果未知的任务"
+            } else {
+                "等待使能原位对齐配置、完整状态及S1命令镜像"
+            }
+            .into(),
             process_id: self.process_id.clone(),
             revision: self.revision.to_string(),
             busy: self.task.as_ref().is_some_and(TaskView::busy),
@@ -292,22 +344,26 @@ impl ControlState {
 
     fn preflight(&self, request: &Request, source: &Source, state: &BusView) -> Result<(), String> {
         request.validate_shape()?;
-        if request.operation == Operation::Enable {
-            return Err("使能请使用已验证的维护入口；Web不能核对S1启动锚点，未发送".into());
-        }
         if !self.enabled || source.motion.is_none() {
             return Err("此总线未开放Web控制，未发送".into());
         }
         if request.process_id != self.process_id || request.revision != self.revision.to_string() {
             return Err("控制版本已变化；请查看最新状态后重新操作，本请求未发送".into());
         }
-        if matches!(request.operation, Operation::Move | Operation::ClearEstop) {
+        if matches!(
+            request.operation,
+            Operation::Move | Operation::ClearEstop | Operation::Enable
+        ) {
             if self.task.as_ref().is_some_and(TaskView::busy) {
                 return Err("总线已有进行中或结果未知的任务，未发送".into());
             }
             if state.data_status != "fresh" || state.fault_code != Some(0) {
                 return Err("反馈无效、陈旧或存在故障，未发送".into());
             }
+        }
+        if request.operation == Operation::Enable && source.enable_alignment_tolerance_rad.is_none()
+        {
+            return Err("未配置使能原位对齐容差，未发送使能".into());
         }
         if request.operation == Operation::Move {
             if self.after_stamp_ns.is_some_and(|after| {
@@ -329,7 +385,7 @@ impl ControlState {
         request: Request,
         source: &Source,
         state: &BusView,
-        rpc: RpcContext<'_>,
+        mut rpc: RpcContext<'_>,
     ) -> Reply {
         if *rpc.shutdown.borrow() {
             return Reply::rejected(Some(&request), self.revision, "Web正在关闭，未发送");
@@ -343,6 +399,10 @@ impl ControlState {
         if let Err(error) = self.preflight(&request, source, state) {
             return Reply::rejected(Some(&request), self.revision, error);
         }
+        let enable_stamp = match prepare_operation(&request, source, &mut rpc).await {
+            Ok(stamp) => stamp,
+            Err(error) => return Reply::rejected(Some(&request), self.revision, error),
+        };
         let Some(next_revision) = self.revision.checked_add(1) else {
             return Reply::rejected(Some(&request), self.revision, "控制版本耗尽，未发送");
         };
@@ -358,13 +418,13 @@ impl ControlState {
             );
         }
         self.revision = next_revision;
-        self.after_stamp_ns = Some(
+        self.after_stamp_ns = enable_stamp.or(Some(
             state
                 .stamp_ns
                 .as_ref()
                 .and_then(|stamp| stamp.parse().ok())
                 .unwrap_or(0),
-        );
+        ));
         let rpc_id = uuid::Uuid::now_v7().to_string();
         let action_id = match request.operation {
             Operation::Move => Some(rpc_id.clone()),
@@ -462,6 +522,27 @@ impl ControlState {
     }
 }
 
+async fn prepare_operation(
+    request: &Request,
+    source: &Source,
+    rpc: &mut RpcContext<'_>,
+) -> Result<Option<u64>, String> {
+    if request.operation != Operation::Enable {
+        return Ok(None);
+    }
+    let commands = rpc.commands.ok_or("缺少共享S1命令镜像，未发送使能")?;
+    command::prepare_enable(
+        source,
+        commands,
+        rpc.client,
+        rpc.clock,
+        rpc.timeout,
+        rpc.shutdown,
+    )
+    .await
+    .map(Some)
+}
+
 fn command_meta(
     request: &Request,
     source: &Source,
@@ -539,7 +620,7 @@ fn accepted_message(operation: Operation) -> &'static str {
     match operation {
         Operation::Move => "任务已接收，等待新鲜反馈到位及任务终态",
         Operation::Cancel => "取消请求已接收；取消不等于断扭，等待任务终态",
-        Operation::Enable => "Web使能未开放，请使用已验证的维护入口",
+        Operation::Enable => "使能回执已收到；等待新鲜TorqueOn反馈后再定位",
         Operation::Disable => "断扭回执已收到；仍以新鲜TorqueOffConfirmed反馈确认",
         Operation::Estop => "急停事件已发布；回执不证明实际已停止或锁存写入完成",
         Operation::ClearEstop => "独立解除急停回执已收到；没有自动使能或清故障",
@@ -655,17 +736,16 @@ async fn invoke_rpc(
             ))
             .await
             .map(|reply| RpcReply::Ack(reply.into_inner())),
-        Operation::Disable => client
+        Operation::Disable | Operation::Enable => client
             .set_enabled(bounded(
                 SetEnabledCommand {
                     meta: Some(meta),
-                    enabled: false,
+                    enabled: request.operation == Operation::Enable,
                 },
                 timeout,
             ))
             .await
             .map(|reply| RpcReply::Ack(reply.into_inner())),
-        Operation::Enable => Err(tonic::Status::failed_precondition("Web使能未开放")),
         Operation::Estop => client
             .e_stop(bounded(
                 EStopCommand {
