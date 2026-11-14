@@ -39,17 +39,17 @@
 
 ## 安装、发布与下一步
 
-正式0.1.0安装根为`/home/loosqk/robot-checks/deploy-0.1.0-20261112`，S0候选在`candidate`，两份网关在`status/candidate`，均从发布提交`bc5603f100e50b57b8e28a889a800bf1062821b5`原生构建。S0备份为`/var/lib/robot/deploy-backup-s0-0.1.0-bc5603f`，原状态层备份为安装根下`status/backup`。S0、网关、校准、保护目录及旧Web产物仍留原位；本次相机开发未更新master或发布标签。
+正式0.1.0安装根为`/home/loosqk/robot-checks/deploy-0.1.0-20261112`，S0候选在`candidate`，两份网关在`status/candidate`，均从发布提交`bc5603f100e50b57b8e28a889a800bf1062821b5`原生构建。S0备份为`/var/lib/robot/deploy-backup-s0-0.1.0-bc5603f`，原状态层备份为安装根下`status/backup`。S0、网关、校准、保护目录及旧Web产物仍留原位；本轮开发未更新master或发布标签。
 
-Web当前运行开发提交`2d9e53ff8abafbc2b748b637b469de0d3ca6e5c0`的Orin原生release候选，部署根为`/home/loosqk/robot-checks/web-dashboard-navigation-20261113/deploy-2d9e53f`，unit引用其`candidate/bin/robot-status`及`candidate/configs/xlerobot-status.toml`。本轮只更新`robot-status.service`，679个编译输入与提交匹配；备份、清单、PLAN_ONLY、安装与部署后身份核验均通过。旧unit位于该根`backup/robot-status.service`，`robot-dashboard-rollback-web.sh`仅恢复Web到上一版服务资源候选`/home/loosqk/robot-checks/robot-service-resources-20261112/deploy-2539a7e`。当前及旧部署根、事务脚本及其引用的源码目录需保留；前版整机资源与相机候选仍分别保留在`/home/loosqk/robot-checks/web-resource-overview-20261112/deploy-aff972c`和`/home/loosqk/robot-checks/web-camera-preview-20261112/deploy-209ad4c`。原三服务状态层回滚会涉及网关，不用于单Web回退。
+Web当前部署根为`/home/loosqk/robot-checks/web-control-acceptance-20261114-repeat1/deploy`，unit引用其`candidate/bin/robot-status`及`candidate/configs/xlerobot-status.toml`，PID为`440243`、5线程、重启数0。受监督往返后已恢复只读配置，`control=false / busy=false`，网页使能仍拒绝。复验复用首轮产物，`repeat1/src`链接到`/home/loosqk/robot-checks/web-control-acceptance-20261113/src`；这两个任务根、各自部署备份和事务脚本必须保留。旧导航部署`web-dashboard-navigation-20261113/deploy-2d9e53f`及其服务资源、整机资源、相机部署链仍为回退依赖，不作临时垃圾清理。回退仅操作Web，原三服务状态层回滚不用于单Web回退。
 
-本次双腕往返验收后，两侧S0已恢复`fresh / Safe / TorqueOffConfirmed / fault_code=0 / EStop=1`保护待机，左/右PID为`382682/382734`，`NRestarts=0`。四个临时S1与两份维护网关均已退出，正式两份只读网关和Web身份未变。用户确认全程看清、双腕往返正常、结束整机静止。S0保持`auto_enable=false`，原自启设置不变；本轮未追加整机重启。
+本次左腕Web往返验收后，两侧S0已恢复`fresh / Safe / TorqueOffConfirmed / fault_code=0 / EStop=1`保护待机，左/右PID为`440505/440557`，正式网关PID仍为`200612/200632`，均`NRestarts=0`。两个临时S1与一份维护网关均为`not-found / PID=0`，两个试验角色文件经SHA核对后删除，临时环境文件均不存在，收尾记录为`CLEANUP_PASS`。用户确认第二次全程看清、往返正常、其余无异常，结束整机静止。S0保持`auto_enable=false`，原自启设置不变；本轮未追加整机重启。
 
 发布标签为[v0.1.0+bc5603f](https://github.com/arxxyr/robot-system/tree/v0.1.0%2Bbc5603f)，包内提交、两个远程master及标签指向上述同一提交，已有标签保留。S0包SHA256为`696971bbd7243a4552795a5c51a46fb78a9b283c20ac0f7bd97f584e9ee485e4`；Web沿原独立入口部署，不混入S0包。此次GitHub Actions因账户付款或额度限制未启动，不能记作CI通过；Orin软件验证与打包已完成。后续开发仅推双远程dev。
 
 ## 通讯与控制TODO
 
-方案见[对外通讯与控制](control_plan.md)。Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口；接入管理交给用户已有的外部系统，项目Web不另加登录或访问token。左侧S1保持、单关节定位与主动取消，以及TODO5右侧混合总线复用和双腕往返均已验收；旧±4raw自动精度失败仍保留。当前单关节能力仍由既有维护入口调用，尚未开放网页动作。控制与相机预览不追加为S0结案条件；实机动作前仍须通知并确认现场。
+方案见[对外通讯与控制](control_plan.md)。Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口；接入管理交给用户已有的外部系统，项目Web不另加登录或访问token。左侧S1保持、单关节定位与主动取消、TODO5双腕往返，以及TODO8.1经真实WebSocket提交的受监督左腕往返均已验收；旧±4raw自动精度失败仍保留。使能仍沿既有维护入口，当前部署恢复只读；尚未验收外网写入或普通页面独立使能。控制与相机预览不追加为S0结案条件；实机动作前仍须通知并确认现场。
 
 - [x] **1. 状态链路（软件）**：现有`robot-rpc`提供可选独立程序`robot-status`，固定轮询原`GetState`并展示一页只读状态；身份、8/9关节及物理ID从原TOML派生。缺帧、陈旧、错配和扭矩未确认明确显示；三轮不伪装为位置关节。网关对齐bus1/bus2且不拉起S0/S1，没有控制按钮或动作路由。
 - [x] **1.1 WebSocket只读软件**：推送改为`/api/ws`，移除Web令牌输入、Bearer校验和旧SSE入口，保留`/api/state`单次查询。沿同机gRPC、源时间戳及最新快照处理；连接、消息、慢写和退出有界。独立Web服务配置CPU0–3及CPU/内存/OS任务预算；S0/S1和内部控制RPC保持原实现。
@@ -61,12 +61,12 @@ Web当前运行开发提交`2d9e53ff8abafbc2b748b637b469de0d3ca6e5c0`的Orin原�
 - [x] **6. 低帧率相机预览**：独立Web进程从既有RGB观测镜像取得头部、左腕、右腕最新帧，归还共享内存后再编码JPEG；默认每路1Hz、320×240，间隔、尺寸、质量及陈旧阈值可配置。网页提供独立查看/暂停，慢端无逐帧队列，源时间不因重复收包续鲜，过期或错误隐藏图像；状态WebSocket保持独立。已仅更新Web并完成三路真实画面和外网验证，不再次打开相机或改采集配置；本轮30秒观测通过，长期USB稳定性及负载峰值仍未闭环。
 - [x] **7. 共享资源监控与页面更新**：页面顶部展示robot-system合计及各服务CPU核数/整机占比、cgroup内存与其中的共享内存、进程、线程和每秒上下文切换，并解释服务职责和统计口径；保留整机CPU、内存/交换空间、系统任务、上下文切换、各网络接口收发及Web自身线程/RSS。统一后台线程每2秒采样，浏览器仅查缓存；只更新变化字段，保留节点和选区，“反馈新鲜”改为“反馈正常/反馈超时”。服务范围为`system.slice/robot-*.service`及其子进程，当前5服务包含相机helper；不含该范围外的手动进程，网络仅展示整机接口，未按服务归属。服务内存不再叠加RSS或共享内存；“有进程/无进程”不代表服务健康或硬件状态。
 
-- [x] **8. Web共享控制软件**：复用独立`robot-status`、每源一个gRPC client和同一状态轮询，按总线共享当前任务及最后回执；页面仅增加现有WebSocket上的定位、取消、断扭、急停与独立解除急停请求，默认配置继续只读。多页共享版本避免重复派发，断线与未知结果不自动重发；不创建每页S1、网关或任务订阅。网页使能本轮明确拒绝，因现有S1可保留旧启动锚点，需沿原维护入口核对真实锚点及命令镜像。软件与模拟验证通过，未安装或操作硬件。
-- [ ] **8.1 控制候选部署与受监督网页验证**：Orin候选、仅Web安装/回滚脚本和PLAN_ONLY已准备通过，等待本轮现场确认。仅左腕ID5从真实启动原点增加320raw（约28.125°）、20秒，再用首次原点回程20秒；原监督入口负责锚点、使能、±20raw到位及断扭，定位提交走真实WebSocket。始终复用一个Web服务；每段确认共享任务完成后才退出S1，成功后恢复只读、执行原17电机停止检查并恢复保护待机。尚未安装候选、启动试验或验收实际动作。
+- [x] **8. Web共享控制软件**：复用独立`robot-status`、每源一个gRPC client和同一状态轮询，按总线共享当前任务及最后回执；页面仅增加现有WebSocket上的定位、取消、断扭、急停与独立解除急停请求，默认配置继续只读。多页共享版本避免重复派发，断线与未知结果不自动重发；不创建每页S1、网关或任务订阅。网页使能本轮明确拒绝，因现有S1可保留旧启动锚点，需沿原维护入口核对真实锚点及命令镜像。软件与模拟验证通过，受监督实机边界见下一项。
+- [x] **8.1 控制候选部署与受监督WebSocket验证**：原监督入口负责真实锚点、使能、±20raw到位及断扭，仅定位提交走真实WebSocket。第二次左腕ID5出回各20秒：本次原点1379raw，出程目标1699、实测1692，回程绝对目标1379、实测1385，偏差−7/+6raw，其余七位置槽偏差0。两段各一次请求，复用同一Web进程；共享任务完成、断扭、重新锁存及原17电机STOP51通过，三轮0/±50反馈按既有位置稳定复核通过。用户确认全程看清、往返正常、其余无异常、整机静止。当前恢复只读，网页使能仍禁用；不代表外网写入或普通页面独立使能通过。首次自动通过但未提供现场观察结论，原报告仍为`PASS_PENDING_FIELD_OBSERVATION`，现场记录为`NOT_CONFIRMED`，不回填通过。
 
-本轮新增监督支路在Orin通过fmt、全workspace/all-targets及`supervised-s0`专项Clippy，监督工具115项与安装/运行脚本31项测试通过；两份程序已构建，747项源码前后核对一致。Web与已验`89103e9`基线产物字节相同，原S1、网关和robotctl按SHA复用；原编译失败日志保留。准备根为`/home/loosqk/robot-checks/web-control-acceptance-20261113`，已有单Web备份、配置切换、回滚及一次性启动入口。预检未打开UART、未写服务，正式S0、网关和Web仍为上述原进程；现场GO尚未生成。
+本轮新增监督支路在Orin通过fmt、全workspace/all-targets及`supervised-s0`专项Clippy，监督工具115项与安装/运行脚本31项测试通过；两份程序已构建，747项源码前后核对一致。Web与已验`89103e9`基线产物字节相同，原S1、网关和robotctl按SHA复用；原编译失败日志保留。首次与复验原report分别位于`/home/loosqk/robot-checks/web-control-acceptance-20261113/run`和`/home/loosqk/robot-checks/web-control-acceptance-20261114-repeat1/run`，第二次现场回执独立保留，不改原报告。复验使用新GO和原现场确认时间，未续期或重用已消费GO。
 
-Web共享控制在Orin同版nightly完成fmt、全workspace/all-targets及`status-web`专项Clippy、程序构建；RPC库377项通过、1项既有手动夹具忽略。新增13项纯值与6项假gRPC到真实HTTP/WebSocket集成测试，确认五个页面仍每总线一条连接、同一请求只派发一次、无任务流订阅，覆盖未知结果、显式取消/断扭/急停及关闭回收。Chrome模拟验证切页共用一条WebSocket、重复点击和断线不重发、任务共享及390px布局；无页面异常。746项源码前后核对一致；首两轮编译/lint失败日志保留，原件在Orin的`robot-checks/web-single-joint-control-20261113/software`。只保留软件候选及日志，本轮未启动S0/S1、连接正式网关或调整资源限额。
+Web共享控制在Orin同版nightly完成fmt、全workspace/all-targets及`status-web`专项Clippy、程序构建；RPC库377项通过、1项既有手动夹具忽略。新增13项纯值与6项假gRPC到真实HTTP/WebSocket集成测试，确认五个页面仍每总线一条连接、同一请求只派发一次、无任务流订阅，覆盖未知结果、显式取消/断扭/急停及关闭回收。Chrome模拟验证切页共用一条WebSocket、重复点击和断线不重发、任务共享及390px布局；无页面异常。746项源码前后核对一致；首两轮编译/lint失败日志保留，原件在Orin的`robot-checks/web-single-joint-control-20261113/software`。该软件验证阶段未启动S0/S1或连接正式网关；实机结果按上述TODO8.1记录，资源限额不变。
 
 单关节软件验证使用Orin nightly `1.102.0-nightly (8eb778d04 2026-11-12)`、独立源码与产物目录：fmt、全workspace/all-targets及S1无默认特性Clippy通过；S1 376项、消息层79项、CLI 99项、RPC任务处理20项通过，消息层另有2项既有doctest忽略。首轮Clippy的一项空集合断言lint已修正，原失败日志保留。覆盖提交快照、取消/失败保持、实际发布回执、实测到位、f32边界和旧载荷兼容；该次软件验证未安装、启停服务或操作硬件。原始软件记录保留在Orin的`robot-checks/s1-single-joint-20261113/software`，不提交Git。
 
