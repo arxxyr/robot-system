@@ -12,7 +12,7 @@
 
 `robot-checks/s0-stop-diagnostic-20261114`的fmt、全workspace/all-targets Clippy、77项原安装器测试、13项入口假命令测试和44项只读预检通过后，已执行一次授权取证：初始STOP51、备份和安装通过；左侧guard原预检已执行，但robot-s0因缺少`rt_guard`在配置解析、进入自身设备初始化前退出2，systemd自动重启一次被入口拒绝，随后停止，右侧未启动，20秒待机及最终STOP51均未执行。本次FAIL不代表原关闭问题复现。EStop双侧主备为1；左侧RX主备为0、右侧为1，未手改保护值。用户断电后，原回滚入口先因USB缺失拒绝；现已修正文件回滚的设备依赖，79项离线测试通过，并实际恢复三份正式unit，未启动服务或改写保护文件。当前左侧inactive/exit2、右侧failed/exit1是保留的历史终态，不能当作新候选验收结果。
 
-补齐特性的候选保存在Orin `robot-checks/s0-stop-diagnostic-rt-20261114`，源码仍为`774120f`。构建直接复用现有矩阵和打包验证函数；真实Cargo记录确认S0及robot-core启用`rt_guard`，release分配守卫未禁用，最终候选SHA与Cargo产物一致。配置解析3项、分配守卫负控1项、矩阵及产物检查60项、生产特性Clippy和release构建通过；提交前fmt及全workspace/all-targets Clippy通过，新二进制两组mock的11项关闭检查通过。尚未安装或启动修正候选，下一轮只做保护待机启停取证，需要重新准备当前设备预检和现场确认。
+补齐特性的候选保存在Orin `robot-checks/s0-stop-diagnostic-rt-20261114`，源码仍为`774120f`。构建直接复用现有矩阵和打包验证函数；真实Cargo记录确认S0及robot-core启用`rt_guard`，release分配守卫未禁用，最终候选SHA与Cargo产物一致。配置解析3项、分配守卫负控1项、矩阵及产物检查60项、生产特性Clippy和release构建通过；提交前fmt及全workspace/all-targets Clippy通过，新二进制两组mock的11项关闭检查通过。尚未安装或启动修正候选。新的安装、备份、断电回滚及左→右保护待机启停入口位于Orin `robot-checks/s0-stop-diagnostic-rt-acceptance-20261114`；沿原配置、20秒观察和STOP51。初始RX左0右1按实值处理，不重复授权左侧。上轮systemd在自动重启等待中被停止，历史计数1可能保留；本轮初始STOP51通过后，记录旧终态并仅归零systemd历史计数，再严格要求新实例无自动重启且退出0，S0的EStop/RX/fault不因此清除，旧FAIL不改判。安装器只读检查、四份脚本语法和systemd配置检查通过，执行入口44项只读预检通过（未打开UART）；等待新的现场确认，尚未安装或启动。
 
 - 左臂六关节＋头部两关节原位保持20秒，同时采集头部、左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`，同时采集右腕RGB。两侧分别完成动作观察、停止及清场。
 - 正式链路为 `robot-s0-preflight → guard → robot-s0`；两侧服务为 `robot-s0-bus1/bus2`。手动启停及此前真实重启后的双侧保护待机自启已验证，默认不上扭、故障保持锁存。
@@ -51,7 +51,7 @@
 
 Web当前部署根为`/home/loosqk/robot-checks/web-enable-slider-20261114/deploy`，往返后已恢复候选只读配置。两个临时S1及维护网关已退出；两侧S0未恢复保护待机，关闭及诊断启动阻塞见本文开头，本轮不能记作`CLEANUP_PASS`。此前8.1的往返、STOP51、保护待机及资源回收通过仅属于该次历史验收。
 
-Web备份仍依赖`web-control-acceptance-20261114-repeat1`及其链接的`web-control-acceptance-20261113/src`；此前导航、资源和相机部署链也保留为回退依赖，不能作为临时垃圾删除。回退仅操作Web，原三服务状态层回滚不用于单Web回退。S0的`auto_enable=false`和原自启设置未改，本轮不启动或重启实机。
+Web备份仍依赖`web-control-acceptance-20261114-repeat1`及其链接的`web-control-acceptance-20261113/src`；此前导航、资源和相机部署链也保留为回退依赖，不能作为临时垃圾删除。回退仅操作Web，原三服务状态层回滚不用于单Web回退。S0的`auto_enable=false`和原自启设置未改；新的诊断启停须收到本轮现场确认，不重复往返。
 
 发布标签为[v0.1.0+bc5603f](https://github.com/arxxyr/robot-system/tree/v0.1.0%2Bbc5603f)，包内提交、两个远程master及标签指向上述同一提交，已有标签保留。S0包SHA256为`696971bbd7243a4552795a5c51a46fb78a9b283c20ac0f7bd97f584e9ee485e4`；Web沿原独立入口部署，不混入S0包。此次GitHub Actions因账户付款或额度限制未启动，不能记作CI通过；Orin软件验证与打包已完成。后续开发仅推双远程dev。
 
