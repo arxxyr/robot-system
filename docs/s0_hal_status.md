@@ -4,13 +4,15 @@
 
 ## 当前完成范围
 
-通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，初版为 **0.0.1**。**0.1.0 已在 Orin 安装，当前两侧 S0 因停止时退出码1而停留failed，无运行PID**；Web已恢复只读。`D15=OPEN/DEFERRED`、`deployable=false`；不代表无人值守部署完成。先排查现有S0关闭问题，再继续S1。
+通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，初版为 **0.0.1**。**Orin已恢复正式0.1.0的服务配置，两侧S0均保持停止、无运行PID**；Web保持只读。用户已确认两个电机电源切断、双臂和底盘支撑稳定。`D15=OPEN/DEFERRED`、`deployable=false`；不代表无人值守部署完成。先排查现有S0关闭问题，再继续S1。
 
-当前阻塞：网页使能往返两段自动检查通过，左腕回原位偏差＋6raw；收尾前两侧均报告`Safe/TorqueOffConfirmed`，EStop主备为1。但正常停止两侧均退出1，原17电机STOP51未执行，RX主备仍为Dirty；原报告保留FAIL，人工断电回执尚未收到。软件排查已用正式二进制完成八组mock/PTY、主PID/进程组及假相机正常停止对照，均退出0，尚未复现本次实机根因；不能据此改判通过或放宽停止检查。原件留在Orin `robot-checks/web-enable-slider-20261114/run`，离线排查留在`s0-stop-exit-20261114`。
+原关闭问题仍未定位：网页使能往返两段自动检查通过，左腕回原位偏差＋6raw；收尾前两侧均报告`Safe/TorqueOffConfirmed`，EStop主备为1。但正常停止两侧均退出1，原17电机STOP51未执行；原报告保留FAIL。软件排查已用正式二进制完成八组mock/PTY、主PID/进程组及假相机正常停止对照，均退出0，尚未复现实机根因；不能据此改判通过或放宽停止检查。原件留在Orin `robot-checks/web-enable-slider-20261114/run`，离线排查留在`s0-stop-exit-20261114`。
 
 关闭诊断候选（源码`774120f`）已通过Orin的fmt、两组Clippy、84项相关测试、正式构建与749项源码核对；不带测试特性的候选再做正常/人为清理失败两组mock，11项检查通过。仅补主线程原始错误及关闭聚合日志，原停止顺序、预算和失败规则不变。
 
-安装、备份、回滚及仅保护待机取证入口已准备在Orin `robot-checks/s0-stop-diagnostic-20261114`；本轮fmt、全workspace/all-targets Clippy、77项原安装器测试、13项入口假命令测试和44项只读预检通过，尚未安装或启动。待本轮现场确认后，先做原STOP51，再备份安装；左→右各保护待机20秒、严格检查退出0并再次STOP51，最终两侧停止。EStop始终锁存、默认不上扭，沿原RX恢复入口，不重复往返、不重启Web或网关。退出1先留诊断再判FAIL，不启动下一侧，不重发未知启停；本轮结果不能改写此前失败。
+`robot-checks/s0-stop-diagnostic-20261114`的fmt、全workspace/all-targets Clippy、77项原安装器测试、13项入口假命令测试和44项只读预检通过后，已执行一次授权取证：初始STOP51、备份和安装通过；左侧guard原预检已执行，但robot-s0因缺少`rt_guard`在配置解析、进入自身设备初始化前退出2，systemd自动重启一次被入口拒绝，随后停止，右侧未启动，20秒待机及最终STOP51均未执行。本次FAIL不代表原关闭问题复现。EStop双侧主备为1；左侧RX主备为0、右侧为1，未手改保护值。用户断电后，原回滚入口先因USB缺失拒绝；现已修正文件回滚的设备依赖，79项离线测试通过，并实际恢复三份正式unit，未启动服务或改写保护文件。当前左侧inactive/exit2、右侧failed/exit1是保留的历史终态，不能当作新候选验收结果。
+
+补齐特性的候选保存在Orin `robot-checks/s0-stop-diagnostic-rt-20261114`，源码仍为`774120f`。构建直接复用现有矩阵和打包验证函数；真实Cargo记录确认S0及robot-core启用`rt_guard`，release分配守卫未禁用，最终候选SHA与Cargo产物一致。配置解析3项、分配守卫负控1项、矩阵及产物检查60项、生产特性Clippy和release构建通过；提交前fmt及全workspace/all-targets Clippy通过，新二进制两组mock的11项关闭检查通过。尚未安装或启动修正候选，下一轮只做保护待机启停取证，需要重新准备当前设备预检和现场确认。
 
 - 左臂六关节＋头部两关节原位保持20秒，同时采集头部、左腕RGB；右臂六关节保持＋前轮ID8 raw `+500/20秒`，同时采集右腕RGB。两侧分别完成动作观察、停止及清场。
 - 正式链路为 `robot-s0-preflight → guard → robot-s0`；两侧服务为 `robot-s0-bus1/bus2`。手动启停及此前真实重启后的双侧保护待机自启已验证，默认不上扭、故障保持锁存。
@@ -47,7 +49,7 @@
 
 正式0.1.0安装根为`/home/loosqk/robot-checks/deploy-0.1.0-20261112`，S0候选在`candidate`，两份网关在`status/candidate`，均从发布提交`bc5603f100e50b57b8e28a889a800bf1062821b5`原生构建。S0备份为`/var/lib/robot/deploy-backup-s0-0.1.0-bc5603f`，原状态层备份为安装根下`status/backup`。S0、网关、校准、保护目录及旧Web产物仍留原位；本轮开发未更新master或发布标签。
 
-Web当前部署根为`/home/loosqk/robot-checks/web-enable-slider-20261114/deploy`，往返后已恢复候选只读配置。两个临时S1及维护网关已退出；两侧正式S0停止退出1、未恢复保护待机，本轮不能记作`CLEANUP_PASS`。此前8.1的往返、STOP51、保护待机及资源回收通过仅属于该次历史验收。
+Web当前部署根为`/home/loosqk/robot-checks/web-enable-slider-20261114/deploy`，往返后已恢复候选只读配置。两个临时S1及维护网关已退出；两侧S0未恢复保护待机，关闭及诊断启动阻塞见本文开头，本轮不能记作`CLEANUP_PASS`。此前8.1的往返、STOP51、保护待机及资源回收通过仅属于该次历史验收。
 
 Web备份仍依赖`web-control-acceptance-20261114-repeat1`及其链接的`web-control-acceptance-20261113/src`；此前导航、资源和相机部署链也保留为回退依赖，不能作为临时垃圾删除。回退仅操作Web，原三服务状态层回滚不用于单Web回退。S0的`auto_enable=false`和原自启设置未改，本轮不启动或重启实机。
 

@@ -1267,6 +1267,62 @@ class UnitInstallerTests(unittest.TestCase):
             path = self.fixture.unit_directory / name
             self.assertEqual((path.read_bytes(), stat.S_IMODE(path.stat().st_mode), path.stat().st_uid, path.stat().st_gid), expected)
 
+    def test_missing_devices_do_not_block_file_only_rollback(self):
+        protection = {ref["path"]: reference(Path(ref["path"]))
+                      for rows in self.fixture.protection.values() for ref in rows.values()}
+        self.subject.backup(self.fixture.backup_dir)
+        self.subject.install(self.fixture.backup_dir)
+        for device in self.fixture.devices.values():
+            Path(device["path"]).unlink()
+        for operation in (self.subject.check,
+                          lambda: self.subject.backup(self.fixture.backup_dir.with_name("offline-backup")),
+                          lambda: self.subject.install(self.fixture.backup_dir)):
+            with self.assertRaises(FileNotFoundError):
+                operation()
+        self.fixture.commands.calls.clear()
+
+        self.assertEqual(self.subject.rollback(self.fixture.backup_dir)["status"], "PASS")
+
+        # 原件内容、权限及归属恢复，保护文件的内容和身份保持不变。
+        self.assert_original_targets()
+        self.assertEqual(protection, {path: reference(Path(path)) for path in protection})
+        self.assertEqual(self.fixture.commands.calls.count(["systemctl", "daemon-reload"]), 1)
+        for command in self.fixture.commands.calls:
+            self.assertEqual(command[0], "systemctl")
+            self.assertIn(command[1], ("show", "daemon-reload"))
+
+    def test_missing_devices_do_not_bypass_live_pid_or_backup_integrity(self):
+        for damage in ("active-pid", "backup"):
+            with self.subTest(damage=damage):
+                fixture = DeploymentFixture()
+                self.addCleanup(fixture.cleanup)
+                subject = fixture.make_installer()
+                subject.backup(fixture.backup_dir)
+                subject.install(fixture.backup_dir)
+                targets = {name: subject._target(name) for name in MANAGED_UNIT_NAMES}
+                protection = {ref["path"]: reference(Path(ref["path"]))
+                              for rows in fixture.protection.values() for ref in rows.values()}
+                for device in fixture.devices.values():
+                    Path(device["path"]).unlink()
+                fixture.commands.calls.clear()
+                if damage == "active-pid":
+                    fixture.commands.overrides[UNIT_NAMES[1]] = {"MainPID": "42"}
+                    message = "服务仍有主进程"
+                else:
+                    path = fixture.backup_dir / "backup.json"
+                    path.chmod(0o600)
+                    path.write_bytes(path.read_bytes() + b" \n")
+                    message = "备份清单损坏"
+
+                with self.assertRaisesRegex(ValueError, message):
+                    subject.rollback(fixture.backup_dir)
+
+                self.assertEqual(targets, {name: subject._target(name) for name in MANAGED_UNIT_NAMES})
+                self.assertEqual(protection, {path: reference(Path(path)) for path in protection})
+                self.assertFalse(list(fixture.backup_dir.glob("rollback-*-result.json")))
+                for command in fixture.commands.calls:
+                    self.assertEqual(command[:2], ["systemctl", "show"])
+
     def test_damaged_helper_prevents_check_and_install(self):
         self.assert_runtime_damage_prevents_install(self.fixture.candidate / "camera_capture.py")
 

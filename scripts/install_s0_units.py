@@ -562,7 +562,9 @@ class S0UnitInstaller:
                         or (isinstance(previous, dict) and previous.get("candidate") == str(self.previous_candidate)
                             and previous.get("manifest_sha256") == self.previous_manifest_sha256),
                         "安装的上一版选择与备份不一致")
-            state = self._check(rollback_record=record if rollback else None, allow_upgrade_state=upgrade)
+            # 回滚仅恢复已校验的服务文件；断电后的设备缺失不妨碍恢复。
+            state = self._check(rollback_record=record if rollback else None, allow_upgrade_state=upgrade,
+                                verify_runtime=not rollback)
             if upgrade:
                 require(all(state["services"][name]["UnitFileState"] == record["services"][name]["UnitFileState"]
                             for name in UNIT_NAMES), "换入前自启状态与备份不一致")

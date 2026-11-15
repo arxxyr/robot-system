@@ -46,6 +46,7 @@ Rust 机器人运行时；S0/S1/S2、iceoryx2 与 FlatBuffers 沿既有设计。
 - `robot-core` 保持冻结设计的零 runtime 依赖边界，遵守既有白名单；RPC 使用 `CommandMeta` 与强类型，不用 `protobuf.Any`；`layout_id` 保持 `u64`。具体接口、线程和 wire 规则按需读设计对应章节。
 - 每次提交前实际执行 `cargo fmt --all`，再执行 `cargo clippy --all --all-targets -- -D warnings`，零警告后提交；相关测试按改动选择。CI 顺序沿既有配置。
 - macOS 适用于纯值/部分单测；S0 的 Linux 路径在 Orin 或现有 Linux 环境验证。候选使用隔离工作目录和已有缓存，不在正式安装产物目录构建；只清理本任务资源。
+- 实机候选复用 `configs/package-matrix.toml` 与 `scripts/build_package.py` 生成构建命令，核对实际 Cargo feature 闭包并绑定最终二进制 SHA；S0 的 `serial_rt` 配置需要 `rt_guard`。临时诊断构建也沿用该矩阵。
 - Python 开发/测试沿全局 `uv` 约定；上述固定解释器仅用于既有硬件入口。
 
 ## Git 收尾
