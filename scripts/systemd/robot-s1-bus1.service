@@ -19,8 +19,8 @@ ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-s1 \
     --hardware-id left_arm_full_with_head \
     --config /home/loosqk/repo/robot/robot-system/configs/xlerobot-bus1.toml
 WatchdogSec=5s
-Restart=on-failure
-RestartSec=2s
+# 异常退出后由人工确认断扭并恢复，不在已使能状态自动重建命令发布者。
+Restart=no
 CPUAffinity=0-3
 StandardOutput=journal
 StandardError=journal

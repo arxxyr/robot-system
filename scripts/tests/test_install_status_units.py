@@ -31,7 +31,7 @@ class FakeCommands:
         if argv == ["systemctl", "daemon-reload"]:
             self.stale_cache = self.reload_fails
             return subprocess.CompletedProcess(argv, int(self.reload_fails), "", "失败" if self.reload_fails else "")
-        if argv[:2] != ["systemctl", "show"] or argv[2] not in installer.UNITS:
+        if argv[:2] != ["systemctl", "show"] or argv[2] not in (*installer.UNITS, *installer.LEFT_UNITS):
             raise AssertionError("禁止的外部命令：" + repr(argv))
         name = argv[2]
         exists = (self.directory / name).exists() and not self.stale_cache
@@ -220,6 +220,113 @@ class StatusInstallTests(unittest.TestCase):
                      ["fuser", "/dev/ttyUSB0"]):
             with self.subTest(argv=argv), self.assertRaises(ValueError):
                 installer.run_command(argv)
+
+    def left_control_candidate(self):
+        shutil.copyfile(self.bin_directory / "robot-gateway", self.bin_directory / "robot-s1")
+        (self.bin_directory / "robot-s1").chmod(0o755)
+        candidate = self.root / "left-control"
+        result = installer.prepare(candidate, self.bin_directory, self.configs, "b" * 40,
+                                   "10.0.0.2:8080", self.source, left_control=True)
+        subject = installer.StatusUnitInstaller(candidate, result["manifest_sha256"],
+                                                unit_directory=self.units, runner=self.commands)
+        return candidate, result["manifest_sha256"], subject
+
+    def test_left_control_reuses_bus1_gateway_and_only_changes_three_units(self):
+        candidate, digest, subject = self.left_control_candidate()
+        manifest = installer.validate_candidate(candidate, digest)
+        self.assertEqual(set(manifest["files"]), set(installer.LEFT_FILES))
+        status = installer.tomllib.loads((candidate / "configs/xlerobot-status.toml").read_text())
+        self.assertEqual(status["control"], {"enabled": True})
+        self.assertEqual(status["sources"][0]["endpoint"], "http://127.0.0.1:50061")
+        self.assertEqual(status["sources"][0]["control"]["motion_config"], "xlerobot-bus1-motion.toml")
+        self.assertNotIn("control", status["sources"][1])
+        self.assertEqual(status["sources"][1]["endpoint"], "http://127.0.0.1:50062")
+        self.assertEqual(subject.check()["result"], "CHECK_PASS")
+        self.assertEqual({call[2] for call in self.commands.calls}, set(installer.LEFT_UNITS))
+        self.assertNotIn("robot-gateway-bus2.service", subject.units)
+        s1 = (candidate / "systemd/robot-s1-bus1.service").read_text()
+        self.assertIn("--config " + str(candidate / "configs/xlerobot-bus1-s1.toml"), s1)
+        self.assertIn("Requires=robot-s0-bus1.service", s1)
+        self.assertIn("CPUAffinity=0-3", s1)
+        self.assertIn("Restart=no", s1)
+        self.assertNotIn("target/release", s1)
+        for unit in ("robot-gateway-bus1.service", "robot-status.service"):
+            self.assertNotIn("\nRequires=", (candidate / "systemd" / unit).read_text())
+
+    def test_left_control_preserves_device_config_and_reuses_motion_constraints(self):
+        original = installer.tomllib.loads(self.configs[0].read_text())
+        candidate, _, _ = self.left_control_candidate()
+        composed = installer.tomllib.loads((candidate / "configs/xlerobot-bus1-s1.toml").read_text())
+        motion = installer.tomllib.loads((candidate / "configs/xlerobot-bus1-motion.toml").read_text())
+        self.assertEqual(composed.pop("s1"), {**original.pop("s1"), **motion["s1"]})
+        self.assertEqual(composed, original)
+        self.assertEqual((candidate / "configs/xlerobot-bus1-motion.toml").read_bytes(),
+                         (self.source / "configs/xlerobot-bus1-motion.toml").read_bytes())
+        self.assertNotIn("single_joint", installer.tomllib.loads(self.configs[0].read_text())["s1"])
+
+    def test_left_control_credentials_are_private_and_bound_to_same_token(self):
+        candidate, digest, _ = self.left_control_candidate()
+        roles_path = candidate / "configs/rpc-roles-web-control.toml"
+        env_path = candidate / "configs/web-control.env"
+        roles = installer.tomllib.loads(roles_path.read_text())
+        self.assertEqual(len(roles["tokens"]), 1)
+        token, role = next(iter(roles["tokens"].items()))
+        self.assertEqual(role, "maintainer")
+        self.assertEqual(roles["roles"][role]["capabilities"], list(installer.CONTROL_CAPABILITIES))
+        self.assertEqual(env_path.read_text(), "ROBOT_TOKEN=" + token + "\n")
+        for path in (roles_path, env_path):
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        for name in ("manifest.json", "configs/xlerobot-status.toml", "systemd/robot-status.service"):
+            self.assertNotIn(token, (candidate / name).read_text())
+        env_path.chmod(0o644)
+        with self.assertRaises(ValueError):
+            installer.validate_candidate(candidate, digest)
+
+    def test_left_control_install_and_rollback_leave_right_gateway_untouched(self):
+        right = self.units / "robot-gateway-bus2.service"
+        right.write_text("保留右侧服务\n")
+        right_before = installer.file_identity(right)
+        web = self.units / "robot-status.service"
+        web.write_text("原只读Web\n")
+        web.chmod(0o640)
+        web_before = installer.file_identity(web)
+        candidate, _, subject = self.left_control_candidate()
+        subject.backup(self.backup)
+        self.assertEqual(subject.apply(self.backup)["status"], "PASS")
+        self.assertEqual(installer.file_identity(right), right_before)
+        for name in installer.LEFT_UNITS:
+            self.assertEqual((self.units / name).read_bytes(), (candidate / "systemd" / name).read_bytes())
+        self.assertEqual(subject.apply(self.backup, rollback=True)["status"], "PASS")
+        self.assertEqual(installer.file_identity(right), right_before)
+        self.assertTrue(installer.same_content(installer.file_identity(web), web_before))
+        self.assertFalse((self.units / "robot-s1-bus1.service").exists())
+        self.assertFalse((self.units / "robot-gateway-bus1.service").exists())
+
+    def test_left_control_partial_install_rolls_back_without_candidate_runtime(self):
+        candidate, _, subject = self.left_control_candidate()
+        subject.backup(self.backup)
+        replace = installer.atomic_replace
+        def fail_web(path, data, expected):
+            if path == self.units / "robot-status.service":
+                raise OSError("Web替换失败")
+            return replace(path, data, expected)
+        with patch.object(installer, "atomic_replace", side_effect=fail_web), self.assertRaises(OSError):
+            subject.apply(self.backup)
+        receipt = json.loads((self.backup / "install-result.json").read_text())
+        self.assertEqual(receipt["status"], "FAIL")
+        self.assertEqual(receipt["completed"], list(installer.LEFT_UNITS[:2]))
+        (candidate / "bin/robot-s1").unlink()
+        (candidate / "configs/web-control.env").unlink()
+        self.assertEqual(subject.apply(self.backup, rollback=True)["status"], "PASS")
+        self.assertEqual(list(self.units.iterdir()), [])
+        self.assertEqual(json.loads((self.backup / "install-result.json").read_text()), receipt)
+
+    def test_left_control_rejects_prepare_as_another_user_before_writing_secrets(self):
+        with patch.object(installer.pwd, "getpwnam") as account:
+            account.return_value.pw_uid = os.geteuid() + 1
+            with self.assertRaisesRegex(ValueError, "服务用户"):
+                self.left_control_candidate()
+        self.assertFalse((self.root / "left-control").exists())
 
 
 if __name__ == "__main__":

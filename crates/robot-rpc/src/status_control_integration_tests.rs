@@ -265,16 +265,34 @@ impl Fixture {
         rpc_timeout_ms: u64,
         enable: bool,
     ) -> Self {
+        Self::start_with_sources(
+            poll_ms,
+            hold_invoke,
+            rpc_timeout_ms,
+            enable,
+            vec![source(1), source(2)],
+        )
+        .await
+    }
+
+    async fn start_with_sources(
+        poll_ms: u64,
+        hold_invoke: bool,
+        rpc_timeout_ms: u64,
+        enable: bool,
+        configured_sources: Vec<Source>,
+    ) -> Self {
         let mut sources = Vec::new();
         let mut calls = Vec::new();
         let mut gateways = Vec::new();
         let invoke_gate = hold_invoke.then(|| Arc::new(Semaphore::new(0)));
         let invoked = Arc::new(tokio::sync::Notify::new());
-        for bus in 1..=2 {
-            let mut source = source(bus);
+        for mut source in configured_sources {
             if enable {
                 source.robot_id = format!("web_enable_{}", uuid::Uuid::now_v7().simple());
-                source.enable_alignment_tolerance_rad = Some(0.006_136_5);
+                if source.motion.is_some() {
+                    source.enable_alignment_tolerance_rad = Some(0.006_136_5);
+                }
             }
             let count = Arc::new(Calls::default());
             count.torque_off.store(enable, Ordering::Relaxed);
@@ -501,6 +519,88 @@ async fn enable_uses_real_mirror_guard_and_two_pages_dispatch_once() {
     assert_eq!(fixture.calls[0].connections.load(Ordering::Relaxed), 1);
     assert_eq!(fixture.calls[1].enables.load(Ordering::Relaxed), 0);
     drop((first, second));
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn left_only_control_rejects_every_right_bus_write_without_rpc() {
+    let mut right = source(2);
+    right.motion = None;
+    right.enable_alignment_tolerance_rad = None;
+    let fixture = Fixture::start_with_sources(20, false, 500, true, vec![source(1), right]).await;
+    let mut browser = fixture.same_origin().await;
+    let initial = next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][0]["control"]["can_enable"] == true
+            && snapshot["buses"][1]["data_status"] == "fresh"
+    })
+    .await;
+    let right_control = &initial["buses"][1]["control"];
+    assert_eq!(initial["buses"][0]["control"]["enabled"], true);
+    assert_eq!(right_control["enabled"], false);
+    assert_eq!(right_control["can_enable"], false);
+    assert_eq!(right_control["joints"], json!([]));
+
+    // 伪造合法形状和当前版本的右侧请求，证明拒绝来自总线配置边界。
+    for operation in [
+        "move",
+        "enable",
+        "disable",
+        "cancel",
+        "estop",
+        "clear_estop",
+    ] {
+        let id = format!("right-denied-{operation}");
+        let mut request = command(&initial, &id, operation);
+        request["bus_id"] = "bus2".into();
+        request["process_id"] = right_control["process_id"].clone();
+        request["revision"] = right_control["revision"].clone();
+        if operation == "move" {
+            request["joint"] = "right_arm_wrist_roll".into();
+        } else if operation == "clear_estop" {
+            request["confirmation"] = "CONFIRM_CLEAR_ESTOP".into();
+        }
+        send(&mut browser, &request).await;
+        let result = reply(&mut browser, &id).await;
+        assert_eq!(result["status"], "rejected", "{result}");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("此总线未开放Web控制")
+        );
+        assert_eq!(result["revision"], "0");
+    }
+
+    // 全局控制确实开启，左侧仍能沿同一连接显式使能和提交一次定位。
+    send(&mut browser, &command(&initial, "left-enable", "enable")).await;
+    assert_eq!(
+        reply(&mut browser, "left-enable").await["status"],
+        "accepted"
+    );
+    let enabled = next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][0]["mode"] == "Enabled"
+            && snapshot["buses"][0]["safety_state"] == "TorqueOn"
+    })
+    .await;
+    send(&mut browser, &command(&enabled, "left-move", "move")).await;
+    assert_eq!(reply(&mut browser, "left-move").await["status"], "accepted");
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 1);
+    let right = &fixture.calls[1];
+    for count in [
+        &right.invokes,
+        &right.enables,
+        &right.disables,
+        &right.cancellations,
+        &right.estops,
+        &right.clears,
+    ] {
+        assert_eq!(count.load(Ordering::Relaxed), 0);
+    }
+    assert_eq!(right.connections.load(Ordering::Relaxed), 1);
+    assert!(right.reads.load(Ordering::Relaxed) > 0);
+    drop(browser);
     fixture.finish().await;
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""准备、备份与回滚三个只读状态接入 unit；不启动服务、不访问硬件。"""
+"""准备、备份与回滚状态接入或左侧常驻控制 unit；不启动服务、不访问硬件。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import pwd
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -26,10 +28,23 @@ BINARIES = ("robot-gateway", "robot-status")
 FILES = tuple("bin/" + name for name in BINARIES) + (
     "configs/xlerobot-status.toml", "configs/rpc-roles-status.toml",
 ) + tuple("systemd/" + name for name in UNITS)
+LEFT_UNITS = ("robot-s1-bus1.service", "robot-gateway-bus1.service", "robot-status.service")
+LEFT_BINARIES = (*BINARIES, "robot-s1")
+LEFT_FILES = tuple("bin/" + name for name in LEFT_BINARIES) + (
+    "configs/xlerobot-status.toml", "configs/rpc-roles-web-control.toml", "configs/web-control.env",
+    "configs/xlerobot-bus1-motion.toml", "configs/xlerobot-bus1-s1.toml",
+) + tuple("systemd/" + name for name in LEFT_UNITS)
+CONTROL_CAPABILITIES = ("read_state", "set_enabled", "clear_estop", "estop", "invoke_task")
 PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "Job",
               "UnitFileState", "FragmentPath", "DropInPaths")
 SCHEMA = "ROBOT_STATUS_DEPLOY_V1"
 BACKUP_SCHEMA = "ROBOT_STATUS_BACKUP_V1"
+
+
+def deployment_files(record):
+    left_control = record.get("left_control", False)
+    require(type(left_control) is bool, "左侧控制标记必须为布尔值")
+    return (LEFT_UNITS, LEFT_BINARIES, LEFT_FILES) if left_control else (UNITS, BINARIES, FILES)
 
 
 def safe_directory(path):
@@ -62,12 +77,13 @@ def validate_listen(value):
     return value
 
 
-def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, source_root):
+def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, source_root, *, left_control=False):
     candidate = safe_directory(candidate)
     require(re.fullmatch(r"[0-9a-f]{40}", runtime_commit), "运行产物提交须为完整 Git SHA")
     listen = validate_listen(listen)
     require(len(bus_configs) == 2 and len(set(map(str, bus_configs))) == 2, "须明确两份不同的总线配置")
-    external, robot_ids = {}, []
+    units, binaries, files = deployment_files({"left_control": left_control})
+    external, robot_ids, hardware_ids = {}, [], []
     for bus, path in enumerate(bus_configs, 1):
         path = absolute(path)
         require(path.resolve(strict=True) == path, "总线配置不能经符号链接")
@@ -76,11 +92,13 @@ def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, sourc
         robot_id = config["robot"]["id"]
         require(isinstance(robot_id, str) and re.fullmatch(r"[A-Za-z0-9_-]+", robot_id), "机器人身份无效")
         require(len(config["hardware"]) == 1, "每个网关须对应唯一 hardware")
+        require(re.fullmatch(r"[A-Za-z0-9_-]+", config["hardware"][0]["id"]), "硬件身份无效")
         robot_ids.append(robot_id)
+        hardware_ids.append(config["hardware"][0]["id"])
     require(len(set(robot_ids)) == 2, "两总线机器人身份重复")
     source_root, bin_directory = absolute(source_root), absolute(bin_directory)
     payloads = {}
-    for name in BINARIES:
+    for name in binaries:
         path = bin_directory / name
         # Cargo 的 bin/deps 可以共享硬链接；只读源核内容，冻结副本仍须单链接。
         before = elf_identity(path, 183)
@@ -99,33 +117,81 @@ def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, sourc
             and row["endpoint"] == f"http://127.0.0.1:{50061 + index}"
             and row["config"] == str(bus_configs[index]) for index, row in enumerate(sources)),
             "状态源与两份网关地址或配置不一致")
+    if left_control:
+        motion_path = source_root / "configs/xlerobot-bus1-motion.toml"
+        motion = motion_path.read_text()
+        motion_config = tomllib.loads(motion)
+        require(set(motion_config) == {"s1"} and set(motion_config["s1"]) == {"single_joint"},
+                "运动片段只能包含原单关节约束")
+        original = tomllib.loads(Path(bus_configs[0]).read_text())
+        require("single_joint" not in original.get("s1", {}), "原总线已有运动约束，不能重复合成")
+        names = [row["name"] for row in motion_config["s1"]["single_joint"]["joints"]]
+        require(names == original["hardware"][0]["joints"], "左侧运动片段与原总线关节顺序不一致")
+        composed = Path(bus_configs[0]).read_text().rstrip() + "\n\n" + motion
+        expected = {**original, "s1": {**original.get("s1", {}), **motion_config["s1"]}}
+        require(tomllib.loads(composed) == expected, "合成配置改变了原总线内容")
+        payloads["configs/xlerobot-bus1-s1.toml"] = composed.encode()
+        payloads["configs/xlerobot-bus1-motion.toml"] = motion.encode()
+        status, count = re.subn(r'(?m)^(\[control\]\s*\n)enabled\s*=\s*false\s*$',
+                               r'\1enabled = true', status)
+        require(count == 1, "控制开关须唯一且默认关闭")
+        status, count = re.subn(r'(?m)^# (control = \{ motion_config = "xlerobot-bus1-motion.toml"[^\n]+)$',
+                               r'\1', status)
+        require(count == 1, "缺少唯一的左侧控制配置示例")
+        parsed = tomllib.loads(status)
+        require(parsed["control"] == {"enabled": True} and "control" in parsed["sources"][0]
+                and "control" not in parsed["sources"][1], "只能开放左侧控制")
+        token = secrets.token_hex(32)
+        roles_name = "rpc-roles-web-control.toml"
+        payloads["configs/" + roles_name] = ("[tokens]\n" + json.dumps(token) + ' = "maintainer"\n'
+            '[roles.maintainer]\ncapabilities = ' + json.dumps(CONTROL_CAPABILITIES) + "\n").encode()
+        payloads["configs/web-control.env"] = ("ROBOT_TOKEN=" + token + "\n").encode()
+    else:
+        roles_name = "rpc-roles-status.toml"
+        roles = (source_root / "configs" / roles_name).read_bytes()
+        require(tomllib.loads(roles.decode()) == {"tokens": {}, "roles": {"viewer": {"capabilities": ["read_state"]}}},
+                "只读候选不得含控制凭据或权限")
+        payloads["configs/" + roles_name] = roles
     payloads["configs/xlerobot-status.toml"] = status.encode()
-    roles = (source_root / "configs/rpc-roles-status.toml").read_bytes()
-    require(tomllib.loads(roles.decode()) == {"tokens": {}, "roles": {"viewer": {"capabilities": ["read_state"]}}},
-            "只读候选不得含控制凭据或权限")
-    payloads["configs/rpc-roles-status.toml"] = roles
-    for index, name in enumerate(UNITS):
+    for name in units:
         text = (source_root / "scripts/systemd" / name).read_text()
         text = re.sub(r"\\\n\s*", " ", text)
-        require(not re.search(r"(?m)^\s*(?:Requires|Wants|BindsTo|Upholds|OnFailure|OnSuccess)\s*=", text)
+        if left_control:
+            users = re.findall(r"(?m)^User=([A-Za-z0-9_-]+)$", text)
+            require(len(users) == 1 and pwd.getpwnam(users[0]).pw_uid == os.geteuid(),
+                    "左侧候选须以unit的服务用户执行prepare，确保0600凭据可读；安装仍使用root")
+        # S1沿现有同侧S0依赖；Web和网关仍不会拉起硬件服务。
+        dependencies = re.findall(r"(?m)^\s*(Requires|Wants|BindsTo|Upholds|OnFailure|OnSuccess)\s*=([^\n]*)", text)
+        require((dependencies == [("Requires", "robot-s0-bus1.service")] if name == "robot-s1-bus1.service" else not dependencies)
                 and all(key == "ExecStart" for key in re.findall(r"(?m)^\s*(Exec[A-Za-z]+)\s*=", text)),
                 "状态模板不得自动操作其他服务或执行额外命令")
         text = replace_line(text, "WorkingDirectory", unit_path(candidate))
-        if index < 2:
+        if name.startswith("robot-gateway-"):
+            index = 0 if name == "robot-gateway-bus1.service" else 1
             argv = [unit_path(candidate / "bin/robot-gateway"), "--robot-id", robot_ids[index],
-                    "--rpc-roles-toml", unit_path(candidate / "configs/rpc-roles-status.toml"),
+                    "--rpc-roles-toml", unit_path(candidate / "configs" / roles_name),
                     "--config", unit_path(bus_configs[index]), "--listen-addr", f"127.0.0.1:{50061 + index}"]
+        elif name == "robot-s1-bus1.service":
+            argv = [unit_path(candidate / "bin/robot-s1"), "--robot-id", robot_ids[0],
+                    "--hardware-id", hardware_ids[0], "--config", unit_path(candidate / "configs/xlerobot-bus1-s1.toml")]
         else:
             argv = [unit_path(candidate / "bin/robot-status"), "--config", unit_path(candidate / "configs/xlerobot-status.toml")]
+            if left_control:
+                require(not re.search(r"(?m)^EnvironmentFile=", text), "Web模板不得预置其他凭据文件")
+                text = text.replace("[Service]\n", "[Service]\nEnvironmentFile=" + unit_path(candidate / "configs/web-control.env") + "\n", 1)
+                text = replace_line(text, "Description", "Robot status and left joint control")
         payloads["systemd/" + name] = replace_line(text, "ExecStart", " ".join(argv)).encode()
     candidate.mkdir(mode=0o755)
     for directory in ("bin", "configs", "systemd"):
         (candidate / directory).mkdir(mode=0o755)
     for name, data in payloads.items():
-        write_new(candidate / name, data, 0o555 if name.startswith("bin/") else 0o444)
+        secret = name in ("configs/rpc-roles-web-control.toml", "configs/web-control.env")
+        write_new(candidate / name, data, 0o600 if secret else 0o555 if name.startswith("bin/") else 0o444)
     require(all(file_identity(ref["path"]) == ref for ref in external.values()), "准备期间总线配置变化")
     manifest = {"schema": SCHEMA, "candidate": str(candidate), "runtime_commit": runtime_commit,
-                "files": {name: file_identity(candidate / name) for name in FILES}, "external_configs": external}
+                "files": {name: file_identity(candidate / name) for name in files}, "external_configs": external}
+    if left_control:
+        manifest["left_control"] = True
     write_new(candidate / "manifest.json", (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(), 0o444)
     sync_directory(candidate.parent)
     return {"result": "PREPARE_PASS", "candidate": str(candidate), "manifest_sha256": sha256(candidate / "manifest.json")}
@@ -133,8 +199,8 @@ def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, sourc
 
 def run_command(argv):
     require(argv == ["systemctl", "daemon-reload"] or any(
-        argv == ["systemctl", "show", name, "--all", "--property=" + ",".join(PROPERTIES)] for name in UNITS),
-        "安装入口仅允许三服务属性查询及 daemon-reload")
+        argv == ["systemctl", "show", name, "--all", "--property=" + ",".join(PROPERTIES)] for name in (*UNITS, *LEFT_UNITS)),
+        "安装入口仅允许已知接入服务属性查询及 daemon-reload")
     return subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False,
                           env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
 
@@ -163,16 +229,17 @@ def validate_candidate(candidate, manifest_sha256, *, verify_files=True):
     path = candidate / "manifest.json"
     require(file_identity(path)["sha256"] == manifest_sha256, "候选清单变化")
     record = strict_json(path.read_text())
+    _, binaries, files = deployment_files(record)
     require(record["schema"] == SCHEMA and record["candidate"] == str(candidate)
             and re.fullmatch(r"[0-9a-f]{40}", record["runtime_commit"])
-            and set(record["files"]) == set(FILES) and set(record["external_configs"]) == {"bus1", "bus2"},
+            and set(record["files"]) == set(files) and set(record["external_configs"]) == {"bus1", "bus2"},
             "候选字段或文件集合错误")
     for name, ref in record["files"].items():
         require(ref["path"] == str(candidate / name), "候选文件路径越界")
     if verify_files:
         for ref in (*record["files"].values(), *record["external_configs"].values()):
             require(file_identity(ref["path"]) == ref, "候选或总线配置身份变化：" + ref["path"])
-        for name in BINARIES:
+        for name in binaries:
             elf_identity(candidate / "bin" / name, 183)
     return record
 
@@ -182,6 +249,7 @@ class StatusUnitInstaller:
         self.candidate, self.unit_directory = safe_directory(candidate), safe_directory(unit_directory)
         require(re.fullmatch(r"[0-9a-f]{64}", manifest_sha256), "清单 SHA 格式错误")
         self.manifest_sha256, self.runner = manifest_sha256, runner
+        self.units = deployment_files(self.manifest(verify_files=False))[0]
 
     @contextmanager
     def locked(self):
@@ -203,7 +271,7 @@ class StatusUnitInstaller:
         return result.stdout
 
     def target(self, name):
-        require(name in UNITS, "仅管理固定三个状态接入 unit")
+        require(name in self.units, "仅管理本候选的三个接入 unit")
         path = self.unit_directory / name
         require(not os.path.lexists(str(path) + ".d"), "拒绝目标 drop-in")
         return {"path": str(path), "exists": True, **file_identity(path)} if os.path.lexists(path) else {"path": str(path), "exists": False}
@@ -211,7 +279,7 @@ class StatusUnitInstaller:
     def state(self, verify_files=True):
         manifest = self.manifest(verify_files)
         services, targets = {}, {}
-        for name in UNITS:
+        for name in self.units:
             raw = self.command(["systemctl", "show", name, "--all", "--property=" + ",".join(PROPERTIES)])
             rows = [line.split("=", 1) for line in raw.splitlines()]
             require(all(len(row) == 2 for row in rows) and len(rows) == len(PROPERTIES), "服务属性缺失或重复")
@@ -252,7 +320,7 @@ class StatusUnitInstaller:
             record = {"schema": BACKUP_SCHEMA, "candidate": str(self.candidate), "manifest_sha256": self.manifest_sha256,
                       "unit_directory": str(self.unit_directory), "originals": state["targets"], "saved": saved,
                       "new_units": {name: {**state["manifest"]["files"]["systemd/" + name], "uid": owner.st_uid,
-                                            "gid": owner.st_gid, "mode": 0o644} for name in UNITS}}
+                                            "gid": owner.st_gid, "mode": 0o644} for name in self.units}}
             data = (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
             write_new(path / "backup.json", data)
             write_new(path / "backup.sha256", (hashlib.sha256(data).hexdigest() + "\n").encode())
@@ -267,7 +335,7 @@ class StatusUnitInstaller:
         record = strict_json((path / "backup.json").read_text())
         require(record["schema"] == BACKUP_SCHEMA and record["candidate"] == str(self.candidate)
                 and record["manifest_sha256"] == self.manifest_sha256 and record["unit_directory"] == str(self.unit_directory)
-                and set(record["originals"]) == set(record["new_units"]) == set(UNITS)
+                and set(record["originals"]) == set(record["new_units"]) == set(self.units)
                 and set(record["saved"]) == {name for name, ref in record["originals"].items() if ref["exists"]}, "备份不属于本候选")
         for name, ref in record["originals"].items():
             require(ref["path"] == str(self.unit_directory / name), "备份目标路径错误")
@@ -282,7 +350,7 @@ class StatusUnitInstaller:
             path, record = self.read_backup(directory)
             state = self.state(verify_files=not rollback)
             owner = self.unit_directory.stat()
-            for name in UNITS:
+            for name in self.units:
                 current, old, new = state["targets"][name], record["originals"][name], record["new_units"][name]
                 source = state["manifest"]["files"]["systemd/" + name]
                 require(all(new[key] == source[key] for key in ("path", "sha256", "bytes"))
@@ -305,7 +373,7 @@ class StatusUnitInstaller:
                                "uid": os.geteuid(), "gid": os.getegid(), "mode": 0o600})
             save_receipt()
             try:
-                for name in UNITS:
+                for name in self.units:
                     require(self.target(name) == state["targets"][name], "换入前目标再次漂移")
                     target = self.unit_directory / name
                     expected = record["originals"][name] if rollback else record["new_units"][name]
@@ -343,12 +411,13 @@ def main(argv=None):
     parser.add_argument("--bus2-config", type=Path)
     parser.add_argument("--runtime-commit")
     parser.add_argument("--listen", default="127.0.0.1:8080")
+    parser.add_argument("--left-control", action="store_true", help="显式准备常驻左侧S1、左网关和Web；右侧仅保留状态源")
     args = parser.parse_args(argv)
     try:
         if args.operation == "prepare":
             require(all((args.bin_dir, args.bus1_config, args.bus2_config, args.runtime_commit)), "prepare 缺少产物或总线配置")
             result = prepare(args.candidate, args.bin_dir, (args.bus1_config, args.bus2_config),
-                             args.runtime_commit, args.listen, Path(__file__).resolve().parents[1])
+                             args.runtime_commit, args.listen, Path(__file__).resolve().parents[1], left_control=args.left_control)
         else:
             require(args.manifest_sha256 is not None, "须指定候选清单 SHA")
             installer = StatusUnitInstaller(args.candidate, args.manifest_sha256)
