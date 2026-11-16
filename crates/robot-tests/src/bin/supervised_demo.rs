@@ -5966,7 +5966,7 @@ mod tests {
             enable_only.push("--web-enable".into());
             assert!(Args::parse_from(&enable_only).is_err());
             let mut args = raw_args();
-            args.extend(["--web-url".into(), "ws://10.0.1.40:8080/api/ws".into()]);
+            args.extend(["--web-url".into(), "ws://10.0.0.2:8080/api/ws".into()]);
             assert!(Args::parse_from(&args).is_err());
             args.extend(["--web-bus-id".into(), "bus1".into()]);
             assert!(Args::parse_from(&args).is_ok());

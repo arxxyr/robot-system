@@ -61,7 +61,7 @@ class StatusInstallTests(unittest.TestCase):
             shutil.copyfile(self.source / f"configs/xlerobot-bus{bus}.toml", path)
             self.configs.append(path)
         self.candidate = self.root / "candidate"
-        result = installer.prepare(self.candidate, self.bin_directory, self.configs, "a" * 40, "10.0.1.40:8080", self.source)
+        result = installer.prepare(self.candidate, self.bin_directory, self.configs, "a" * 40, "10.0.0.2:8080", self.source)
         self.digest = result["manifest_sha256"]
         self.units = self.root / "units"
         self.units.mkdir()
@@ -74,7 +74,7 @@ class StatusInstallTests(unittest.TestCase):
         self.assertEqual(set(manifest["files"]), set(installer.FILES))
         self.assertEqual(len(manifest["files"]), 7)
         status = installer.tomllib.loads((self.candidate / "configs/xlerobot-status.toml").read_text())
-        self.assertEqual(status["listen"], "10.0.1.40:8080")
+        self.assertEqual(status["listen"], "10.0.0.2:8080")
         self.assertEqual([row["config"] for row in status["sources"]], list(map(str, self.configs)))
         roles = installer.tomllib.loads((self.candidate / "configs/rpc-roles-status.toml").read_text())
         self.assertEqual(roles["tokens"], {})
@@ -100,7 +100,7 @@ class StatusInstallTests(unittest.TestCase):
         os.link(self.bin_directory / "robot-gateway", self.root / "cargo-deps-gateway")
         self.assertEqual((self.bin_directory / "robot-gateway").stat().st_nlink, 2)
         candidate = self.root / "hardlink-source-candidate"
-        result = installer.prepare(candidate, self.bin_directory, self.configs, "a" * 40, "10.0.1.40:8080", self.source)
+        result = installer.prepare(candidate, self.bin_directory, self.configs, "a" * 40, "10.0.0.2:8080", self.source)
         installer.validate_candidate(candidate, result["manifest_sha256"])
         self.assertEqual((candidate / "bin/robot-gateway").stat().st_nlink, 1)
         os.link(candidate / "bin/robot-gateway", self.root / "forbidden-candidate-link")
@@ -208,7 +208,7 @@ class StatusInstallTests(unittest.TestCase):
             self.subject.check()
 
     def test_listener_rejects_public_unspecified_and_invalid_values(self):
-        for value in ("0.0.0.0:8080", "8.8.8.8:8080", "10.0.1.40:0", "10.0.1.40:65536", "localhost:8080"):
+        for value in ("0.0.0.0:8080", "8.8.8.8:8080", "10.0.0.2:0", "10.0.0.2:65536", "localhost:8080"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 installer.validate_listen(value)
 

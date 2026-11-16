@@ -122,13 +122,13 @@ Web共享控制在Orin同版nightly完成fmt、全workspace/all-targets及`statu
 
 相机预览开发使用独立worktree、隔离Orin源码与产物目录，nightly版本同下。fmt、全workspace/all-targets及`status-web`专项Clippy零警告；RPC串行334项通过/1项既有手动夹具忽略，包含9项新增相机测试和真实软件镜像→JPEG→HTTP/关闭回收。首次并行运行有1项原有subscriber生命周期测试在30秒超时，单独复查及串行全套通过，不回填首轮结果。Chrome模拟三路图像通过暂停、故障恢复、慢端单请求、重复源时间不续鲜及390px布局检查；安装脚本15项通过，本轮单Web事务另有10项离线检查通过。
 
-前次相机部署的真实画面30秒验证：三路各30/30次JPEG成功，源时间均前进29次、无回退；两总线各60次状态均fresh/Safe/TorqueOffConfirmed/故障0。S0 PID仍为`200279/200384`，网关为`200612/200632`，运行标识、重启数、unit及引用配置未变；仅Web换为PID`269237`，重启数0。Web采样最大内存7.53MiB、平均CPU约0.96%单核、4个OS任务，线程均在CPU0–3，无新增OOM事件，原半核/128–256MiB/32任务预算保持；这是观测窗口数据，不是长期峰值。Chrome经SSH转发和`robot.yang.cafe:30080`外网共核57帧，均320×240，17行状态继续更新，暂停/恢复及390px布局通过，业务API无失败。原帧和结果留在该部署根的`verify-live`及本机临时路径，不提交Git；Nginx未改动。
+前次相机部署的真实画面30秒验证：三路各30/30次JPEG成功，源时间均前进29次、无回退；两总线各60次状态均fresh/Safe/TorqueOffConfirmed/故障0。S0 PID仍为`200279/200384`，网关为`200612/200632`，运行标识、重启数、unit及引用配置未变；仅Web换为PID`269237`，重启数0。Web采样最大内存7.53MiB、平均CPU约0.96%单核、4个OS任务，线程均在CPU0–3，无新增OOM事件，原半核/128–256MiB/32任务预算保持；这是观测窗口数据，不是长期峰值。Chrome经SSH转发和外网入口共核57帧，均320×240，17行状态继续更新，暂停/恢复及390px布局通过，业务API无失败。原帧和结果留在该部署根的`verify-live`及本机临时路径，不提交Git；Nginx未改动。
 
 0.1.0软件验证使用Orin nightly `1.102.0-nightly (8eb778d04 2026-11-12)`：fmt、workspace和专项Clippy零警告；RPC 324项通过/1项忽略，S0库762项、程序13项、RX定向与daemon/mock回归通过。部署脚本沿现有安装器验证，实际本轮退出码0；完整报告和原帧只留在部署目录，不提交Git。
 
 本轮S1在独立worktree及Orin隔离目录验证：fmt、全workspace/all-targets及保持工具两组特性Clippy零警告；S1共347项、工具79项、维护/模拟脚本13项通过。真实新S1与mock S0完成固定20秒保持、独立10帧断扭观察、重新锁存及全部进程退出；14项只读预检通过后执行上述一次实机保持。资源回收测试修正join后立即读取`/proc`的观察竞态，保留256轮和30秒上限；编译负载下超时的原记录保留，编译结束后独立复验25.99秒通过，FD数量4→4。正式0.1.0产物未替换；收尾为整机停止检查正常启停两侧S0，恢复后均为fresh/Safe/TorqueOffConfirmed/故障0、EStop主备均为1。相机Web部署段的旧S0 PID仅对应当时观测窗口，不是本轮运行身份。隔离构建目录已清理，正式安装、回滚依赖及原始记录保留。
 
-两个外网入口：[robot.yang.cafe:30080](https://robot.yang.cafe:30080/)和[robot.yang.coffee:30080](https://robot.yang.coffee:30080/)，均使用同源`/api/ws`。本轮真实Chrome取得HTTPS 200、WSS 101，展示17行，两总线均为fresh、Safe、TorqueOffConfirmed、故障码0，源时间戳推进；未发送客户端业务消息，无页面异常。页面的`control_link/output_mode`仍为Unspecified，不据此声称控制接口已接入。Nginx未改动。
+两个外网入口均使用同源`/api/ws`，具体域名与端口由部署环境管理，项目不保存访问地址。本轮真实Chrome取得HTTPS 200、WSS 101，展示17行，两总线均为fresh、Safe、TorqueOffConfirmed、故障码0，源时间戳推进；未发送客户端业务消息，无页面异常。页面的`control_link/output_mode`仍为Unspecified，不据此声称控制接口已接入。Nginx未改动。
 
 Web实际cgroup限制为CPU半核、MemoryHigh 128MiB、MemoryMax 256MiB、TasksMax 32，线程限制在CPU0–3，无OOM；网关同样绑定CPU0–3。升级状态层期间两侧S0 PID和重启次数不变。Web故障元数据与位置有效性分开，缺帧仍显示未知或陈旧。
 

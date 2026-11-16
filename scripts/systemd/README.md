@@ -28,13 +28,13 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 使用[install_status_units.py](../install_status_units.py)，复用原文件身份校验、备份及同目录原子替换，仅管理两份bus网关和一份状态页unit。S0可保持运行；入口不检查串口占用、不触碰保护文件，不带任何start/stop/enable操作。
 
-- `prepare --candidate <绝对目录> --bin-dir <隔离构建的release目录> --bus1-config <当前S0配置绝对路径> --bus2-config <当前S0配置绝对路径> --runtime-commit <实际构建提交的完整SHA> --listen 10.0.1.40:8080`：在仓库脚本位置执行，复制两份AArch64程序，生成两份配置与三份unit，冻结七个文件及外部两份S0配置身份。输出清单SHA；候选目录必须不存在。
+- `prepare --candidate <绝对目录> --bin-dir <隔离构建的release目录> --bus1-config <当前S0配置绝对路径> --bus2-config <当前S0配置绝对路径> --runtime-commit <实际构建提交的完整SHA> --listen <机器人私网IP>:<Web端口>`：在仓库脚本位置执行，复制两份AArch64程序，生成两份配置与三份unit，冻结七个文件及外部两份S0配置身份。输出清单SHA；候选目录必须不存在。
 - `check --candidate <目录> --manifest-sha256 <SHA>`：只读核候选和三个接入服务，拒绝运行中服务、待执行Job、未知drop-in或路径漂移，不要求停止S0。
 - `backup/install/rollback --candidate <目录> --manifest-sha256 <SHA> --backup-dir <绝对目录>`：写操作要求root。先备份三份unit原内容、权限或缺失状态，再安装；安装和回滚仅处理这些文件并执行`daemon-reload`。失败保留进度回执；回滚允许已知的部分安装，拒绝未知漂移。回滚前须停止本批三个上层服务，不停止S0。
 
 开发自测用`uv run --no-project python`；本轮准备好的启动入口使用已核对的固定Python。准备完成后再确认现场并启动：先两个网关，再Web；观察20秒，核实际unit/可执行程序、HTTP两源身份与8/9槽位、真实cgroup限额和所有Web线程CPU范围。真实反馈缺失或被拒收应保留原因，服务及资源通过不等于关节反馈健康。失败只清理本轮三个新服务；通过后可保留运行，自启另行安排。
 
-Nginx由用户在其他配置中维护：上游`http://10.0.1.40:8080`，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前只读websocket入口)。本项目不安装或重载Nginx。外网URL与验收结果见[当前状态](../../docs/s0_hal_status.md#通讯与控制todo)；本机HTTP、外网WSS与有效设备反馈分别验收。`Type=simple`的start成功不等于HTTP已监听，验收需在有限预算内等待就绪，再开始观察；不能因首次连接拒绝立即判定程序启动失败。
+Nginx由用户在其他配置中维护：上游使用安装时配置的机器人私网地址和Web端口，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前只读websocket入口)。本项目不安装或重载Nginx。项目不记录具体外网URL，验收结果见[当前状态](../../docs/s0_hal_status.md#通讯与控制todo)；本机HTTP、外网WSS与有效设备反馈分别验收。`Type=simple`的start成功不等于HTTP已监听，验收需在有限预算内等待就绪，再开始观察；不能因首次连接拒绝立即判定程序启动失败。
 
 ## 安装与回滚
 

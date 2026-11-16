@@ -484,9 +484,9 @@ mod tests {
 
     #[test]
     fn web_url_and_stale_snapshot_are_rejected_before_submission() {
-        assert!(Config::new("ws://10.0.1.40:8080/api/ws", "bus1").is_ok());
+        assert!(Config::new("ws://10.0.0.2:8080/api/ws", "bus1").is_ok());
         for url in [
-            "wss://10.0.1.40/api/ws",
+            "wss://10.0.0.2/api/ws",
             "ws://0.0.0.0:8080/api/ws",
             "ws://8.8.8.8/api/ws",
             "ws://127.0.0.1/api/ws?x=1",

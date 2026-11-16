@@ -335,17 +335,17 @@ fn origin_is_required_for_writes_but_accepts_proxy_https_same_authority() {
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::HOST,
-        "robot.yang.cafe:30080".parse().unwrap(),
+        "robot.example:8443".parse().unwrap(),
     );
     assert!(!super::super::same_origin(&headers));
     headers.insert(
         axum::http::header::ORIGIN,
-        "https://robot.yang.cafe:30080".parse().unwrap(),
+        "https://robot.example:8443".parse().unwrap(),
     );
     assert!(super::super::same_origin(&headers));
     headers.insert(
         axum::http::header::ORIGIN,
-        "https://other.example:30080".parse().unwrap(),
+        "https://other.example:8443".parse().unwrap(),
     );
     assert!(!super::super::same_origin(&headers));
     headers.insert(axum::http::header::ORIGIN, "null".parse().unwrap());

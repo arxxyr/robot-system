@@ -290,7 +290,7 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
     for listen in [
         "127.0.0.1:8080",
         "[::1]:8080",
-        "10.0.1.40:8080",
+        "10.0.0.2:8080",
         "172.16.0.1:8080",
         "172.31.255.254:8080",
         "192.168.1.40:8080",
@@ -308,17 +308,17 @@ fn config_checks_http_rpc_addresses_duplicates_and_budgets() {
         "224.0.0.1:8080",
         "255.255.255.255:8080",
         "[::]:8080",
-        "[::ffff:10.0.1.40]:8080",
+        "[::ffff:10.0.0.2]:8080",
         "[fd00::1]:8080",
         "[fe80::1]:8080",
         "[2001:db8::1]:8080",
         "127.0.0.1:0",
-        "10.0.1.40:0",
+        "10.0.0.2:0",
     ] {
         assert!(validate_file(&parse(listen, "http://127.0.0.1:50061", 2000)).is_err());
     }
-    assert!(validate_file(&parse("127.0.0.1:8080", "http://10.0.1.40:50061", 2000)).is_err());
-    assert!(validate_file(&parse("10.0.1.40:8080", "http://10.0.1.40:50061", 2000)).is_err());
+    assert!(validate_file(&parse("127.0.0.1:8080", "http://10.0.0.2:50061", 2000)).is_err());
+    assert!(validate_file(&parse("10.0.0.2:8080", "http://10.0.0.2:50061", 2000)).is_err());
     assert!(validate_file(&parse("127.0.0.1:8080", "http://localhost:50061", 2000)).is_err());
     assert!(validate_file(&parse("127.0.0.1:8080", "http://127.0.0.1:50061", 1)).is_err());
     let mut config = parse("127.0.0.1:8080", "http://127.0.0.1:50061", 2000);
