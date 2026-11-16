@@ -264,6 +264,44 @@ class StatusInstallTests(unittest.TestCase):
                          (self.source / "configs/xlerobot-bus1-motion.toml").read_bytes())
         self.assertNotIn("single_joint", installer.tomllib.loads(self.configs[0].read_text())["s1"])
 
+    def test_left_control_adds_current_profile_to_legacy_s0_config(self):
+        text = self.configs[0].read_text()
+        begin, end = text.index("[s1.profile]"), text.index("[[sensor]]")
+        self.configs[0].write_text(text[:begin] + text[end:])
+        before = self.configs[0].read_bytes()
+        original = installer.tomllib.loads(before.decode())
+        self.assertNotIn("s1", original)
+        candidate, _, _ = self.left_control_candidate()
+        composed = installer.tomllib.loads((candidate / "configs/xlerobot-bus1-s1.toml").read_text())
+        current = installer.tomllib.loads((self.source / "configs/xlerobot-bus1.toml").read_text())
+        motion = installer.tomllib.loads((self.source / "configs/xlerobot-bus1-motion.toml").read_text())
+        self.assertEqual(composed.pop("s1"), {"profile": current["s1"]["profile"], **motion["s1"]})
+        self.assertEqual(composed, original)
+        self.assertEqual(self.configs[0].read_bytes(), before)
+
+    def test_left_control_replaces_old_profile_but_preserves_other_s1_and_s0_fields(self):
+        text = self.configs[0].read_text().replace("[s1.profile]", "[s1]\ncommand_hz = 50\n\n[s1.profile]")
+        self.configs[0].write_text(text.replace('backends = ["scripted"]', 'backends = ["mock_dwell"]'))
+        before = self.configs[0].read_bytes()
+        original = installer.tomllib.loads(before.decode())
+        self.assertEqual(original["s1"]["profile"]["backends"], ["mock_dwell"])
+        candidate, _, _ = self.left_control_candidate()
+        composed = installer.tomllib.loads((candidate / "configs/xlerobot-bus1-s1.toml").read_text())
+        current = installer.tomllib.loads((self.source / "configs/xlerobot-bus1.toml").read_text())
+        motion = installer.tomllib.loads((self.source / "configs/xlerobot-bus1-motion.toml").read_text())
+        self.assertEqual(composed.pop("s1"), {**original.pop("s1"), "profile": current["s1"]["profile"], **motion["s1"]})
+        self.assertEqual(composed, original)
+        self.assertEqual(self.configs[0].read_bytes(), before)
+
+    def test_left_control_rejects_missing_current_profile_before_writing_candidate(self):
+        original = Path.read_text
+        source_config = self.source / "configs/xlerobot-bus1.toml"
+        def without_profile(path, *args, **kwargs):
+            return "[s1]\n" if path == source_config else original(path, *args, **kwargs)
+        with patch.object(Path, "read_text", without_profile), self.assertRaisesRegex(ValueError, "完整S1 profile"):
+            self.left_control_candidate()
+        self.assertFalse((self.root / "left-control").exists())
+
     def test_left_control_credentials_are_private_and_bound_to_same_token(self):
         candidate, digest, _ = self.left_control_candidate()
         roles_path = candidate / "configs/rpc-roles-web-control.toml"

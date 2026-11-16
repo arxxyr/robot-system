@@ -4,7 +4,7 @@
 
 ## 当前完成范围
 
-通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，初版为 **0.0.1**。Orin保留补齐`rt_guard`的诊断候选，上次受监督网页往返已通过。**本轮常驻控制接入在旧Web退出后的脚本检查处误报，未安装新候选、未使能或运动；双S0正常退出0，原整机停止检查通过。当前双S0、左网关和Web已停止，右网关仍运行，急停保持锁存。** `D15=OPEN/DEFERRED`、`deployable=false`；不代表无人值守部署完成。此前S0退出1的根因仍未定位，与本次上层服务检查错误分开保留。
+通用机器人控制架构的 S0 阶段已完成首个 XLeRobot 后端的受监督 raw 最小闭环，初版为 **0.0.1**。Orin保留补齐`rt_guard`的诊断候选，上次受监督网页往返已通过。**本轮常驻候选已安装，网页解除急停和使能通过，但首条定位因S1配置缺少`scripted`后端被拒绝，出程与回程均未开始；失败收尾的急停、双S0退出0及原整机停止检查通过。当前双S0、左S1、左网关和Web已停止，右网关仍运行。** `D15=OPEN/DEFERRED`、`deployable=false`；此前S0退出1的根因仍未定位，与本轮配置缺项分开保留。
 
 原关闭问题仍未定位：网页使能往返两段自动检查通过，左腕回原位偏差＋6raw；收尾前两侧均报告`Safe/TorqueOffConfirmed`，EStop主备为1。但正常停止两侧均退出1，原17电机STOP51未执行；原报告保留FAIL。软件排查已用正式二进制完成八组mock/PTY、主PID/进程组及假相机正常停止对照，均退出0，尚未复现实机根因；不能据此改判通过或放宽停止检查。原件留在Orin `robot-checks/web-enable-slider-20261114/run`，离线排查留在`s0-stop-exit-20261114`。
 
@@ -61,7 +61,7 @@
 
 正式0.1.0安装根为`/home/loosqk/robot-checks/deploy-0.1.0-20261112`，S0候选在`candidate`，两份网关在`status/candidate`，均从发布提交`bc5603f100e50b57b8e28a889a800bf1062821b5`原生构建。S0备份为`/var/lib/robot/deploy-backup-s0-0.1.0-bc5603f`，原状态层备份为安装根下`status/backup`。S0、网关、校准、保护目录及旧Web产物仍留原位；本轮开发未更新master或发布标签。
 
-Web当前部署根为`/home/loosqk/robot-checks/web-joint-slider-20261116/deploy`，安装配置仍只读，服务已停止。常驻左侧控制候选尚未安装；初始及本次失败收尾的原17电机STOP51通过，停止状态见上文，恢复启动待本轮入口准备及现场确认。此前往返收尾失败不改判。
+Web及左侧S1、网关已安装`/home/loosqk/robot-checks/web-left-persistent-s1-20261116/deploy/candidate`，当前均停止；该候选S1缺profile，待换入修复候选。原只读Web位于`web-joint-slider-20261116/deploy`，三unit备份在本轮`deploy/backup`，保留回滚依赖。停止状态见上文；此前失败不改判。
 
 Web回退链包含前版`web-enable-slider-20261114`、`web-control-acceptance-20261114-repeat1`及其链接的`web-control-acceptance-20261113/src`；此前导航、资源和相机部署链也保留为回退依赖，不能作为临时垃圾删除。回退仅操作Web，原三服务状态层回滚不用于单Web回退。S0的`auto_enable=false`和原自启设置未改。
 
@@ -84,7 +84,7 @@ Web回退链包含前版`web-enable-slider-20261114`、`web-control-acceptance-2
 - [x] **8. Web共享控制软件**：复用独立`robot-status`、每源一个gRPC client和同一状态轮询，按总线共享当前任务及最后回执；页面仅增加现有WebSocket上的定位、取消、断扭、急停与独立解除急停请求，默认配置继续只读。多页共享版本避免重复派发，断线与未知结果不自动重发；不创建每页S1、网关或任务订阅。初版网页使能因旧锚点风险拒绝；8.2已补原位对齐和命令镜像核对，当前部署仍只读。软件与模拟验证通过，受监督实机边界见后续两项。
 - [x] **8.1 控制候选部署与受监督WebSocket验证**：原监督入口负责真实锚点、使能、±20raw到位及断扭，仅定位提交走真实WebSocket。第二次左腕ID5出回各20秒：本次原点1379raw，出程目标1699、实测1692，回程绝对目标1379、实测1385，偏差−7/+6raw，其余七位置槽偏差0。两段各一次请求，复用同一Web进程；共享任务完成、断扭、重新锁存及原17电机STOP51通过，三轮0/±50反馈按既有位置稳定复核通过。用户确认全程看清、往返正常、其余无异常、整机静止。当前恢复只读，网页使能仍禁用；不代表外网写入或普通页面独立使能通过。首次自动通过但未提供现场观察结论，原报告仍为`PASS_PENDING_FIELD_OBSERVATION`，现场记录为`NOT_CONFIRMED`，不回填通过。
 - [x] **8.2 网页使能与目标滑条（软件及受监督WebSocket闭环）**：S1仅在Idle、无任务且新鲜确认断扭时对齐当前保持位置；Web复用原gRPC与一个共享命令镜像线程核对后显式使能。滑条拖动预览、松手单次提交；三轮目标保持raw0，使能对齐约4raw与到位±20raw配置分开。当前HTML的10组浏览器回归、Orin fmt/全workspace Clippy、两端各42项入口假命令测试及49项只读预检通过，复用`3d5d72e`同源已验产物。
-- [ ] **8.3 左侧网页受监督开放（入口已修复，待启动确认）**：现有`install_status_units.py prepare --left-control`只管理左侧S1、左网关和Web；右侧继续只读，页面共享现有连接与任务缓存。滑条松手单次提交，使能原位对齐及±20raw到位合同不变；S1异常退出不自动重启或清错。`2971ee7`三个ARM64候选、Orin fmt/Clippy、12项控制集成、21项安装器测试、本机7项浏览器检查及同一S1两轮20秒mock已通过。首次授权执行在旧Web正常退出后，因脚本强求systemd保留InvocationID/ExecMainPID而误报，未安装、未使能、未运动；原报告保留FAIL，失败收尾STOP51通过，无需人工断电。普通服务现改按正常终态及进程回收判断，S0停止和STOP51原函数不变。修复入口`web-left-persistent-s1-20261116/attempt-02`复用原候选及启动解析函数，两端各33项假命令回归、Orin49条只读命令预检通过，尚未启动。下一次从当前停止状态接续安装，左腕经页面出回各20秒，原停止检查后保留左侧控制服务，电机断扭、急停锁存；外网写入尚未验收。
+- [ ] **8.3 左侧网页受监督开放（修复S1配置合成）**：复用左侧S1、左网关和同一Web，右侧只读。首次入口对systemd历史字段的误判已简化，S0停止与STOP51未改。`attempt-02`完成安装及网页解除急停、使能，首条定位明确返回`NoBackendForKind Scripted`，未开始出程或回程；失败收尾急停、上层进程退出、双S0退出0和原17电机STOP51通过，`manual_power_cut_required=false`，原FAIL保留。原因是旧S0配置无`[s1.profile]`，安装器只拼了运动片段；手写mock却额外启用scripted，未覆盖实际候选。安装器现从当前bus1读取profile一并合成，保留其他S0/S1内容，24项本机回归通过。下一步在Orin验证修复，并让模拟直接读取生成的S1候选配置；不重编或修改S0/S1/Web运行时代码。实机仍待新的脚本、预检和现场确认；外网写入尚未验收。
 
 本次`robot-checks/web-joint-slider-20261116`以新GO执行一次：同一Web进程经两次独立使能与定位，左腕ID5从972raw出程到目标1292/实测1288，再回首次原点972/实测980，出回各20秒，误差−4/+8raw；其余七位置槽偏差0。两段自动到位、断扭、重新锁存及初末两次原17电机STOP51通过；双侧S0严格退出0、无重启，关闭日志完整，随后恢复`fresh/Safe/TorqueOffConfirmed/fault=0`。用户确认全程看清、往返正常、其余无异常、整机静止；`manual_power_cut_required=false`。原report保留`PASS_PENDING_FIELD_OBSERVATION`，独立现场回执保存为`field-observation.json`，不改写旧FAIL。本轮未复现此前退出1；普通浏览器实际拖动与外网写入不由本次工具提交的WebSocket验收替代。
 

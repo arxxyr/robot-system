@@ -123,12 +123,25 @@ def prepare(candidate, bin_directory, bus_configs, runtime_commit, listen, sourc
         motion_config = tomllib.loads(motion)
         require(set(motion_config) == {"s1"} and set(motion_config["s1"]) == {"single_joint"},
                 "运动片段只能包含原单关节约束")
-        original = tomllib.loads(Path(bus_configs[0]).read_text())
+        original_text = Path(bus_configs[0]).read_text()
+        original = tomllib.loads(original_text)
         require("single_joint" not in original.get("s1", {}), "原总线已有运动约束，不能重复合成")
+        profile = tomllib.loads((source_root / "configs/xlerobot-bus1.toml").read_text()).get("s1", {}).get("profile")
+        require(isinstance(profile, dict) and set(profile) == {"backends", "command_mode"}
+                and isinstance(profile["backends"], list) and profile["backends"]
+                and all(isinstance(name, str) and name for name in profile["backends"])
+                and isinstance(profile["command_mode"], str) and profile["command_mode"],
+                "当前左总线配置缺少完整S1 profile，不能回退默认后端")
         names = [row["name"] for row in motion_config["s1"]["single_joint"]["joints"]]
         require(names == original["hardware"][0]["joints"], "左侧运动片段与原总线关节顺序不一致")
-        composed = Path(bus_configs[0]).read_text().rstrip() + "\n\n" + motion
-        expected = {**original, "s1": {**original.get("s1", {}), **motion_config["s1"]}}
+        # 仅替换既有独立profile段；其他段由下方完整解析比对保护，不重写S0配置。
+        base, count = re.subn(r"(?ms)^[ \t]*\[s1\.profile\][ \t]*(?:#[^\n]*)?\n.*?(?=^[ \t]*\[|\Z)",
+                             "", original_text)
+        require(count == (1 if "profile" in original.get("s1", {}) else 0), "原S1 profile须为独立TOML段")
+        profile_text = "[s1.profile]\n" + "\n".join(
+            name + " = " + json.dumps(value, ensure_ascii=False) for name, value in profile.items()) + "\n"
+        composed = base.rstrip() + "\n\n" + profile_text + "\n" + motion
+        expected = {**original, "s1": {**original.get("s1", {}), "profile": profile, **motion_config["s1"]}}
         require(tomllib.loads(composed) == expected, "合成配置改变了原总线内容")
         payloads["configs/xlerobot-bus1-s1.toml"] = composed.encode()
         payloads["configs/xlerobot-bus1-motion.toml"] = motion.encode()

@@ -7,8 +7,8 @@
 | 用途 | 文件 | 边界 |
 |---|---|---|
 | 全总线硬件配置 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
-| 左侧S1软件入口 | [bus1](xlerobot-bus1.toml)、原运动片段与[robot-s1-bus1.service](../scripts/systemd/robot-s1-bus1.service) | 保持8关节顺序和现有scripted profile；显式左侧控制模式生成合成S1配置，同一进程处理多次任务。`Restart=no`，异常后确认断扭并人工恢复；当前仅准备，尚未常驻开放 |
-| 左侧单关节运动片段 | [xlerobot-bus1-motion.toml](xlerobot-bus1-motion.toml) | 仅含左侧8关节的`[s1.single_joint]`约束，供原维护工具或`prepare --left-control`与bus1合成S1候选；不是完整设备配置，不单独安装或自动使能 |
+| 左侧S1软件入口 | [bus1](xlerobot-bus1.toml)、原运动片段与[robot-s1-bus1.service](../scripts/systemd/robot-s1-bus1.service) | 保持8关节顺序和现有scripted profile；显式左侧控制模式生成合成S1配置，同一进程处理多次任务。`Restart=no`，异常后确认断扭并人工恢复；运行状态见[当前状态](../docs/s0_hal_status.md) |
+| 左侧单关节运动片段 | [xlerobot-bus1-motion.toml](xlerobot-bus1-motion.toml) | 仅含左侧8关节的`[s1.single_joint]`约束；部署合成时同时读取当前bus1的`[s1.profile]`，不依赖旧S0配置包含S1后端；不是完整设备配置，不单独安装或自动使能 |
 | 右侧单关节运动片段 | [xlerobot-bus2-motion.toml](xlerobot-bus2-motion.toml) | 仅含右臂6个位置关节的运动约束，供原维护工具与bus2合成候选；三轮目标保持raw 0，不配置轮位置范围，不单独安装 |
 | 单关节软件夹具 | [single-joint-smoke.toml](single-joint-smoke.toml) | 两关节mock配置，只用于新载荷、限位、取消和到位测试；其中数值不是XLeRobot实机运动参数 |
 | 包配置矩阵 | [package-matrix.toml](package-matrix.toml) | 选择Cargo包、feature、程序及归档文件；当前登记`xlerobot-orin-s0`，只在ARM64 Linux原生构建，不作为设备配置加载 |
