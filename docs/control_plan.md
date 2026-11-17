@@ -1,6 +1,6 @@
 # 对外通讯与控制方案
 
-本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前同一Web服务提供双总线状态、三路低帧率相机预览，以及bus1左臂和头部的显式使能与单关节定位；bus2右侧保持只读，不要求Web令牌。左侧常驻S1、左网关和Web已安装并保持运行，真实Chrome原生滑条往返及原停止检查已通过，现场观察待确认；外网写入尚未验收。历史监督入口验收与当前普通页面接入的边界见[当前状态的TODO](s0_hal_status.md#通讯与控制todo)，此前失败记录保留。
+本文记录已确定的通讯与控制方案：Web服务部署在Orin，浏览器使用WebSocket，内部复用现有gRPC，Nginx只作外网入口，访问管理由用户已有的外部系统承担。当前同一Web服务提供双总线状态、三路低帧率相机预览，以及bus1左臂和头部的显式使能与单关节定位；bus2右侧保持只读，不要求Web令牌。左侧常驻S1、左网关和Web已安装并保持运行，真实Chrome原生滑条往返、原停止检查及现场观察均已通过；外网写入尚未验收。历史监督入口验收与当前普通页面接入的边界见[当前状态的TODO](s0_hal_status.md#通讯与控制todo)，此前失败记录保留。
 
 ## 通讯链路
 
@@ -123,7 +123,7 @@ Web启用控制时，一个共享读取线程打开已有S1命令观测镜像，
 
 ## 左侧常驻控制接入
 
-复用[状态安装器](../scripts/install_status_units.py)的`prepare --left-control`，仅管理`robot-s1-bus1.service`、`robot-gateway-bus1.service`和`robot-status.service`。三份服务已安装并保留运行，Web展示双总线，仅bus1配置控制；左网关继续使用本机50061，右网关50062保持只读接入，未改配置或重启。每侧状态连接、共享任务状态、命令镜像、相机和资源缓存沿现有实现，不按网页新建进程。本轮工具检查通过，收尾恢复双S0无故障断扭保护待机；现场观察待确认，最终结论统一见[TODO8.3](s0_hal_status.md#通讯与控制todo)。
+复用[状态安装器](../scripts/install_status_units.py)的`prepare --left-control`，仅管理`robot-s1-bus1.service`、`robot-gateway-bus1.service`和`robot-status.service`。三份服务已安装并保留运行，Web展示双总线，仅bus1配置控制；左网关继续使用本机50061，右网关50062保持只读接入，未改配置或重启。每侧状态连接、共享任务状态、命令镜像、相机和资源缓存沿现有实现，不按网页新建进程。本轮工具检查及现场观察通过，收尾恢复双S0无故障断扭保护待机；具体结论统一见[TODO8.3](s0_hal_status.md#通讯与控制todo)。
 
 `prepare`须以三份unit的`User`运行，生成合成S1配置、受限内部角色和`ROBOT_TOKEN`环境文件；凭据文件权限为0600，只保留在部署候选，不进Git或浏览器。准备仅生成并冻结文件，不操作服务。后续沿同一manifest执行`check → backup → install`，需要时用同批备份`rollback`；写操作使用root，仅安装或恢复本批三份unit并执行`daemon-reload`，不启停服务。具体参数及候选权限见[安装说明](../scripts/systemd/README.md#状态服务安装与回滚)。脚本和预检完成后，再确认现场条件并通知启动。
 
