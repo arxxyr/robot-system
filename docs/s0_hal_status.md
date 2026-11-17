@@ -86,6 +86,8 @@ Web回退链包含前版`web-enable-slider-20261114`、`web-control-acceptance-2
 - [x] **8.2 网页使能与目标滑条（软件及受监督WebSocket闭环）**：S1仅在Idle、无任务且新鲜确认断扭时对齐当前保持位置；Web复用原gRPC与一个共享命令镜像线程核对后显式使能。滑条拖动预览、松手单次提交；三轮目标保持raw0，使能对齐约4raw与到位±20raw配置分开。当前HTML的10组浏览器回归、Orin fmt/全workspace Clippy、两端各42项入口假命令测试及49项只读预检通过，复用`3d5d72e`同源已验产物。
 - [x] **8.3 左侧网页受监督开放（工具及现场观察通过）**：`attempt-03`已安装修复候选；同一常驻S1、一个WebSocket经原生页面滑条完成左腕ID5往返，每段20秒、各一次松键提交。原点980raw，出程目标1298/实测1295，回程目标980/实测986，误差−3/+6raw，其余七位置槽偏差0。中间断扭后原位对齐、再次使能通过；末次断扭、急停锁存、初末原17电机STOP51、双S0严格退出0及保护待机恢复通过，`manual_power_cut_required=false`。左S1、左网关、同一Web保留运行，右网关原实例未动；一次HTTP收尾确认bus1控制开放且可使能、bus2只读，双侧fresh/Safe/TorqueOffConfirmed/fault0。自动报告保持`PASS_PENDING_FIELD_OBSERVATION`，独立`field-observation.json`记录用户确认“全程看清，往返正常，其余无异常，整机静止”，不改写原报告或旧失败。原生按键调整滑条的实机链路与外网写入分别验收，本轮未测外网写入。
 
+- [ ] **8.4 右侧常驻网页控制**：复用已验左侧入口，增量准备右S1、右网关与同一Web；左侧配置和内部凭据沿用。右侧六位置关节显式使能、滑条松手单次定位，三轮目标保持raw 0；当前在做Orin软件验证、候选和实机脚本预检，尚未安装或执行右侧动作。
+
 前两次失败原件保留：首轮普通服务停止后的历史字段误判已简化；`attempt-02`因合成配置缺少S1 profile而拒绝首条定位，未开始轨迹，失败收尾通过。安装器已从当前bus1读取profile，硬件段不改；修复的24项安装器测试、fmt/Clippy、直接使用候选配置（仅隔离robot.id）的两轮mock、33项入口回归及49条只读预检均通过。原S0停止和STOP51合同未改。
 
 前次`robot-checks/web-joint-slider-20261116`以新GO执行一次：同一Web进程经两次独立使能与定位，左腕ID5从972raw出程到目标1292/实测1288，再回首次原点972/实测980，出回各20秒，误差−4/+8raw；其余七位置槽偏差0。两段自动到位、断扭、重新锁存及初末两次原17电机STOP51通过；双侧S0严格退出0、无重启，关闭日志完整，随后恢复`fresh/Safe/TorqueOffConfirmed/fault=0`。用户确认全程看清、往返正常、其余无异常、整机静止；`manual_power_cut_required=false`。原report保留`PASS_PENDING_FIELD_OBSERVATION`，独立现场回执保存为`field-observation.json`，不改写旧FAIL。本轮未复现此前退出1；普通浏览器实际拖动与外网写入不由本次工具提交的WebSocket验收替代。

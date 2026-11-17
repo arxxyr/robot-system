@@ -38,6 +38,7 @@ struct Calls {
     torque_off: AtomicBool,
     enable_unknown: AtomicBool,
     mirror_mode: AtomicUsize,
+    mirror_wheel_slot: AtomicUsize,
     restart_mirror_on_read: AtomicBool,
     frozen_stamp_ns: AtomicU64,
     mirror_sequence: AtomicU64,
@@ -459,14 +460,25 @@ fn spawn_mirrors(
                         .now()
                         .0
                         .saturating_sub(if mode == 2 { 300_000_000 } else { 0 });
-                let positions =
+                let mut positions =
                     vec![if mode == 3 { 0.02 } else { 0.0 }; source.layout.joints.len()];
                 let layout = source.layout.layout_id.wrapping_add(u64::from(mode == 1));
                 let body = if source.mixed_raw {
+                    let mut raw_velocities = vec![0; positions.len()];
+                    // 仅在独立测试镜像中注入指定轮槽的非零命令。
+                    if matches!(mode, 5 | 6) {
+                        let slot = calls[index].mirror_wheel_slot.load(Ordering::Acquire);
+                        assert!(matches!(source.layout.motor_ids[slot], 7..=9));
+                        if mode == 5 {
+                            raw_velocities[slot] = 50;
+                        } else {
+                            positions[slot] = 0.1;
+                        }
+                    }
                     robot_msg::build_helpers::build_mixed_joint_command(
                         layout,
                         &positions,
-                        &vec![0; positions.len()],
+                        &raw_velocities,
                         stamp + 200_000_000,
                         0,
                         seq,
@@ -519,6 +531,125 @@ async fn enable_uses_real_mirror_guard_and_two_pages_dispatch_once() {
     assert_eq!(fixture.calls[0].connections.load(Ordering::Relaxed), 1);
     assert_eq!(fixture.calls[1].enables.load(Ordering::Relaxed), 0);
     drop((first, second));
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn right_mixed_enable_and_joint_move_dispatch_once_without_wheel_requests() {
+    let fixture = Fixture::start_with_enable(20, false, 500, true).await;
+    let mut first = fixture.same_origin().await;
+    let initial = next_matching(&mut first, |snapshot| {
+        snapshot["buses"][1]["control"]["can_enable"] == true
+    })
+    .await;
+    let joints = initial["buses"][1]["control"]["joints"].as_array().unwrap();
+    assert_eq!(joints.len(), 6);
+    let wheels: Vec<_> = fixture.sources[1]
+        .layout
+        .joints
+        .iter()
+        .zip(&fixture.sources[1].layout.motor_ids)
+        .filter(|(_, id)| (7..=9).contains(*id))
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(wheels.len(), 3);
+    for wheel in &wheels {
+        assert!(
+            joints
+                .iter()
+                .all(|joint| joint["name"].as_str() != Some(wheel.as_str()))
+        );
+    }
+    let mut second = fixture.same_origin().await;
+    fresh(&mut second).await;
+    let enable = right_command(&initial, "right-enable-once", "enable");
+    send(&mut first, &enable).await;
+    send(&mut second, &enable).await;
+    let accepted = reply(&mut first, "right-enable-once").await;
+    assert_eq!(accepted["status"], "accepted", "{accepted}");
+    assert_eq!(reply(&mut second, "right-enable-once").await, accepted);
+    let enabled = next_matching(&mut first, |snapshot| {
+        snapshot["buses"][1]["mode"] == "Enabled"
+            && snapshot["buses"][1]["safety_state"] == "TorqueOn"
+            && snapshot["buses"][1]["control"]["busy"] == false
+    })
+    .await;
+    for (slot, wheel) in wheels.iter().enumerate() {
+        let id = format!("right-wheel-denied-{slot}");
+        let mut request = right_command(&enabled, &id, "move");
+        request["joint"] = (*wheel).clone().into();
+        send(&mut first, &request).await;
+        let rejected = reply(&mut first, &id).await;
+        assert_eq!(rejected["status"], "rejected", "{rejected}");
+        assert!(
+            rejected["message"]
+                .as_str()
+                .unwrap()
+                .contains("未知或非位置关节"),
+            "{rejected}"
+        );
+    }
+    assert_eq!(fixture.calls[1].invokes.load(Ordering::Relaxed), 0);
+    let request = right_command(&enabled, "right-move-once", "move");
+    send(&mut first, &request).await;
+    send(&mut second, &request).await;
+    let accepted = reply(&mut first, "right-move-once").await;
+    assert_eq!(accepted["status"], "accepted", "{accepted}");
+    assert_eq!(reply(&mut second, "right-move-once").await, accepted);
+    assert_eq!(fixture.calls[1].enables.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[1].invokes.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[1].connections.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[1].clears.load(Ordering::Relaxed), 0);
+    drop((first, second));
+    fixture.finish().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn right_mixed_nonzero_wheel_raw_or_position_never_sends_enable() {
+    let fixture = Fixture::start_with_enable(20, false, 500, true).await;
+    let mut browser = fixture.same_origin().await;
+    next_matching(&mut browser, |snapshot| {
+        snapshot["buses"][1]["control"]["can_enable"] == true
+    })
+    .await;
+    let right = &fixture.calls[1];
+    for (slot, _) in fixture.sources[1]
+        .layout
+        .motor_ids
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| (7..=9).contains(*id))
+    {
+        right.mirror_wheel_slot.store(slot, Ordering::Release);
+        for mode in [5, 6] {
+            right.mirror_mode.store(mode, Ordering::Release);
+            let snapshot = next_matching(&mut browser, |snapshot| {
+                snapshot["buses"][1]["data_status"] == "fresh"
+                    && snapshot["buses"][1]["control"]["can_enable"] == false
+                    && snapshot["buses"][1]["control"]["enable_reason"]
+                        .as_str()
+                        .is_some_and(|reason| reason.contains("三轮零目标"))
+            })
+            .await;
+            let id = format!("right-wheel-command-denied-{slot}-{mode}");
+            send(&mut browser, &right_command(&snapshot, &id, "enable")).await;
+            let rejected = reply(&mut browser, &id).await;
+            assert_eq!(rejected["status"], "rejected", "{rejected}");
+            assert_eq!(right.enables.load(Ordering::Relaxed), 0);
+            right.mirror_mode.store(0, Ordering::Release);
+            next_matching(&mut browser, |snapshot| {
+                snapshot["buses"][1]["control"]["can_enable"] == true
+            })
+            .await;
+        }
+    }
+    assert_eq!(right.invokes.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[0].enables.load(Ordering::Relaxed), 0);
+    drop(browser);
     fixture.finish().await;
 }
 
@@ -782,6 +913,19 @@ fn command(snapshot: &Value, id: &str, operation: &str) -> Value {
         request["joint"] = "left_arm_wrist_roll".into();
         request["target_position_rad"] = 0.1.into();
         request["duration_ms"] = 10_000.into();
+    }
+    request
+}
+
+#[cfg(target_os = "linux")]
+fn right_command(snapshot: &Value, id: &str, operation: &str) -> Value {
+    let mut request = command(snapshot, id, operation);
+    let control = &snapshot["buses"][1]["control"];
+    request["bus_id"] = "bus2".into();
+    request["process_id"] = control["process_id"].clone();
+    request["revision"] = control["revision"].clone();
+    if operation == "move" {
+        request["joint"] = "right_arm_wrist_roll".into();
     }
     request
 }

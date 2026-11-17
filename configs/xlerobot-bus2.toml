@@ -36,6 +36,10 @@ calibration_paths = [
     "/home/loosqk/repo/dimensional-applications/calibration/base_left9_right7.json",
 ]
 
+[s1.profile]
+backends = ["scripted"]
+command_mode = "joint_position"
+
 # 现场画面已确认：机器人自身右腕接 USB 端口 2.1。
 [[sensor]]
 hardware_id = "right_arm_full_with_base"

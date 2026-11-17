@@ -14,13 +14,13 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 原arm-only S0/S1/gateway模板仍被兼容部署及测试调用，不能与full S0同时占用总线。三个 `*-freeze-test.service` 仅供隔离 smoke 渲染使用，不直接安装到实机。旧服务的停稳检查用于排除占用，不要求将其程序纳入 S0 产物清单。
 
-`robot-s1-bus1.service`是左总线S1模板，硬依赖`robot-s0-bus1.service`，复用bus1的8关节布局和既有scripted profile；普通线程限制在CPU0–3，沿原5秒watchdog。左侧控制候选保留已安装S0设备配置，合入当前仓库bus1的`[s1.profile]`与已有运动片段，同一进程处理多次任务，不修改S0配置。模板设`Restart=no`，异常退出后须先确认断扭，再人工恢复，不能自动重建发布者或靠重启清错。它不访问串口、不自动使能或解除急停；启动S1可能沿依赖启动左S0，仍须事先通知并确认现场。常驻控制的运行状态见[当前状态](../../docs/s0_hal_status.md)，不纳入S0包；须通过下述安装器冻结候选，不能直接复制模板覆盖环境。控制前提与实施顺序见[通讯方案](../../docs/control_plan.md)。
+`robot-s1-bus1.service`与`robot-s1-bus2.service`分别是两总线S1模板，硬依赖同侧S0，复用bus1的8关节或bus2的六臂位置＋三轮速度布局及scripted profile；普通线程限制在CPU0–3，沿原5秒watchdog。控制候选保留已安装S0设备配置，合入当前仓库同侧的`[s1.profile]`与已有运动片段，同一进程处理多次任务，不修改S0配置。模板设`Restart=no`，异常退出后须先确认断扭，再人工恢复，不能自动重建发布者或靠重启清错。它不访问串口、不自动使能或解除急停；启动S1可能沿依赖启动同侧S0，仍须事先通知并确认现场。常驻控制的运行状态见[当前状态](../../docs/s0_hal_status.md)，不纳入S0包；须通过下述安装器冻结候选，不能直接复制模板覆盖环境。控制前提与实施顺序见[通讯方案](../../docs/control_plan.md)。
 
 ## 只读状态接入模板
 
 `robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`独立运行只读HTTP/WebSocket页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
 
-这些模板不在S0安装器、发布矩阵或自启清单内。状态部署入口会冻结产物并渲染绝对路径，不直接复制模板覆盖当前正式安装。原网关保留原生控制RPC；默认只读候选使用[rpc-roles-status.toml](../../configs/rpc-roles-status.toml)的空凭据表与viewer权限，不授予控制能力，也不覆盖原角色表。只读模式不发送控制请求；显式左侧控制模式见下文。当前构建方式见[WebSocket入口](../../docs/control_plan.md#当前websocket入口)；浏览器不设置token，外部接入管理由用户已有系统承担。
+这些模板不在S0安装器、发布矩阵或自启清单内。状态部署入口会冻结产物并渲染绝对路径，不直接复制模板覆盖当前正式安装。原网关保留原生控制RPC；默认只读候选使用[rpc-roles-status.toml](../../configs/rpc-roles-status.toml)的空凭据表与viewer权限，不授予控制能力，也不覆盖原角色表。只读模式不发送控制请求；显式控制模式见下文。当前构建方式见[WebSocket入口](../../docs/control_plan.md#当前websocket入口)；浏览器不设置token，外部接入管理由用户已有系统承担。
 
 状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；当前部署已核对实际限额，结果见[当前状态](../../docs/s0_hal_status.md)，不据此推断未来相机预览负载峰值。
 
@@ -32,15 +32,17 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 |---|---|---|
 | 默认只读 | `robot-gateway-bus1`、`robot-gateway-bus2`、`robot-status` | 两源只读状态与相机预览 |
 | `--left-control` | `robot-s1-bus1`、`robot-gateway-bus1`、`robot-status` | 左侧显式使能及单关节定位；Web仍展示右侧，只读右网关不更改或重启 |
+| `--right-control --existing-control-candidate <已验左候选>` | `robot-s1-bus2`、`robot-gateway-bus2`、`robot-status` | 保留左侧控制，追加六个右臂位置关节；三轮目标raw 0，左S1及左网关unit不改 |
 
-安装器不检查串口占用、不触碰保护文件，不带任何start/stop/enable操作；S0可保持运行。左侧模式须在S1已断扭、停止后安装或回滚，不能把停止S1等同于断扭。
+安装器不检查串口占用、不触碰保护文件，不带任何start/stop/enable操作；S0可保持运行。控制模式须在本侧S1已断扭、停止后安装或回滚，不能把停止S1等同于断扭。
 
 - `prepare --candidate <绝对目录> --bin-dir <隔离构建的release目录> --bus1-config <当前S0配置绝对路径> --bus2-config <当前S0配置绝对路径> --runtime-commit <实际构建提交的完整SHA> --listen <机器人私网IP>:<Web端口>`：在仓库脚本位置执行，复制所需AArch64程序，渲染配置和三个unit，冻结文件及外部两份S0配置身份。输出清单SHA；候选目录必须不存在。准备仅处理文件，不操作服务。
 - 左侧控制在同一prepare命令追加`--left-control`，**必须以模板service User执行，不用root代替**；产物目录还须包含`robot-s1`。生成的`xlerobot-bus1-s1.toml`保留外部S0配置，使用当前仓库`configs/xlerobot-bus1.toml`的`[s1.profile]`并追加原运动片段；旧S0配置无需自带S1后端，Web仅开放bus1，左网关保持本机50061。内部角色文件`rpc-roles-web-control.toml`及`web-control.env`由prepare生成，权限0600且归service User所有，不进Git或浏览器；仅授予现有状态、任务、使能、急停及显式解除急停权限，不自动清错。
-- `check --candidate <目录> --manifest-sha256 <SHA>`：只读核候选和本批三个服务，拒绝运行中服务、待执行Job、未知drop-in或路径漂移，不要求停止S0。模式从已绑定manifest读取，后续操作无需再次传`--left-control`。
-- `backup/install/rollback --candidate <目录> --manifest-sha256 <SHA> --backup-dir <绝对目录>`：写操作使用root。先备份三份unit原内容、权限或缺失状态，再安装；安装和回滚只处理本批unit并执行`daemon-reload`。失败保留进度回执；回滚允许已知的部分安装，拒绝未知漂移。回滚前须停稳本批服务；左侧模式不操作右网关、S0或保护文件，候选内部凭据仍保持原服务用户及0600权限。
+- 右侧在同一prepare命令追加`--right-control --existing-control-candidate <已安装已验左候选目录>`，与`--left-control`互斥。同样使用service User；复用已绑定左候选的内部凭据、左运动片段和Web参数，保留其监听地址（本模式不应用`--listen`），只追加bus2控制。右S1独立合成当前bus2的profile与六位置约束，三轮不进入滑条；不修改两份S0或左S1/左网关unit。
+- `check --candidate <目录> --manifest-sha256 <SHA>`：只读核候选和本批三个服务，拒绝运行中服务、待执行Job、未知drop-in或路径漂移，不要求停止S0。模式从已绑定manifest读取，后续操作无需再次传控制模式参数。
+- `backup/install/rollback --candidate <目录> --manifest-sha256 <SHA> --backup-dir <绝对目录>`：写操作使用root。先备份三份unit原内容、权限或缺失状态，再安装；安装和回滚只处理本批unit并执行`daemon-reload`。失败保留进度回执；回滚允许已知的部分安装，拒绝未知漂移。回滚前须停稳本批服务；控制模式不操作另一侧网关/S1、S0或保护文件，候选内部凭据仍保持原服务用户及0600权限。
 
-开发自测用`uv run --no-project python`，实机执行沿已核对的固定Python。本轮验证与开放状态统一见[TODO8.3](../../docs/s0_hal_status.md#通讯与控制todo)。先完成候选、脚本和预检，再确认现场并通知启动；默认只读模式依次启动两网关和Web，左侧模式按原计划启动左S1、左网关和Web，右侧服务保持原状。启动验收核两源身份与8/9槽位、进程复用和原资源限额；动作验收再沿原位对齐、显式使能、滑条松手单次提交及±20raw到位合同，停止检查不放宽。S1异常后不自动重启、清错或使能，须确认断扭后人工恢复。失败只回收本轮拥有资源，未知结果不重试；通过后是否保持运行按本轮授权，自启另行安排。
+开发自测用`uv run --no-project python`，实机执行沿已核对的固定Python。验证与开放状态统一见[通讯与控制TODO](../../docs/s0_hal_status.md#通讯与控制todo)。先完成候选、脚本和预检，再确认现场并通知启动；默认只读模式依次启动两网关和Web，左侧模式按原计划启动左S1、左网关和Web，右侧服务保持原状；右侧模式只更新右S1、右网关和同一Web，整机停止检查前按计划停双S1/双S0、通过后恢复保护待机。启动验收核两源身份与8/9槽位、进程复用和原资源限额；动作验收再沿原位对齐、显式使能、滑条松手单次提交及±20raw到位合同，停止检查不放宽。S1异常后不自动重启、清错或使能，须确认断扭后人工恢复。失败只回收本轮拥有资源，未知结果不重试；通过后是否保持运行按本轮授权，自启另行安排。
 
 Nginx由用户在其他配置中维护：上游使用安装时配置的机器人私网地址和Web端口，原样转发`/`、`/api/state`、`/api/ws`，支持WebSocket升级；具体要求见[通讯方案](../../docs/control_plan.md#当前websocket入口)。本项目不安装或重载Nginx。项目不记录具体外网URL，验收结果见[当前状态](../../docs/s0_hal_status.md#通讯与控制todo)；本机HTTP、外网WSS与有效设备反馈分别验收。`Type=simple`的start成功不等于HTTP已监听，验收需在有限预算内等待就绪，再开始观察；不能因首次连接拒绝立即判定程序启动失败。
 

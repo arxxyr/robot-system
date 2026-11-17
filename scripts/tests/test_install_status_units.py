@@ -1,6 +1,7 @@
 """状态页部署的离线文件事务测试；假 ELF、假 systemd，不访问设备。"""
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -31,7 +33,7 @@ class FakeCommands:
         if argv == ["systemctl", "daemon-reload"]:
             self.stale_cache = self.reload_fails
             return subprocess.CompletedProcess(argv, int(self.reload_fails), "", "失败" if self.reload_fails else "")
-        if argv[:2] != ["systemctl", "show"] or argv[2] not in (*installer.UNITS, *installer.LEFT_UNITS):
+        if argv[:2] != ["systemctl", "show"] or argv[2] not in (*installer.UNITS, *installer.LEFT_UNITS, *installer.RIGHT_UNITS):
             raise AssertionError("禁止的外部命令：" + repr(argv))
         name = argv[2]
         exists = (self.directory / name).exists() and not self.stale_cache
@@ -365,6 +367,127 @@ class StatusInstallTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "服务用户"):
                 self.left_control_candidate()
         self.assertFalse((self.root / "left-control").exists())
+
+    def right_control_candidate(self, existing=None):
+        if existing is None:
+            existing, _, _ = self.left_control_candidate()
+        candidate = self.root / "right-control"
+        # 右侧扩展须复用已有令牌，禁止额外生成。
+        with patch.object(installer.secrets, "token_hex", side_effect=AssertionError("禁止轮换左侧令牌")):
+            result = installer.prepare(candidate, self.bin_directory, self.configs, "c" * 40,
+                                       "127.0.0.1:8080", self.source, right_control=True,
+                                       existing_control_candidate=existing)
+        subject = installer.StatusUnitInstaller(candidate, result["manifest_sha256"],
+                                                unit_directory=self.units, runner=self.commands)
+        return candidate, result["manifest_sha256"], subject, existing
+
+    def test_control_modes_are_exclusive_and_right_requires_existing_left_candidate(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            installer.main(["prepare", "--candidate", str(self.root / "invalid"), "--left-control", "--right-control"])
+        for options in ({"left_control": True, "right_control": True}, {"right_control": True},
+                        {"right_control": True, "existing_control_candidate": self.candidate}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                installer.prepare(self.root / "invalid", self.bin_directory, self.configs, "c" * 40,
+                                  "127.0.0.1:8080", self.source, **options)
+            self.assertFalse((self.root / "invalid").exists())
+
+    def test_right_preserves_left_credentials_motion_and_web_parameters(self):
+        original_read = Path.read_text
+        def custom_preview(path, *args, **kwargs):
+            text = original_read(path, *args, **kwargs)
+            return text.replace("interval_ms = 1000", "interval_ms = 2000") if path == self.source / "configs/xlerobot-status.toml" else text
+        with patch.object(Path, "read_text", custom_preview):
+            existing, _, _ = self.left_control_candidate()
+        candidate, digest, _, _ = self.right_control_candidate(existing)
+        manifest = installer.validate_candidate(candidate, digest)
+        self.assertEqual(set(manifest["files"]), set(installer.RIGHT_FILES))
+        self.assertEqual(manifest["existing_control_manifest"], installer.file_identity(existing / "manifest.json"))
+        before = installer.tomllib.loads((existing / "configs/xlerobot-status.toml").read_text())
+        after = installer.tomllib.loads((candidate / "configs/xlerobot-status.toml").read_text())
+        self.assertEqual(after["listen"], "10.0.0.2:8080")
+        self.assertEqual(after["preview"]["interval_ms"], 2000)
+        self.assertEqual(after["sources"][1].pop("control"),
+                         {"motion_config": "xlerobot-bus2-motion.toml", "enable_alignment_tolerance_rad": 0.0061365})
+        self.assertEqual(after, before)
+        for name in ("rpc-roles-web-control.toml", "web-control.env", "xlerobot-bus1-motion.toml"):
+            self.assertEqual((candidate / "configs" / name).read_bytes(), (existing / "configs" / name).read_bytes())
+        for name in ("rpc-roles-web-control.toml", "web-control.env"):
+            self.assertEqual(stat.S_IMODE((candidate / "configs" / name).stat().st_mode), 0o600)
+
+    def test_right_composes_current_profile_for_legacy_bus_without_changing_hardware(self):
+        text = self.configs[1].read_text()
+        begin, end = text.index("[s1.profile]"), text.index("[[sensor]]")
+        self.configs[1].write_text(text[:begin] + text[end:])
+        original_bytes = self.configs[1].read_bytes()
+        original = installer.tomllib.loads(original_bytes.decode())
+        candidate, _, _, _ = self.right_control_candidate()
+        combined = installer.tomllib.loads((candidate / "configs/xlerobot-bus2-s1.toml").read_text())
+        s1 = combined.pop("s1")
+        self.assertEqual(s1["profile"], {"backends": ["scripted"], "command_mode": "joint_position"})
+        self.assertEqual(combined, original)
+        self.assertTrue(combined["hardware"][0]["feetech_bus2_mixed_raw"])
+        self.assertEqual(len(s1["single_joint"]["joints"]), 6)
+        self.assertEqual(self.configs[1].read_bytes(), original_bytes)
+        template = (candidate / "systemd/robot-s1-bus2.service").read_text()
+        for expected in ("Requires=robot-s0-bus2.service", "Restart=no", "CPUAffinity=0-3",
+                         "--hardware-id right_arm_full_with_base", "--config " + str(candidate / "configs/xlerobot-bus2-s1.toml")):
+            self.assertIn(expected, template)
+
+    def test_right_filters_wheel_slots_by_motor_id_not_array_position(self):
+        text = self.configs[1].read_text()
+        hardware = installer.tomllib.loads(text)["hardware"][0]
+        order = [6, 0, 1, 2, 7, 3, 4, 8, 5]
+        text = installer.re.sub(r"(?ms)^joints\s*=\s*\[.*?\]", "joints = " + json.dumps([hardware["joints"][i] for i in order]), text, count=1)
+        text = installer.re.sub(r"(?m)^motor_ids\s*=.*$", "motor_ids = " + json.dumps([hardware["motor_ids"][i] for i in order]), text)
+        text = installer.re.sub(r"(?m)^calibration_range_tolerances_raw\s*=.*$", "calibration_range_tolerances_raw = "
+                                + json.dumps([hardware["calibration_range_tolerances_raw"][i] for i in order]), text)
+        self.configs[1].write_text(text)
+        candidate, _, _, _ = self.right_control_candidate()
+        combined = installer.tomllib.loads((candidate / "configs/xlerobot-bus2-s1.toml").read_text())
+        self.assertEqual(combined["hardware"], installer.tomllib.loads(text)["hardware"])
+        self.assertEqual([joint["name"] for joint in combined["s1"]["single_joint"]["joints"]], hardware["joints"][:6])
+
+    def test_right_rejects_wheel_position_constraint(self):
+        existing, _, _ = self.left_control_candidate()
+        original_read = Path.read_text
+        def wheel_motion(path, *args, **kwargs):
+            text = original_read(path, *args, **kwargs)
+            return text.replace("right_arm_wrist_roll", "base_left_wheel") if path == self.source / "configs/xlerobot-bus2-motion.toml" else text
+        with patch.object(Path, "read_text", wheel_motion), self.assertRaisesRegex(ValueError, "位置关节顺序"):
+            self.right_control_candidate(existing)
+        self.assertFalse((self.root / "right-control").exists())
+
+    def test_right_install_and_rollback_only_touch_right_three_units(self):
+        candidate, _, subject, existing = self.right_control_candidate()
+        preserved = {}
+        for name in ("robot-s1-bus1.service", "robot-gateway-bus1.service"):
+            path = self.units / name
+            shutil.copyfile(existing / "systemd" / name, path)
+            path.chmod(0o640)
+            preserved[name] = installer.file_identity(path)
+        web = self.units / "robot-status.service"
+        shutil.copyfile(existing / "systemd/robot-status.service", web)
+        web.chmod(0o640)
+        web_before = installer.file_identity(web)
+        self.assertEqual(subject.check()["result"], "CHECK_PASS")
+        subject.backup(self.backup)
+        self.assertEqual(subject.apply(self.backup)["status"], "PASS")
+        self.assertEqual(set(subject.units), set(installer.RIGHT_UNITS))
+        for name in installer.RIGHT_UNITS:
+            self.assertEqual((self.units / name).read_bytes(), (candidate / "systemd" / name).read_bytes())
+        self.assertEqual(subject.apply(self.backup, rollback=True)["status"], "PASS")
+        self.assertTrue(installer.same_content(installer.file_identity(web), web_before))
+        for name, before in preserved.items():
+            self.assertEqual(installer.file_identity(self.units / name), before)
+        self.assertFalse((self.units / "robot-s1-bus2.service").exists())
+        self.assertFalse((self.units / "robot-gateway-bus2.service").exists())
+        self.assertEqual({call[2] for call in self.commands.calls if call[:2] == ["systemctl", "show"]}, set(installer.RIGHT_UNITS))
+
+    def test_right_validation_rejects_changed_existing_left_candidate(self):
+        candidate, digest, _, existing = self.right_control_candidate()
+        (existing / "configs/web-control.env").write_text("ROBOT_TOKEN=changed\n")
+        with self.assertRaises(ValueError):
+            installer.validate_candidate(candidate, digest)
 
 
 if __name__ == "__main__":

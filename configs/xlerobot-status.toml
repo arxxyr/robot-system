@@ -7,7 +7,7 @@ poll_interval_ms = 500
 stale_after_ms = 2000
 rpc_timeout_ms = 500
 
-# 仅软件候选显式启用；正式部署仍关闭。内部权限沿现有gRPC，不向浏览器提供凭据。
+# 默认关闭，由控制候选显式启用。内部权限沿现有gRPC，不向浏览器提供凭据。
 [control]
 enabled = false
 
