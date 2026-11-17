@@ -1953,6 +1953,13 @@ def validate_go(go, plan, now_ns):
                 '缺本轮架空支撑/持续观察及具体动作现场确认')
 
 
+def is_read_only_journal_command(argv):
+    """仅识别既有按boot/Invocation读取日志的命令，不接受journalctl管理选项。"""
+    return (len(argv)==7 and list(argv[:5])==['sudo','-n','journalctl','--no-pager','--output=json']
+            and all(isinstance(value,str) and re.fullmatch(prefix+r'[0-9a-f]{32}',value)
+                    for prefix,value in zip(('_BOOT_ID=','_SYSTEMD_INVOCATION_ID='),argv[5:])))
+
+
 class RealExecutor:
     """普通命令仅一个child；S0专用分支另持daemon，两者都必须真实回收。"""
     def __init__(self, tool, output):
@@ -2014,7 +2021,10 @@ class RealExecutor:
             try:
                 if self.now() - row['started_ns'] > row.get('budget_ns',2_000_000_000):
                     if not row['over_budget']:
-                        print('爸爸，child超预算，仍持有真实wait；请立即人工断电。', flush=True)
+                        if row.get('diagnostic_journal'):
+                            print('爸爸，日志采集超预算，仍持有真实wait；停止状态由最终退出和读回确认。', flush=True)
+                        else:
+                            print('爸爸，child超预算，仍持有真实wait；请立即人工断电。', flush=True)
                     row['over_budget'] = True
             except BaseException as error:
                 failures.append('wait观测:' + repr(error))
@@ -2062,7 +2072,11 @@ class RealExecutor:
                     warning(error)
 
     def command(self, argv, *, cleanup=False, allowed=(0,), input_raw=None, mixed_stop_check=None,
-                s0_sender=False,s0_control=False):
+                s0_sender=False,s0_control=False,diagnostic_journal=False):
+        require(type(diagnostic_journal) is bool, '日志诊断类别必须为布尔值')
+        if diagnostic_journal:
+            require(is_read_only_journal_command(argv) and input_raw is None and mixed_stop_check is None
+                    and not s0_sender and not s0_control, '日志诊断类别仅允许原只读journalctl命令')
         if s0_sender or s0_control:
             contract=self.s0_contract
             expected=tuple(self.s0_sender_argv) if s0_sender else None
@@ -2082,6 +2096,8 @@ class RealExecutor:
         row = {"sequence": self.sequence, "argv": [str(v) for v in argv],
                "started_ns": self.now(), "pid": None, "reaped": False,
                "signals_sent": [], "over_budget": False, "cleanup": cleanup}
+        if diagnostic_journal:
+            row['diagnostic_journal'] = True
         if mixed_stop_check is not None:
             row['budget_ns']=MIXED_CHILD_BUDGET_NS
         failures = []

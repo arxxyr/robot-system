@@ -153,6 +153,7 @@ fn make_rig(
             .map(|i| u8::try_from(i + 1).expect("motor id fits u8"))
             .collect(),
         feetech_bus2_mixed_raw: false,
+        calibration_range_tolerances_raw: None,
     };
     let mock_dwell = Box::leak(Box::new(MockDwellBackend::with_duration_ms(20)));
     let mut backends: Vec<&'static dyn ActionBackend> = vec![

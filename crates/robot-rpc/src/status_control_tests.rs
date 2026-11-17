@@ -16,6 +16,7 @@ fn source(bus: u8) -> Source {
         robot_id: robot.robot.id,
         hardware_id: hardware.id.clone(),
         mixed_raw: hardware.feetech_bus2_mixed_raw,
+        calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
         enable_alignment_tolerance_rad: Some(0.006_136_5),
@@ -104,17 +105,18 @@ fn duplicate_missing_or_wheel_motion_limits_are_rejected() {
 
 #[test]
 fn enable_alignment_never_accepts_out_of_range_original_or_encoded_positions() {
-    let source = source(1);
+    let mut source = source(1);
+    source.calibration_range_tolerances_raw = None;
     let mut motion = source.motion.clone().unwrap();
     let mut positions = vec![0.0; source.layout.joints.len()];
     positions[0] = motion.joints[0].max_position_rad + 0.001;
-    assert!(motion.check_positions(&source, &positions).is_err());
+    assert!(motion.check_hold_positions(&source, &positions).is_err());
     motion.joints[0].max_position_rad = 0.1;
     positions[0] = 0.1;
     // f64落在边界，但实际f32编码略大于0.1，仍应拒绝。
-    assert!(motion.check_positions(&source, &positions).is_err());
+    assert!(motion.check_hold_positions(&source, &positions).is_err());
     positions[0] = 0.09;
-    assert!(motion.check_positions(&source, &positions).is_ok());
+    assert!(motion.check_hold_positions(&source, &positions).is_ok());
 }
 
 #[test]
@@ -224,6 +226,33 @@ fn move_respects_state_motion_units_and_wheel_exclusion() {
     let mut inactive = state;
     inactive.mode = Some("Safe".into());
     assert!(control.preflight(&request, &source, &inactive).is_err());
+}
+
+#[test]
+fn calibrated_hold_tolerance_never_expands_selected_web_target() {
+    let source = source(2);
+    let mut state = view(&source);
+    let elbow = source
+        .layout
+        .motor_ids
+        .iter()
+        .position(|&id| id == 3)
+        .unwrap();
+    state.joints[elbow].position_rad = Some(f64::from(robot_adapter_feetech::raw_to_rad(2998)));
+    let control = ControlState::new(true, "process-1");
+    let mut request = request(Operation::Move);
+    request.bus_id = source.id.clone();
+    request.joint = Some(source.layout.joints[4].clone());
+    request.target_position_rad = Some(0.5);
+    request.duration_ms = Some(20_000);
+    assert!(control.preflight(&request, &source, &state).is_ok());
+    request.joint = Some(source.layout.joints[elbow].clone());
+    for raw in [2992, 2998, 3011] {
+        request.target_position_rad = Some(f64::from(robot_adapter_feetech::raw_to_rad(raw)));
+        assert!(control.preflight(&request, &source, &state).is_err());
+    }
+    request.target_position_rad = Some(f64::from(robot_adapter_feetech::raw_to_rad(2991)));
+    assert!(control.preflight(&request, &source, &state).is_ok());
 }
 
 #[test]

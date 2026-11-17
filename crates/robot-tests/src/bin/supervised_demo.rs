@@ -987,6 +987,7 @@ struct SingleJointLimit {
     max: f64,
     velocity: f64,
     tolerance_rad: f64,
+    hold_tolerance_raw: u16,
 }
 
 #[cfg(feature = "supervised-s0")]
@@ -999,14 +1000,20 @@ fn check_single_joint_limits(limits: &[SingleJointLimit], positions: &[f64]) -> 
         return Err("单关节配置范围与位置维度不匹配".into());
     }
     for (limit, &position) in limits.iter().zip(positions) {
+        let (min, max) = robot_adapter_feetech::convert::calibrated_hold_range(
+            limit.min,
+            limit.max,
+            limit.hold_tolerance_raw,
+        )
+        .ok_or("单关节原位边界必须来自可往返的校准raw端点")?;
         if !position.is_finite()
             || position.abs() > f64::from(f32::MAX)
-            || position < limit.min
-            || position > limit.max
-            || f64::from(position as f32) < limit.min
-            || f64::from(position as f32) > limit.max
+            || position < min
+            || position > max
+            || f64::from(position as f32) < min
+            || f64::from(position as f32) > max
         {
-            return Err("单关节位置或实际f32编码值超出候选S1配置范围".into());
+            return Err("单关节位置或实际f32编码值超出候选校准保持范围".into());
         }
     }
     Ok(())
@@ -1101,9 +1108,45 @@ fn motion_config(
             max,
             velocity,
             tolerance_rad: tolerance,
+            hold_tolerance_raw: 0,
         });
     }
     Ok((limits, max_duration, settle, stable))
+}
+
+/// 同份已读取的硬件 TOML 提供容差；不再读取校准文件，也不扩展主动目标。
+#[cfg(feature = "supervised-s0")]
+fn single_joint_hold_tolerances(
+    config: &toml::Value,
+    args: &Args,
+    joint_count: usize,
+) -> Result<Option<Vec<u16>>, String> {
+    let hardware_id = match args.side {
+        Side::Left => &args.left_hardware_id,
+        Side::Right => &args.right_hardware_id,
+    };
+    let tolerances: Option<Vec<u16>> = config
+        .get("hardware")
+        .and_then(toml::Value::as_array)
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry.get("id").and_then(toml::Value::as_str) == Some(hardware_id.as_str())
+            })
+        })
+        .and_then(|hardware| hardware.get("calibration_range_tolerances_raw"))
+        .map(|value| {
+            value
+                .clone()
+                .try_into()
+                .map_err(|error| format!("校准边界容差解析失败：{error}"))
+        })
+        .transpose()?;
+    if let Some(values) = &tolerances
+        && (values.len() != joint_count || values.iter().any(|&value| value > 4095))
+    {
+        return Err("校准边界容差必须与关节等长且在0..4095内".into());
+    }
+    Ok(tolerances)
 }
 
 #[cfg(feature = "supervised-s0")]
@@ -1231,7 +1274,13 @@ impl SingleJointPlan {
                 .collect(),
             layout_id: layout.layout_id,
         };
-        let (limits, max_duration, settle_ms, stable_ms) = motion_config(config, &position_layout)?;
+        let (mut limits, max_duration, settle_ms, stable_ms) =
+            motion_config(config, &position_layout)?;
+        if let Some(tolerances) = single_joint_hold_tolerances(config, args, layout.joints.len())? {
+            for (limit, &slot) in limits.iter_mut().zip(&position_slots) {
+                limit.hold_tolerance_raw = tolerances[slot];
+            }
+        }
         if duration_ms == 0 || duration_ms > max_duration {
             return Err("单关节时长超出候选S1配置".into());
         }
@@ -1278,14 +1327,20 @@ impl SingleJointPlan {
     )]
     fn check_start(&self, positions: &[f64]) -> Result<(), String> {
         self.check_limits(positions)?;
-        let mut target = positions.to_vec();
-        target[self.joint_idx] = self.target_position_rad;
-        self.check_limits(&target)?;
         let selected_limit = &self.limits[self
             .position_slots
             .iter()
             .position(|&slot| slot == self.joint_idx)
             .ok_or("所选位置槽缺少约束")?];
+        // 未选中槽保持原位可用边界容差，主动选中目标仍必须落在原运动范围。
+        let target = self.target_position_rad;
+        let range = selected_limit.min..=selected_limit.max;
+        if !target.is_finite()
+            || !range.contains(&target)
+            || !range.contains(&position_for_s0(target))
+        {
+            return Err("单关节主动目标或实际f32编码超出原运动范围".into());
+        }
         let start = positions[self.joint_idx];
         check_single_joint_motion(
             start,
@@ -5107,8 +5162,9 @@ mod tests {
         }
 
         fn mixed_fixture() -> (Args, HardwareLayout, toml::Value) {
+            // 当前总线配置已声明 profile，只合入原运动片段，不能重复定义 TOML 表。
             let config: toml::Value = toml::from_str(&format!(
-                "{}\n{}\n[s1.profile]\nbackends=['scripted']\ncommand_mode='joint_position'\n",
+                "{}\n{}\n",
                 include_str!("../../../../configs/xlerobot-bus2.toml"),
                 include_str!("../../../../configs/xlerobot-bus2-motion.toml"),
             ))
@@ -5137,6 +5193,40 @@ mod tests {
         fn mixed_plan() -> SingleJointPlan {
             let (args, layout, config) = mixed_fixture();
             SingleJointPlan::prepare(&args, &layout, &[0.0; 9], &config).unwrap()
+        }
+
+        #[test]
+        fn mixed_single_joint_accepts_held_elbow_boundary_without_widening_target() {
+            let (mut args, layout, config) = mixed_fixture();
+            let elbow = layout.motor_ids.iter().position(|&id| id == 3).unwrap();
+            let rad = |raw| f64::from(robot_adapter_feetech::raw_to_rad(raw));
+            let mut anchor = vec![0.0; 9];
+            for raw in [792, 2998, 3011] {
+                anchor[elbow] = rad(raw);
+                let plan = SingleJointPlan::prepare(&args, &layout, &anchor, &config).unwrap();
+                assert_eq!(plan.expected_positions[elbow], anchor[elbow]);
+                assert_eq!(plan.expected_raw[elbow], raw);
+                assert!(
+                    plan.expected_positions[6..]
+                        .iter()
+                        .all(|&value| value == 0.0)
+                );
+            }
+            for raw in [791, 3012] {
+                anchor[elbow] = rad(raw);
+                assert!(SingleJointPlan::prepare(&args, &layout, &anchor, &config).is_err());
+            }
+            anchor[elbow] = rad(2998);
+            let mut zero_config = config.clone();
+            zero_config["hardware"][0]
+                .as_table_mut()
+                .unwrap()
+                .remove("calibration_range_tolerances_raw");
+            assert!(SingleJointPlan::prepare(&args, &layout, &anchor, &zero_config).is_err());
+            args.joint_name = Some(layout.joints[elbow].clone());
+            args.target_offset_raw = None;
+            args.target_position_rad = Some(rad(3011));
+            assert!(SingleJointPlan::prepare(&args, &layout, &anchor, &config).is_err());
         }
 
         fn mixed_state(step: u64, offset: i32) -> RobotState {
@@ -6100,6 +6190,7 @@ mod tests {
                 max: 0.1,
                 velocity: 1.0,
                 tolerance_rad: 0.0,
+                hold_tolerance_raw: 0,
             }];
             assert!(check_single_joint_limits(&limits, &[0.1]).is_err());
             assert!(check_single_joint_limits(&limits, &[-0.1]).is_err());

@@ -426,6 +426,7 @@ mod tests {
             ],
             motor_ids: vec![1, 2, 3, 4, 5],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         }
     }
 
@@ -801,6 +802,7 @@ mod tests {
             joints: vec!["a".into(), "b".into(), "c".into()],
             motor_ids: vec![1, 2, 3],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         };
         let anchor_bias = vec![0.0_f64; 3];
         let clock = MockClock::new(MonoRawNs(1_000_000_000));

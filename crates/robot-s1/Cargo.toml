@@ -79,6 +79,8 @@ path = "src/bin/robot-s1.rs"
 
 [dependencies]
 robot-core      = { workspace = true }
+# 仅复用校准原位范围的纯换算，不启用 real-hw。
+robot-adapter-feetech = { workspace = true }
 robot-logging   = { workspace = true }
 robot-msg       = { workspace = true }
 robot-transport = { workspace = true }

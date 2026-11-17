@@ -98,6 +98,8 @@ struct HardwareIdentity {
     id: String,
     #[serde(default)]
     feetech_bus2_mixed_raw: bool,
+    #[serde(default)]
+    calibration_range_tolerances_raw: Option<Vec<u16>>,
 }
 
 #[derive(Clone)]
@@ -108,6 +110,7 @@ struct Source {
     robot_id: String,
     hardware_id: String,
     mixed_raw: bool,
+    calibration_range_tolerances_raw: Option<Vec<u16>>,
     layout: HardwareLayout,
     motion: Option<control::MotionConfig>,
     enable_alignment_tolerance_rad: Option<f64>,
@@ -156,6 +159,15 @@ impl StatusConfig {
             }
             let layout =
                 load_hardware_layout(&path, &hardware.id).map_err(|error| error.to_string())?;
+            if hardware
+                .calibration_range_tolerances_raw
+                .as_ref()
+                .is_some_and(|values| {
+                    values.len() != layout.joints.len() || values.iter().any(|&value| value > 4095)
+                })
+            {
+                return Err("校准边界容差必须与关节等长且在0..4095内".into());
+            }
             if hardware.feetech_bus2_mixed_raw
                 && (layout.motor_ids.len() != 9
                     || !(1..=9).all(|id| layout.motor_ids.contains(&id)))
@@ -196,6 +208,7 @@ impl StatusConfig {
                 robot_id: robot.robot.id,
                 hardware_id: hardware.id.clone(),
                 mixed_raw: hardware.feetech_bus2_mixed_raw,
+                calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
                 layout,
                 motion: None,
                 enable_alignment_tolerance_rad: None,

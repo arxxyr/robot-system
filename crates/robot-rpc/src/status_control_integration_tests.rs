@@ -228,6 +228,7 @@ fn source(bus: u8) -> Source {
         robot_id: robot.robot.id,
         hardware_id: hardware.id.clone(),
         mixed_raw: hardware.feetech_bus2_mixed_raw,
+        calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
         enable_alignment_tolerance_rad: None,

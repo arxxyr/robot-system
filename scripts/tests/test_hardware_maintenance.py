@@ -640,6 +640,65 @@ class OwnerTests(unittest.TestCase):
                 self.assertEqual(row['over_budget'],reason=='budget')
                 self.assertTrue(row['mixed_stop_requested']);e.journal.close()
 
+    def test_journal_timeout_only_changes_notice_and_still_reaps_then_fails(self):
+        real_popen=subprocess.Popen
+        journal=['sudo','-n','journalctl','--no-pager','--output=json',
+                 '_BOOT_ID='+'a'*32,'_SYSTEMD_INVOCATION_ID='+'b'*32]
+        class WaitOnce:
+            def __init__(self,argv,**kwargs):
+                self.raw=real_popen([sys.executable,'-c','print("captured")'],**kwargs)
+                self.pid=self.raw.pid;self.first=True
+            def wait(self,timeout):
+                if self.first:
+                    self.first=False
+                    raise subprocess.TimeoutExpired('假日志等待',timeout)
+                return self.raw.wait(timeout=timeout)
+        for category in ('default','diagnostic','frozen-wrapper'):
+            with self.subTest(category=category),tempfile.TemporaryDirectory() as d:
+                e=self.make_io(d);self.addCleanup(e.journal.close)
+                e.now=lambda counter=itertools.count(0,2_000_000_001):next(counter)
+                if category=='frozen-wrapper':
+                    # 原冻结command不接新参数；新入口可只包装reap并绑定本轮新版方法。
+                    def reap(row,failures,**kwargs):
+                        row['diagnostic_journal']=m.is_read_only_journal_command(row['argv'])
+                        return m.RealExecutor.reap(e,row,failures,**kwargs)
+                    e.reap=reap
+                output=io.StringIO()
+                argv=journal if category!='default' else [sys.executable,'-c','print("captured")']
+                with patch.object(m.subprocess,'Popen',WaitOnce),contextlib.redirect_stdout(output):
+                    with self.assertRaisesRegex(ValueError,'child 退出/预算失败'):
+                        e.command(argv,cleanup=True,**({'diagnostic_journal':True} if category=='diagnostic' else {}))
+                row=e.commands[0]
+                self.assertIsNone(e.child);self.assertTrue(row['reaped']);self.assertEqual(row['exit_code'],0)
+                self.assertTrue(row['over_budget']);self.assertNotIn('budget_ns',row)
+                self.assertEqual(row['signals_sent'],[]);self.assertEqual(row['owner_errors'],[])
+                self.assertEqual(Path(row['stdout_path']).read_bytes(),b'captured\n')
+                self.assertIn('child 退出/预算失败',row['error'])
+                if category=='default':
+                    self.assertIn('请立即人工断电',output.getvalue())
+                    self.assertNotIn('diagnostic_journal',row)
+                else:
+                    self.assertTrue(row['diagnostic_journal'])
+                    self.assertIn('日志采集超预算',output.getvalue())
+                    self.assertIn('停止状态由最终退出和读回确认',output.getvalue())
+                    self.assertNotIn('请立即人工断电',output.getvalue())
+
+    def test_journal_diagnostic_rejects_other_commands_before_spawn(self):
+        journal=['sudo','-n','journalctl','--no-pager','--output=json',
+                 '_BOOT_ID='+'a'*32,'_SYSTEMD_INVOCATION_ID='+'b'*32]
+        cases=[([sys.executable,'-c','print("not journal")'],{}),
+               (journal+['--vacuum-time=1s'],{}),
+               (journal[:-1]+['_SYSTEMD_INVOCATION_ID='],{}),
+               (journal,{'input_raw':b'data'}),(journal,{'mixed_stop_check':lambda:None}),
+               (journal,{'s0_sender':True}),(journal,{'s0_control':True})]
+        for argv,kwargs in cases:
+            with self.subTest(argv=argv,kwargs=list(kwargs)),tempfile.TemporaryDirectory() as d:
+                e=self.make_io(d);self.addCleanup(e.journal.close)
+                with patch.object(m.subprocess,'Popen',side_effect=AssertionError('拒绝项不得启动child')):
+                    with self.assertRaisesRegex(ValueError,'日志诊断类别仅允许'):
+                        e.command(argv,diagnostic_journal=True,**kwargs)
+                self.assertIsNone(e.child);self.assertEqual(e.commands,[])
+
     def test_stderr_and_evidence_failure_are_sticky_after_reap(self):
         with tempfile.TemporaryDirectory() as d:
             e=self.make_io(d)

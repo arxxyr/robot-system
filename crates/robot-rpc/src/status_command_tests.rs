@@ -19,6 +19,7 @@ fn source(mixed: bool) -> Source {
         robot_id: "robot".into(),
         hardware_id: "arm".into(),
         mixed_raw: mixed,
+        calibration_range_tolerances_raw: None,
         layout: HardwareLayout {
             joints: ids.iter().map(|id| format!("joint_{id}")).collect(),
             motor_ids: ids,
@@ -100,7 +101,7 @@ fn decode_body(
 #[test]
 fn original_four_count_alignment_accepts_quantization_but_not_five_or_arrival_twenty() {
     let mut source = source(false);
-    // 固定设备换算产生的rad样例；生产Web不引用设备驱动或复制转换公式。
+    // 固定设备换算产生的rad样例；原位对齐容差与校准边界容差分别守门。
     let one = 0.001_533_980_7_f64;
     let base = vec![0.0; 8];
     for ticks in [-4.0, -1.0, 0.0, 1.0, 4.0] {
@@ -192,6 +193,42 @@ fn mixed_command_rejects_nonzero_raw_or_wheel_target_but_ignores_wheel_position_
     let mut actual = vec![0.0; 9];
     actual[7] = 2.0;
     assert!(aligned(&source, &actual, &[0.0; 9]).is_ok());
+}
+
+#[test]
+fn mixed_state_and_command_allow_calibrated_elbow_hold_but_reject_twenty_one() {
+    let mut source = source(true);
+    let mut tolerances = vec![0; 9];
+    tolerances[2] = 20;
+    source.calibration_range_tolerances_raw = Some(tolerances);
+    let rad = |raw| f64::from(robot_adapter_feetech::raw_to_rad(raw));
+    source.motion.as_mut().unwrap().joints[2] = toml::from_str(&format!(
+        "name='{}'\nmin_position_rad={}\nmax_position_rad={}\nmax_velocity_rad_s=0.1\ntolerance_rad=0.03",
+        source.layout.joints[2], rad(812), rad(2991),
+    )).unwrap();
+    for raw in [791, 792, 2998, 3011, 3012] {
+        let mut actual = state(&source, 10_000_000);
+        actual.position_rad[2] = rad(raw);
+        // 轮反馈不能拿来做位置保持目标；镜像的轮目标仍为零。
+        actual.position_rad[6..].fill(4000.0);
+        let mut target = vec![0.0; 9];
+        target[2] = rad(raw);
+        let body = robot_msg::build_helpers::build_mixed_joint_command(
+            42,
+            &target,
+            &[0; 9],
+            100_000_000,
+            0,
+            1,
+        );
+        let accepted = (792..=3011).contains(&raw);
+        assert_eq!(check_state(&source, &actual, 10_000_001).is_ok(), accepted);
+        assert_eq!(decode_body(&source, &body, 2, 10_000_000).is_ok(), accepted);
+    }
+    source.calibration_range_tolerances_raw = None;
+    let mut actual = state(&source, 10_000_000);
+    actual.position_rad[2] = rad(2998);
+    assert!(check_state(&source, &actual, 10_000_001).is_err());
 }
 
 #[test]

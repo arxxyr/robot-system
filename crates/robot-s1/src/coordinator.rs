@@ -347,9 +347,28 @@ pub struct HardwareSection {
     /// 与 S0 从同一 TOML 读取；混合总线保活只保持臂位置，三轮 raw 恒为零。
     #[serde(default)]
     pub feetech_bus2_mixed_raw: bool,
+    /// 同一硬件 TOML 的原位保持边界容差；缺省为零，不扩展主动运动目标。
+    #[serde(default)]
+    pub calibration_range_tolerances_raw: Option<Vec<u16>>,
 }
 
 impl HardwareSection {
+    pub(crate) fn range_tolerance_raw(&self, slot: usize) -> u16 {
+        self.calibration_range_tolerances_raw
+            .as_ref()
+            .and_then(|values| values.get(slot))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn range_tolerances_valid(&self) -> bool {
+        self.calibration_range_tolerances_raw
+            .as_ref()
+            .is_none_or(|values| {
+                values.len() == self.joints.len() && values.iter().all(|&value| value <= 4095)
+            })
+    }
+
     /// 轮槽只由同份混合总线配置的电机 ID 判定，不固定配置中的下标。
     #[must_use]
     pub fn is_wheel_slot(&self, slot: usize) -> bool {
@@ -442,6 +461,11 @@ pub fn parse_hardware_section_from_toml(
     if !section.mixed_layout_is_valid() {
         return Err(ConfigError::Toml(
             "混合总线需要完整右臂九槽及 ID1..9".into(),
+        ));
+    }
+    if !section.range_tolerances_valid() {
+        return Err(ConfigError::Toml(
+            "校准边界容差必须与关节等长且在0..4095内".into(),
         ));
     }
     Ok(section)
@@ -1855,14 +1879,9 @@ impl Coordinator {
                 .lock_state_cache()
                 .as_ref()
                 .and_then(|cache| cache.latest_torque_off_positions(clock).ok().flatten())
-            && positions.len() == self.hardware.joints.len()
-            && positions.iter().enumerate().all(|(slot, &position)| {
-                self.hardware.is_wheel_slot(slot)
-                    || config.joints.iter().any(|limit| {
-                        limit.name == self.hardware.joints[slot]
-                            && crate::single_joint::valid_position(position, limit)
-                    })
-            })
+            && config
+                .validate_hold_positions(&self.hardware, &positions)
+                .is_ok()
         {
             self.hardware.clear_wheel_targets(&mut positions);
             inner.idle_hold_target = positions;
@@ -3337,6 +3356,7 @@ joints  = ["j0"]
             joints: (0..joint_count).map(|i| format!("j{i}")).collect(),
             motor_ids: (1..=u8::try_from(joint_count).expect("test joint_count fits u8")).collect(),
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         }
     }
 
@@ -3826,6 +3846,7 @@ backends = 42
             joints: vec!["j0".into()],
             motor_ids: vec![1],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         };
         let registry =
             BackendRegistry::from_explicit(&[&SCRIPTED_BACKEND as &'static dyn ActionBackend]);
@@ -4551,6 +4572,7 @@ backends = 42
                     joints: vec!["j0".into(), "j1".into()],
                     motor_ids: vec![1, 2],
                     feetech_bus2_mixed_raw: false,
+                    calibration_range_tolerances_raw: None,
                 },
                 LAYOUT,
                 ANCHOR.to_vec(),
@@ -4900,12 +4922,6 @@ backends = 42
             positions: &[f64],
         ) {
             use robot_msg::msg::{S0ControlLink, S0FaultCode, S0Mode, S0OutputMode, S0SafetyState};
-            let received = coordinator
-                .lock_state_cache()
-                .as_ref()
-                .unwrap()
-                .stats()
-                .frames_received;
             let body = robot_msg::build_helpers::build_joint_state_with_s0(
                 layout,
                 stamp_ns,
@@ -4924,14 +4940,13 @@ backends = 42
             writer.set_body_bytes(&body);
             writer.set_stamp_ns(stamp_ns);
             writer.publish().unwrap();
+            // keep-last 可重复缓存旧帧并递增计数；必须等本次完整body，坏帧也不能跳过。
             for _ in 0..2000 {
                 if coordinator
                     .lock_state_cache()
                     .as_ref()
                     .unwrap()
-                    .stats()
-                    .frames_received
-                    > received
+                    .contains_test_frame(&body)
                 {
                     return;
                 }
@@ -5035,6 +5050,7 @@ backends = 42
             Vec<f64>,
         ) {
             let mut hardware = mixed_test_hardware();
+            hardware.calibration_range_tolerances_raw = None;
             hardware.joints.rotate_left(4);
             hardware.motor_ids.rotate_left(4);
             let feedback: Vec<_> = hardware

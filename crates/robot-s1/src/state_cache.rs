@@ -306,6 +306,15 @@ pub struct JointFeedbackSnapshot {
 }
 
 impl StateCacheHandle {
+    /// 测试同步等待本次完整帧；坏帧也按原字节区分，不把重复旧帧的计数当消费回执。
+    #[cfg(all(test, feature = "backend-scripted"))]
+    pub(crate) fn contains_test_frame(&self, expected: &[u8]) -> bool {
+        self.slot
+            .lock_latest()
+            .as_ref()
+            .is_some_and(|frame| frame.body == expected)
+    }
+
     /// 借用 spawn 时的配置（topic / expected_* / max_stale_ms / poll）。
     #[must_use]
     pub fn config(&self) -> &StateCacheConfig {

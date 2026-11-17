@@ -28,6 +28,8 @@ publish    .workspace = true
 
 [dependencies]
 robot-core = { workspace = true }
+# 状态页原位校验复用纯换算，不启用 real-hw。
+robot-adapter-feetech = { workspace = true, optional = true }
 # robot-msg 复用 ClearEStopRequest / ClearEStopResponse / RpcRole / RpcStatus
 # wire types（A1-1 part 1 落地）；A1-3 (2/3) gateway 真接 daemon 时构造
 # wire bytes 用 build_helpers + flatbuffers root。
@@ -123,7 +125,7 @@ robot-core = { workspace = true }
 # `client`（不依赖 robot-cli），无 client-only runtime 影响。
 client = []
 # HTTP/WebSocket状态与控制页；控制缺省关闭，不改变robot-gateway默认构建。
-status-web = ["client", "dep:axum", "dep:futures-util", "dep:serde_json", "dep:jpeg-encoder"]
+status-web = ["client", "dep:axum", "dep:futures-util", "dep:serde_json", "dep:jpeg-encoder", "dep:robot-adapter-feetech"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
 # 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke

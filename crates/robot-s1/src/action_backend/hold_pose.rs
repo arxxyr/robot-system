@@ -215,6 +215,7 @@ mod tests {
             joints: vec!["j0".into(), "j1".into(), "j2".into()],
             motor_ids: vec![1, 2, 3],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         }
     }
 

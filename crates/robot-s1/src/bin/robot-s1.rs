@@ -494,6 +494,14 @@ fn run(args: &Args) -> Result<(), i32> {
         &clock,
         args.poll_interval,
     )?;
+    if let Some(config) = &single_joint_config {
+        config
+            .validate_hold_positions(&hardware, &bias)
+            .map_err(|error| {
+                eprintln!("fatal: startup anchor failed: {error}");
+                4
+            })?;
+    }
     hardware.clear_wheel_targets(&mut bias);
     tracing::info!(?bias, "robot-s1 anchored to S0 state");
 

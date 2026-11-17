@@ -2,7 +2,7 @@
 # 不单独作为设备配置安装；不保存动作锚点，不自动使能。
 # 三轮为原始速度槽，不列入位置约束；本轮命令保持 raw 0。
 # tolerance_rad 按原 raw_to_rad 的 f32 编码差值上界，保证 ±20 raw 接受、±21 raw 拒绝。
-# 运动范围沿原校准，不叠加校准边界容差。
+# 主动目标范围沿原校准；原位保持另复用 hardware.calibration_range_tolerances_raw，不裁剪当前位置。
 [s1.single_joint]
 max_duration_ms = 20000
 settle_timeout_ms = 800

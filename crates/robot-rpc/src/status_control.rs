@@ -70,7 +70,11 @@ impl MotionConfig {
         clippy::cast_possible_truncation,
         reason = "先检查f64有限及f32范围，再核对实际编码值"
     )]
-    pub(super) fn check_positions(&self, source: &Source, positions: &[f64]) -> Result<(), String> {
+    pub(super) fn check_hold_positions(
+        &self,
+        source: &Source,
+        positions: &[f64],
+    ) -> Result<(), String> {
         if positions.len() != source.layout.joints.len() {
             return Err("原位位置维度与配置不一致".into());
         }
@@ -87,9 +91,10 @@ impl MotionConfig {
                 .iter()
                 .find(|joint| &joint.name == name)
                 .ok_or_else(|| format!("{name}缺少位置范围配置"))?;
-            let range = limit.min_position_rad..=limit.max_position_rad;
+            let (min, max) = hold_range(limit, source, slot)?;
+            let range = min..=max;
             if !range.contains(&position) || !range.contains(&f64::from(position as f32)) {
-                return Err(format!("{name}原位位置超出运动配置范围"));
+                return Err(format!("{name}原位位置超出校准保持范围"));
             }
         }
         Ok(())
@@ -147,9 +152,31 @@ impl MotionConfig {
             {
                 return Err(format!("运动配置关节或边界无效：{}", joint.name));
             }
+            let slot = source
+                .layout
+                .joints
+                .iter()
+                .position(|name| name == &joint.name)
+                .ok_or("运动配置缺少对应硬件槽位")?;
+            hold_range(joint, source, slot)?;
         }
         Ok(())
     }
+}
+
+fn hold_range(joint: &JointLimit, source: &Source, slot: usize) -> Result<(f64, f64), String> {
+    let tolerance = source
+        .calibration_range_tolerances_raw
+        .as_ref()
+        .and_then(|values| values.get(slot))
+        .copied()
+        .unwrap_or(0);
+    robot_adapter_feetech::convert::calibrated_hold_range(
+        joint.min_position_rad,
+        joint.max_position_rad,
+        tolerance,
+    )
+    .ok_or_else(|| format!("{}原位边界必须来自可往返的校准raw端点", joint.name))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]

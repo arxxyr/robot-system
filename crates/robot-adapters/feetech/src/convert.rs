@@ -50,10 +50,61 @@ pub fn rad_to_raw(rad: f32) -> i32 {
     tick.saturating_add(i32::from(STS3215_MAX_POSITION))
 }
 
+/// 从原校准派生的运动范围计算原位保持允许范围，不改变主动目标限位。
+/// 零容差保留原范围；非零容差要求端点就是可往返的 12-bit f32 校准值。
+/// 只扩展范围并在 raw 硬边界饱和，不裁剪实际位置或目标。
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "先核有限值，再验证 f32 与 raw 精确往返"
+)]
+pub fn calibrated_hold_range(min_rad: f64, max_rad: f64, tolerance_raw: u16) -> Option<(f64, f64)> {
+    if !min_rad.is_finite() || !max_rad.is_finite() || min_rad >= max_rad || tolerance_raw > 4095 {
+        return None;
+    }
+    if tolerance_raw == 0 {
+        return Some((min_rad, max_rad));
+    }
+    let endpoint = |position: f64| {
+        let raw = rad_to_raw(position as f32);
+        ((0..=4095).contains(&raw) && f64::from(raw_to_rad(raw)) == position).then_some(raw)
+    };
+    let lower_ticks = endpoint(min_rad)?;
+    let upper_ticks = endpoint(max_rad)?;
+    let tolerance = i32::from(tolerance_raw);
+    Some((
+        f64::from(raw_to_rad((lower_ticks - tolerance).max(0))),
+        f64::from(raw_to_rad((upper_ticks + tolerance).min(4095))),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::f32::consts::{FRAC_PI_2, PI};
+
+    #[test]
+    fn calibrated_hold_bounds_preserve_f32_endpoints_and_raw_saturation() {
+        let rad = |raw| f64::from(raw_to_rad(raw));
+        let (min, max) = calibrated_hold_range(rad(812), rad(2991), 20).unwrap();
+        assert_eq!((min, max), (rad(792), rad(3011)));
+        for raw in [792, 812, 2991, 2998, 3011] {
+            assert!((min..=max).contains(&rad(raw)));
+        }
+        for raw in [791, 3012] {
+            assert!(!(min..=max).contains(&rad(raw)));
+        }
+        assert_eq!(
+            calibrated_hold_range(rad(1), rad(4094), 20),
+            Some((rad(0), rad(4095)))
+        );
+        assert_eq!(calibrated_hold_range(-0.1, 0.1, 0), Some((-0.1, 0.1)));
+        assert_eq!(calibrated_hold_range(-0.1, 0.1, 20), None);
+        assert_eq!(calibrated_hold_range(rad(-1), rad(4095), 20), None);
+        assert_eq!(calibrated_hold_range(rad(0), rad(4096), 20), None);
+        assert_eq!(calibrated_hold_range(rad(0), rad(4095), 4096), None);
+        assert_eq!(calibrated_hold_range(f64::NAN, rad(4095), 0), None);
+    }
 
     #[test]
     fn rad_per_tick_matches_resolution() {

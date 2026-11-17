@@ -677,6 +677,7 @@ mod tests {
             joints: vec!["j0".into(), "j1".into(), "j2".into()],
             motor_ids: vec![1, 2, 3],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         }
     }
 
@@ -1926,6 +1927,7 @@ mod single_joint_tests {
                 joints: vec!["关节甲".into(), "关节乙".into(), "关节丙".into()],
                 motor_ids: vec![1, 2, 3],
                 feetech_bus2_mixed_raw: false,
+                calibration_range_tolerances_raw: None,
             };
             let limits = SingleJointConfig {
                 max_duration_ms: 2_000,
@@ -1959,6 +1961,7 @@ mod single_joint_tests {
             )
             .unwrap();
             fixture.hardware.feetech_bus2_mixed_raw = true;
+            fixture.hardware.calibration_range_tolerances_raw = None;
             fixture.hardware.joints.rotate_left(4);
             fixture.hardware.motor_ids.rotate_left(4);
             fixture.limits.joints = fixture
@@ -2521,6 +2524,83 @@ mod single_joint_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn mixed_single_joint_keeps_real_elbow_boundary_anchor_and_strict_active_target() {
+        let mut fixture = Fixture::new();
+        fixture.hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot-bus2.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        fixture.limits = crate::coordinator::parse_single_joint_config_from_toml(
+            include_str!("../../../../configs/xlerobot-bus2-motion.toml"),
+            &fixture.hardware,
+        )
+        .unwrap()
+        .unwrap();
+        let elbow = fixture
+            .hardware
+            .motor_ids
+            .iter()
+            .position(|&id| id == 3)
+            .unwrap();
+        let wrist = fixture
+            .hardware
+            .motor_ids
+            .iter()
+            .position(|&id| id == 5)
+            .unwrap();
+        let rad = |raw| f64::from(robot_adapter_feetech::raw_to_rad(raw));
+        let request = fixture.request(
+            &fixture.hardware.id,
+            &fixture.hardware.joints[wrist],
+            rad(2071),
+            1000,
+        );
+        for raw in [792, 2998, 3011] {
+            fixture.clock.set(MonoRawNs(BASE_NS));
+            let mut feedback = vec![0.0; 9];
+            feedback[elbow] = rad(raw);
+            let mut instance = fixture.start_from(&request, &feedback).unwrap();
+            for time in [0, 500, 1000] {
+                let target = mixed_command(
+                    fixture.ready_tick(instance.as_mut(), time, &feedback),
+                    &fixture.hardware,
+                );
+                assert_eq!(target[elbow].to_bits(), feedback[elbow].to_bits());
+                for slot in 0..6 {
+                    if slot != wrist {
+                        assert_eq!(target[slot], feedback[slot]);
+                    }
+                }
+            }
+        }
+        fixture.clock.set(MonoRawNs(BASE_NS));
+        for raw in [791, 3012] {
+            let mut feedback = vec![0.0; 9];
+            feedback[elbow] = rad(raw);
+            assert!(fixture.start_from(&request, &feedback).is_err());
+        }
+        let mut feedback = vec![0.0; 9];
+        feedback[elbow] = rad(2998);
+        for raw in [811, 2992, 3011] {
+            let target_request = fixture.request(
+                &fixture.hardware.id,
+                &fixture.hardware.joints[elbow],
+                rad(raw),
+                1000,
+            );
+            assert!(fixture.start_from(&target_request, &feedback).is_err());
+        }
+        let mut instance = fixture.start_from(&request, &feedback).unwrap();
+        feedback[elbow] = rad(3012);
+        assert!(
+            fixture
+                .tick(instance.as_mut(), 10, Some(&sample(10, &feedback)), false)
+                .is_err()
+        );
     }
 
     #[test]

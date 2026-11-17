@@ -36,10 +36,41 @@ pub struct JointMotionLimits {
 }
 
 impl SingleJointConfig {
+    /// 启动及断扭后的原位保持使用硬件边界容差，绝不裁剪快照。
+    pub fn validate_hold_positions(
+        &self,
+        hardware: &HardwareSection,
+        positions: &[f64],
+    ) -> Result<(), String> {
+        if positions.len() != hardware.joints.len() || !hardware.range_tolerances_valid() {
+            return Err("原位快照或校准容差维度无效".into());
+        }
+        for (slot, &position) in positions.iter().enumerate() {
+            if !position.is_finite() || position.abs() > f64::from(f32::MAX) {
+                return Err("原位位置含非有限或不可表示值".into());
+            }
+            if hardware.is_wheel_slot(slot) {
+                continue;
+            }
+            let limit = self
+                .joints
+                .iter()
+                .find(|limit| limit.name == hardware.joints[slot])
+                .ok_or_else(|| format!("缺少原位约束：{}", hardware.joints[slot]))?;
+            if !valid_hold_position(position, limit, hardware.range_tolerance_raw(slot)) {
+                return Err(format!("原位位置超出校准保持范围：{}", limit.name));
+            }
+        }
+        Ok(())
+    }
+
     /// 校验完整位置关节覆盖与参数边界；不为轮槽补造 rad 运动参数。
     pub fn validate(&self, hardware: &HardwareSection) -> Result<(), String> {
         if !hardware.mixed_layout_is_valid() {
             return Err("混合总线需要完整右臂九槽及 ID1..9".into());
+        }
+        if !hardware.range_tolerances_valid() {
+            return Err("校准边界容差必须与关节等长且在0..4095内".into());
         }
         if self.max_duration_ms == 0
             || self.settle_timeout_ms == 0
@@ -84,6 +115,12 @@ impl SingleJointConfig {
             {
                 return Err(format!("关节 {} 的运动边界、速率或容差无效", joint.name));
             }
+            if hold_range(joint, hardware.range_tolerance_raw(slot)).is_none() {
+                return Err(format!(
+                    "关节 {} 的原位边界必须来自可往返的校准raw端点",
+                    joint.name
+                ));
+            }
         }
         Ok(())
     }
@@ -105,7 +142,7 @@ pub(crate) struct SingleJointExecution {
     settle_timeout_ns: u64,
     stable_window_ns: u64,
     max_stale_ns: u64,
-    /// 配置槽位顺序；None 只表示混合总线轮槽，不伪造位置范围或容差。
+    /// 配置槽位顺序的保持/反馈范围；到位容差保持原值，None 只表示轮槽。
     limits: Vec<Option<JointMotionLimits>>,
     target: Vec<f64>,
     last_feedback_stamp_ns: u64,
@@ -200,8 +237,10 @@ impl SingleJointPlan {
             payload.target_position_rad(),
             initial_pose[selected],
             duration_ms,
-            execution.limits[selected]
-                .as_ref()
+            config
+                .joints
+                .iter()
+                .find(|limit| limit.name == ctx.hardware.joints[selected])
                 .ok_or_else(|| ActionStartError::Rejected("所选关节缺少位置约束".into()))?,
         )?;
         Ok(Self {
@@ -231,9 +270,17 @@ fn limits_in_slot_order(
                 .joints
                 .iter()
                 .find(|limit| limit.name == *name)
-                .cloned()
-                .map(Some)
                 .ok_or_else(|| ActionStartError::Rejected(format!("缺少关节约束：{name}")))
+                .and_then(|limit| {
+                    let (min, max) = hold_range(limit, hardware.range_tolerance_raw(slot))
+                        .ok_or_else(|| {
+                            ActionStartError::Rejected(format!("原位范围无效：{name}"))
+                        })?;
+                    let mut held = limit.clone();
+                    held.min_position_rad = min;
+                    held.max_position_rad = max;
+                    Ok(Some(held))
+                })
         })
         .collect()
 }
@@ -269,6 +316,30 @@ pub(crate) fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {
         && position <= limit.max_position_rad
         && position_for_s0(position) >= limit.min_position_rad
         && position_for_s0(position) <= limit.max_position_rad
+}
+
+fn hold_range(limit: &JointMotionLimits, tolerance_raw: u16) -> Option<(f64, f64)> {
+    robot_adapter_feetech::convert::calibrated_hold_range(
+        limit.min_position_rad,
+        limit.max_position_rad,
+        tolerance_raw,
+    )
+}
+
+pub(crate) fn valid_hold_position(
+    position: f64,
+    limit: &JointMotionLimits,
+    tolerance_raw: u16,
+) -> bool {
+    if tolerance_raw == 0 {
+        return valid_position(position, limit);
+    }
+    hold_range(limit, tolerance_raw).is_some_and(|(min, max)| {
+        position.is_finite()
+            && position.abs() <= f64::from(f32::MAX)
+            && (min..=max).contains(&position)
+            && (min..=max).contains(&position_for_s0(position))
+    })
 }
 
 /// 沿 S0 位置命令的实际 f32 编码，再提升以供同一轨迹、保持及到位比较使用。
@@ -387,12 +458,62 @@ impl SingleJointExecution {
 mod tests {
     use super::*;
 
+    #[test]
+    fn real_bus_hold_bounds_accept_twenty_without_changing_motion_limits() {
+        let hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../configs/xlerobot-bus2.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        let config = crate::coordinator::parse_single_joint_config_from_toml(
+            include_str!("../../../configs/xlerobot-bus2-motion.toml"),
+            &hardware,
+        )
+        .unwrap()
+        .unwrap();
+        let elbow = hardware.motor_ids.iter().position(|&id| id == 3).unwrap();
+        let limit = config
+            .joints
+            .iter()
+            .find(|limit| limit.name == hardware.joints[elbow])
+            .unwrap();
+        let mut positions = vec![0.0; 9];
+        for raw in [792, 2998, 3011] {
+            positions[elbow] = f64::from(robot_adapter_feetech::raw_to_rad(raw));
+            assert!(
+                config
+                    .validate_hold_positions(&hardware, &positions)
+                    .is_ok()
+            );
+            assert!(!valid_position(positions[elbow], limit));
+        }
+        for raw in [791, 3012] {
+            positions[elbow] = f64::from(robot_adapter_feetech::raw_to_rad(raw));
+            assert!(
+                config
+                    .validate_hold_positions(&hardware, &positions)
+                    .is_err()
+            );
+        }
+        let mut zero = hardware.clone();
+        zero.calibration_range_tolerances_raw = None;
+        positions[elbow] = f64::from(robot_adapter_feetech::raw_to_rad(2998));
+        assert!(config.validate_hold_positions(&zero, &positions).is_err());
+        zero.calibration_range_tolerances_raw = Some(vec![0; 9]);
+        assert!(config.validate_hold_positions(&zero, &positions).is_err());
+        for invalid in [vec![], vec![20; 8], vec![4096; 9]] {
+            zero.calibration_range_tolerances_raw = Some(invalid);
+            assert!(config.validate(&zero).is_err());
+        }
+    }
+
     fn hardware() -> HardwareSection {
         HardwareSection {
             id: "测试总线".into(),
             joints: vec!["位置甲".into(), "位置乙".into()],
             motor_ids: vec![1, 2],
             feetech_bus2_mixed_raw: false,
+            calibration_range_tolerances_raw: None,
         }
     }
 
@@ -523,6 +644,7 @@ mod tests {
         )
         .unwrap();
         hardware.feetech_bus2_mixed_raw = true;
+        hardware.calibration_range_tolerances_raw = None;
         hardware.joints.rotate_left(4);
         hardware.motor_ids.rotate_left(4);
         let mut limits = config();

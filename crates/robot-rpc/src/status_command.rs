@@ -250,7 +250,7 @@ fn decode(
         .motion
         .as_ref()
         .ok_or("缺少运动范围配置")?
-        .check_positions(source, &target)?;
+        .check_hold_positions(source, &target)?;
     Ok(Command {
         metadata,
         seq: view.header.seq(),
@@ -300,7 +300,7 @@ fn check_state(source: &Source, state: &RobotState, now_ns: u64) -> Result<(), S
         .motion
         .as_ref()
         .ok_or("缺少运动范围配置")?
-        .check_positions(source, &state.position_rad)?;
+        .check_hold_positions(source, &state.position_rad)?;
     Ok(())
 }
 
