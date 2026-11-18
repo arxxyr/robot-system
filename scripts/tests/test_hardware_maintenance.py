@@ -1554,13 +1554,17 @@ class RightPulseTests(unittest.TestCase):
                 'host':{'boot_id':'pulse-fixture'},'refs':references,
                 'binary_paths':[r['path'] for r in (m.RIGHT_PULSE_WRITE,m.RIGHT_PULSE_RAW,m.RIGHT_PULSE_SYNC,m.RIGHT_PULSE_TRACE)]}
 
-    def plan(self,wheel='right',*,zero_stop_check=False):
+    def plan(self,wheel='right',*,zero_stop_check=False,reverse=False):
         root='/home/loosqk/robot-checks/pulse-fixture'
         return m.make_plan(self.bindings(),root+'/run','pulse-fixture',root,right_wheel_pulse=wheel=='right',
-                           wheel_pulse_target=wheel if wheel!='right' else None,zero_stop_check=zero_stop_check)
+                           wheel_pulse_target=wheel if wheel!='right' else None,zero_stop_check=zero_stop_check,
+                           reverse_wheel_pulse=reverse)
 
-    def engine(self,wheel='right',*,zero_stop_check=False):
+    def engine(self,wheel='right',*,zero_stop_check=False,reverse=False):
         executor=RightPulseIO()
+        if reverse:
+            executor.velocity=-500
+            executor.delta=-80
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         executor.output=Path(directory.name)
         executor.sdk_packets=[];executor.sdk_actions=[];executor.sdk_serials=[];executor.sdk_read_counts={}
@@ -1569,7 +1573,7 @@ class RightPulseTests(unittest.TestCase):
         executor.sdk_close_fails=False
         executor.sdk_target=m.WHEEL_PULSE_TARGETS[wheel][1]
         helper=SimpleNamespace(install_stop_wire_capture=lambda module:None)
-        engine=m.ProbeEngine(executor,self.plan(wheel,zero_stop_check=zero_stop_check))
+        engine=m.ProbeEngine(executor,self.plan(wheel,zero_stop_check=zero_stop_check,reverse=reverse))
         m.install_right_pulse_guard(engine,helper)
         return executor,engine
 
@@ -1642,6 +1646,60 @@ class RightPulseTests(unittest.TestCase):
         self.assertTrue(all(w['motor']==7 for w in row['writes']))
         self.assertTrue(row['stopped_confirmed']);self.assertEqual((executor.goal,executor.torque),(0,0))
 
+    def test_reverse_single_wheel_uses_sign_bit_and_checks_signed_encoder_delta(self):
+        for wheel in m.WHEEL_PULSE_TARGETS:
+            with self.subTest(wheel=wheel):
+                executor,engine=self.engine(wheel,zero_stop_check=True,reverse=True)
+                executor.position=12
+                executor.sdk_zero_coast=[-350,-50,0]
+                row=self.perform(executor,engine)
+                motor=executor.sdk_target
+                frames=[frame for frame in executor.sdk_packets if frame[4:5]==[0x83]]
+                self.assertEqual({tuple(frame[5:10]) for frame in frames},
+                                 {(46,2,motor,0,0),(46,2,motor,0xf4,0x81)})
+                self.assertEqual(frames[0][8:10],[0,0])
+                self.assertEqual(frames[-1][8:10],[0,0])
+                self.assertLess(row['cumulative_delta_raw'],0)
+                self.assertTrue(all(sample['delta_raw']==-80 for sample in row['samples']))
+                self.assertTrue(row['stopped_confirmed'])
+                self.assertEqual((executor.goal,executor.torque),(0,0))
+                self.assertFalse(engine.manual_cut)
+
+    def test_reverse_requires_single_wheel_zero_stop_and_separate_approval(self):
+        with self.assertRaises(ValueError):self.plan(reverse=True)
+        for args in ([],['--zero-stop-check'],['--right-wheel-pulse'],
+                     ['--front-wheel-feedback-only','--zero-stop-check']):
+            with self.assertRaises(ValueError):run_main([*args,'--reverse-wheel-pulse'])
+        positive=self.plan('front',zero_stop_check=True)
+        reverse=self.plan('front',zero_stop_check=True,reverse=True)
+        self.assertNotEqual(m.digest(positive),m.digest(reverse))
+        self.assertNotEqual(positive['scope'],reverse['scope'])
+        tampered=copy.deepcopy(reverse)
+        tampered['right_wheel_pulse']['raw_velocity']=500
+        with self.assertRaises(ValueError):m.validate_right_pulse_plan(tampered)
+        self.assertEqual(reverse['right_wheel_pulse']['zero_stop_check']['final_present_velocity_raw_unsigned'],
+                         [0,50,0x8032])
+
+    def test_reverse_rejects_wrong_feedback_wrong_delta_negative_zero_and_bad_final(self):
+        for fault in ('motion_sign','motion_negative_zero','motion_overspeed','delta_sign',
+                      'goal_word','brake_sign','final_speed'):
+            with self.subTest(fault=fault):
+                executor,engine=self.engine('front',zero_stop_check=True,reverse=True)
+                if fault=='motion_sign':executor.velocity=500
+                elif fault=='motion_negative_zero':executor.velocity=0x8000
+                elif fault=='motion_overspeed':executor.velocity=-1001
+                elif fault=='delta_sign':executor.delta=80
+                elif fault=='goal_word':
+                    original=executor.value
+                    executor.value=lambda reg:500 if reg=='Goal_Velocity' and executor.goal else original(reg)
+                elif fault=='brake_sign':executor.sdk_zero_coast=[350,0,0]
+                elif fault=='final_speed':executor.sdk_zero_coast=[-350,0,-51]
+                row=self.perform(executor,engine,False)
+                self.assertTrue(engine.manual_cut)
+                self.assertTrue(row['uart_blocked'])
+                self.assertTrue(row['connection']['closed'])
+                self.assertEqual((executor.goal,executor.torque),(0,0))
+
     def test_zero_stop_option_is_pulse_only_and_binds_target_scope_plan_and_go(self):
         root='/home/loosqk/robot-checks/pulse-fixture'
         for options in ({'zero_stop_check':True},{'zero_stop_check':True,'right_wheel_feedback_only':True},
@@ -1669,6 +1727,13 @@ class RightPulseTests(unittest.TestCase):
                 continuous_wheel_observation=True,base_confirmation_kind='CURRENT_SETUP_READY',
                 base_confirmation_scope=plan['scope'],base_confirmation_answer='夹具就绪')
             m.validate_go(go,plan,200)
+            reverse=self.plan(wheel,zero_stop_check=True,reverse=True)
+            with self.assertRaises(ValueError):m.validate_go(go,reverse,200)
+            reverse_go=copy.deepcopy(go)
+            reverse_go['plan_sha256']=m.digest(reverse)
+            with self.assertRaises(ValueError):m.validate_go(reverse_go,reverse,200)
+            reverse_go['physical']['right']['base_confirmation_scope']=reverse['scope']
+            m.validate_go(reverse_go,reverse,200)
             self.assertIn('三轮各按同一获准稳定性判据',plan['scope'])
             old=copy.deepcopy(plan)
             old['scope']=old['scope'].replace('三轮各按同一获准稳定性判据','仅右7和左9各按获准稳定性判据')
@@ -2524,6 +2589,28 @@ class RightPulseTests(unittest.TestCase):
         self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
         self.assertTrue(all(row['decision']=='DEFERRED' for row in engine.rows[1:]))
 
+    def test_reverse_capture_uses_normal_position_identity_and_stop_checks(self):
+        executor,engine=self.engine('front',zero_stop_check=True,reverse=True)
+        with patch.object(m,'load_right_pulse_sdk',return_value=fake_sdk(executor)):
+            m.run_motion_probes(engine,engine.plan['bindings'],engine.plan)
+        self.assertEqual(len(engine.rows),1)
+        self.assertTrue(all(t['decision']=='DEFERRED' for t in engine.plan['base_targets']))
+        before=idle_rows()
+        after=copy.deepcopy(before)
+        after['right:8']['Present_Position']=executor.position
+        report={'plan':engine.plan,'probes':engine.rows,'child_active':False,
+                'position_verification':m.classify_position_snapshot(after,before,engine.rows),
+                'identity_verification':{'status':'PASS'},'stop_verification':{'status':'PASS'}}
+        self.assertEqual(m.classify_run_result(report),'DIAGNOSTIC_CAPTURED')
+        for gate in ('stop_verification','identity_verification'):
+            self.assertEqual(m.classify_run_result({**report,gate:{'status':'UNKNOWN'}}),
+                             'NEEDS_MANUAL_POWER_CUT')
+        after['right:7']['Present_Position']+=5
+        self.assertEqual(m.classify_run_result({**report,'position_verification':
+            m.classify_position_snapshot(after,before,engine.rows)}),'FAIL')
+        self.assertEqual(m.classify_run_result({**report,'probes':[]}), 'FAIL')
+        self.assertEqual(m.classify_run_result({**report,'probes':[dict(engine.rows[0],motor=7)]}), 'FAIL')
+
     def test_actual_sdk_golden_when_explicit_same_version_source_is_available(self):
         site=os.environ.get('SDK_GOLDEN_SITE')
         if not site:
@@ -2542,11 +2629,12 @@ class RightPulseTests(unittest.TestCase):
             self.assertEqual(serial.VERSION,'3.5')
             original=sdk.PortHandler
             for wheel,motor in (('right',7),('front',8),('left',9)):
-                cases=[(False,[250,50,0],None,0),(True,[250,-50,-50],None,0),(True,[300,0,50],None,0)]
-                cases += [(False,[250,50,0],phase,trigger) for phase in ('initial','post_disable') for trigger in (50,-50)]
-                for zero_stop,speeds,phase,trigger in cases:
+                cases=[(False,[250,50,0],None,0,False),(True,[250,-50,-50],None,0,False),
+                       (True,[300,0,50],None,0,False),(True,[-300,-50,0],None,0,True)]
+                cases += [(False,[250,50,0],phase,trigger,False) for phase in ('initial','post_disable') for trigger in (50,-50)]
+                for zero_stop,speeds,phase,trigger,reverse in cases:
                     executor,engine=(self.stability_engine(wheel,phase,trigger) if phase else
-                                     self.engine(wheel,zero_stop_check=zero_stop))
+                                     self.engine(wheel,zero_stop_check=zero_stop,reverse=reverse))
                     executor.sdk_zero_coast=list(speeds)
                     def port(device):
                         instance=original(device)
@@ -2556,7 +2644,7 @@ class RightPulseTests(unittest.TestCase):
                         row=self.perform(executor,engine,sdk=sdk)
                     self.assertEqual(row['status'],'PASS');self.assertEqual(executor.sdk_close_calls,1)
                     self.assertGreater(executor.sdk_nonzero_count,300)
-                    expected=[255,255,254,7,131,46,2,motor,244,1]
+                    expected=[255,255,254,7,131,46,2,motor,244,0x81 if reverse else 1]
                     expected.append((~sum(expected[2:]))&255)
                     self.assertIn(expected,executor.sdk_packets)
                     self.assertTrue(all(op['motor']==motor for op in row['sdk_operations']))
@@ -2570,7 +2658,7 @@ class RightPulseTests(unittest.TestCase):
                     if zero_stop:
                         zero=row['zero_stop_check']
                         self.assertEqual([s['velocity_raw'] for s in zero['samples']],
-                                         [0x8032 if value==-50 else value for value in speeds])
+                                         [0x8000 | -value if value<0 else value for value in speeds])
                         entry=zero['samples'][-1]['raw'][-1]
                         expected_word=0x8032 if speeds[-1]==-50 else speeds[-1]
                         self.assertEqual(entry['data'],[expected_word&255,expected_word>>8])
