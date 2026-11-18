@@ -2107,6 +2107,34 @@ impl Coordinator {
         })
     }
 
+    /// 网页的下一条按住输入只更新当前模拟动作，绝不重新创建任务或事件线程。
+    #[cfg(feature = "test-base-command")]
+    pub(crate) fn renew_simulated_base(
+        &self,
+        req: &ActionRequest,
+        clock: &dyn RobotClock,
+    ) -> Result<(), SubmitError> {
+        let mut inner = self.lock_inner();
+        let now = clock.now().0;
+        req.validate(now)?;
+        let sequence = crate::action_backend::simulated_base_command::request_sequence(req)?;
+        if sequence <= inner.simulated_base_sequence {
+            return Err(
+                ActionStartError::Rejected("模拟底盘命令序号已消费，禁止重放".into()).into(),
+            );
+        }
+        let current = inner
+            .current
+            .as_mut()
+            .filter(|c| c.action_id == req.action_id && !c.pending_cancel)
+            .ok_or_else(|| ActionStartError::Rejected("底盘按住动作已失效".into()))?;
+        current
+            .instance
+            .renew_simulated_base(req, self.layout_id, now)?;
+        inner.simulated_base_sequence = sequence;
+        Ok(())
+    }
+
     /// Cooperative cancel：set backend `cancel()` flag + 标记
     /// `pending_cancel`；下次 [`Self::tick_action`] 收敛 backend 输出。
     ///
@@ -5280,6 +5308,53 @@ backends = 42
                 ))
             ));
             assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_renew_keeps_original_target_and_cannot_revive() {
+            let (c, _, clock, feedback) = simulated_base_fixture();
+            let mut first = simulated_base_request(&c, &clock, &feedback, 1, 500);
+            first.source = crate::action::ActionSource::RpcGateway {
+                actor: "web-base-start".into(),
+            };
+            let ticket = c.submit(first, &clock).unwrap();
+            for sequence in 2..=5 {
+                clock.advance(DurationNs::from_millis(30));
+                let request = |raw| ActionRequest {
+                    action_id: ticket.action_id,
+                    ..simulated_base_request(&c, &clock, &feedback, sequence, raw)
+                };
+                assert!(c.renew_simulated_base(&request(0), &clock).is_err());
+                let renew = request(500);
+                c.renew_simulated_base(&renew, &clock).unwrap();
+                assert!(c.renew_simulated_base(&renew, &clock).is_err());
+                assert_simulated_base_body(
+                    &c,
+                    c.tick_action(&clock, sequence).unwrap().as_bytes(),
+                    &feedback,
+                    500,
+                    sequence,
+                );
+                c.command_published(clock.now().0);
+            }
+            clock.advance(DurationNs::from_millis(100));
+            let late = ActionRequest {
+                action_id: ticket.action_id,
+                ..simulated_base_request(&c, &clock, &feedback, 6, 500)
+            };
+            assert!(c.renew_simulated_base(&late, &clock).is_err());
+            assert_simulated_base_body(
+                &c,
+                c.tick_action(&clock, 6).unwrap().as_bytes(),
+                &feedback,
+                0,
+                6,
+            );
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 7).is_none());
+            assert!(c.renew_simulated_base(&late, &clock).is_err());
             c.take_state_cache().unwrap().join().unwrap();
         }
 

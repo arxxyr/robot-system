@@ -27,6 +27,7 @@ fn source(mixed: bool) -> Source {
         },
         motion: None,
         enable_alignment_tolerance_rad: Some(0.006_136_5),
+        base_simulation: false,
     };
     let mut joints = String::new();
     for (slot, name) in source.layout.joints.iter().enumerate() {

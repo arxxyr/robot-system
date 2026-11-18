@@ -1,6 +1,8 @@
 //! Web控制的固定容量共享状态；复用状态轮询持有的gRPC连接，不启动机器人进程。
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use flatbuffers::FlatBufferBuilder;
@@ -17,6 +19,10 @@ use crate::proto::{
 };
 use robot_core::time::RobotClock;
 
+#[path = "status_base.rs"]
+mod base;
+pub(super) use base::wheel_slots as base_wheel_slots;
+
 pub(super) const MAILBOX_CAPACITY: usize = 8;
 
 #[derive(Default, Deserialize)]
@@ -32,10 +38,15 @@ pub(super) struct SourceConfig {
     pub motion_config: PathBuf,
     #[serde(default)]
     pub enable_alignment_tolerance_rad: Option<f64>,
+    #[serde(default)]
+    pub base_simulation: bool,
 }
 
 impl SourceConfig {
     pub(super) fn validate(&self) -> Result<(), String> {
+        if self.base_simulation && !cfg!(feature = "test-base-command") {
+            return Err("底盘控制仅接受显式test-base-command模拟构建".into());
+        }
         if self
             .enable_alignment_tolerance_rad
             .is_some_and(|value| !value.is_finite() || value < 0.0)
@@ -188,6 +199,16 @@ pub(super) enum Operation {
     Disable,
     Estop,
     ClearEstop,
+    BaseHold,
+    BaseStop,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct WheelsRaw {
+    front: i16,
+    left: i16,
+    right: i16,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -208,6 +229,9 @@ pub(super) struct Request {
     pub target_position_rad: Option<f64>,
     pub duration_ms: Option<u32>,
     pub confirmation: Option<String>,
+    pub hold_id: Option<String>,
+    pub seq: Option<String>,
+    pub wheels_raw: Option<WheelsRaw>,
 }
 
 impl Request {
@@ -223,6 +247,21 @@ impl Request {
             return Err("控制消息类型或请求标识无效".into());
         }
         match self.operation {
+            Operation::BaseHold | Operation::BaseStop => {
+                let hold = self.hold_id.as_deref().ok_or("底盘缺少hold_id")?;
+                if crate::auth::validate_request_id(hold).is_err()
+                    || self
+                        .seq
+                        .as_ref()
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .is_none_or(|s| s == 0)
+                    || self.has_motion()
+                    || self.confirmation.is_some()
+                    || (self.operation == Operation::BaseHold) != self.wheels_raw.is_some()
+                {
+                    return Err("底盘按住/停止标识、序号或参数无效".into());
+                }
+            }
             Operation::Move => {
                 if self.joint.is_none()
                     || self.target_position_rad.is_none()
@@ -244,7 +283,16 @@ impl Request {
                 }
             }
         }
+        if !self.is_base()
+            && (self.hold_id.is_some() || self.seq.is_some() || self.wheels_raw.is_some())
+        {
+            return Err("关节及使能操作不接受底盘参数".into());
+        }
         Ok(())
+    }
+
+    pub(super) fn is_base(&self) -> bool {
+        matches!(self.operation, Operation::BaseHold | Operation::BaseStop)
     }
 
     fn has_motion(&self) -> bool {
@@ -263,6 +311,7 @@ pub(super) struct Reply {
     pub message: String,
     pub action_id: Option<String>,
     pub revision: String,
+    pub lease_deadline_ns: Option<String>,
 }
 
 impl Reply {
@@ -280,13 +329,22 @@ impl Reply {
             message: message.into(),
             action_id: None,
             revision: revision.to_string(),
+            lease_deadline_ns: None,
         }
     }
 }
 
-pub(super) struct Envelope {
-    pub request: Request,
-    pub reply: tokio::sync::oneshot::Sender<Reply>,
+pub(super) enum Envelope {
+    Request {
+        request: Box<Request>,
+        reply: tokio::sync::oneshot::Sender<Reply>,
+        connection_id: String,
+        connected: Arc<AtomicBool>,
+        received_ns: u64,
+    },
+    Disconnected {
+        connection_id: String,
+    },
 }
 
 #[derive(Clone, Serialize)]
@@ -315,6 +373,28 @@ pub(super) struct View {
     pub joints: Vec<JointLimit>,
     pub task: Option<TaskView>,
     pub last_result: Option<Reply>,
+    pub base: BaseView,
+}
+
+#[derive(Clone, Default, Serialize)]
+pub(super) struct BaseView {
+    pub enabled: bool,
+    pub can_hold: bool,
+    pub active: bool,
+    pub hold_id: Option<String>,
+    pub seq: Option<String>,
+    pub lease_deadline_ns: Option<String>,
+    pub reason: String,
+}
+
+struct BaseHold {
+    owner: String,
+    id: String,
+    seq: u64,
+    deadline_ns: u64,
+    anchor: Vec<f64>,
+    closed: bool,
+    cancel_sent: bool,
 }
 
 pub(super) struct RpcContext<'a> {
@@ -334,6 +414,8 @@ pub(super) struct ControlState {
     last_request: Option<Request>,
     last_result: Option<Reply>,
     after_stamp_ns: Option<u64>,
+    base: Option<BaseHold>,
+    base_sequence: u64,
 }
 
 impl ControlState {
@@ -346,6 +428,8 @@ impl ControlState {
             last_request: None,
             last_result: None,
             after_stamp_ns: None,
+            base: None,
+            base_sequence: 0,
         }
     }
 
@@ -366,11 +450,15 @@ impl ControlState {
             joints: motion.map_or_else(Vec::new, |m| m.joints.clone()),
             task: self.task.clone(),
             last_result: self.last_result.clone(),
+            base: BaseView::default(),
         }
     }
 
     fn preflight(&self, request: &Request, source: &Source, state: &BusView) -> Result<(), String> {
         request.validate_shape()?;
+        if request.is_base() {
+            return Err("底盘命令必须经过本连接的有界入口".into());
+        }
         if !self.enabled || source.motion.is_none() {
             return Err("此总线未开放Web控制，未发送".into());
         }
@@ -467,6 +555,7 @@ impl ControlState {
             });
         }
         let meta = command_meta(&request, source, &rpc_id, motion, &rpc);
+        self.close_base_for(request.operation);
         let result = tokio::select! {
             _ = rpc.shutdown.changed() => Err("Web关闭时RPC结果未知；不自动重发"),
             result = tokio::time::timeout(rpc.timeout,
@@ -536,7 +625,14 @@ impl ControlState {
             result = tokio::time::timeout(timeout, client.get_task_status(request)) => result,
         };
         match result {
-            Ok(Ok(response)) => apply_task_status(task, response.into_inner(), &rpc_id),
+            Ok(Ok(response)) => apply_task_status(
+                task,
+                response.into_inner(),
+                &rpc_id,
+                self.base
+                    .as_ref()
+                    .is_some_and(|base| base.id == task.action_id),
+            ),
             Ok(Err(error)) => {
                 task.state = "unknown";
                 task.error = Some(format!("任务查询失败：{error}"));
@@ -651,10 +747,12 @@ fn accepted_message(operation: Operation) -> &'static str {
         Operation::Disable => "断扭回执已收到；仍以新鲜TorqueOffConfirmed反馈确认",
         Operation::Estop => "急停事件已发布；回执不证明实际已停止或锁存写入完成",
         Operation::ClearEstop => "独立解除急停回执已收到；没有自动使能或清故障",
+        Operation::BaseHold => "模拟底盘租期已接收；仅新按住消息可续租",
+        Operation::BaseStop => "底盘取消请求已接收；归零与物理停止分别确认",
     }
 }
 
-fn apply_task_status(task: &mut TaskView, status: TaskStatus, rpc_id: &str) {
+fn apply_task_status(task: &mut TaskView, status: TaskStatus, rpc_id: &str, base_task: bool) {
     if status.request_id != rpc_id
         || status.action_id != task.action_id
         || !status.progress.is_finite()
@@ -673,7 +771,7 @@ fn apply_task_status(task: &mut TaskView, status: TaskStatus, rpc_id: &str) {
             if status
                 .outcome
                 .as_ref()
-                .is_some_and(|outcome| outcome.kind == 1) =>
+                .is_some_and(|outcome| outcome.kind == 1 || (base_task && outcome.kind == 2)) =>
         {
             "completed"
         }
@@ -793,6 +891,9 @@ async fn invoke_rpc(
             ))
             .await
             .map(|reply| RpcReply::Ack(reply.into_inner())),
+        Operation::BaseHold | Operation::BaseStop => Err(tonic::Status::failed_precondition(
+            "底盘命令必须经过有界连接入口",
+        )),
     }
 }
 

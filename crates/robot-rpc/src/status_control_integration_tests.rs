@@ -20,6 +20,175 @@ type FakeStream<T> =
 type Browser =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[cfg(feature = "test-base-command")]
+mod base_panel {
+    use super::*;
+
+    async fn fixture(hold: bool, timeout: u64) -> Fixture {
+        let mut right = source(2);
+        right.base_simulation = true;
+        Fixture::start_with_sources(100, hold, timeout, false, vec![right]).await
+    }
+
+    fn message(snapshot: &Value, hold: &str, seq: u64, operation: &str, revision: &Value) -> Value {
+        let bus = &snapshot["buses"][0];
+        let mut value = json!({"type":"control", "request_id":format!("base-{seq}-{operation}"),
+            "bus_id":bus["id"], "process_id":bus["control"]["process_id"], "revision":revision,
+            "operation":operation,"hold_id":hold,"seq":seq.to_string()});
+        if operation == "base_hold" {
+            value["wheels_raw"] = json!({"front":500,"left":0,"right":500});
+        }
+        value
+    }
+
+    #[tokio::test]
+    async fn base_hold_renews_one_action_on_one_shared_connection_and_owner_stops() {
+        let fixture = fixture(false, 100).await;
+        let mut first = fixture.same_origin().await;
+        let initial = next_matching(&mut first, |v| {
+            v["buses"][0]["control"]["base"]["can_hold"] == true
+        })
+        .await;
+        let hold = uuid::Uuid::now_v7().to_string();
+        let mut revision = initial["buses"][0]["control"]["revision"].clone();
+        for seq in 1..=3 {
+            let request = message(&initial, &hold, seq, "base_hold", &revision);
+            send(&mut first, &request).await;
+            let ack = reply(&mut first, request["request_id"].as_str().unwrap()).await;
+            assert_eq!(ack["status"], "accepted");
+            assert_eq!(ack["action_id"], hold);
+            revision = ack["revision"].clone();
+        }
+        let mut second = fixture.same_origin().await;
+        next_matching(&mut second, |value| {
+            value["buses"]
+                .as_array()
+                .is_some_and(|buses| buses.len() == 1 && buses[0]["data_status"] == "fresh")
+        })
+        .await;
+        let steal = message(&initial, &hold, 4, "base_hold", &revision);
+        send(&mut second, &steal).await;
+        assert_eq!(
+            reply(&mut second, steal["request_id"].as_str().unwrap()).await["status"],
+            "rejected"
+        );
+        let stop = message(&initial, &hold, 4, "base_stop", &json!("0"));
+        send(&mut first, &stop).await;
+        assert_eq!(
+            reply(&mut first, stop["request_id"].as_str().unwrap()).await["status"],
+            "accepted"
+        );
+        next_matching(&mut first, |v| {
+            v["buses"][0]["control"]["base"]["can_hold"] == true
+                && v["buses"][0]["control"]["base"]["active"] == false
+        })
+        .await;
+        let calls = &fixture.calls[0];
+        let invocations = calls.base_invocations.lock().unwrap().clone();
+        assert_eq!(invocations.len(), 3);
+        let mut previous_sequence = 0;
+        for (index, invocation) in invocations.iter().enumerate() {
+            let meta = invocation.meta.as_ref().unwrap();
+            assert_eq!(meta.request_id, hold);
+            assert_eq!(
+                meta.source,
+                if index == 0 {
+                    "web-base-start"
+                } else {
+                    "web-base-renew"
+                }
+            );
+            let wire =
+                flatbuffers::root::<robot_msg::msg::JointCommand<'_>>(&invocation.payload).unwrap();
+            assert_eq!(
+                wire.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
+                [0, 0, 0, 0, 0, 0, 500, 500, 0]
+            );
+            assert!(wire.target().unwrap().iter().all(|v| v == 0.0));
+            assert!(wire.source_task_id() > previous_sequence);
+            previous_sequence = wire.source_task_id();
+        }
+        assert_eq!(calls.cancellations.load(Ordering::Relaxed), 1);
+        assert_eq!(calls.connections.load(Ordering::Relaxed), 1);
+        first.close(None).await.unwrap();
+        second.close(None).await.unwrap();
+        fixture.finish().await;
+    }
+
+    #[tokio::test]
+    async fn base_disconnect_cancels_once_and_reconnect_does_not_resume() {
+        let fixture = fixture(false, 100).await;
+        let mut browser = fixture.same_origin().await;
+        let initial = next_matching(&mut browser, |v| {
+            v["buses"][0]["control"]["base"]["can_hold"] == true
+        })
+        .await;
+        let hold = uuid::Uuid::now_v7().to_string();
+        let start = message(
+            &initial,
+            &hold,
+            1,
+            "base_hold",
+            &initial["buses"][0]["control"]["revision"],
+        );
+        send(&mut browser, &start).await;
+        let ack = reply(&mut browser, start["request_id"].as_str().unwrap()).await;
+        assert_eq!(ack["status"], "accepted");
+        browser.close(None).await.unwrap();
+        let mut reconnect = fixture.same_origin().await;
+        let stopped = next_matching(&mut reconnect, |v| {
+            v["buses"][0]["control"]["task"]["state"] == "cancelled"
+        })
+        .await;
+        let old = message(
+            &stopped,
+            &hold,
+            2,
+            "base_hold",
+            &stopped["buses"][0]["control"]["revision"],
+        );
+        send(&mut reconnect, &old).await;
+        assert_eq!(
+            reply(&mut reconnect, old["request_id"].as_str().unwrap()).await["status"],
+            "rejected"
+        );
+        assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.calls[0].cancellations.load(Ordering::Relaxed), 1);
+        reconnect.close(None).await.unwrap();
+        fixture.finish().await;
+    }
+
+    #[tokio::test]
+    async fn base_stop_preempts_pending_reply_without_repeating_unknown_invoke() {
+        let fixture = fixture(true, 150).await;
+        let mut browser = fixture.same_origin().await;
+        let initial = next_matching(&mut browser, |v| {
+            v["buses"][0]["control"]["base"]["can_hold"] == true
+        })
+        .await;
+        let hold = uuid::Uuid::now_v7().to_string();
+        let start = message(
+            &initial,
+            &hold,
+            1,
+            "base_hold",
+            &initial["buses"][0]["control"]["revision"],
+        );
+        send(&mut browser, &start).await;
+        fixture.invoked.notified().await;
+        let stop = message(&initial, &hold, 2, "base_stop", &json!("0"));
+        send(&mut browser, &stop).await;
+        assert_eq!(
+            reply(&mut browser, stop["request_id"].as_str().unwrap()).await["status"],
+            "accepted"
+        );
+        assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 1);
+        assert_eq!(fixture.calls[0].cancellations.load(Ordering::Relaxed), 1);
+        browser.close(None).await.unwrap();
+        fixture.finish().await;
+    }
+}
+
 #[derive(Default)]
 struct Calls {
     connections: AtomicUsize,
@@ -42,6 +211,7 @@ struct Calls {
     restart_mirror_on_read: AtomicBool,
     frozen_stamp_ns: AtomicU64,
     mirror_sequence: AtomicU64,
+    base_invocations: std::sync::Mutex<Vec<InvokeTaskCommand>>,
 }
 
 #[derive(Clone)]
@@ -106,10 +276,23 @@ impl RobotControl for FakeControl {
         self.calls.invokes.fetch_add(1, Ordering::Relaxed);
         self.invoked.notify_one();
         let command = request.into_inner();
-        assert_eq!(
-            command.payload_schema_id,
-            robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
-        );
+        if command.payload_schema_id == robot_msg::schema_id::SCHEMA_JOINT_COMMAND {
+            crate::auth::validate_request_id(&command.meta.as_ref().unwrap().request_id)
+                .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            if command.meta.as_ref().unwrap().source == "web-base-start" {
+                self.calls.cancelled.store(false, Ordering::Relaxed);
+            }
+            self.calls
+                .base_invocations
+                .lock()
+                .unwrap()
+                .push(command.clone());
+        } else {
+            assert_eq!(
+                command.payload_schema_id,
+                robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
+            );
+        }
         let meta = command.meta.unwrap();
         assert_eq!(meta.auth.unwrap().token, "software-only");
         if let Some(gate) = &self.invoke_gate {
@@ -232,6 +415,7 @@ fn source(bus: u8) -> Source {
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
         enable_alignment_tolerance_rad: None,
+        base_simulation: false,
     };
     source.motion = Some(
         control::MotionConfig::load(

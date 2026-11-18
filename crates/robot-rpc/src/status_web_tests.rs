@@ -34,6 +34,7 @@ fn source(bus: u8, endpoint: String) -> Source {
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
         enable_alignment_tolerance_rad: None,
+        base_simulation: false,
     }
 }
 

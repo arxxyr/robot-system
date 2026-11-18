@@ -9,6 +9,7 @@ use std::future::{Future, IntoFuture};
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::extract::State;
@@ -114,6 +115,7 @@ struct Source {
     layout: HardwareLayout,
     motion: Option<control::MotionConfig>,
     enable_alignment_tolerance_rad: Option<f64>,
+    base_simulation: bool,
 }
 
 /// 已校验的状态与可选控制配置；所有文件读取均在启动期完成。
@@ -212,10 +214,15 @@ impl StatusConfig {
                 layout,
                 motion: None,
                 enable_alignment_tolerance_rad: None,
+                base_simulation: false,
             };
             if let Some(control) = entry.control {
                 control.validate()?;
                 source.enable_alignment_tolerance_rad = control.enable_alignment_tolerance_rad;
+                source.base_simulation = control.base_simulation;
+                if source.base_simulation {
+                    control::base_wheel_slots(&source)?;
+                }
                 source.motion = Some(control::MotionConfig::load(
                     &base.join(control.motion_config),
                     &source,
@@ -331,6 +338,22 @@ impl Snapshot {
                         bus.data_status = "stale";
                     }
                 }
+            }
+            if bus
+                .control
+                .base
+                .lease_deadline_ns
+                .as_ref()
+                .and_then(|value| value.parse::<u64>().ok())
+                .is_some_and(|deadline| now_ns >= deadline)
+            {
+                bus.control.base.active = false;
+                if bus.control.busy {
+                    bus.control.base.can_hold = false;
+                }
+            }
+            if bus.data_status != "fresh" {
+                bus.control.base.can_hold = false;
             }
         }
         snapshot
@@ -522,7 +545,7 @@ impl SourceState {
                 .err()
                 .unwrap_or_else(|| "原位已对齐；使能时仍会重新核对两帧".into());
         }
-        BusView {
+        let mut view = BusView {
             id: self.source.id.clone(),
             label: self.source.label.clone(),
             robot_id: self.source.robot_id.clone(),
@@ -551,7 +574,9 @@ impl SourceState {
             fault_code: self.reported.as_ref().map(|last| last.fault_code),
             joints,
             control,
-        }
+        };
+        view.control.base = self.control.base_view(&self.source, &view, now_ns);
+        view
     }
 }
 
@@ -625,6 +650,8 @@ async fn websocket_loop(connection: WsConnection, state: WebState) {
     let mut send_snapshot = true;
     let mut close_frame = None;
     let mut pending: Option<oneshot::Receiver<control::Reply>> = None;
+    let connection_id = uuid::Uuid::now_v7().to_string();
+    let connected = Arc::new(AtomicBool::new(true));
     loop {
         if *shutdown.borrow() {
             break;
@@ -660,16 +687,20 @@ async fn websocket_loop(connection: WsConnection, state: WebState) {
                         continue;
                     };
                     let message = if !same_origin { Some("控制请求须来自同源页面，未发送") }
-                        else if pending.is_some() { Some("本连接已有待处理请求，未发送") } else { None };
+                        else if pending.is_some() && request.operation != control::Operation::BaseStop { Some("本连接已有待处理请求，未发送") } else { None };
                     if let Some(message) = message {
                         if !send_control_reply(&mut socket, control::Reply::rejected(Some(&request), 0, message), &mut shutdown).await { break; }
                         continue;
                     }
                     let (reply, received) = oneshot::channel();
-                    match state.commands.try_send(control::Envelope { request, reply }) {
+                    match state.commands.try_send(control::Envelope::Request {
+                        request: Box::new(request), reply, connection_id: connection_id.clone(),
+                        connected: Arc::clone(&connected), received_ns: state.clock.now().0,
+                    }) {
                         Ok(()) => pending = Some(received),
                         Err(error) => {
-                            if !send_control_reply(&mut socket, control::Reply::rejected(Some(&error.into_inner().request), 0, "共享控制入口繁忙或已关闭，未发送"), &mut shutdown).await { break; }
+                            let control::Envelope::Request { request, .. } = error.into_inner() else { unreachable!() };
+                            if !send_control_reply(&mut socket, control::Reply::rejected(Some(&request), 0, "共享控制入口繁忙或已关闭，未发送"), &mut shutdown).await { break; }
                         }
                     }
                 }
@@ -689,6 +720,11 @@ async fn websocket_loop(connection: WsConnection, state: WebState) {
             }
         }
     }
+    connected.store(false, Ordering::Release);
+    // 若共享队列已满，固定租期仍停止输出；关闭事件不重试、不延长租期。
+    let _ = state
+        .commands
+        .try_send(control::Envelope::Disconnected { connection_id });
     // 关闭不等对端无限确认；发完Close并flush后释放socket和连接许可。
     let _ = tokio::time::timeout(WS_IO_BUDGET, async {
         if let Some(frame) = close_frame {
@@ -982,13 +1018,28 @@ async fn poll_sources_inner(
             _ = interval.tick() => {},
             command = commands.recv() => {
                 let Some(command) = command else { break; };
-                let reply = if let Some((source, client)) = sources.iter_mut().find(|(source, _)| source.source.id == command.request.bus_id) {
-                    let state = source.view(clock.now().0, config.stale_after_ms);
-                    source.control.dispatch(command.request, &source.source, &state, control::RpcContext { client,
-                        token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown,
-                        commands: mirrors.as_ref(), clock: clock.as_ref() }).await
-                } else { control::Reply::rejected(Some(&command.request), 0, "未知总线，未发送") };
-                let _ = command.reply.send(reply);
+                match command {
+                    control::Envelope::Request { request, reply, connection_id, connected, received_ns } => {
+                        let request = *request;
+                        let result = if let Some((source, client)) = sources.iter_mut().find(|(source, _)| source.source.id == request.bus_id) {
+                            let state = source.view(clock.now().0, config.stale_after_ms);
+                            let rpc = control::RpcContext { client,
+                                token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown,
+                                commands: mirrors.as_ref(), clock: clock.as_ref() };
+                            if request.is_base() {
+                                source.control.dispatch_base(request, &source.source, &state, &connection_id, &connected, received_ns, rpc).await
+                            } else { source.control.dispatch(request, &source.source, &state, rpc).await }
+                        } else { control::Reply::rejected(Some(&request), 0, "未知总线，未发送") };
+                        let _ = reply.send(result);
+                    }
+                    control::Envelope::Disconnected { connection_id } => {
+                        for (source, client) in &mut sources {
+                            source.control.disconnect_base(&connection_id, control::RpcContext { client,
+                                token: config.control_token.as_deref().unwrap_or_default(), timeout, shutdown: &mut shutdown,
+                                commands: mirrors.as_ref(), clock: clock.as_ref() }).await;
+                        }
+                    }
+                }
                 publish_snapshot(&sources, &latest, clock.now().0, config.stale_after_ms);
                 continue;
             },

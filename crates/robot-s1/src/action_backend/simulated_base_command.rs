@@ -2,7 +2,7 @@
 //!
 //! 仅 `test-base-command` 特性和显式 `simulated_base_command` profile 可接入。
 //! 使用既有混合 JointCommand 载荷，位置字段作为提交时原位前提，三轮各仅
-//! 允许 raw0/+500。租期从提交时固定，后续 tick 或心跳不续期；断联仅由该
+//! 允许 raw0/+500。每次明确按住输入给出有界期限，tick 和连接心跳均不续期；断联由该
 //! 短租期兜底，不把 RPC 连接关闭伪装成主动取消。零速发布不是硬件停止读回。
 
 use crate::action::{
@@ -26,6 +26,33 @@ pub(crate) fn request_sequence(req: &ActionRequest) -> Result<u64, ActionStartEr
         ));
     }
     Ok(command.source_task_id())
+}
+
+fn decode_timed_command(
+    req: &ActionRequest,
+    layout_id: u64,
+    now: u64,
+) -> Result<(JointCommand<'_>, u64), ActionStartError> {
+    let reject = |reason: &str| ActionStartError::Rejected(reason.into());
+    if req.kind != ActionKind::Scripted || req.payload_schema_id != SCHEMA_JOINT_COMMAND {
+        return Err(reject("模拟底盘需要混合 JointCommand"));
+    }
+    let command = flatbuffers::root::<JointCommand<'_>>(&req.payload)
+        .map_err(|error| ActionStartError::PayloadDecode(error.to_string()))?;
+    if command.layout_id() != layout_id
+        || command.mode() != ControlMode::MixedPositionRawVelocity
+        || command.on_timeout() != StaleAction::Hold
+    {
+        return Err(reject("模拟底盘布局、混合模式或超时合同不符"));
+    }
+    let deadline = command.deadline_ns().min(req.deadline_ns);
+    if !deadline
+        .checked_sub(now)
+        .is_some_and(|ttl| (1..=COMMAND_TTL_MAX_NS).contains(&ttl))
+    {
+        return Err(reject("模拟底盘运动租期必须大于0且不超过100毫秒"));
+    }
+    Ok((command, deadline))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,22 +86,8 @@ impl ActionBackend for SimulatedBaseCommandBackend {
                 "模拟底盘请求需要既有完整右侧混合布局与JointCommand载荷",
             ));
         }
-        let command = flatbuffers::root::<JointCommand<'_>>(&req.payload)
-            .map_err(|error| ActionStartError::PayloadDecode(error.to_string()))?;
-        if command.layout_id() != ctx.layout_id
-            || command.mode() != ControlMode::MixedPositionRawVelocity
-            || command.on_timeout() != StaleAction::Hold
-        {
-            return Err(reject("模拟底盘布局、混合模式或超时合同不符"));
-        }
         let now = ctx.clock.now().0;
-        let deadline = command.deadline_ns().min(req.deadline_ns);
-        if !deadline
-            .checked_sub(now)
-            .is_some_and(|ttl| (1..=COMMAND_TTL_MAX_NS).contains(&ttl))
-        {
-            return Err(reject("模拟底盘运动租期必须大于0且不超过100毫秒"));
-        }
+        let (command, deadline) = decode_timed_command(req, ctx.layout_id, now)?;
         let config = ctx
             .single_joint_config
             .ok_or_else(|| reject("缺少右臂原位保持约束"))?;
@@ -125,14 +138,21 @@ impl ActionBackend for SimulatedBaseCommandBackend {
             last_feedback: feedback.stamp_ns,
             cancelled: false,
             terminal: None,
-            zero_published: false,
-            nonzero_published: false,
+            published: PublishedCommand::None,
+            web_hold: matches!(&req.source, crate::action::ActionSource::RpcGateway { actor } if actor == "web-base-start"),
         };
         instance
             .check_feedback(ctx, now)
             .map_err(|error| reject(&error.to_string()))?;
         Ok(Box::new(instance))
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PublishedCommand {
+    None,
+    Motion,
+    Zero,
 }
 
 struct BaseCommandInstance {
@@ -144,9 +164,9 @@ struct BaseCommandInstance {
     last_feedback: u64,
     cancelled: bool,
     terminal: Option<Result<ActionOutcome, ActionFailure>>,
-    zero_published: bool,
-    // 只记录原publisher成功回调，不把生成命令或实际轮子运动混为一谈。
-    nonzero_published: bool,
+    // 只记录现有发布器已成功发出的最后一帧。
+    published: PublishedCommand,
+    web_hold: bool,
 }
 
 impl BaseCommandInstance {
@@ -187,6 +207,38 @@ impl BaseCommandInstance {
 }
 
 impl ActionInstance for BaseCommandInstance {
+    fn renew_simulated_base(
+        &mut self,
+        req: &ActionRequest,
+        layout_id: u64,
+        now: u64,
+    ) -> Result<(), ActionStartError> {
+        let reject = |reason: &str| ActionStartError::Rejected(reason.into());
+        if !self.web_hold
+            || self.cancelled
+            || self.terminal.is_some()
+            || now < self.last_tick
+            || now >= self.deadline
+        {
+            return Err(reject("底盘动作已结束、到期或不属于网页按住动作"));
+        }
+        let (command, next_deadline) = decode_timed_command(req, layout_id, now)?;
+        let (Some(target), Some(raw)) = (command.target(), command.raw_velocities()) else {
+            return Err(reject("底盘续期缺少完整目标"));
+        };
+        if next_deadline <= self.deadline
+            || !raw.iter().eq(self.velocities)
+            || !target
+                .iter()
+                .map(position_for_s0)
+                .eq(self.held.iter().copied())
+        {
+            return Err(reject("底盘续期只可延长当前动作期限，原位和轮速必须一致"));
+        }
+        self.deadline = next_deadline;
+        Ok(())
+    }
+
     fn tick(&mut self, ctx: &mut ActionContext<'_>) -> Result<ActionTickOutput, ActionFailure> {
         let now = ctx.clock.now().0;
         // 安全失败优先于取消和正常到期；待零速确认期间的新故障也不能被掩盖。
@@ -201,7 +253,7 @@ impl ActionInstance for BaseCommandInstance {
                 Err(error) => self.terminal = Some(Err(error)),
             }
         }
-        if self.zero_published
+        if self.published == PublishedCommand::Zero
             && let Some(result) = self.terminal.as_ref()
         {
             return result.clone().map(ActionTickOutput::Completed);
@@ -219,7 +271,7 @@ impl ActionInstance for BaseCommandInstance {
                 let period =
                     u64::try_from(ctx.config.command_period().as_nanos()).unwrap_or(u64::MAX);
                 if now.saturating_add(period) >= self.deadline {
-                    let warning = if self.nonzero_published {
+                    let warning = if self.published == PublishedCommand::Motion {
                         "底盘固定租期到达归零边界，未续期"
                     } else {
                         "底盘固定租期到达归零边界，未发布非零命令"
@@ -255,11 +307,11 @@ impl ActionInstance for BaseCommandInstance {
     }
 
     fn command_published(&mut self, _published_at_ns: u64) {
-        if self.terminal.is_some() {
-            self.zero_published = true;
+        self.published = if self.terminal.is_some() {
+            PublishedCommand::Zero
         } else {
-            self.nonzero_published = true;
-        }
+            PublishedCommand::Motion
+        };
     }
 
     fn cancel(&mut self, _ctx: &mut ActionContext<'_>) -> Result<(), ActionCancelError> {

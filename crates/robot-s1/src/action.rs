@@ -491,6 +491,17 @@ pub trait ActionBackend: Send + Sync {
 /// 自查 + 收敛返 `Completed(PartialSuccess)` 或 `Err(...)`（§10 决策
 /// #4）。
 pub trait ActionInstance: Send {
+    /// 仅模拟底盘实例接受同一手势的新期限。
+    #[cfg(feature = "test-base-command")]
+    fn renew_simulated_base(
+        &mut self,
+        _req: &ActionRequest,
+        _layout_id: u64,
+        _now_ns: u64,
+    ) -> Result<(), ActionStartError> {
+        Err(ActionStartError::Rejected("当前动作不支持底盘续期".into()))
+    }
+
     /// 仅在命令成功发布后调用；用于记录取消或失败后的保持目标。
     fn command_published(&mut self, _published_at_ns: u64) {}
 

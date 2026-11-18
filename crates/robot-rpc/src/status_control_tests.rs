@@ -3,6 +3,210 @@
 use super::*;
 use crate::client::layout::load_hardware_layout;
 
+#[cfg(feature = "test-base-command")]
+mod base_control {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    fn base_request(seq: u64) -> Request {
+        Request {
+            bus_id: "bus2".into(),
+            operation: Operation::BaseHold,
+            hold_id: Some("01900000-0000-7000-8000-000000000001".into()),
+            seq: Some(seq.to_string()),
+            wheels_raw: Some(WheelsRaw {
+                front: 500,
+                left: 0,
+                right: 500,
+            }),
+            ..request(Operation::BaseHold)
+        }
+    }
+
+    #[test]
+    fn base_requires_explicit_opt_in_and_preserves_role_slot_order() {
+        let mut source = source(2);
+        let control = ControlState::new(true, "process-1");
+        let connected = AtomicBool::new(true);
+        let request = base_request(1);
+        assert!(
+            control
+                .prepare_base(&request, &source, &view(&source), "owner", &connected, 1, 1)
+                .is_err()
+        );
+        source.base_simulation = true;
+        source.layout.joints.rotate_left(4);
+        source.layout.motor_ids.rotate_left(4);
+        let slots = base_wheel_slots(&source).unwrap();
+        assert_eq!(slots, [3, 4, 2]);
+        assert!(
+            control
+                .prepare_base(&request, &source, &view(&source), "owner", &connected, 1, 1)
+                .is_ok()
+        );
+        let mut v4 = request;
+        v4.hold_id = Some("550e8400-e29b-41d4-a716-446655440000".into());
+        assert!(v4.validate_shape().is_err());
+    }
+
+    #[test]
+    fn base_queue_deadline_owner_sequence_and_closed_scope_are_strict() {
+        let mut source = source(2);
+        source.base_simulation = true;
+        let mut control = ControlState::new(true, "process-1");
+        let connected = AtomicBool::new(true);
+        let mut request = base_request(1);
+        let state = view(&source);
+        assert!(
+            control
+                .prepare_base(
+                    &request,
+                    &source,
+                    &state,
+                    "owner",
+                    &connected,
+                    1,
+                    100_000_001
+                )
+                .is_err()
+        );
+        let (deadline, anchor, _) = control
+            .prepare_base(&request, &source, &state, "owner", &connected, 1, 1)
+            .unwrap();
+        control.base = Some(BaseHold {
+            owner: "owner".into(),
+            id: request.hold_id.clone().unwrap(),
+            seq: 1,
+            deadline_ns: deadline,
+            anchor,
+            closed: false,
+            cancel_sent: false,
+        });
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .is_err()
+        );
+        request.seq = Some("2".into());
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "other", &connected, 2, 2)
+                .is_err()
+        );
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .unwrap()
+                .2
+        );
+        assert!(
+            control
+                .prepare_base(
+                    &request, &source, &state, "owner", &connected, deadline, deadline
+                )
+                .is_err()
+        );
+        control.base.as_mut().unwrap().closed = true;
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .is_err()
+        );
+        connected.store(false, Ordering::Release);
+        request.hold_id = Some(uuid::Uuid::now_v7().to_string());
+        request.seq = Some("1".into());
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn base_stop_can_preempt_pending_revision_but_only_for_its_owner_once() {
+        let mut source = source(2);
+        source.base_simulation = true;
+        let mut control = ControlState::new(true, "process-1");
+        let connected = AtomicBool::new(true);
+        let mut request = base_request(1);
+        control.base = Some(BaseHold {
+            owner: "owner".into(),
+            id: request.hold_id.clone().unwrap(),
+            seq: 1,
+            deadline_ns: 100_000_001,
+            anchor: vec![0.0; 9],
+            closed: true,
+            cancel_sent: false,
+        });
+        control.revision = 2;
+        request.operation = Operation::BaseStop;
+        request.seq = Some("2".into());
+        request.wheels_raw = None;
+        let state = view(&source);
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .is_ok()
+        );
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "other", &connected, 2, 2)
+                .is_err()
+        );
+        control.base.as_mut().unwrap().cancel_sent = true;
+        assert!(
+            control
+                .prepare_base(&request, &source, &state, "owner", &connected, 2, 2)
+                .is_err()
+        );
+        for operation in [Operation::Cancel, Operation::Disable, Operation::Estop] {
+            let base = control.base.as_mut().unwrap();
+            base.closed = false;
+            base.cancel_sent = false;
+            control.close_base_for(operation);
+            let base = control.base.as_ref().unwrap();
+            assert!(base.closed && base.cancel_sent);
+            assert_eq!(base.deadline_ns, 100_000_001);
+        }
+    }
+
+    #[test]
+    fn base_rejects_unapproved_raw_and_does_not_relax_position_task_outcomes() {
+        let mut source = source(2);
+        source.base_simulation = true;
+        let control = ControlState::new(true, "process-1");
+        let connected = AtomicBool::new(true);
+        let mut request = base_request(1);
+        request.wheels_raw.as_mut().unwrap().front = -500;
+        assert!(
+            control
+                .prepare_base(&request, &source, &view(&source), "owner", &connected, 1, 1)
+                .is_err()
+        );
+        let mut task = TaskView {
+            action_id: "task".into(),
+            state: "executing",
+            progress: None,
+            error: None,
+        };
+        let status = TaskStatus {
+            request_id: "rpc".into(),
+            action_id: "task".into(),
+            state: TaskState::Completed as i32,
+            progress: 1.0,
+            outcome: Some(crate::proto::ActionOutcomeProto {
+                kind: 2,
+                ..Default::default()
+            }),
+            failure: None,
+        };
+        apply_task_status(&mut task, status.clone(), "rpc", false);
+        assert_eq!(task.state, "unknown");
+        apply_task_status(&mut task, status, "rpc", true);
+        assert_eq!(task.state, "completed");
+    }
+}
+
 fn source(bus: u8) -> Source {
     let config_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs");
     let path = config_dir.join(format!("xlerobot-bus{bus}.toml"));
@@ -20,6 +224,7 @@ fn source(bus: u8) -> Source {
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
         motion: None,
         enable_alignment_tolerance_rad: Some(0.006_136_5),
+        base_simulation: false,
     };
     source.motion = Some(
         MotionConfig::load(
@@ -43,6 +248,9 @@ fn request(operation: Operation) -> Request {
         target_position_rad: None,
         duration_ms: None,
         confirmation: None,
+        hold_id: None,
+        seq: None,
+        wheels_raw: None,
     }
 }
 
@@ -346,15 +554,15 @@ fn wrong_task_identity_or_unknown_outcome_cannot_clear_busy() {
         }),
         failure: None,
     };
-    apply_task_status(&mut task, status.clone(), "rpc");
+    apply_task_status(&mut task, status.clone(), "rpc", false);
     assert!(task.busy());
     assert_eq!(task.state, "unknown");
     status.action_id = "known".into();
     status.outcome = None;
-    apply_task_status(&mut task, status.clone(), "rpc");
+    apply_task_status(&mut task, status.clone(), "rpc", false);
     assert!(task.busy());
     status.state = 5;
-    apply_task_status(&mut task, status, "rpc");
+    apply_task_status(&mut task, status, "rpc", false);
     assert!(!task.busy());
     assert_eq!(task.state, "cancelled");
 }
@@ -433,6 +641,7 @@ fn missing_or_unknown_failure_keeps_unknown_task_busy() {
                 outcome: None,
             },
             "rpc",
+            false,
         );
         assert_eq!(task.state, "unknown");
         assert!(task.busy());

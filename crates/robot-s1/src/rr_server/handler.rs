@@ -298,6 +298,22 @@ where
 
     // 6. 调 Coordinator::submit。
     let clock_ref: &dyn RobotClock = ctx.clock.as_ref();
+    #[cfg(feature = "test-base-command")]
+    if matches!(&req.source, ActionSource::RpcGateway { actor } if actor == "web-base-renew") {
+        return match ctx.coordinator.renew_simulated_base(&req, clock_ref) {
+            Ok(()) => encode_invoke_response_ok(
+                &decoded.request_id,
+                &decoded.request_id,
+                clock_ref.now().0,
+            ),
+            Err(error) => encode_invoke_response_err(
+                &decoded.request_id,
+                &decoded.request_id,
+                submit_err_to_rpc_status(&error),
+                &error.to_string(),
+            ),
+        };
+    }
     match ctx.coordinator.submit(req, clock_ref) {
         Ok(ticket) => {
             let action_id = ticket.action_id;
