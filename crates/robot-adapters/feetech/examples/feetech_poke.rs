@@ -16,6 +16,7 @@
 //! ## 用法
 //!
 //! ```bash
+//! feetech_poke <right-device> <forward|backward|turn_left|turn_right> mixed-hold-direction --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <right-device> <7|8|9> mixed-hold-wheel --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <right-device> 9 mixed-hold-wheel9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <address> <motor_id> ping
@@ -340,7 +341,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if matches!(
         args.get(3).map(String::as_str),
-        Some("mixed-hold-wheel" | "mixed-hold-wheel9")
+        Some("mixed-hold-wheel" | "mixed-hold-wheel9" | "mixed-hold-direction")
     ) {
         return mixed_maintenance::main(&args);
     }

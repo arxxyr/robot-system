@@ -4439,6 +4439,7 @@ dependencies = [
  "inventory",
  "libc 1.0.0-alpha.5",
  "robot-core",
+ "robot-kinematics-xlerobot",
  "robot-logging",
  "serde",
  "serde_json",

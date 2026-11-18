@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use robot_adapter_feetech::adapter::FeetechAdapterConfig;
+use robot_adapter_feetech::encoding::{decode_sign_magnitude, encode_sign_magnitude};
 use robot_adapter_feetech::protocol::parse_status;
 use robot_adapter_feetech::transport::{DrainReport, SerialTransport, SourceWriteDeadline};
 use robot_adapter_feetech::velocity_profile::{
@@ -30,6 +31,7 @@ use robot_core::serial_services::{
     AbortReason, BusLease, BusOpClass, CommErrorKind, LeasedPreemptProbe, PreemptProbe,
 };
 use robot_core::time::{DurationNs, RobotClock, SystemClock};
+use robot_kinematics_xlerobot::base::BaseDirection;
 use serde_json::{Value, json};
 
 const DEVICE: &str = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7C122340-if00";
@@ -92,10 +94,37 @@ impl Drop for Signals {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Motion {
+    Single(u8),
+    Direction(BaseDirection),
+}
+
+impl From<u8> for Motion {
+    fn from(id: u8) -> Self {
+        Self::Single(id)
+    }
+}
+
+impl Motion {
+    fn goals(self, wheel_ids: [u8; 3]) -> [i16; 3] {
+        match self {
+            Self::Single(id) => wheel_ids.map(|wheel| if wheel == id { 500 } else { 0 }),
+            Self::Direction(direction) => direction.wheel_raw(),
+        }
+    }
+}
+
+fn velocity_matches_motion(word: u32, target: i16) -> bool {
+    let speed = decode_sign_magnitude(word, 15);
+    word == 0 || (speed.signum() == i32::from(target.signum()) && (1..=1000).contains(&speed.abs()))
+}
+
 /// Unix GO只在入口映射一次；所有内部期限使用同一RobotClock，不把父MONOTONIC当RAW。
 struct Guard {
     ids: [u8; 9],
-    selected_motor_id: u8,
+    motion: Motion,
+    goals: [i16; 3],
     clock: Arc<dyn RobotClock>,
     authority: ControlAuthority,
     expires_unix: u64,
@@ -126,10 +155,13 @@ impl Guard {
         clock: Arc<dyn RobotClock>,
         expires_unix: u64,
         wheel_ids: [u8; 3],
-        selected_motor_id: u8,
+        motion: impl Into<Motion>,
     ) -> Result<Self, String> {
         let ids = motor_ids(wheel_ids)?;
-        if !wheel_ids.contains(&selected_motor_id) {
+        let motion = motion.into();
+        if let Motion::Single(id) = motion
+            && !wheel_ids.contains(&id)
+        {
             return Err("所选物理轮必须属于本次三轮ID".into());
         }
         let unix = Self::unix_now()?;
@@ -143,7 +175,8 @@ impl Guard {
             .ok_or("GO本地期限溢出")?;
         Ok(Self {
             ids,
-            selected_motor_id,
+            motion,
+            goals: motion.goals(wheel_ids),
             clock,
             authority: ControlAuthority::new(AuthorityInit::new(
                 false,
@@ -369,27 +402,29 @@ impl<T: SerialTransport> Port<T> {
                 );
             }
         }
-        if bytes.len() == 17
-            && bytes[4..7] == [131, 46, 2]
-            && self.guard.ids[6..].iter().enumerate().all(|(i, id)| {
-                bytes[7 + i * 3..10 + i * 3]
-                    == [
-                        *id,
-                        if *id == self.guard.selected_motor_id {
-                            244
-                        } else {
-                            0
-                        },
-                        u8::from(*id == self.guard.selected_motor_id),
-                    ]
-            })
-        {
-            let _ = self.guard.nonzero_attempt.compare_exchange(
-                0,
-                self.guard.clock.now().0,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            );
+        if bytes.len() == 17 && bytes[4..7] == [131, 46, 2] {
+            let mut all_zero = true;
+            let mut fixed_goal = true;
+            for (index, entry) in bytes[7..16].as_chunks::<3>().0.iter().enumerate() {
+                if entry[0] != self.guard.ids[6 + index] {
+                    return Err(FeetechError::Aborted(AbortReason::Revoked));
+                }
+                let word = u32::from(u16::from_le_bytes([entry[1], entry[2]]));
+                all_zero &= word == 0;
+                fixed_goal &=
+                    word == encode_sign_magnitude(i32::from(self.guard.goals[index]), 15)?;
+            }
+            if !all_zero && !fixed_goal {
+                return Err(FeetechError::Aborted(AbortReason::Revoked));
+            }
+            if fixed_goal {
+                let _ = self.guard.nonzero_attempt.compare_exchange(
+                    0,
+                    self.guard.clock.now().0,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+            }
         }
         self.pv_response =
             bytes.len() == 17 && bytes[4..7] == [130, 58, 2] && bytes[7..16] == self.guard.ids;
@@ -482,28 +517,22 @@ fn read_raw<T: SerialTransport>(
     adapter: &mut FeetechAdapter<T>,
     guard: &Guard,
     register: &'static str,
-) -> Result<u32, String> {
+    ids: &[u8],
+) -> Result<Vec<u32>, String> {
     guard.check().map_err(|e| format!("读取中止:{e:?}"))?;
     adapter.bus().set_op_class(BusOpClass::PeriodicRead);
-    let mut raw = [0];
+    let mut raw = vec![0; ids.len()];
     adapter
         .bus()
-        .sync_read_by_id_raw_into(
-            register,
-            &[guard.selected_motor_id],
-            &mut raw,
-            &mut [0; 16],
-            &mut [0; 8],
-        )
+        .sync_read_by_id_raw_into(register, ids, &mut raw, &mut [0; 16], &mut [0; 24])
         .map_err(|e| e.to_string())?;
     guard.check().map_err(|e| format!("读取返回过期:{e:?}"))?;
-    Ok(raw[0])
+    Ok(raw)
 }
 fn write_cycle<T: SerialTransport + 'static>(
     adapter: &mut FeetechAdapter<T>,
     guard: &Guard,
     anchors: [i32; 6],
-    raw: i16,
     source: u64,
     deadline: u64,
 ) -> Result<(), String> {
@@ -522,12 +551,7 @@ fn write_cycle<T: SerialTransport + 'static>(
     for (index, anchor) in anchors.into_iter().enumerate() {
         command.positions[index] = raw_to_rad(anchor);
     }
-    let selected = guard
-        .ids
-        .iter()
-        .position(|id| *id == guard.selected_motor_id)
-        .unwrap();
-    command.raw_velocities[selected] = raw;
+    command.raw_velocities[6..9].copy_from_slice(&guard.goals);
     adapter
         .write_command(&command.as_view())
         .map_err(|e| e.to_string())
@@ -545,15 +569,9 @@ fn run<T: SerialTransport + 'static>(
     report: &mut Value,
 ) -> Result<(), String> {
     let ids = guard.ids;
-    let selected = ids
-        .iter()
-        .position(|id| *id == guard.selected_motor_id)
-        .unwrap();
-    let held_slots = (6..9)
-        .filter(|slot| ids[*slot] != guard.selected_motor_id)
-        .collect::<Vec<_>>();
-    let held_ids = held_slots.iter().map(|slot| ids[*slot]).collect::<Vec<_>>();
-    bind_report(report, &ids, guard.selected_motor_id);
+    let held_slots: Vec<_> = (0..3).filter(|&role| guard.goals[role] == 0).collect();
+    let held_ids: Vec<_> = held_slots.iter().map(|&role| ids[6 + role]).collect();
+    bind_report(report, &ids, guard.motion);
     report["calibration_range_tolerances_raw"] = json!(calibration_range_tolerances_raw);
     let motors: HashMap<_, _> = NAMES
         .iter()
@@ -579,15 +597,17 @@ fn run<T: SerialTransport + 'static>(
             .chain([0; 3])
             .collect(),
     };
-    let mut adapter = FeetechAdapter::new_bus2_mixed_raw(
-        config,
-        bus,
-        [
-            profile(WheelRole::Front, ids[6]),
-            profile(WheelRole::Left, ids[7]),
-            profile(WheelRole::Right, ids[8]),
-        ],
-    )
+    let profiles = [
+        profile(WheelRole::Front, ids[6]),
+        profile(WheelRole::Left, ids[7]),
+        profile(WheelRole::Right, ids[8]),
+    ];
+    let mut adapter = match guard.motion {
+        Motion::Single(_) => FeetechAdapter::new_bus2_mixed_raw(config, bus, profiles),
+        Motion::Direction(_) => {
+            FeetechAdapter::new_bus2_direction_maintenance(config, bus, profiles, guard.goals)
+        }
+    }
     .map_err(|e| e.to_string())?;
     let outcome = (|| {
         adapter.connect().map_err(|e| e.to_string())?;
@@ -652,21 +672,25 @@ fn run<T: SerialTransport + 'static>(
         for index in 0..6 {
             report["arm_anchors"].as_array_mut().unwrap().push(json!({"motor_id":ids[index],"raw":anchors[index],"goal_raw":goals[index],"sampled_ns":sampled_ns,"calibration_min":calibrations[index].range_min,"calibration_max":calibrations[index].range_max}));
         }
-        let mut wheel_anchors = [0; 2];
-        let wheel_sampled = guard.clock.now().0;
-        adapter.bus().set_op_class(BusOpClass::PeriodicRead);
-        adapter
-            .bus()
-            .sync_read_by_id_into("Present_Position", &held_ids, &mut wheel_anchors)
-            .map_err(|e| e.to_string())?;
-        for (id, raw) in held_ids.into_iter().zip(wheel_anchors) {
-            if !(0..=4095).contains(&raw) {
-                return Err("未驱动轮基线超界".into());
+        let mut wheel_anchors = [0; 3];
+        if !held_ids.is_empty() {
+            let wheel_sampled = guard.clock.now().0;
+            let mut observations = vec![0; held_ids.len()];
+            adapter.bus().set_op_class(BusOpClass::PeriodicRead);
+            adapter
+                .bus()
+                .sync_read_by_id_into("Present_Position", &held_ids, &mut observations)
+                .map_err(|e| e.to_string())?;
+            for (&role, raw) in held_slots.iter().zip(observations) {
+                if !(0..=4095).contains(&raw) {
+                    return Err("未驱动轮基线超界".into());
+                }
+                wheel_anchors[role] = raw;
+                report["wheel_anchors"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"motor_id":ids[6 + role],"raw":raw,"sampled_ns":wheel_sampled}));
             }
-            report["wheel_anchors"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"motor_id":id,"raw":raw,"sampled_ns":wheel_sampled}));
         }
         let mut first = guard.clock.now().0;
         if first
@@ -678,9 +702,9 @@ fn run<T: SerialTransport + 'static>(
         report["timing"]["first_nonzero_ns"] = json!(first);
 
         let mut state = JointStateBuf::default();
-        let mut previous: Option<i32> = None;
-        let mut travel = 0;
-        let mut positive_pv = false;
+        let mut previous = [None; 3];
+        let mut travel = [0; 3];
+        let mut observed_motion = [false; 3];
         for cycle in 0..400_u64 {
             let scheduled = first + cycle * PERIOD;
             let deadline = if cycle == 0 {
@@ -693,7 +717,7 @@ fn run<T: SerialTransport + 'static>(
             );
             guard.wait(scheduled)?;
             let started = guard.clock.now().0;
-            write_cycle(&mut adapter, guard, anchors, 500, started, deadline)?;
+            write_cycle(&mut adapter, guard, anchors, started, deadline)?;
             if cycle == 0 {
                 first = guard.nonzero_attempt.load(Ordering::SeqCst);
             }
@@ -717,25 +741,35 @@ fn run<T: SerialTransport + 'static>(
                         return Err("六臂偏离固定锚点超过4计数".into());
                     }
                 }
-                if raw.iter().any(|r| !(0..=4095).contains(r)) || words[selected] > 1000 {
-                    return Err("运动反馈原值越界或方向异常".into());
+                if raw.iter().any(|r| !(0..=4095).contains(r)) {
+                    return Err("运动位置反馈原值越界".into());
                 }
-                for (index, slot) in held_slots.iter().copied().enumerate() {
-                    if !matches!(words[slot], 0 | 50 | 0x8032)
-                        || (raw[slot] - wheel_anchors[index]).abs() > 4
-                    {
-                        return Err("未驱动轮反馈超出原非目标范围".into());
+                for (role, goal) in guard.goals.iter().copied().enumerate() {
+                    let slot = role + 6;
+                    let position = raw[slot];
+                    let word = words[slot];
+                    if goal == 0 {
+                        if !matches!(word, 0 | 50 | 0x8032)
+                            || (position - wheel_anchors[role]).abs() > 4
+                        {
+                            return Err("未驱动轮反馈超出原非目标范围".into());
+                        }
+                    } else {
+                        if !velocity_matches_motion(word.into(), goal) {
+                            return Err(format!("物理{}速度反馈越界或方向异常", ids[slot]));
+                        }
+                        observed_motion[role] |= word != 0;
+                        if let Some(last) = previous[role] {
+                            let signed_step: i32 = (position - last) * i32::from(goal.signum());
+                            let step = signed_step.rem_euclid(4096);
+                            if step > 512 {
+                                return Err(format!("物理{}相邻位移越界或逆向", ids[slot]));
+                            }
+                            travel[role] += step;
+                        }
+                        previous[role] = Some(position);
                     }
                 }
-                positive_pv |= words[selected] > 0;
-                if let Some(last) = previous {
-                    let step = (raw[selected] - last).rem_euclid(4096);
-                    if step > 512 {
-                        return Err(format!("物理{}相邻位移越界或逆向", guard.selected_motor_id));
-                    }
-                    travel += step;
-                }
-                previous = Some(raw[selected]);
             }
             let finished = guard.clock.now().0;
             report["cycles"].as_array_mut().unwrap().push(
@@ -748,11 +782,13 @@ fn run<T: SerialTransport + 'static>(
                 .min(guard.hard_deadline),
         );
         guard.wait(first.checked_add(PULSE).ok_or("20秒期限溢出")?)?;
-        if travel <= 0 || !positive_pv {
-            return Err(format!(
-                "物理{}在20秒未得到正向位置变化",
-                guard.selected_motor_id
-            ));
+        for (role, goal) in guard.goals.iter().enumerate() {
+            if *goal != 0 && (travel[role] == 0 || !observed_motion[role]) {
+                return Err(format!(
+                    "物理{}在20秒未得到指定方向的位置或速度变化",
+                    ids[6 + role]
+                ));
+            }
         }
         let zero_started = guard.clock.now().0;
         report["timing"]["zero_started_ns"] = json!(zero_started);
@@ -781,16 +817,29 @@ fn run<T: SerialTransport + 'static>(
             guard.set_deadline(slot_deadline);
             guard.wait(zero_finished + offset)?;
             let started = guard.clock.now().0;
-            let te = read_raw(&mut adapter, guard, "Torque_Enable")?;
-            let gv = read_raw(&mut adapter, guard, "Goal_Velocity")?;
-            let pv = read_raw(&mut adapter, guard, "Present_Velocity")?;
-            report["zero_samples"].as_array_mut().unwrap().push(json!({"started_ns":started,"finished_ns":guard.clock.now().0,"torque_enable":te,"goal_velocity_word":gv,"present_velocity_word":pv}));
-            if te != 1
-                || gv != 0
-                || (index < 2 && pv > 1000 && pv != 0x8032)
-                || (index == 2 && !matches!(pv, 0 | 50 | 0x8032))
-            {
-                return Err("TE1零速500ms读回不满足既有合同".into());
+            let wheel_ids = &ids[6..9];
+            let watch = match &guard.motion {
+                Motion::Single(id) => std::slice::from_ref(id),
+                Motion::Direction(_) => wheel_ids,
+            };
+            let te = read_raw(&mut adapter, guard, "Torque_Enable", watch)?;
+            let gv = read_raw(&mut adapter, guard, "Goal_Velocity", watch)?;
+            let pv = read_raw(&mut adapter, guard, "Present_Velocity", watch)?;
+            let reading = |values: &[u32]| match guard.motion {
+                Motion::Single(_) => json!(values[0]),
+                Motion::Direction(_) => json!(values),
+            };
+            report["zero_samples"].as_array_mut().unwrap().push(json!({"started_ns":started,"finished_ns":guard.clock.now().0,"torque_enable":reading(&te),"goal_velocity_word":reading(&gv),"present_velocity_word":reading(&pv)}));
+            for (sample, id) in watch.iter().enumerate() {
+                let role = wheel_ids.iter().position(|wheel| wheel == id).unwrap();
+                let settled = matches!(pv[sample], 0 | 50 | 0x8032);
+                if te[sample] != 1
+                    || gv[sample] != 0
+                    || (!settled
+                        && (index == 2 || !velocity_matches_motion(pv[sample], guard.goals[role])))
+                {
+                    return Err("TE1零速500ms读回不满足既有合同".into());
+                }
             }
         }
         Ok(())
@@ -957,26 +1006,44 @@ fn parse_calibration_range_tolerances_raw(args: &[String]) -> Result<[u16; 6], S
         .map_err(|_| "六臂校准容差必须恰为六个整数".into())
 }
 
-fn bind_report(report: &mut Value, ids: &[u8; 9], selected_motor_id: u8) {
+fn bind_report(report: &mut Value, ids: &[u8; 9], motion: impl Into<Motion>) {
+    let motion = motion.into();
+    let wheel_ids: [u8; 3] = ids[6..].try_into().unwrap();
     report["motor_ids"] = json!(ids);
-    report["wheel_ids"] = json!(&ids[6..]);
-    if report["operation"] == "mixed-hold-wheel" {
-        report["selected_motor_id"] = json!(selected_motor_id);
+    report["wheel_ids"] = json!(wheel_ids);
+    if report["operation"] == "mixed-hold-wheel"
+        && let Motion::Single(id) = motion
+    {
+        report["selected_motor_id"] = json!(id);
     }
-    report["wheel_raw_goal"] = json!(
-        ids[6..]
-            .iter()
-            .map(|id| if *id == selected_motor_id { 500 } else { 0 })
-            .collect::<Vec<_>>()
-    );
+    report["wheel_raw_goal"] = json!(motion.goals(wheel_ids));
+}
+
+fn parse_motion(args: &[String], wheel_ids: [u8; 3]) -> Result<Motion, String> {
+    if args.get(3).map(String::as_str) == Some("mixed-hold-direction") {
+        let direction = match args.get(2).map(String::as_str) {
+            Some("forward") => BaseDirection::Forward,
+            Some("backward") => BaseDirection::Backward,
+            Some("turn_left") => BaseDirection::RotateLeft,
+            Some("turn_right") => BaseDirection::RotateRight,
+            _ => return Err("联动维护仅接受四种具名方向".into()),
+        };
+        Ok(Motion::Direction(direction))
+    } else {
+        parse_selected_motor_id(args, wheel_ids).map(Motion::Single)
+    }
 }
 
 fn empty_report(args: &[String]) -> Value {
     let (schema, operation) = match args.get(3).map(String::as_str) {
+        Some("mixed-hold-direction") => ("FEETECH_MIXED_DIRECTION_V1", "mixed-hold-direction"),
         Some("mixed-hold-wheel9") => ("FEETECH_MIXED_WHEEL9_V1", "mixed-hold-wheel9"),
         _ => ("FEETECH_MIXED_WHEEL_V1", "mixed-hold-wheel"),
     };
     let mut report = json!({"schema":schema,"operation":operation,"result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"calibration_range_tolerances_raw":[0,0,0,0,0,0],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}});
+    if operation == "mixed-hold-direction" {
+        report["direction"] = json!(args.get(2));
+    }
     if operation == "mixed-hold-wheel" {
         report["selected_motor_id"] = Value::Null;
     }
@@ -995,11 +1062,11 @@ fn execute(args: &[String]) -> Value {
             return Err("固定mixed维护参数不匹配".into());
         }
         let wheel_ids = parse_wheel_ids(&args[9])?;
-        let selected_motor_id = parse_selected_motor_id(args, wheel_ids)?;
+        let motion = parse_motion(args, wheel_ids)?;
         let calibration_range_tolerances_raw = parse_calibration_range_tolerances_raw(&args[10..])?;
         report["calibration_range_tolerances_raw"] = json!(calibration_range_tolerances_raw);
         let ids = motor_ids(wheel_ids)?;
-        bind_report(&mut report, &ids, selected_motor_id);
+        bind_report(&mut report, &ids, motion);
         let expiry = args[7].parse::<u64>().map_err(|_| "GO Unix期限解析失败")?;
         report["go_expires_at_unix_ns"] = json!(expiry);
         let mut loaded =
@@ -1025,7 +1092,7 @@ fn execute(args: &[String]) -> Value {
             Arc::new(SystemClock::new()),
             expiry,
             wheel_ids,
-            selected_motor_id,
+            motion,
         )?);
         guard
             .check()
@@ -1100,7 +1167,8 @@ mod tests {
         velocity: [u16; 10],
         scenario: u8,
         nonzero: bool,
-        zero_samples: usize,
+        previous_goal: [u16; 10],
+        zero_samples: [usize; 10],
     }
     impl Sim {
         fn status(&mut self, id: u8, bytes: &[u8]) {
@@ -1110,7 +1178,7 @@ mod tests {
             self.rx.extend(packet);
         }
         fn value(&mut self, id: u8, address: u8) -> u16 {
-            let selected = usize::from(self.selected_motor_id);
+            let slot = usize::from(id);
             match address {
                 0 => 3,
                 1 => {
@@ -1134,14 +1202,22 @@ mod tests {
                 46 => self.velocity[usize::from(id)],
                 56 => self.position[usize::from(id)],
                 58 => {
-                    if id == self.selected_motor_id && self.velocity[selected] == 500 {
-                        if self.scenario == 7 { 0 } else { 500 }
-                    } else if id == self.selected_motor_id && self.nonzero {
-                        self.zero_samples += 1;
-                        if self.zero_samples == 1 {
-                            250
-                        } else if self.scenario == 5 {
-                            250
+                    let goal = self.velocity[slot];
+                    if goal != 0 {
+                        if self.scenario == 7 {
+                            0
+                        } else if self.scenario == 11 && id == self.ids[8] {
+                            goal ^ 0x8000
+                        } else {
+                            goal
+                        }
+                    } else if self.previous_goal[slot] != 0 {
+                        self.zero_samples[slot] += 1;
+                        if self.zero_samples[slot] == 1
+                            || self.scenario == 5
+                            || (self.scenario == 14 && id == self.ids[8])
+                        {
+                            (self.previous_goal[slot] & 0x8000) | 250
                         } else {
                             0x8032
                         }
@@ -1181,12 +1257,25 @@ mod tests {
                     self.status(bytes[2], &[]);
                 }
                 130 => {
-                    if bytes[5] == 56
-                        && bytes[7..bytes.len() - 1] == self.ids
-                        && self.nonzero
-                        && self.velocity[selected] == 500
-                    {
-                        self.position[selected] = (self.position[selected] + 40) % 4096;
+                    if bytes[5] == 56 && bytes[7..bytes.len() - 1] == self.ids && self.nonzero {
+                        for &wheel in &self.ids[6..9] {
+                            let slot = usize::from(wheel);
+                            let mut sign =
+                                decode_sign_magnitude(self.velocity[slot].into(), 15).signum();
+                            if self.scenario == 12 && wheel == self.ids[8] {
+                                sign = -sign;
+                            }
+                            if self.scenario == 13 && wheel == self.ids[8] {
+                                sign = 0;
+                            }
+                            self.position[slot] = u16::try_from(
+                                (i32::from(self.position[slot]) + sign * 40).rem_euclid(4096),
+                            )
+                            .unwrap();
+                        }
+                        if self.scenario == 15 {
+                            self.position[1] = 2100;
+                        }
                         if self.scenario == 6 {
                             let held = self.ids[6..]
                                 .iter()
@@ -1212,11 +1301,17 @@ mod tests {
                         match bytes[5] {
                             40 => self.torque[usize::from(row[0])] = u8::try_from(value).unwrap(),
                             42 => self.goal.lock().unwrap()[usize::from(row[0])] = value,
-                            46 => self.velocity[usize::from(row[0])] = value,
+                            46 => {
+                                let slot = usize::from(row[0]);
+                                self.velocity[slot] = value;
+                                if value != 0 {
+                                    self.previous_goal[slot] = value;
+                                }
+                            }
                             _ => panic!("未授权寄存器写"),
                         }
                     }
-                    if bytes[5] == 46 && self.velocity[selected] == 500 {
+                    if bytes[5] == 46 && self.velocity.iter().any(|speed| *speed != 0) {
                         self.nonzero = true;
                         if self.scenario == 1 {
                             interrupted(libc::SIGINT);
@@ -1435,6 +1530,114 @@ mod tests {
     }
 
     #[test]
+    fn mixed_directions_verify_wire_feedback_and_stops() {
+        let _sim_lock = SIM_LOCK.lock().unwrap();
+        for (name, goals) in [
+            ("forward", [0, -500, 500]),
+            ("backward", [0, 500, -500]),
+            ("turn_left", [500, 500, 500]),
+            ("turn_right", [-500, -500, -500]),
+        ] {
+            for scenario in [0, 5, 11, 12, 13, 14, 15] {
+                INTERRUPTED.store(false, Ordering::SeqCst);
+                let wheel_ids = [8, 9, 7];
+                let ids = motor_ids(wheel_ids).unwrap();
+                let args = arguments(name, "mixed-hold-direction");
+                let motion = parse_motion(&args, wheel_ids).unwrap();
+                let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000)));
+                let guard = Arc::new(
+                    Guard::new(
+                        Arc::new(AdvancingClock(clock.clone())),
+                        Guard::unix_now().unwrap() + 600_000_000_000,
+                        wheel_ids,
+                        motion,
+                    )
+                    .unwrap(),
+                );
+                let frames = Arc::new(Mutex::new(Vec::new()));
+                let sim = Sim {
+                    ids,
+                    selected_motor_id: wheel_ids[2],
+                    clock,
+                    rx: VecDeque::new(),
+                    frames: frames.clone(),
+                    goal: Arc::new(Mutex::new([0; 10])),
+                    torque: [0; 10],
+                    position: [2047; 10],
+                    velocity: [0; 10],
+                    scenario,
+                    nonzero: false,
+                    previous_goal: [0; 10],
+                    zero_samples: [0; 10],
+                };
+                let calibrations: Vec<_> = ids
+                    .into_iter()
+                    .map(|id| MotorCalibration::new(id, 0, 0, 0, 4095).unwrap())
+                    .collect();
+                let mut report = empty_report(&args);
+                let result = run(sim, &guard, &calibrations, [20; 6], &mut report);
+                assert_eq!(
+                    result.is_ok(),
+                    scenario == 0,
+                    "{name} {scenario}: {result:?}"
+                );
+                assert_eq!(report["cleanup"]["zero_ok"], true);
+                assert_eq!(report["cleanup"]["disable_ok"], true);
+                let frames = frames.lock().unwrap();
+                let last_write = frames.iter().rfind(|f| matches!(f[4], 3 | 131)).unwrap();
+                assert_eq!(last_write[4..7], [131, 40, 1]);
+                assert_eq!(
+                    last_write[7..25],
+                    ids.into_iter().flat_map(|id| [id, 0]).collect::<Vec<_>>()
+                );
+                if scenario != 0 {
+                    assert_eq!(frames.last(), Some(last_write));
+                    continue;
+                }
+                assert_eq!(report["wheel_raw_goal"], json!(goals));
+                assert_eq!(report["wheel_samples"].as_array().unwrap().len(), 79);
+                assert_eq!(report["zero_samples"].as_array().unwrap().len(), 3);
+                assert_eq!(
+                    report["zero_samples"][2]["present_velocity_word"],
+                    json!(goals.map(|g| if g == 0 { 0 } else { 0x8032 }))
+                );
+                let goal_frame: Vec<_> = wheel_ids
+                    .iter()
+                    .zip(goals)
+                    .flat_map(|(&id, raw)| {
+                        let word = u16::try_from(encode_sign_magnitude(raw, 15).unwrap())
+                            .unwrap()
+                            .to_le_bytes();
+                        [id, word[0], word[1]]
+                    })
+                    .collect();
+                assert_eq!(
+                    frames
+                        .iter()
+                        .filter(|frame| frame.len() == 17
+                            && frame[4..7] == [131, 46, 2]
+                            && frame[7..16] == goal_frame)
+                        .count(),
+                    400
+                );
+                if let Some(directory) = std::env::var_os("ROBOT_MIXED_DIRECTION_FIXTURE_DIR") {
+                    report["result"] = json!("PASS");
+                    report["arm_calibration_path"] =
+                        json!("/tmp/mixed-software-arm-calibration.json");
+                    report["go_expires_at_unix_ns"] = json!(guard.expires_unix);
+                    report["loaded_calibration"] = json!(ids[..6].iter().map(|id| json!({"id":id,"range_min":0,"range_max":4095,"homing_offset":0,"drive_mode":0})).collect::<Vec<_>>());
+                    std::fs::write(
+                        Path::new(&directory).join(format!("{name}.json")),
+                        serde_json::to_vec_pretty(&report).unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        assert!(parse_motion(&arguments("unknown", "mixed-hold-direction"), [8, 9, 7]).is_err());
+    }
+
+    #[test]
     fn fixed_mixed_maintenance_runs_full_clocked_path_and_failures_keep_independent_stop() {
         let _sim_lock = SIM_LOCK.lock().unwrap();
         assert!(Guard::new(Arc::new(MockClock::default()), 0, [8, 9, 7], 9).is_err());
@@ -1485,7 +1688,8 @@ mod tests {
                 velocity: [0; 10],
                 scenario,
                 nonzero: false,
-                zero_samples: 0,
+                previous_goal: [0; 10],
+                zero_samples: [0; 10],
             };
             let mut cals = ids
                 .into_iter()
@@ -1666,7 +1870,8 @@ mod tests {
                 velocity: [0; 10],
                 scenario: 0,
                 nonzero: false,
-                zero_samples: 0,
+                previous_goal: [0; 10],
+                zero_samples: [0; 10],
             };
             let mut calibrations = ids
                 .into_iter()

@@ -76,6 +76,7 @@ pub(super) struct MixedBus2 {
     wheel_slots: [usize; 3],
     position_mask: u32,
     velocity_mask: u32,
+    maintenance_goal: Option<[i16; 3]>,
     profiles: Profiles,
 }
 
@@ -124,6 +125,7 @@ impl MixedBus2 {
             wheel_slots: slots[6..].try_into().unwrap(),
             position_mask: slots[..6].iter().fold(0, |mask, slot| mask | (1 << slot)),
             velocity_mask: slots[6..].iter().fold(0, |mask, slot| mask | (1 << slot)),
+            maintenance_goal: None,
             profiles,
         })
     }
@@ -203,6 +205,29 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             &adapter.joint_ids,
             Profiles::ObservedRaw(profiles),
         )?);
+        Ok(adapter)
+    }
+
+    /// 构造一次具名架空联动维护动作的适配器。目标按前、左、右角色绑定；
+    /// 整个生命周期只接受这个完整组合或三轮全零，不用于服务的配置工厂。
+    /// # Errors
+    /// 档位、布局、角色或标定不符时拒绝。
+    pub fn new_bus2_direction_maintenance(
+        config: FeetechAdapterConfig,
+        bus: FeetechBus<T>,
+        profiles: [Sts3215RawWheelProfile; 3],
+        goal: [i16; 3],
+    ) -> Result<Self, RobotError> {
+        let [front, left, right] = goal;
+        let translating = front == 0 && matches!(left, -500 | 500) && right == -left;
+        let rotating = matches!(front, -500 | 500) && front == left && left == right;
+        if !translating && !rotating {
+            return Err(RobotError::InvalidParameter("联动维护轮速超出固定档位"));
+        }
+        let mut adapter = Self::new_bus2_mixed_raw(config, bus, profiles)?;
+        if let Some(layout) = &mut adapter.mixed_bus2 {
+            layout.maintenance_goal = Some(goal);
+        }
         Ok(adapter)
     }
 
@@ -498,11 +523,18 @@ impl<T: SerialTransport> FeetechAdapter<T> {
             }
             positions[index] = (layout.arm_ids[index], raw);
         }
-        for (index, &slot) in layout.wheel_slots.iter().enumerate() {
-            let raw = command.raw_velocities[slot];
-            if !layout.profiles.accepts(index, raw) {
-                return Err(RobotError::InvalidParameter("混合轮raw速度超过显式上限"));
-            }
+        let wheel_targets = layout.wheel_slots.map(|slot| command.raw_velocities[slot]);
+        let accepted = match layout.maintenance_goal {
+            Some(goal) => wheel_targets == goal || wheel_targets == [0; 3],
+            None => wheel_targets
+                .iter()
+                .enumerate()
+                .all(|(index, &raw)| layout.profiles.accepts(index, raw)),
+        };
+        if !accepted {
+            return Err(RobotError::InvalidParameter("混合轮raw速度超过显式上限"));
+        }
+        for (index, raw) in wheel_targets.into_iter().enumerate() {
             velocities[index] = (layout.wheel_ids[index], i32::from(raw));
         }
         self.bus.set_op_class(BusOpClass::PeriodicWrite);

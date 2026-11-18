@@ -3920,6 +3920,137 @@ class MixedRawTests(unittest.TestCase):
             else:m.run_motion_probes(engine,self.bindings,self.plan)
         return engine
 
+    direction_vectors = {
+        'forward': [0,-500,500], 'backward': [0,500,-500],
+        'turn_left': [500,500,500], 'turn_right': [-500,-500,-500],
+    }
+
+    def direction_plan(self, direction):
+        return m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                           bus2_mixed_raw_hold=True,mixed_direction=direction)
+
+    def direction_receipt(self, direction):
+        # 沿用原拓扑、时序和收尾模板；同一帧内三轮按配置的前、左、右顺序返回。
+        self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,bus2_mixed_raw_hold=True)
+        row=self.receipt()
+        goals=self.direction_vectors[direction]
+        self.plan=self.direction_plan(direction)
+        row.update(schema='FEETECH_MIXED_DIRECTION_V1',operation='mixed-hold-direction',
+                   direction=direction,wheel_raw_goal=goals)
+        row['wheel_anchors']=[{'motor_id':motor,'raw':1000,'sampled_ns':1_080_000_000}
+                              for motor,goal in zip(m.wheel_ids(),goals) if goal==0]
+        for i,sample in enumerate(row['wheel_samples']):
+            sample['position_raw']=[(1000+i*(goal//100))%4096 for goal in goals]
+            sample['velocity_word']=[0x8000-goal if goal<0 else goal for goal in goals]
+        for i,sample in enumerate(row['zero_samples']):
+            words=[0 if goal==0 or i>0 else 0x8190 if goal<0 else 400 for goal in goals]
+            sample.update(torque_enable=[1]*3,goal_velocity_word=[0]*3,present_velocity_word=words)
+        return row
+
+    def test_direction_plan_binds_one_combination_and_its_own_go(self):
+        old_plan=self.plan
+        old_go=WheelFeedbackTests.go(self,old_plan,1000)
+        scopes=set()
+        for direction,goals in self.direction_vectors.items():
+            with self.subTest(direction=direction):
+                plan=self.direction_plan(direction)
+                contract=plan['bus2_mixed_raw_hold']
+                self.assertEqual(contract['wheel_ids'],[8,9,7])
+                self.assertEqual(contract['wheel_raw_goal'],goals)
+                self.assertEqual(contract['direction'],direction)
+                self.assertNotIn('selected_motor_id',contract)
+                self.assertEqual(contract['pulse_duration_ns'],20_000_000_000)
+                self.assertEqual(contract['scope'],plan['scope'])
+                scopes.add(plan['scope'])
+                m.validate_go(WheelFeedbackTests.go(self,plan,1000),plan,2000)
+                with self.assertRaises(ValueError):m.validate_go(old_go,plan,2000)
+                wrong=copy.deepcopy(plan);wrong['bus2_mixed_raw_hold']['wheel_raw_goal'][2]*=-1
+                with self.assertRaises(ValueError):m.validate_mixed_raw_plan(wrong)
+                old_go=WheelFeedbackTests.go(self,plan,1000)
+        self.assertEqual(len(scopes),4)
+        for kwargs in ({'mixed_direction':'forward'},
+                       {'mixed_direction':'forward','bus2_mixed_raw_hold':True,'mixed_wheel_id':9},
+                       {'mixed_direction':'sideways','bus2_mixed_raw_hold':True}):
+            with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):
+                m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,**kwargs)
+
+    def test_direction_plan_only_cli_and_exclusive_selection(self):
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('预演不得启动子进程')):
+            for direction in self.direction_vectors:
+                with self.subTest(direction=direction),contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(run_main(['--bus2-mixed-raw-hold','--mixed-direction',direction]),0)
+                    preview=json.loads(out.getvalue())
+                    self.assertEqual(preview['actions_started'],0)
+                    self.assertEqual(preview['scope'],self.direction_plan(direction)['scope'])
+            with self.assertRaises(ValueError):
+                run_main(['--mixed-direction','forward'])
+            with self.assertRaises(SystemExit),contextlib.redirect_stderr(io.StringIO()):
+                run_main(['--bus2-mixed-raw-hold','--mixed-direction','forward','--mixed-wheel-id','9'])
+
+    def test_direction_command_per_wheel_feedback_and_original_stop_requirements(self):
+        for direction,goals in self.direction_vectors.items():
+            with self.subTest(direction=direction):
+                row=self.direction_receipt(direction)
+                self.assertEqual(self.parse(row),row)
+                for slot,goal in enumerate(goals):
+                    with self.subTest(slot=slot):
+                        bad=copy.deepcopy(row)
+                        bad['wheel_samples'][3]['velocity_word'][slot]=0x81f4 if goal>=0 else 500
+                        with self.assertRaises(ValueError):self.parse(bad)
+                        bad=copy.deepcopy(row)
+                        bad['wheel_samples'][3]['position_raw'][slot]+=10 if goal<=0 else -10
+                        with self.assertRaises(ValueError):self.parse(bad)
+                        for field,value in (('torque_enable',0),('goal_velocity_word',1),
+                                            ('present_velocity_word',250)):
+                            bad=copy.deepcopy(row);bad['zero_samples'][-1][field][slot]=value
+                            with self.assertRaises(ValueError):self.parse(bad)
+                bad=copy.deepcopy(row);bad['wheel_samples'][1]['arm_position_raw'][2]+=5
+                with self.assertRaises(ValueError):self.parse(bad)
+                bad=copy.deepcopy(row);bad['cleanup']['torque_enable_after'][0]=1
+                with self.assertRaises(ValueError):self.parse(bad)
+                bad=copy.deepcopy(row);bad['direction']='backward' if direction=='forward' else 'forward'
+                with self.assertRaises(ValueError):self.parse(bad)
+        row=self.direction_receipt('forward')
+        engine=self.perform(row)
+        self.assertEqual(engine.mixed_wire_evidence['original_argv'][2:4],['forward','mixed-hold-direction'])
+        self.assertEqual(len(engine.io.commands),1)
+        self.assertTrue(engine.mixed_command_used)
+        before=idle_rows();after=idle_rows()
+        after['right:9']['Present_Position']=500
+        after['right:7']['Present_Position']=1500
+        position=m.classify_position_snapshot(after,before,engine.rows)
+        self.assertEqual(position['status'],'PASS')
+        report={'plan':self.plan,'probes':engine.rows,'mixed_raw_result':engine.mixed_raw_result,
+                'position_verification':position,'stop_verification':{'status':'PASS'},
+                'identity_verification':{'status':'PASS'},'child_active':False}
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        after['right:8']['Present_Position']+=5
+        self.assertEqual(m.classify_position_snapshot(after,before,engine.rows)['status'],'FAIL')
+        bad=copy.deepcopy(report);bad['probes'][-1]['raw_velocity']*=-1
+        self.assertEqual(m.classify_run_result(bad),'FAIL')
+        bad=copy.deepcopy(report);bad['probes'].pop(-1)
+        self.assertEqual(m.classify_run_result(bad),'FAIL')
+        report['stop_verification']['status']='UNKNOWN'
+        self.assertEqual(m.classify_run_result(report),'NEEDS_MANUAL_POWER_CUT')
+
+
+    @unittest.skipUnless(os.environ.get('ROBOT_MIXED_DIRECTION_FIXTURE_DIR'),'未提供四方向同源Rust内存串口回执')
+    def test_actual_rust_four_directions_match_python_acceptance(self):
+        directory=Path(os.environ['ROBOT_MIXED_DIRECTION_FIXTURE_DIR'])
+        self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH,LEFT_BUS_FIXTURE_PATH)
+        m.configure_bus_mapping(write_bus_fixture(self.directory/'bus2-directions.toml',tolerances=[20]*6+[0]*3),
+                                LEFT_BUS_FIXTURE_PATH)
+        for direction,goals in self.direction_vectors.items():
+            with self.subTest(direction=direction):
+                self.plan=self.direction_plan(direction)
+                row=m.strict_json((directory/(direction+'.json')).read_text())
+                self.assertEqual(row['direction'],direction)
+                self.assertEqual(row['wheel_raw_goal'],goals)
+                self.assertEqual(row['arm_calibration_path'],'/tmp/mixed-software-arm-calibration.json')
+                row['arm_calibration_path']=self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path']
+                self.expiry=row['go_expires_at_unix_ns']
+                self.assertEqual(self.parse(row),row)
+
     def test_mixed_front_plan_command_and_final_result_bind_physical_8(self):
         self.plan=m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
                               bus2_mixed_raw_hold=True,mixed_wheel_id=8)
