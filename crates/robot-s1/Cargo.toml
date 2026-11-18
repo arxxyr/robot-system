@@ -63,6 +63,8 @@ test-freeze-hook   = []
 # **profile 冲突消除**：启用它的 config 必须从 `[s1.profile] backends` 移除
 # `mock_dwell`（分发键重合，dispatch 取首个命中）。
 test-fault-backend = []
+# 仅软件模拟：复用原 InvokeTask 与混合 JointCommand，不进入默认或发布构建。
+test-base-command = ["backend-scripted"]
 
 # v0.3 B1 (2/3)：mock_s1 / robot-s1 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production

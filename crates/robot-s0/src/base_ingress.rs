@@ -10,8 +10,7 @@ use robot_core::time::{DurationNs, MonoRawNs};
 use robot_core::wheel_velocity_profile::WheelVelocityProfile;
 use robot_transport::{PublisherNodeId, PublisherOrigin, PublisherPortId};
 
-/// 生产者命令有效期的严格上限。
-pub const COMMAND_TTL_MAX_NS: u64 = 100_000_000;
+pub use robot_core::wheel_velocity_profile::COMMAND_TTL_MAX_NS;
 
 /// 显式配置的来源；零是合法配置值，未知由 `Option` 表达。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

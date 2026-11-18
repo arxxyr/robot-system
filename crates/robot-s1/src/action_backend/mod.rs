@@ -61,6 +61,9 @@ pub mod ik;
 #[cfg(feature = "test-fault-backend")]
 pub mod fault_inject;
 
+#[cfg(feature = "test-base-command")]
+pub mod simulated_base_command;
+
 // 链接器收集每个 backend crate 的 `inventory::submit!` 项。
 inventory::collect!(&'static dyn ActionBackend);
 

@@ -1445,6 +1445,7 @@ pub fn validate_profile_section(
         }
         if hardware.feetech_bus2_mixed_raw
             && !matches!(name.as_str(), "hold_pose" | "scripted" | "mock_dwell")
+            && !(cfg!(feature = "test-base-command") && name == "simulated_base_command")
         {
             return Err(ProfileError::UnsupportedMixedBackend {
                 backend: name.clone(),
@@ -1624,6 +1625,9 @@ struct InnerState {
     /// 配置单关节控制时，仅 Idle 且确认安全断扭才对齐新鲜当前位置。
     /// `Degraded` 也读取本字段，使单关节任务失败后不会回拉启动锚点。
     idle_hold_target: Vec<f64>,
+    /// 模拟底盘输入序号高水位；取消、任务结束或清错均不回退。
+    #[cfg(feature = "test-base-command")]
+    simulated_base_sequence: u64,
 }
 
 impl InnerState {
@@ -1633,6 +1637,8 @@ impl InnerState {
             current: None,
             finished: VecDeque::with_capacity(FINISHED_RING_CAPACITY),
             idle_hold_target: anchor_bias.to_vec(),
+            #[cfg(feature = "test-base-command")]
+            simulated_base_sequence: 0,
         }
     }
 
@@ -2020,6 +2026,19 @@ impl Coordinator {
             self.registry
                 .dispatch(&self.enabled_backends, req.kind, req.payload_schema_id)?;
 
+        #[cfg(feature = "test-base-command")]
+        let base_sequence = if backend.name() == "simulated_base_command" {
+            let sequence = crate::action_backend::simulated_base_command::request_sequence(&req)?;
+            if sequence <= inner.simulated_base_sequence {
+                return Err(
+                    ActionStartError::Rejected("模拟底盘命令序号已消费，禁止重放".into()).into(),
+                );
+            }
+            Some(sequence)
+        } else {
+            None
+        };
+
         // v0.5 候选 E 段(5) D3 第 1 条：Scripted 起点 = 提交时当前位
         // （state cache 最新鲜帧）；其余 kind 恒 None（穷举 match 让新增
         // ActionKind 编译期显式表态）。
@@ -2050,6 +2069,15 @@ impl Coordinator {
         };
         // start 失败：状态不转移，仍 Idle。
         let instance = backend.start(&req, &ctx)?;
+        let needs_feedback =
+            req.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
+        #[cfg(feature = "test-base-command")]
+        let needs_feedback = {
+            if let Some(sequence) = base_sequence {
+                inner.simulated_base_sequence = sequence;
+            }
+            needs_feedback || base_sequence.is_some()
+        };
 
         let action_id = req.action_id;
         let (tx, rx) = std::sync::mpsc::channel::<ActionEvent>();
@@ -2070,8 +2098,7 @@ impl Coordinator {
             events_tx: tx,
             pending_cancel: false,
             last_progress: 0.0,
-            needs_feedback: req.payload_schema_id
-                == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+            needs_feedback,
         });
 
         Ok(ActionTicket {
@@ -5093,6 +5120,380 @@ backends = 42
             let clock = MockClock::new(MonoRawNs(1_000_000_000));
             publish_motion_feedback(&coordinator, &channel, &clock, &feedback, true);
             (coordinator, channel, clock, feedback)
+        }
+
+        #[cfg(feature = "test-base-command")]
+        fn simulated_base_fixture() -> (
+            Coordinator,
+            MockChannel<markers::JointState>,
+            MockClock,
+            Vec<f64>,
+        ) {
+            static BASE:
+                crate::action_backend::simulated_base_command::SimulatedBaseCommandBackend =
+                crate::action_backend::simulated_base_command::SimulatedBaseCommandBackend;
+            let (mut coordinator, channel, clock, feedback) = mixed_single_joint_fixture();
+            coordinator.registry = BackendRegistry::from_explicit(&[&REAL_SCRIPTED, &BASE]);
+            coordinator
+                .enabled_backends
+                .push("simulated_base_command".into());
+            (coordinator, channel, clock, feedback)
+        }
+
+        #[cfg(feature = "test-base-command")]
+        fn simulated_base_request(
+            c: &Coordinator,
+            clock: &MockClock,
+            feedback: &[f64],
+            sequence: u64,
+            raw: i16,
+        ) -> ActionRequest {
+            let mut held = feedback.to_vec();
+            c.hardware.clear_wheel_targets(&mut held);
+            let velocities: Vec<i16> = (0..held.len())
+                .map(|slot| {
+                    if c.hardware.is_wheel_slot(slot) {
+                        raw
+                    } else {
+                        0
+                    }
+                })
+                .collect();
+            ActionRequest {
+                payload_schema_id: robot_msg::schema_id::SCHEMA_JOINT_COMMAND,
+                payload: robot_msg::build_helpers::build_mixed_joint_command(
+                    LAYOUT,
+                    &held,
+                    &velocities,
+                    clock.now().0 + 100_000_000,
+                    10,
+                    sequence,
+                ),
+                // RPC预算比运动租期长，不用它刷新原payload的短租期。
+                deadline_ns: clock.now().0 + 10_000_000_000,
+                ..scripted_request(&[held])
+            }
+        }
+
+        #[cfg(feature = "test-base-command")]
+        fn assert_simulated_base_body(
+            c: &Coordinator,
+            body: &[u8],
+            feedback: &[f64],
+            raw: i16,
+            sequence: u64,
+        ) -> u64 {
+            let command = flatbuffers::root::<FbJointCommand<'_>>(body).unwrap();
+            assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+            assert_eq!(command.on_timeout(), StaleAction::Hold);
+            assert_eq!(command.source_task_id(), sequence);
+            for (slot, &position) in feedback.iter().enumerate() {
+                let wheel = c.hardware.is_wheel_slot(slot);
+                assert_eq!(
+                    command.target().unwrap().get(slot),
+                    if wheel {
+                        0.0
+                    } else {
+                        crate::single_joint::position_for_s0(position)
+                    }
+                );
+                assert_eq!(
+                    command.raw_velocities().unwrap().get(slot),
+                    if wheel { raw } else { 0 }
+                );
+            }
+            command.deadline_ns()
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_three_wheels_fixed_deadline_and_original_publisher_return_to_zero() {
+            let (c, _, clock, feedback) = simulated_base_fixture();
+            let mut request = simulated_base_request(&c, &clock, &feedback, 1, 500);
+            let mut held = feedback.clone();
+            c.hardware.clear_wheel_targets(&mut held);
+            let mut velocities = [0; 9];
+            let wheels: Vec<_> = (0..9)
+                .filter(|&slot| c.hardware.is_wheel_slot(slot))
+                .collect();
+            for (&slot, raw) in wheels.iter().zip([500, 0, 500]) {
+                velocities[slot] = raw;
+            }
+            let fixed_deadline = clock.now().0 + 100_000_000;
+            request.payload = robot_msg::build_helpers::build_mixed_joint_command(
+                LAYOUT,
+                &held,
+                &velocities,
+                fixed_deadline,
+                10,
+                1,
+            );
+            let check_nonzero = |body: &[u8], sequence| {
+                let command = flatbuffers::root::<FbJointCommand<'_>>(body).unwrap();
+                assert_eq!(command.mode(), ControlMode::MixedPositionRawVelocity);
+                assert_eq!(command.on_timeout(), StaleAction::Hold);
+                assert_eq!(command.source_task_id(), sequence);
+                assert_eq!(command.deadline_ns(), fixed_deadline);
+                for (slot, &raw) in velocities.iter().enumerate() {
+                    assert_eq!(command.raw_velocities().unwrap().get(slot), raw);
+                    assert_eq!(
+                        command.target().unwrap().get(slot),
+                        crate::single_joint::position_for_s0(held[slot])
+                    );
+                }
+            };
+            let ticket = c.submit(request, &clock).unwrap();
+            let initial = c.tick_action(&clock, 0).unwrap();
+            check_nonzero(initial.as_bytes(), 0);
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            let next = c.tick_action(&clock, 1).unwrap();
+            check_nonzero(next.as_bytes(), 1);
+            let commands = MockChannel::<markers::JointCommand>::new();
+            let heartbeats = MockChannel::<markers::Heartbeat>::new();
+            let mut publisher = commands.publisher();
+            let mut heartbeat = heartbeats.publisher();
+            let tick = run_action_tick_loop(
+                &c,
+                &mut heartbeat,
+                &mut publisher,
+                &clock,
+                Duration::from_millis(1),
+                Some(Duration::from_millis(140)),
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert_eq!(commands.publishes(), tick.cmd_seq);
+            assert!(tick.cmd_seq >= 5);
+            let mut subscriber = commands.subscriber();
+            let sample = subscriber.latest().unwrap().unwrap();
+            assert_simulated_base_body(
+                &c,
+                sample.view().unwrap().body.raw(),
+                &feedback,
+                0,
+                tick.cmd_seq - 1,
+            );
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Completed(
+                    ActionOutcome::PartialSuccess { .. }
+                ))
+            ));
+            assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_cancel_requires_zero_publish_and_replay_stays_rejected() {
+            let (c, _, clock, feedback) = simulated_base_fixture();
+            let request = simulated_base_request(&c, &clock, &feedback, 7, 500);
+            let replay = request.clone();
+            let ticket = c.submit(request, &clock).unwrap();
+            assert!(matches!(
+                c.submit(replay.clone(), &clock),
+                Err(SubmitError::BusyExecuting(_))
+            ));
+            let nonzero = c.tick_action(&clock, 41).unwrap();
+            assert_simulated_base_body(&c, nonzero.as_bytes(), &feedback, 500, 41);
+            c.command_published(clock.now().0);
+            c.cancel(ticket.action_id, &clock).unwrap();
+            for seq in 42..44 {
+                let zero = c.tick_action(&clock, seq).unwrap();
+                assert_simulated_base_body(&c, zero.as_bytes(), &feedback, 0, seq);
+                assert!(matches!(
+                    c.status(ticket.action_id),
+                    Some(ActionStatus::Executing { .. })
+                ));
+            }
+            // 未收到publisher成功回调时，不以发送意图报告停止完成。
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 44).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Cancelled)
+            ));
+            assert!(
+                c.submit(replay, &clock)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("禁止重放")
+            );
+            assert_mixed_target(
+                &c.hold_command(&c.idle_hold_target(), 45, clock.now().0),
+                &c.hardware,
+                &c.idle_hold_target(),
+            );
+            let zero = simulated_base_request(&c, &clock, &feedback, 8, 0);
+            let zero_ticket = c.submit(zero, &clock).unwrap();
+            assert_simulated_base_body(
+                &c,
+                c.tick_action(&clock, 46).unwrap().as_bytes(),
+                &feedback,
+                0,
+                46,
+            );
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 47).is_none());
+            assert!(matches!(
+                c.status(zero_ticket.action_id),
+                Some(ActionStatus::Completed(ActionOutcome::Success))
+            ));
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_rejects_unapproved_raw_arm_target_and_oversized_lease() {
+            let (c, _, clock, feedback) = simulated_base_fixture();
+            for raw in [-500, 1, 499, 501, i16::MAX] {
+                assert!(
+                    c.submit(
+                        simulated_base_request(&c, &clock, &feedback, 1, raw),
+                        &clock
+                    )
+                    .is_err()
+                );
+                assert!(matches!(c.current_state(), CoordinatorState::Idle));
+            }
+            let mut held = feedback.clone();
+            c.hardware.clear_wheel_targets(&mut held);
+            let raw: Vec<_> = (0..held.len())
+                .map(|slot| {
+                    if c.hardware.is_wheel_slot(slot) {
+                        500
+                    } else {
+                        0
+                    }
+                })
+                .collect();
+            for (layout, deadline, changed_arm) in [
+                (LAYOUT + 1, clock.now().0 + 100_000_000, false),
+                (LAYOUT, clock.now().0 + 100_000_001, false),
+                (LAYOUT, clock.now().0, false),
+                (LAYOUT, clock.now().0 + 100_000_000, true),
+            ] {
+                let mut target = held.clone();
+                if changed_arm {
+                    target[0] += 0.001;
+                }
+                let mut request = simulated_base_request(&c, &clock, &feedback, 1, 500);
+                request.payload = robot_msg::build_helpers::build_mixed_joint_command(
+                    layout, &target, &raw, deadline, 10, 1,
+                );
+                assert!(c.submit(request, &clock).is_err());
+            }
+            // 全部提交拒绝均不消费序号，不产生动作实例。
+            assert!(
+                c.submit(
+                    simulated_base_request(&c, &clock, &feedback, 1, 500),
+                    &clock
+                )
+                .is_ok()
+            );
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_fault_stops_before_failed_and_never_reuses_nonzero_hold() {
+            let (c, channel, clock, feedback) = simulated_base_fixture();
+            let ticket = c
+                .submit(
+                    simulated_base_request(&c, &clock, &feedback, 1, 500),
+                    &clock,
+                )
+                .unwrap();
+            c.tick_action(&clock, 1).unwrap();
+            c.command_published(clock.now().0);
+            clock.advance(DurationNs::from_nanos(20_000_000));
+            publish_motion_feedback(&c, &channel, &clock, &feedback, false);
+            c.cancel(ticket.action_id, &clock).unwrap();
+            assert_simulated_base_body(
+                &c,
+                c.tick_action(&clock, 2).unwrap().as_bytes(),
+                &feedback,
+                0,
+                2,
+            );
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 3).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Failed(ActionFailure::SafetyAbort(_)))
+            ));
+            assert!(matches!(
+                c.current_state(),
+                CoordinatorState::Degraded { .. }
+            ));
+            assert_mixed_target(
+                &c.hold_command(&c.idle_hold_target(), 4, clock.now().0),
+                &c.hardware,
+                &c.idle_hold_target(),
+            );
+            c.clear_error().unwrap();
+            assert!(c.tick_action(&clock, 5).is_none());
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_expired_before_first_tick_reports_no_nonzero_publish() {
+            let (c, _, clock, feedback) = simulated_base_fixture();
+            let ticket = c
+                .submit(
+                    simulated_base_request(&c, &clock, &feedback, 1, 500),
+                    &clock,
+                )
+                .unwrap();
+            clock.advance(DurationNs::from_nanos(100_000_000));
+            assert_simulated_base_body(
+                &c,
+                c.tick_action(&clock, 1).unwrap().as_bytes(),
+                &feedback,
+                0,
+                1,
+            );
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Executing { .. })
+            ));
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 2).is_none());
+            assert!(
+                matches!(c.status(ticket.action_id), Some(ActionStatus::Completed(
+                ActionOutcome::PartialSuccess { warning }
+            )) if warning.contains("未发布非零命令"))
+            );
+            c.take_state_cache().unwrap().join().unwrap();
+        }
+
+        #[cfg(feature = "test-base-command")]
+        #[test]
+        fn simulated_base_first_tick_rejects_feedback_older_than_start_snapshot() {
+            let (c, channel, clock, feedback) = simulated_base_fixture();
+            let ticket = c
+                .submit(
+                    simulated_base_request(&c, &clock, &feedback, 1, 500),
+                    &clock,
+                )
+                .unwrap();
+            let previous_clock = MockClock::new(MonoRawNs(clock.now().0 - 1));
+            publish_motion_feedback(&c, &channel, &previous_clock, &feedback, true);
+            assert_simulated_base_body(
+                &c,
+                c.tick_action(&clock, 1).unwrap().as_bytes(),
+                &feedback,
+                0,
+                1,
+            );
+            c.command_published(clock.now().0);
+            assert!(c.tick_action(&clock, 2).is_none());
+            assert!(matches!(
+                c.status(ticket.action_id),
+                Some(ActionStatus::Failed(ActionFailure::SafetyAbort(_)))
+            ));
+            c.take_state_cache().unwrap().join().unwrap();
         }
 
         fn mixed_request(c: &Coordinator, duration_ms: u32) -> ActionRequest {

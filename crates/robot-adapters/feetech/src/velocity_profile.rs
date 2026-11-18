@@ -180,6 +180,12 @@ impl Sts3215RawWheelProfile {
     /// 该实证合同只容许已测的零速和正向500，不把上限解释为连续范围。
     #[must_use]
     pub const fn accepts(self, raw: i16) -> bool {
+        Self::accepts_raw(raw)
+    }
+
+    /// 供命令提交前检查同一组允许值，设备身份仍由绑定过程核对。
+    #[must_use]
+    pub const fn accepts_raw(raw: i16) -> bool {
         matches!(raw, 0 | 500)
     }
 }
