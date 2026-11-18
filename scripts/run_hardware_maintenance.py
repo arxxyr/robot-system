@@ -34,6 +34,8 @@ HANDOFF_UNIT = 'robot-s0-preflight.service'
 MAINTENANCE_NAMESPACE = Path('/home/loosqk/robot-checks')
 STOP_REGS = ('Torque_Enable','Present_Velocity','Goal_Velocity')
 MIXED_CHILD_BUDGET_NS = 28_000_000_000
+GROUND_BASE_FACTS = ('wheels_on_ground','level_clear_floor','continuous_base_observation',
+                     'stop_distance_measurement_ready')
 S0_MIXED_SCOPE = ('默认S0独占右总线，typed ClearEStop/SetEnabled及心跳命令流；'
                   '六臂冻结新鲜反馈位置，配置前轮raw+500持续20秒，其余轮raw0；'
                   '500毫秒零速原字观测、Disable及EStop，退出并取回右锁后原整机STOP51；'
@@ -232,11 +234,15 @@ def wheel_label(motor):
     return f'{WHEEL_LABELS[WHEEL_STOP_TARGETS[motor]]}{motor}'
 
 
-def mixed_raw_scope(selected_motor_id,direction=None):
+def mixed_raw_scope(selected_motor_id,direction=None,*,ground_forward=False):
+    if ground_forward:
+        require(direction=='forward','落地首测只允许前进')
     if direction is not None:
         require(direction in MIXED_DIRECTIONS,'未知架空方向')
         targets='、'.join(f'{wheel_label(i)}={g:+d}' for i,g in zip(wheel_ids(),MIXED_DIRECTIONS[direction]))
-        return f'仅本次架空 {direction}，右臂六关节原位保持，三轮 {targets} raw 持续20秒，随后零速、断扭和整机停止检查'
+        setup='落地' if ground_forward else '架空'
+        seconds=1 if ground_forward else 20
+        return f'仅本次{setup} {direction}，右臂六关节原位保持，三轮 {targets} raw 持续{seconds}秒，随后零速、断扭和整机停止检查'
     require(type(selected_motor_id) is int and selected_motor_id in (7,8,9),'混合维护仅接受物理7/8/9')
     held='/'.join(wheel_label(motor) for motor in wheel_ids() if motor!=selected_motor_id)
     return MIXED_RAW_SCOPE_TEMPLATE.format(held=held,selected=wheel_label(selected_motor_id))
@@ -444,9 +450,9 @@ def validate_arm_range_plan(plan):
             '右臂范围只读不得解除三轮合同DEFERRED')
 
 
-def mixed_raw_contract(bindings,selected_motor_id=9,direction=None):
+def mixed_raw_contract(bindings,selected_motor_id=9,direction=None,*,ground_forward=False):
     refs=mixed_raw_refs(bindings)
-    scope=mixed_raw_scope(selected_motor_id,direction)
+    scope=mixed_raw_scope(selected_motor_id,direction,ground_forward=ground_forward)
     contract={'scope':scope,
             'tool':dict(refs['tool']),'arm_calibration':dict(refs['arm_calibration']),
             'trace':dict(RIGHT_PULSE_TRACE),
@@ -461,9 +467,13 @@ def mixed_raw_contract(bindings,selected_motor_id=9,direction=None):
             'sample_period_ns':250_000_000,'position_step_raw_max':512,
             'velocity_raw_max':1000,'zero_offsets_ns':[50_000_000,250_000_000,450_000_000],
             'zero_final_raw_unsigned':[0,50,0x8032],'typed_velocity_profile_released':False}
+    if ground_forward:
+        contract.update(pulse_duration_ns=1_000_000_000,enable_budget_ns=2_000_000_000,
+                        child_budget_ns=9_000_000_000,cycle_count=20,wheel_sample_count=3)
     if direction is not None:
         contract.update(schema='MAINTENANCE_BUS2_MIXED_DIRECTION_V1',direction=direction,
-                        operation='mixed-hold-direction',wheel_raw_goal=list(MIXED_DIRECTIONS[direction]),
+                        operation='mixed-ground-forward' if ground_forward else 'mixed-hold-direction',
+                        wheel_raw_goal=list(MIXED_DIRECTIONS[direction]),
                         allowed_raw_targets=[-500,0,500])
     else:
         contract.update(schema='MAINTENANCE_BUS2_MIXED_RAW_V1',selected_motor_id=selected_motor_id,
@@ -1338,10 +1348,11 @@ def validate_mixed_raw_plan(plan):
     contract=plan.get('bus2_mixed_raw_hold')
     require(isinstance(contract,dict),'缺少混合维护合同')
     selected=contract.get('selected_motor_id');direction=contract.get('direction')
+    ground=contract.get('operation')=='mixed-ground-forward'
     require(not any(key in plan for key in ('right_wheel_pulse','right_wheel_feedback_only',
                 'front_wheel_feedback_only','left_wheel_feedback_only'))
-            and plan.get('position_targets')==[] and plan.get('scope')==mixed_raw_scope(selected,direction)
-            and contract==mixed_raw_contract(plan['bindings'],selected,direction),
+            and plan.get('position_targets')==[] and plan.get('scope')==mixed_raw_scope(selected,direction,ground_forward=ground)
+            and contract==mixed_raw_contract(plan['bindings'],selected,direction,ground_forward=ground),
             '混合维护禁止混用旧动作或改动固定raw合同')
     require(plan.get('base_targets')==mixed_base_targets(contract),
             '混合维护不得扩展为通用底盘合同')
@@ -1432,7 +1443,10 @@ def parse_mixed_raw_result(text,plan,expiry,calibration):
     require(isinstance(timing,dict) and set(timing)==set(time_keys),'混合时间字段错误')
     times=[integer(timing[key],1) for key in time_keys]
     require(times==sorted(times) and times[2]-times[1]>=contract['pulse_duration_ns']
-            and times[5]-times[0]<=contract['enable_budget_ns'],'混合启用/20秒/断扭预算失败')
+            and times[5]-times[0]<=contract['enable_budget_ns'],'混合启用、运动时长或断扭预算失败')
+    if contract['operation']=='mixed-ground-forward':
+        require(times[3]-times[1]<=contract['pulse_duration_ns']+contract['cycle_period_ns'],
+                '落地发零完成超过短脉冲一个调度周期')
     anchors=row['arm_anchors'];final=row['arm_final']
     require(type(anchors) is list and len(anchors)==6 and type(final) is list and len(final)==6,
             '混合六臂锚点/末置缺失')
@@ -1564,7 +1578,8 @@ def run_bus2_mixed_raw_hold(engine):
         def stop_check():
             io.check();engine.right_pulse_go_check()
             if io.child is None:
-                require(expiry-time.time_ns()>=MIXED_CHILD_BUDGET_NS,'本次GO不足完整28秒child预算')
+                require(expiry-time.time_ns()>=contract['child_budget_ns'],'本次GO不足计划的完整child预算')
+        io.mixed_child_budget_ns=contract['child_budget_ns']
         engine.mixed_stop_check=stop_check
         engine.mixed_trace_argv=tuple(traced)
         text=io.command(traced,allowed=(0,1),mixed_stop_check=stop_check)
@@ -1574,7 +1589,7 @@ def run_bus2_mixed_raw_hold(engine):
         result=parse_mixed_raw_result(text,plan,expiry,calibration)
         for probe,anchor in zip(arms,result['arm_anchors']):
             probe.update(status='PASS',anchor_raw=anchor['raw'],sampled_ns=anchor['sampled_ns'],
-                         hold_verification={'status':'PASS','tolerance_raw':4,'feedback_samples':79})
+                         hold_verification={'status':'PASS','tolerance_raw':4,'feedback_samples':contract['wheel_sample_count']})
         for wheel in wheels:
             wheel.update(status='PASS',evidence_command_sequence=io.sequence)
     except BaseException as error:
@@ -1833,12 +1848,15 @@ def position_targets_from_plan(plan):
 def make_plan(bindings, output, run_id, artifact_root, position_target_names=None, *, right_wheel_pulse=False,
               right_wheel_feedback_only=False,wheel_pulse_target=None,zero_stop_check=False,front_wheel_feedback_only=False,
               left_wheel_feedback_only=False,bus2_mixed_raw_hold=False,bus2_arm_range_only=False,right_gripper_release=False,
-              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,mixed_direction=None,s0_mixed_hold=False,s0_position_hold=False,
+              gripper_goal=1600,arm_range_id=None,mixed_wheel_id=None,mixed_direction=None,ground_forward=False,s0_mixed_hold=False,s0_position_hold=False,
               with_cameras=False,reverse_wheel_pulse=False):
     require(type(with_cameras) is bool and (not with_cameras or s0_mixed_hold or s0_position_hold),
             '相机只能显式附加到默认S0保持模式')
     require(arm_range_id is None or bus2_arm_range_only and type(arm_range_id) is int and arm_range_id==3,
             '单ID3选择只能附加到右臂范围只读')
+    require(type(ground_forward) is bool and (not ground_forward or
+            bus2_mixed_raw_hold and mixed_direction is None and mixed_wheel_id is None),
+            '落地短距前进只能单独附加到混合维护')
     require(mixed_direction is None or (bus2_mixed_raw_hold and mixed_direction in MIXED_DIRECTIONS and mixed_wheel_id is None),
             '每次仅接受一个架空联动方向，不能同时选单轮')
     require(mixed_wheel_id is None or bus2_mixed_raw_hold and type(mixed_wheel_id) is int and mixed_wheel_id in (7,8,9),
@@ -1907,13 +1925,16 @@ def make_plan(bindings, output, run_id, artifact_root, position_target_names=Non
             else:validate_front_feedback_plan(plan,motor=motor)
     if bus2_mixed_raw_hold:
         selected=9 if mixed_wheel_id is None else mixed_wheel_id
-        contract=mixed_raw_contract(bindings,selected,mixed_direction)
+        direction='forward' if ground_forward else mixed_direction
+        contract=mixed_raw_contract(bindings,selected,direction,ground_forward=ground_forward)
         plan['bus2_mixed_raw_hold']=contract
         plan['scope']=contract['scope']
         plan['base_targets']=mixed_base_targets(contract)
         plan['limitations']=['仅本次FW3.10/Phase12/Mode1的raw{0,+500}维护合同，不解除通用profile/SI门',
                              '维护真实adapter链；不声明SerialTick、S0/S1、D15或生产验收完成']
-        if mixed_direction is not None:
+        if ground_forward:
+            plan['limitations'][0]='落地前进单脉冲；实际方向及发零速至停稳的距离由地面参照实测'
+        elif mixed_direction is not None:
             plan['limitations'][0]='仅本轮固定的三轮架空组合，地面位移和转角待另验'
         validate_mixed_raw_plan(plan)
     if s0_mixed_hold:
@@ -1990,8 +2011,10 @@ def validate_go(go, plan, now_ns):
         require(0 < go['expires_at_ns']-go['issued_at_ns'] <= 600_000_000_000
                 and 0 <= now_ns-facts['confirmed_at_ns'] <= 600_000_000_000,
                 '右轮诊断现场/GO最多600秒')
-        require(all(facts.get(key) is True for key in ('all_three_wheels_off_ground','base_stably_supported',
-                    'continuous_wheel_observation'))
+        ground=plan.get('bus2_mixed_raw_hold',{}).get('operation')=='mixed-ground-forward'
+        setup=GROUND_BASE_FACTS if ground else ('all_three_wheels_off_ground','base_stably_supported','continuous_wheel_observation')
+        opposite='all_three_wheels_off_ground' if ground else 'wheels_on_ground'
+        require(all(facts.get(key) is True for key in setup) and facts.get(opposite,False) is False
                 and facts.get('base_confirmation_kind')=='CURRENT_SETUP_READY'
                 and facts.get('base_confirmation_scope')==(
                     plan['s0_mixed_hold']['scope'] if 's0_mixed_hold' in plan else
@@ -2000,7 +2023,7 @@ def validate_go(go, plan, now_ns):
                     FRONT_FEEDBACK_SCOPE if 'front_wheel_feedback_only' in plan else
                     RIGHT_FEEDBACK_SCOPE if 'right_wheel_feedback_only' in plan else plan['right_wheel_pulse']['scope'])
                 and isinstance(facts.get('base_confirmation_answer'),str) and facts['base_confirmation_answer'].strip(),
-                '缺本轮架空支撑/持续观察及具体动作现场确认')
+                '缺本轮现场布置、持续观察或具体动作确认')
 
 
 def is_read_only_journal_command(argv):
@@ -2044,8 +2067,8 @@ class RealExecutor:
             if mixed_stop_check is not None and not row.get('mixed_stop_requested'):
                 try:
                     mixed_stop_check()
-                    require(self.now()-row['started_ns'] <= MIXED_CHILD_BUDGET_NS,
-                            '混合维护child超过固定28秒预算')
+                    require(self.now()-row['started_ns'] <= row['budget_ns'],
+                            '混合维护child超过计划预算')
                 except BaseException as error:
                     # 仅新混合入口：所属独立进程组收到一次协作停止，仍持有真实wait，不kill。
                     row['mixed_stop_requested'] = repr(error)
@@ -2148,7 +2171,7 @@ class RealExecutor:
         if diagnostic_journal:
             row['diagnostic_journal'] = True
         if mixed_stop_check is not None:
-            row['budget_ns']=MIXED_CHILD_BUDGET_NS
+            row['budget_ns']=getattr(self,'mixed_child_budget_ns',MIXED_CHILD_BUDGET_NS)
         failures = []
         out, err = b'', b''
         naming_stack=contextlib.ExitStack()
@@ -3916,7 +3939,7 @@ def classify_run_result(report):
             for probe,anchor in zip(probes[:6],result['arm_anchors']):
                 require(type(probe.get('anchor_raw')) is int and probe['anchor_raw']==anchor['raw']
                         and probe.get('sampled_ns')==anchor['sampled_ns']
-                        and probe.get('hold_verification')=={'status':'PASS','tolerance_raw':4,'feedback_samples':79},
+                        and probe.get('hold_verification')=={'status':'PASS','tolerance_raw':4,'feedback_samples':mixed['wheel_sample_count']},
                         '混合保持探针与本次锚点原件不符')
         except BaseException:
             return 'FAIL'
@@ -4221,6 +4244,7 @@ def main(argv=None):
     parser.add_argument('--s0-position-hold',action='store_true',help=S0_POSITION_SCOPE)
     parser.add_argument('--with-cameras',action='store_true',help='仅附加默认S0保持：'+S0_CAMERA_SCOPE)
     mixed_motion=parser.add_mutually_exclusive_group()
+    mixed_motion.add_argument('--ground-forward',action='store_true',help='落地短距前进一次，固定 1 秒，随后归零断扭')
     mixed_motion.add_argument('--mixed-direction',choices=tuple(MIXED_DIRECTIONS),help='架空三轮组合，仅执行所选方向一次')
     mixed_motion.add_argument('--mixed-wheel-id',type=int,choices=(7,8,9),
                         help='仅附加到混合维护：选择物理7/8/9，缺省物理9；其余两轮保持raw0')
@@ -4236,6 +4260,7 @@ def main(argv=None):
     require(not options.with_cameras or options.s0_mixed_hold or options.s0_position_hold,
             '相机只能显式附加到默认S0保持模式')
     require(options.arm_range_id is None or options.bus2_arm_range_only,'单ID3选择只能附加到右臂范围只读')
+    require(not options.ground_forward or options.bus2_mixed_raw_hold,'落地前进只能附加到混合维护')
     require(options.mixed_direction is None or options.bus2_mixed_raw_hold,'架空方向仅能用于混合维护')
     require(options.mixed_wheel_id is None or options.bus2_mixed_raw_hold,'混合选轮只能附加到混合维护')
     require(options.wheel_pulse is None or len(options.wheel_pulse)==1,'每次仅接受一个轮目标')
@@ -4265,7 +4290,9 @@ def main(argv=None):
                               GRIPPER_TARGETS[gripper_goal]['scope'] if gripper_requested else
                               (ARM_ELBOW_RANGE_SCOPE if options.arm_range_id==3 else ARM_RANGE_SCOPE)
                               if options.bus2_arm_range_only else
-                              mixed_raw_scope(9 if options.mixed_wheel_id is None else options.mixed_wheel_id,options.mixed_direction)
+                              mixed_raw_scope(9 if options.mixed_wheel_id is None else options.mixed_wheel_id,
+                                              'forward' if options.ground_forward else options.mixed_direction,
+                                              ground_forward=options.ground_forward)
                               if options.bus2_mixed_raw_hold else
                               pulse_scope(wheel_target or 'right',zero_stop_check=True,reverse=True)
                               if options.reverse_wheel_pulse else '单电机独立维护；不运行硬件、不改保护'},ensure_ascii=False))
@@ -4277,7 +4304,8 @@ def main(argv=None):
                    left_wheel_feedback_only=options.left_wheel_feedback_only,
                    bus2_mixed_raw_hold=options.bus2_mixed_raw_hold,bus2_arm_range_only=options.bus2_arm_range_only,
                    right_gripper_release=gripper_requested,gripper_goal=gripper_goal,arm_range_id=options.arm_range_id,
-                   mixed_wheel_id=options.mixed_wheel_id,mixed_direction=options.mixed_direction,s0_mixed_hold=options.s0_mixed_hold,
+                   mixed_wheel_id=options.mixed_wheel_id,mixed_direction=options.mixed_direction,
+                   ground_forward=options.ground_forward,s0_mixed_hold=options.s0_mixed_hold,
                    s0_position_hold=options.s0_position_hold,with_cameras=options.with_cameras,
                    reverse_wheel_pulse=options.reverse_wheel_pulse)
     if not options.execute:

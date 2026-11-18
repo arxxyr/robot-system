@@ -612,7 +612,7 @@ class OwnerTests(unittest.TestCase):
             self.assertTrue(e.commands[1]['reaped']); e.journal.close()
 
     def test_mixed_child_requests_one_group_interrupt_then_reaps_without_kill(self):
-        for reason in ('go','signal','budget'):
+        for reason in ('go','signal','budget','ground_budget'):
             with self.subTest(reason=reason),tempfile.TemporaryDirectory() as d:
                 e=self.make_io(d);ready=Path(d)/'ready';stopped=Path(d)/'stopped'
                 code=('import pathlib,signal,time\n'
@@ -621,23 +621,26 @@ class OwnerTests(unittest.TestCase):
                       ' stopped.write_text("stopped");print("stopped",flush=True);raise SystemExit(0)\n'
                       'signal.signal(signal.SIGINT,stop);ready.write_text("ready")\n'
                       'while True:time.sleep(.01)\n')
+                budget=m.MIXED_CHILD_BUDGET_NS
+                if reason=='ground_budget':
+                    budget=e.mixed_child_budget_ns=9_000_000_000
                 actual_now=e.now;shift=[0]
                 e.now=lambda:actual_now()+shift[0]
                 def check():
                     if not ready.exists():return
                     if reason=='go':raise ValueError('原GO到期')
                     if reason=='signal':e.mark_signal(signal.SIGHUP,None);e.check()
-                    shift[0]=m.MIXED_CHILD_BUDGET_NS+1
+                    shift[0]=budget+1
                 with self.assertRaises(ValueError):
                     e.command([sys.executable,'-c',code],mixed_stop_check=check)
                 row=e.commands[0]
                 self.assertIsNone(e.child);self.assertTrue(row['reaped'])
                 self.assertEqual(row['exit_code'],0)
-                self.assertEqual(row['budget_ns'],28_000_000_000)
+                self.assertEqual(row['budget_ns'],budget)
                 self.assertEqual(len(row['signals_sent']),1)
                 self.assertEqual(row['signals_sent'][0]['signal'],int(signal.SIGINT))
                 self.assertEqual(stopped.read_text(),'stopped')
-                self.assertEqual(row['over_budget'],reason=='budget')
+                self.assertEqual(row['over_budget'],reason in ('budget','ground_budget'))
                 self.assertTrue(row['mixed_stop_requested']);e.journal.close()
 
     def test_journal_timeout_only_changes_notice_and_still_reaps_then_fails(self):
@@ -3925,6 +3928,83 @@ class MixedRawTests(unittest.TestCase):
         'turn_left': [500,500,500], 'turn_right': [-500,-500,-500],
     }
 
+    def ground_plan(self):
+        return m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
+                           bus2_mixed_raw_hold=True,ground_forward=True)
+
+    def test_ground_forward_has_its_own_short_plan_and_field_scope(self):
+        plan=self.ground_plan()
+        contract=plan['bus2_mixed_raw_hold']
+        self.assertEqual(contract['direction'],'forward')
+        self.assertEqual(contract['operation'],'mixed-ground-forward')
+        self.assertEqual(contract['wheel_raw_goal'],[0,-500,500])
+        self.assertEqual((contract['pulse_duration_ns'],contract['enable_budget_ns'],contract['child_budget_ns']),
+                         (1_000_000_000,2_000_000_000,9_000_000_000))
+        self.assertEqual((contract['cycle_count'],contract['wheel_sample_count']),(20,3))
+        old_go=WheelFeedbackTests.go(self,plan,1000)
+        with self.assertRaises(ValueError):m.validate_go(old_go,plan,2000)
+        go=copy.deepcopy(old_go)
+        facts=go['physical']['right']
+        for key in ('all_three_wheels_off_ground','base_stably_supported','continuous_wheel_observation'):
+            del facts[key]
+        facts.update(dict.fromkeys(m.GROUND_BASE_FACTS,True))
+        m.validate_go(go,plan,2000)
+        for key in m.GROUND_BASE_FACTS:
+            bad=copy.deepcopy(go);bad['physical']['right'][key]=False
+            with self.subTest(key=key),self.assertRaises(ValueError):m.validate_go(bad,plan,2000)
+        bad=copy.deepcopy(go);bad['physical']['right']['all_three_wheels_off_ground']=True
+        with self.assertRaises(ValueError):m.validate_go(bad,plan,2000)
+        airborne=self.direction_plan('forward')
+        with self.assertRaises(ValueError):m.validate_go(go,airborne,2000)
+        both=WheelFeedbackTests.go(self,airborne,1000);both['physical']['right']['wheels_on_ground']=True
+        with self.assertRaises(ValueError):m.validate_go(both,airborne,2000)
+        for key,value in (('operation','mixed-hold-direction'),('direction','backward'),('cycle_count',400),
+                          ('pulse_duration_ns',20_000_000_000),('child_budget_ns',m.MIXED_CHILD_BUDGET_NS)):
+            bad=copy.deepcopy(plan);bad['bus2_mixed_raw_hold'][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):m.validate_mixed_raw_plan(bad)
+        for options in ([],['--mixed-direction','forward'],['--mixed-wheel-id','9']):
+            with self.subTest(options=options),contextlib.redirect_stderr(io.StringIO()):
+                if options:
+                    with self.assertRaises(SystemExit):run_main(['--bus2-mixed-raw-hold','--ground-forward',*options])
+                else:
+                    with self.assertRaises(ValueError):run_main(['--ground-forward'])
+        with patch.object(m.subprocess,'Popen',side_effect=AssertionError('预演不得接硬件')),contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(run_main(['--bus2-mixed-raw-hold','--ground-forward']),0)
+            self.assertEqual(json.loads(out.getvalue())['scope'],plan['scope'])
+
+    def test_ground_feedback_uses_short_window_and_preserves_stop(self):
+        airborne_row=self.direction_receipt('forward')
+        self.plan=self.ground_plan()
+        with self.assertRaises(ValueError):self.parse(airborne_row)
+        row=copy.deepcopy(airborne_row)
+        row.update(operation='mixed-ground-forward',pulse_duration_ns=1_000_000_000,enable_budget_ns=2_000_000_000,
+                   cycle_count=20,cycles=row['cycles'][:20],wheel_samples=row['wheel_samples'][:3])
+        for key in ('zero_started_ns','zero_finished_ns','disable_attempt_ns','disable_finished_ns','finished_ns'):
+            row['timing'][key]-=19_000_000_000
+        for z in row['zero_samples']:
+            z['started_ns']-=19_000_000_000;z['finished_ns']-=19_000_000_000
+        self.assertEqual(self.parse(row),row)
+        bad=copy.deepcopy(row);bad['zero_samples'][-1]['present_velocity_word'][1]=250
+        with self.assertRaises(ValueError):self.parse(bad)
+        bad=copy.deepcopy(row);bad['wheel_samples'].pop()
+        with self.assertRaises(ValueError):self.parse(bad)
+        late=copy.deepcopy(row)
+        for key in ('zero_started_ns','zero_finished_ns','disable_attempt_ns','disable_finished_ns','finished_ns'):
+            late['timing'][key]+=50_000_000
+        for z in late['zero_samples']:
+            z['started_ns']+=50_000_000;z['finished_ns']+=50_000_000
+        with self.assertRaisesRegex(ValueError,'落地发零完成'):self.parse(late)
+        engine=self.perform(row)
+        self.assertEqual(engine.mixed_wire_evidence['original_argv'][2:4],['forward','mixed-ground-forward'])
+        self.assertEqual(engine.io.mixed_child_budget_ns,9_000_000_000)
+        self.assertTrue(all(p['hold_verification']['feedback_samples']==3 for p in engine.rows[:6]))
+        report={'plan':self.plan,'probes':engine.rows,'mixed_raw_result':engine.mixed_raw_result,
+                'position_verification':{'status':'PASS'},'stop_verification':{'status':'PASS'},
+                'identity_verification':{'status':'PASS'},'child_active':False}
+        self.assertEqual(m.classify_run_result(report),'PASS')
+        report['stop_verification']['status']='UNKNOWN'
+        self.assertEqual(m.classify_run_result(report),'NEEDS_MANUAL_POWER_CUT')
+
     def direction_plan(self, direction):
         return m.make_plan(self.bindings,self.root+'/run','mixed-fixture',self.root,
                            bus2_mixed_raw_hold=True,mixed_direction=direction)
@@ -4035,16 +4115,16 @@ class MixedRawTests(unittest.TestCase):
 
 
     @unittest.skipUnless(os.environ.get('ROBOT_MIXED_DIRECTION_FIXTURE_DIR'),'未提供四方向同源Rust内存串口回执')
-    def test_actual_rust_four_directions_match_python_acceptance(self):
+    def test_actual_rust_direction_receipts_match_python_acceptance(self):
         directory=Path(os.environ['ROBOT_MIXED_DIRECTION_FIXTURE_DIR'])
         self.addCleanup(m.configure_bus_mapping,BUS_FIXTURE_PATH,LEFT_BUS_FIXTURE_PATH)
         m.configure_bus_mapping(write_bus_fixture(self.directory/'bus2-directions.toml',tolerances=[20]*6+[0]*3),
                                 LEFT_BUS_FIXTURE_PATH)
-        for direction,goals in self.direction_vectors.items():
-            with self.subTest(direction=direction):
-                self.plan=self.direction_plan(direction)
-                row=m.strict_json((directory/(direction+'.json')).read_text())
-                self.assertEqual(row['direction'],direction)
+        for name,goals in {**self.direction_vectors,'ground_forward':self.direction_vectors['forward']}.items():
+            with self.subTest(mode=name):
+                self.plan=self.ground_plan() if name=='ground_forward' else self.direction_plan(name)
+                row=m.strict_json((directory/(name+'.json')).read_text())
+                self.assertEqual(row['direction'],self.plan['bus2_mixed_raw_hold']['direction'])
                 self.assertEqual(row['wheel_raw_goal'],goals)
                 self.assertEqual(row['arm_calibration_path'],'/tmp/mixed-software-arm-calibration.json')
                 row['arm_calibration_path']=self.bindings['bus2_mixed_raw_hold']['arm_calibration']['path']

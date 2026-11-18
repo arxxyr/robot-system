@@ -48,7 +48,8 @@ const NAMES: [&str; 9] = [
 ];
 const PERIOD: u64 = 50_000_000;
 const PULSE: u64 = 20_000_000_000;
-const ENABLE: u64 = 21_000_000_000;
+const GROUND_PULSE: u64 = 1_000_000_000;
+const ENABLE_MARGIN: u64 = 1_000_000_000;
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn interrupted(_: libc::c_int) {
@@ -98,6 +99,7 @@ impl Drop for Signals {
 enum Motion {
     Single(u8),
     Direction(BaseDirection),
+    GroundForward,
 }
 
 impl From<u8> for Motion {
@@ -107,10 +109,22 @@ impl From<u8> for Motion {
 }
 
 impl Motion {
+    const fn pulse_ns(self) -> u64 {
+        match self {
+            Self::GroundForward => GROUND_PULSE,
+            Self::Single(_) | Self::Direction(_) => PULSE,
+        }
+    }
+
+    const fn enable_budget_ns(self) -> u64 {
+        self.pulse_ns() + ENABLE_MARGIN
+    }
+
     fn goals(self, wheel_ids: [u8; 3]) -> [i16; 3] {
         match self {
             Self::Single(id) => wheel_ids.map(|wheel| if wheel == id { 500 } else { 0 }),
             Self::Direction(direction) => direction.wheel_raw(),
+            Self::GroundForward => BaseDirection::Forward.wheel_raw(),
         }
     }
 }
@@ -171,7 +185,7 @@ impl Guard {
             .ok_or("GO已过期")?;
         let now = clock.now().0;
         let hard_deadline = now
-            .checked_add(remaining.min(28_000_000_000))
+            .checked_add(remaining.min(motion.pulse_ns() + 8_000_000_000))
             .ok_or("GO本地期限溢出")?;
         Ok(Self {
             ids,
@@ -397,7 +411,7 @@ impl<T: SerialTransport> Port<T> {
                 .is_ok()
             {
                 self.guard.set_deadline(
-                    now.saturating_add(ENABLE - 100_000_000)
+                    now.saturating_add(self.guard.motion.enable_budget_ns() - 100_000_000)
                         .min(self.guard.deadline.load(Ordering::SeqCst)),
                 );
             }
@@ -569,6 +583,8 @@ fn run<T: SerialTransport + 'static>(
     report: &mut Value,
 ) -> Result<(), String> {
     let ids = guard.ids;
+    let pulse = guard.motion.pulse_ns();
+    let enable_budget = guard.motion.enable_budget_ns();
     let held_slots: Vec<_> = (0..3).filter(|&role| guard.goals[role] == 0).collect();
     let held_ids: Vec<_> = held_slots.iter().map(|&role| ids[6 + role]).collect();
     bind_report(report, &ids, guard.motion);
@@ -604,7 +620,7 @@ fn run<T: SerialTransport + 'static>(
     ];
     let mut adapter = match guard.motion {
         Motion::Single(_) => FeetechAdapter::new_bus2_mixed_raw(config, bus, profiles),
-        Motion::Direction(_) => {
+        Motion::Direction(_) | Motion::GroundForward => {
             FeetechAdapter::new_bus2_direction_maintenance(config, bus, profiles, guard.goals)
         }
     }
@@ -705,16 +721,17 @@ fn run<T: SerialTransport + 'static>(
         let mut previous = [None; 3];
         let mut travel = [0; 3];
         let mut observed_motion = [false; 3];
-        for cycle in 0..400_u64 {
+        for cycle in 0..pulse / PERIOD {
             let scheduled = first + cycle * PERIOD;
             let deadline = if cycle == 0 {
                 (scheduled + PERIOD).min(sampled_ns + 200_000_000)
             } else {
                 scheduled + PERIOD
             };
-            guard.set_deadline(
-                deadline.min(guard.enable_attempt.load(Ordering::SeqCst) + ENABLE - 100_000_000),
-            );
+            guard
+                .set_deadline(deadline.min(
+                    guard.enable_attempt.load(Ordering::SeqCst) + enable_budget - 100_000_000,
+                ));
             guard.wait(scheduled)?;
             let started = guard.clock.now().0;
             write_cycle(&mut adapter, guard, anchors, started, deadline)?;
@@ -777,24 +794,28 @@ fn run<T: SerialTransport + 'static>(
             );
             guard.check().map_err(|e| format!("周期完成过期:{e:?}"))?;
         }
-        guard.set_deadline(
-            (guard.enable_attempt.load(Ordering::SeqCst) + ENABLE - 100_000_000)
-                .min(guard.hard_deadline),
-        );
-        guard.wait(first.checked_add(PULSE).ok_or("20秒期限溢出")?)?;
+        let pulse_end = first.checked_add(pulse).ok_or("运动期限溢出")?;
+        let enable_deadline =
+            guard.enable_attempt.load(Ordering::SeqCst) + enable_budget - 100_000_000;
+        let zero_write_deadline = if matches!(guard.motion, Motion::GroundForward) {
+            enable_deadline.min(pulse_end.checked_add(PERIOD).ok_or("落地发零期限溢出")?)
+        } else {
+            enable_deadline
+        };
+        guard.set_deadline(zero_write_deadline);
+        guard.wait(pulse_end)?;
         for (role, goal) in guard.goals.iter().enumerate() {
             if *goal != 0 && (travel[role] == 0 || !observed_motion[role]) {
                 return Err(format!(
-                    "物理{}在20秒未得到指定方向的位置或速度变化",
+                    "物理{}在运动窗口内未得到指定方向的位置或速度变化",
                     ids[6 + role]
                 ));
             }
         }
         let zero_started = guard.clock.now().0;
         report["timing"]["zero_started_ns"] = json!(zero_started);
-        let zero_deadline = (zero_started + 500_000_000)
-            .min(guard.enable_attempt.load(Ordering::SeqCst) + ENABLE - 100_000_000);
-        guard.set_deadline(zero_deadline);
+        let zero_deadline = (zero_started + 500_000_000).min(enable_deadline);
+        guard.set_deadline(zero_deadline.min(zero_write_deadline));
         adapter.bus().set_op_class(BusOpClass::PeriodicWrite);
         adapter
             .bus()
@@ -805,6 +826,9 @@ fn run<T: SerialTransport + 'static>(
             .map_err(|e| e.to_string())?;
         let zero_finished = guard.clock.now().0;
         report["timing"]["zero_finished_ns"] = json!(zero_finished);
+        if matches!(guard.motion, Motion::GroundForward) {
+            guard.check().map_err(|e| format!("落地发零过期:{e:?}"))?;
+        }
         for (index, offset) in [50_000_000, 250_000_000, 450_000_000]
             .into_iter()
             .enumerate()
@@ -820,14 +844,14 @@ fn run<T: SerialTransport + 'static>(
             let wheel_ids = &ids[6..9];
             let watch = match &guard.motion {
                 Motion::Single(id) => std::slice::from_ref(id),
-                Motion::Direction(_) => wheel_ids,
+                Motion::Direction(_) | Motion::GroundForward => wheel_ids,
             };
             let te = read_raw(&mut adapter, guard, "Torque_Enable", watch)?;
             let gv = read_raw(&mut adapter, guard, "Goal_Velocity", watch)?;
             let pv = read_raw(&mut adapter, guard, "Present_Velocity", watch)?;
             let reading = |values: &[u32]| match guard.motion {
                 Motion::Single(_) => json!(values[0]),
-                Motion::Direction(_) => json!(values),
+                Motion::Direction(_) | Motion::GroundForward => json!(values),
             };
             report["zero_samples"].as_array_mut().unwrap().push(json!({"started_ns":started,"finished_ns":guard.clock.now().0,"torque_enable":reading(&te),"goal_velocity_word":reading(&gv),"present_velocity_word":reading(&pv)}));
             for (sample, id) in watch.iter().enumerate() {
@@ -886,9 +910,9 @@ fn run<T: SerialTransport + 'static>(
                 .now()
                 .0
                 .checked_sub(attempted)
-                .is_none_or(|elapsed| elapsed > ENABLE)
+                .is_none_or(|elapsed| elapsed > enable_budget)
         {
-            error.get_or_insert_with(|| "首次TE1至全九TE0超过21秒".into());
+            error.get_or_insert_with(|| "首次TE1至全九TE0超出本次启用预算".into());
         }
         guard.cleanup.store(false, Ordering::SeqCst);
         if error.is_none() {
@@ -1020,6 +1044,12 @@ fn bind_report(report: &mut Value, ids: &[u8; 9], motion: impl Into<Motion>) {
 }
 
 fn parse_motion(args: &[String], wheel_ids: [u8; 3]) -> Result<Motion, String> {
+    if args.get(3).is_some_and(|op| op == "mixed-ground-forward") {
+        return match args.get(2).map(String::as_str) {
+            Some("forward") => Ok(Motion::GroundForward),
+            _ => Err("本次落地短距维护仅允许前进".into()),
+        };
+    }
     if args.get(3).map(String::as_str) == Some("mixed-hold-direction") {
         let direction = match args.get(2).map(String::as_str) {
             Some("forward") => BaseDirection::Forward,
@@ -1036,12 +1066,18 @@ fn parse_motion(args: &[String], wheel_ids: [u8; 3]) -> Result<Motion, String> {
 
 fn empty_report(args: &[String]) -> Value {
     let (schema, operation) = match args.get(3).map(String::as_str) {
+        Some("mixed-ground-forward") => ("FEETECH_MIXED_DIRECTION_V1", "mixed-ground-forward"),
         Some("mixed-hold-direction") => ("FEETECH_MIXED_DIRECTION_V1", "mixed-hold-direction"),
         Some("mixed-hold-wheel9") => ("FEETECH_MIXED_WHEEL9_V1", "mixed-hold-wheel9"),
         _ => ("FEETECH_MIXED_WHEEL_V1", "mixed-hold-wheel"),
     };
-    let mut report = json!({"schema":schema,"operation":operation,"result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"calibration_range_tolerances_raw":[0,0,0,0,0,0],"pulse_duration_ns":PULSE,"zero_window_ns":500_000_000_u64,"enable_budget_ns":ENABLE,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}});
-    if operation == "mixed-hold-direction" {
+    let pulse = if operation == "mixed-ground-forward" {
+        GROUND_PULSE
+    } else {
+        PULSE
+    };
+    let mut report = json!({"schema":schema,"operation":operation,"result":"FAIL","error":null,"serial_device":args.get(1),"arm_calibration_path":args.get(5),"go_expires_at_unix_ns":null,"motor_ids":[],"wheel_ids":[],"wheel_raw_goal":[],"calibration_range_tolerances_raw":[0,0,0,0,0,0],"pulse_duration_ns":pulse,"zero_window_ns":500_000_000_u64,"enable_budget_ns":pulse + ENABLE_MARGIN,"loaded_calibration":[],"arm_anchors":[],"arm_final":[],"cycle_count":0,"cycles":[],"wheel_anchors":[],"wheel_samples":[],"zero_samples":[],"timing":{"enable_attempt_ns":null,"first_nonzero_ns":null,"zero_started_ns":null,"zero_finished_ns":null,"disable_attempt_ns":null,"disable_finished_ns":null,"finished_ns":null},"cleanup":{"zero_attempted":false,"zero_ok":false,"disable_attempted":false,"disable_ok":false,"torque_enable_after":null}});
+    if schema == "FEETECH_MIXED_DIRECTION_V1" {
         report["direction"] = json!(args.get(2));
     }
     if operation == "mixed-hold-wheel" {
@@ -1242,6 +1278,17 @@ mod tests {
                 return Err(FeetechError::TransportWrite(std::io::Error::other(
                     "固定零速失败",
                 )));
+            }
+            if self.scenario == 16 && self.nonzero && bytes.get(4..7) == Some(&[131, 40, 1]) {
+                self.clock.advance(DurationNs(600_000_000));
+            }
+            if self.scenario == 17
+                && self.nonzero
+                && bytes.len() == 17
+                && bytes[4..7] == [131, 46, 2]
+                && bytes[7..16].chunks_exact(3).all(|row| row[1..] == [0, 0])
+            {
+                self.clock.advance(DurationNs(60_000_000));
             }
             self.frames.lock().unwrap().push(bytes.to_vec());
             match bytes[4] {
@@ -1532,17 +1579,26 @@ mod tests {
     #[test]
     fn mixed_directions_verify_wire_feedback_and_stops() {
         let _sim_lock = SIM_LOCK.lock().unwrap();
-        for (name, goals) in [
-            ("forward", [0, -500, 500]),
-            ("backward", [0, 500, -500]),
-            ("turn_left", [500, 500, 500]),
-            ("turn_right", [-500, -500, -500]),
+        for (operation, name, goals, cycles) in [
+            ("mixed-hold-direction", "forward", [0, -500, 500], 400),
+            ("mixed-hold-direction", "backward", [0, 500, -500], 400),
+            ("mixed-hold-direction", "turn_left", [500, 500, 500], 400),
+            (
+                "mixed-hold-direction",
+                "turn_right",
+                [-500, -500, -500],
+                400,
+            ),
+            ("mixed-ground-forward", "forward", [0, -500, 500], 20),
         ] {
-            for scenario in [0, 5, 11, 12, 13, 14, 15] {
+            for scenario in [0, 2, 5, 11, 12, 13, 14, 15, 16, 17] {
+                if scenario == 17 && operation != "mixed-ground-forward" {
+                    continue;
+                }
                 INTERRUPTED.store(false, Ordering::SeqCst);
                 let wheel_ids = [8, 9, 7];
                 let ids = motor_ids(wheel_ids).unwrap();
-                let args = arguments(name, "mixed-hold-direction");
+                let args = arguments(name, operation);
                 let motion = parse_motion(&args, wheel_ids).unwrap();
                 let clock = Arc::new(MockClock::new(MonoRawNs(1_000_000)));
                 let guard = Arc::new(
@@ -1579,7 +1635,7 @@ mod tests {
                 assert_eq!(
                     result.is_ok(),
                     scenario == 0,
-                    "{name} {scenario}: {result:?}"
+                    "{operation} {name} {scenario}: {result:?}"
                 );
                 assert_eq!(report["cleanup"]["zero_ok"], true);
                 assert_eq!(report["cleanup"]["disable_ok"], true);
@@ -1590,12 +1646,41 @@ mod tests {
                     last_write[7..25],
                     ids.into_iter().flat_map(|id| [id, 0]).collect::<Vec<_>>()
                 );
+                if scenario == 16 {
+                    assert_eq!(
+                        result.err().as_deref(),
+                        Some("首次TE1至全九TE0超出本次启用预算")
+                    );
+                }
+                if scenario == 17 {
+                    assert!(report["timing"]["zero_started_ns"].is_u64());
+                    assert_eq!(report["zero_samples"], json!([]));
+                    assert_eq!(report["cycles"].as_array().unwrap().len(), 20);
+                }
                 if scenario != 0 {
                     assert_eq!(frames.last(), Some(last_write));
                     continue;
                 }
+                let pulse = u64::try_from(cycles).unwrap() * PERIOD;
+                let budget = pulse + 1_000_000_000;
+                assert_eq!(report["pulse_duration_ns"], pulse);
+                assert_eq!(report["enable_budget_ns"], budget);
+                assert_eq!(report["operation"], operation);
+                assert_eq!(report["cycle_count"], cycles);
+                let timing = &report["timing"];
+                let actual_pulse = timing["zero_started_ns"].as_u64().unwrap()
+                    - timing["first_nonzero_ns"].as_u64().unwrap();
+                assert!((pulse..pulse + PERIOD).contains(&actual_pulse));
+                assert!(
+                    timing["disable_finished_ns"].as_u64().unwrap()
+                        - timing["enable_attempt_ns"].as_u64().unwrap()
+                        <= budget
+                );
                 assert_eq!(report["wheel_raw_goal"], json!(goals));
-                assert_eq!(report["wheel_samples"].as_array().unwrap().len(), 79);
+                assert_eq!(
+                    report["wheel_samples"].as_array().unwrap().len(),
+                    cycles / 5 - 1
+                );
                 assert_eq!(report["zero_samples"].as_array().unwrap().len(), 3);
                 assert_eq!(
                     report["zero_samples"][2]["present_velocity_word"],
@@ -1618,7 +1703,7 @@ mod tests {
                             && frame[4..7] == [131, 46, 2]
                             && frame[7..16] == goal_frame)
                         .count(),
-                    400
+                    cycles
                 );
                 if let Some(directory) = std::env::var_os("ROBOT_MIXED_DIRECTION_FIXTURE_DIR") {
                     report["result"] = json!("PASS");
@@ -1626,8 +1711,13 @@ mod tests {
                         json!("/tmp/mixed-software-arm-calibration.json");
                     report["go_expires_at_unix_ns"] = json!(guard.expires_unix);
                     report["loaded_calibration"] = json!(ids[..6].iter().map(|id| json!({"id":id,"range_min":0,"range_max":4095,"homing_offset":0,"drive_mode":0})).collect::<Vec<_>>());
+                    let fixture = if operation == "mixed-ground-forward" {
+                        "ground_forward"
+                    } else {
+                        name
+                    };
                     std::fs::write(
-                        Path::new(&directory).join(format!("{name}.json")),
+                        Path::new(&directory).join(format!("{fixture}.json")),
                         serde_json::to_vec_pretty(&report).unwrap(),
                     )
                     .unwrap();
@@ -1635,6 +1725,11 @@ mod tests {
             }
         }
         assert!(parse_motion(&arguments("unknown", "mixed-hold-direction"), [8, 9, 7]).is_err());
+        for invalid in ["backward", "turn_left", "turn_right", "9"] {
+            let report = execute(&arguments(invalid, "mixed-ground-forward"));
+            assert_eq!(report["error"], "本次落地短距维护仅允许前进");
+            assert!(report["timing"]["enable_attempt_ns"].is_null());
+        }
     }
 
     #[test]
@@ -1816,7 +1911,8 @@ mod tests {
                 assert_eq!(report["cleanup"]["disable_ok"], true);
                 let enable = report["timing"]["enable_attempt_ns"].as_u64().unwrap();
                 assert!(
-                    report["timing"]["disable_finished_ns"].as_u64().unwrap() - enable <= ENABLE
+                    report["timing"]["disable_finished_ns"].as_u64().unwrap() - enable
+                        <= PULSE + ENABLE_MARGIN
                 );
             } else {
                 assert!(report["arm_final"].as_array().unwrap().is_empty());

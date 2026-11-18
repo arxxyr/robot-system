@@ -16,6 +16,7 @@
 //! ## 用法
 //!
 //! ```bash
+//! feetech_poke <right-device> forward mixed-ground-forward --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <right-device> <forward|backward|turn_left|turn_right> mixed-hold-direction --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <right-device> <7|8|9> mixed-hold-wheel --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
 //! feetech_poke <right-device> 9 mixed-hold-wheel9 --arm-calibration <right_arm.json> --go-expires-at-ns <Unix纳秒> --wheel-ids <前ID,左ID,右ID> [--calibration-range-tolerances-raw <六臂raw容差,逗号分隔>]
@@ -339,18 +340,19 @@ fn do_write<T: robot_adapter_feetech::SerialTransport>(
 fn main() -> ExitCode {
     robot_logging::set_process_name("robot-feetech");
     let args: Vec<String> = std::env::args().collect();
-    if matches!(
-        args.get(3).map(String::as_str),
-        Some("mixed-hold-wheel" | "mixed-hold-wheel9" | "mixed-hold-direction")
-    ) {
-        return mixed_maintenance::main(&args);
-    }
-    if matches!(
-        args.get(3).map(String::as_str),
-        Some("mixed-hold-right9" | "mixed-hold-left9")
-    ) {
-        eprintln!("error: 旧轮位维护入口已停用；请按总线配置重新生成当前计划");
-        return ExitCode::from(2);
+    let action = args.get(3).map_or("", String::as_str);
+    match action {
+        "mixed-hold-wheel"
+        | "mixed-hold-wheel9"
+        | "mixed-hold-direction"
+        | "mixed-ground-forward" => {
+            return mixed_maintenance::main(&args);
+        }
+        "mixed-hold-right9" | "mixed-hold-left9" => {
+            eprintln!("error: 旧轮位维护入口已停用；请按总线配置重新生成当前计划");
+            return ExitCode::from(2);
+        }
+        _ => {}
     }
     // 原裸wire入口继续使用原日志初始化，固定维护stdout只输出一份JSON。
     let _ = robot_logging::init();
@@ -371,7 +373,6 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let action = args[3].as_str();
 
     if let Err(error) = preflight_diagnostic_write(&args) {
         eprintln!("error: {error}");
