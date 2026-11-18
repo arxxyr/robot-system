@@ -5244,7 +5244,7 @@ backends = 42
             let wheels: Vec<_> = (0..9)
                 .filter(|&slot| c.hardware.is_wheel_slot(slot))
                 .collect();
-            for (&slot, raw) in wheels.iter().zip([500, 0, 500]) {
+            for (&slot, raw) in wheels.iter().zip([500, 0, -500]) {
                 velocities[slot] = raw;
             }
             let fixed_deadline = clock.now().0 + 100_000_000;
@@ -5421,7 +5421,7 @@ backends = 42
         #[test]
         fn simulated_base_rejects_unapproved_raw_arm_target_and_oversized_lease() {
             let (c, _, clock, feedback) = simulated_base_fixture();
-            for raw in [-500, 1, 499, 501, i16::MAX] {
+            for raw in [i16::MIN, -501, -499, 1, 499, 501, i16::MAX] {
                 assert!(
                     c.submit(
                         simulated_base_request(&c, &clock, &feedback, 1, raw),
@@ -5442,6 +5442,24 @@ backends = 42
                     }
                 })
                 .collect();
+            let mut invalid_combo = raw.clone();
+            let front = c
+                .hardware
+                .joints
+                .iter()
+                .position(|name| name == "base_front_wheel")
+                .unwrap();
+            invalid_combo[front] = -500;
+            let mut request = simulated_base_request(&c, &clock, &feedback, 1, 500);
+            request.payload = robot_msg::build_helpers::build_mixed_joint_command(
+                LAYOUT,
+                &held,
+                &invalid_combo,
+                clock.now().0 + 100_000_000,
+                10,
+                1,
+            );
+            assert!(c.submit(request, &clock).is_err());
             for (layout, deadline, changed_arm) in [
                 (LAYOUT + 1, clock.now().0 + 100_000_000, false),
                 (LAYOUT, clock.now().0 + 100_000_001, false),

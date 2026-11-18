@@ -4544,6 +4544,7 @@ dependencies = [
  "robot-adapter-feetech",
  "robot-core",
  "robot-health",
+ "robot-kinematics-xlerobot",
  "robot-logging",
  "robot-msg",
  "robot-transport",

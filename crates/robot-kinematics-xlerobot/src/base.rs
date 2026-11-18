@@ -1,19 +1,20 @@
-//! `XLeRobot` 三轮全向底盘的纯 SI 运动学。
+//! `XLeRobot` 三轮全向底盘运动学与模拟面板方向。
 //!
 //! 机身坐标为前进 `vx`、左移 `vy`、逆时针 `wz`；数组顺序固定为前轮、左轮、右轮。
 //! 设轮半径为 `r`，底盘中心到轮的半径为 `L`，`a = sqrt(3)/2`：
 //!
 //! ```text
 //! wf = (vy + L*wz)/r
-//! wl = (a*vx - vy/2 + L*wz)/r
-//! wr = (-a*vx - vy/2 + L*wz)/r
-//! vx = r*(wl-wr)/sqrt(3)
+//! wl = (-a*vx - vy/2 + L*wz)/r
+//! wr = (a*vx - vy/2 + L*wz)/r
+//! vx = r*(wr-wl)/sqrt(3)
 //! vy = r*(2*wf-wl-wr)/3
 //! wz = r*(wf+wl+wr)/(3*L)
 //! ```
 //!
-//! 沿现场上游的轮序及方向约定；不提供默认几何或默认实测轮速上限。
-//! 不转换电机 raw、不解释 Phase/零速语义、不做里程计或 S0/S1 硬件接入。
+//! 以机身前方为 0°，朝左为正角度，左轮位于 120°，右轮位于 240°。
+//! 从各轮外侧正对轮面，负轮速为逆时针。几何尺寸与轮速上限由调用方提供。
+//! 模拟方向使用固定 raw 档位，档位只用于验证各轮转向组合。
 //! 每次计算检查输入与中间值；中间溢出即拒绝，不借助后续除法把无穷大掩盖成零。
 
 use std::fmt;
@@ -27,6 +28,72 @@ pub struct PlanarBodyVelocity {
     pub vy_m_s: f64,
     /// 逆时针角速度，弧度/秒。
     pub wz_rad_s: f64,
+}
+
+/// 以机器人自身为参照的四个底盘方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseDirection {
+    /// 沿机身前方平移。
+    Forward,
+    /// 沿机身后方平移。
+    Backward,
+    /// 俯视时原地逆时针旋转。
+    RotateLeft,
+    /// 俯视时原地顺时针旋转。
+    RotateRight,
+}
+
+impl BaseDirection {
+    /// 模拟面板支持的全部方向。
+    pub const ALL: [Self; 4] = [
+        Self::Forward,
+        Self::Backward,
+        Self::RotateLeft,
+        Self::RotateRight,
+    ];
+
+    const SIMULATED_RAW_SPEED: i16 = 500;
+
+    /// 与 SI 变换共用轮切向投影，按前、左、右返回 −1、0 或 +1。
+    #[must_use]
+    pub fn wheel_signs(self) -> [i16; 3] {
+        let (forward, rotation) = match self {
+            Self::Forward => (1.0, 0.0),
+            Self::Backward => (-1.0, 0.0),
+            Self::RotateLeft => (0.0, 1.0),
+            Self::RotateRight => (0.0, -1.0),
+        };
+        wheel_tangents(forward, 0.0, rotation)
+            .map(|speed| i16::from(speed > 0.0) - i16::from(speed < 0.0))
+    }
+
+    /// 模拟面板的固定档位，按前、左、右返回各轮有符号目标。
+    #[must_use]
+    pub fn wheel_raw(self) -> [i16; 3] {
+        self.wheel_signs()
+            .map(|sign| sign * Self::SIMULATED_RAW_SPEED)
+    }
+
+    /// 兼容原模拟入口的各轮 0/+500；含负值的请求仅接受已核对的方向组合。
+    #[must_use]
+    pub fn accepts_simulated_raw(wheels: [i16; 3]) -> bool {
+        wheels
+            .iter()
+            .all(|&raw| matches!(raw, 0 | Self::SIMULATED_RAW_SPEED))
+            || Self::ALL
+                .into_iter()
+                .any(|direction| direction.wheel_raw() == wheels)
+    }
+}
+
+// forward 是纵向速度在右轮切线上的有符号投影，rotation 是各轮共同的旋转分量。
+fn wheel_tangents(forward: f64, lateral: f64, rotation: f64) -> [f64; 3] {
+    let half_lateral = lateral / 2.0;
+    [
+        lateral + rotation,
+        (-forward - half_lateral) + rotation,
+        (forward - half_lateral) + rotation,
+    ]
 }
 
 /// 具名轮角速度，均为弧度/秒；不是电机原始寄存器值。
@@ -152,10 +219,7 @@ impl XLeRobotOmniKinematics {
         validate_body(body)?;
         let rotation = finite(self.base_radius_m * body.wz_rad_s)?;
         let forward = finite((3.0_f64.sqrt() / 2.0) * body.vx_m_s)?;
-        let half_left = finite(body.vy_m_s / 2.0)?;
-        let front = finite(body.vy_m_s + rotation)?;
-        let left = finite(finite(forward - half_left)? + rotation)?;
-        let right = finite(finite(-forward - half_left)? + rotation)?;
+        let [front, left, right] = wheel_tangents(forward, body.vy_m_s, rotation);
         Ok(XLeRobotWheelVelocities {
             front_rad_s: finite(front / self.wheel_radius_m)?,
             left_rad_s: finite(left / self.wheel_radius_m)?,
@@ -169,7 +233,7 @@ impl XLeRobotOmniKinematics {
         wheels: XLeRobotWheelVelocities,
     ) -> Result<PlanarBodyVelocity, BaseKinematicsError> {
         let [front, left, right] = wheels.to_role_order()?;
-        let difference = finite(left - right)?;
+        let difference = finite(right - left)?;
         let lateral = finite(finite(finite(2.0 * front)? - left)? - right)?;
         let sum = finite(finite(front + left)? + right)?;
         let rotation_denominator = finite(3.0 * self.base_radius_m)?;
@@ -323,10 +387,10 @@ mod tests {
 
     #[test]
     fn forward_basis_absolute_golden_with_nonunit_geometry() {
-        // r=0.2米、L=0.5米，vx=1米/秒；前轮为零，左右轮分别为±sqrt(3)/0.4。
+        // r=0.2米、L=0.5米，vx=1米/秒；前轮为零，左轮负、右轮正。
         assert_wheels(
             model(20.0).body_to_wheels(body([1.0, 0.0, 0.0])).unwrap(),
-            [0.0, 4.330_127_018_922_193, -4.330_127_018_922_193],
+            [0.0, -4.330_127_018_922_193, 4.330_127_018_922_193],
         );
     }
 
@@ -347,25 +411,58 @@ mod tests {
     }
 
     #[test]
+    fn four_directions_match_physical_wheel_roles() {
+        for (direction, expected) in [
+            (BaseDirection::Forward, [0, -1, 1]),
+            (BaseDirection::Backward, [0, 1, -1]),
+            (BaseDirection::RotateLeft, [1, 1, 1]),
+            (BaseDirection::RotateRight, [-1, -1, -1]),
+        ] {
+            assert_eq!(direction.wheel_signs(), expected);
+        }
+    }
+
+    #[test]
+    fn simulated_raw_accepts_original_positive_combinations_and_only_known_directions() {
+        for front in [-500, 0, 500] {
+            for left in [-500, 0, 500] {
+                for right in [-500, 0, 500] {
+                    let wheels = [front, left, right];
+                    let original = wheels.iter().all(|&speed| speed >= 0);
+                    let reverse =
+                        matches!(wheels, [0, -500, 500] | [0, 500, -500] | [-500, -500, -500]);
+                    assert_eq!(
+                        BaseDirection::accepts_simulated_raw(wheels),
+                        original || reverse
+                    );
+                }
+            }
+        }
+        for wheels in [[0, -499, 499], [0, -501, 501], [501; 3], [i16::MIN; 3]] {
+            assert!(!BaseDirection::accepts_simulated_raw(wheels));
+        }
+    }
+
+    #[test]
     fn mixed_body_absolute_golden_then_round_trip() {
         let model = model(20.0);
         let actual = model.body_to_wheels(body([0.4, -0.3, 0.2])).unwrap();
         assert_wheels(
             actual,
-            [-1.0, 2.982_050_807_568_877, -0.482_050_807_568_877_2],
+            [-1.0, -0.482_050_807_568_877_2, 2.982_050_807_568_877],
         );
         assert_body(model.wheels_to_body(actual).unwrap(), [0.4, -0.3, 0.2]);
     }
 
     #[test]
     fn inverse_absolute_golden_independent_of_forward_output() {
-        // 指定独立轮速[2,4,-2]，手算vx=1.2/sqrt(3)、vy=0.4/3、wz=0.8/1.5。
+        // 指定独立轮速[2,4,-2]，手算vx=-1.2/sqrt(3)、vy=0.4/3、wz=0.8/1.5。
         assert_body(
             model(20.0)
                 .wheels_to_body(wheels([2.0, 4.0, -2.0]))
                 .unwrap(),
             [
-                0.692_820_323_027_550_9,
+                -0.692_820_323_027_550_9,
                 0.133_333_333_333_333_33,
                 0.533_333_333_333_333_3,
             ],
@@ -398,7 +495,7 @@ mod tests {
         assert_body(
             model.wheels_to_body(wheels([-2.0, -4.0, 2.0])).unwrap(),
             [
-                -0.692_820_323_027_550_9,
+                0.692_820_323_027_550_9,
                 -0.133_333_333_333_333_33,
                 -0.533_333_333_333_333_3,
             ],

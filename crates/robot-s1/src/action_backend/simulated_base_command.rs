@@ -1,8 +1,8 @@
 //! 模拟专用的有界三轮命令，沿原 InvokeTask、Coordinator 和单 publisher。
 //!
 //! 仅 `test-base-command` 特性和显式 `simulated_base_command` profile 可接入。
-//! 使用既有混合 JointCommand 载荷，位置字段作为提交时原位前提，三轮各仅
-//! 允许 raw0/+500。每次明确按住输入给出有界期限，tick 和连接心跳均不续期；断联由该
+//! 使用既有混合 JointCommand，保持提交时的右臂位置，只接受经核对的三轮组合。
+//! 每次明确按住输入给出有界期限，tick 和连接心跳均不续期；断联由该
 //! 短租期兜底，不把 RPC 连接关闭伪装成主动取消。零速发布不是硬件停止读回。
 
 use crate::action::{
@@ -10,8 +10,8 @@ use crate::action::{
     ActionOutcome, ActionRequest, ActionStartError, ActionTickOutput, JointCommandBody,
 };
 use crate::single_joint::{SingleJointConfig, position_for_s0};
-use robot_adapter_feetech::velocity_profile::Sts3215RawWheelProfile;
 use robot_core::wheel_velocity_profile::COMMAND_TTL_MAX_NS;
+use robot_kinematics_xlerobot::base::BaseDirection;
 use robot_msg::build_helpers::build_mixed_joint_command;
 use robot_msg::msg::{ControlMode, JointCommand, StaleAction};
 use robot_msg::schema_id::SCHEMA_JOINT_COMMAND;
@@ -116,8 +116,8 @@ impl ActionBackend for SimulatedBaseCommandBackend {
         let mut velocities = [0_i16; 9];
         for (slot, position) in held.iter_mut().enumerate() {
             if ctx.hardware.is_wheel_slot(slot) {
-                if target.get(slot) != 0.0 || !Sts3215RawWheelProfile::accepts_raw(raw.get(slot)) {
-                    return Err(reject("三轮仅接受原混合合同raw0/+500，轮位置必须为0"));
+                if target.get(slot) != 0.0 {
+                    return Err(reject("轮位置必须为0"));
                 }
                 velocities[slot] = raw.get(slot);
                 *position = 0.0;
@@ -128,6 +128,23 @@ impl ActionBackend for SimulatedBaseCommandBackend {
             {
                 return Err(reject("底盘请求不得改变右臂原位或填写臂速度"));
             }
+        }
+        let wheel_raw = |role: &str| {
+            ctx.hardware
+                .joints
+                .iter()
+                .position(|joint| joint == role)
+                .filter(|&slot| ctx.hardware.is_wheel_slot(slot))
+                .map(|slot| velocities[slot])
+                .ok_or_else(|| reject("模拟底盘缺少对应的轮角色"))
+        };
+        let wheels = [
+            wheel_raw("base_front_wheel")?,
+            wheel_raw("base_left_wheel")?,
+            wheel_raw("base_right_wheel")?,
+        ];
+        if !BaseDirection::accepts_simulated_raw(wheels) {
+            return Err(reject("三轮目标超出模拟允许的轮速组合"));
         }
         let instance = BaseCommandInstance {
             held,

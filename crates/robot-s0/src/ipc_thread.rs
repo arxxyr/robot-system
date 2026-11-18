@@ -1359,6 +1359,31 @@ mod tests {
     }
 
     #[test]
+    fn signed_wheel_commands_require_the_in_memory_serial_adapter() {
+        let mut hw = mixed_hardware();
+        let reverse = [-500, 0, 500];
+        let mut raw = [0; 9];
+        raw[6..].copy_from_slice(&reverse);
+        let body = mixed_body(Some(&[0.0; 9]), Some(&raw), 200, StaleAction::Hold);
+        let fb = flatbuffers::root::<FbJointCommand>(&body).unwrap();
+        let real = XleRobotBus2Layout::from_hardware(&hw).unwrap();
+        assert!(parse_joint_command(&fb, 100, MonoRawNs(150), Some(&real)).is_err());
+
+        hw.adapter = "mock_serial_rt".into();
+        let layout = XleRobotBus2Layout::from_hardware(&hw);
+        assert_eq!(layout.is_ok(), cfg!(feature = "mock-only"));
+        if let Ok(mock) = layout {
+            let cmd = parse_joint_command(&fb, 100, MonoRawNs(150), Some(&mock)).unwrap();
+            assert_eq!(&cmd.raw_velocities[..9], &raw);
+            raw[6] = -501;
+            assert!(
+                mock.command_from_config_slots([0.0; 9], raw, 1, 100, 200)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn mixed_command_requires_opt_in_and_rejects_raw_under_old_position_mode() {
         let body = mixed_body(Some(&[0.0; 9]), Some(&[0; 9]), 200, StaleAction::Hold);
         assert_eq!(

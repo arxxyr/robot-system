@@ -28,6 +28,7 @@ publish    .workspace = true
 
 [dependencies]
 robot-core = { workspace = true }
+robot-kinematics-xlerobot = { workspace = true, optional = true }
 # 状态页原位校验复用纯换算，不启用 real-hw。
 robot-adapter-feetech = { workspace = true, optional = true }
 # robot-msg 复用 ClearEStopRequest / ClearEStopResponse / RpcRole / RpcStatus
@@ -127,7 +128,7 @@ client = []
 # HTTP/WebSocket状态与控制页；控制缺省关闭，不改变robot-gateway默认构建。
 status-web = ["client", "dep:axum", "dep:futures-util", "dep:serde_json", "dep:jpeg-encoder", "dep:robot-adapter-feetech"]
 # 底盘按住控制仅供隔离软件模拟，正式构建与配置均不默认启用。
-test-base-command = ["status-web"]
+test-base-command = ["status-web", "dep:robot-kinematics-xlerobot"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/gateway/test/freeze`
 # 注入线程 + `TestFreezeCommandV2` / `WorkerKind` pub 导出给 sd_watchdog_smoke

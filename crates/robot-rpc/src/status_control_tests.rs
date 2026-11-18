@@ -44,6 +44,31 @@ mod base_control {
                 .prepare_base(&request, &source, &view(&source), "owner", &connected, 1, 1)
                 .is_ok()
         );
+        let snapshot = serde_json::to_value(control.base_view(&source, &view(&source), 1)).unwrap();
+        let directions = snapshot["directions"].as_array().unwrap();
+        assert_eq!(directions.len(), 4);
+        for (direction, [front, left, right]) in [
+            ("forward", [0, -500, 500]),
+            ("backward", [0, 500, -500]),
+            ("turn_left", [500, 500, 500]),
+            ("turn_right", [-500, -500, -500]),
+        ] {
+            let preset = directions
+                .iter()
+                .find(|p| p["direction"] == direction)
+                .unwrap();
+            assert_eq!(
+                preset["wheels_raw"],
+                serde_json::json!({ "front": front, "left": left, "right": right })
+            );
+            let mut signed = request.clone();
+            signed.wheels_raw = Some(WheelsRaw { front, left, right });
+            assert!(
+                control
+                    .prepare_base(&signed, &source, &view(&source), "owner", &connected, 1, 1)
+                    .is_ok()
+            );
+        }
         let mut v4 = request;
         v4.hold_id = Some("550e8400-e29b-41d4-a716-446655440000".into());
         assert!(v4.validate_shape().is_err());
@@ -79,6 +104,7 @@ mod base_control {
             seq: 1,
             deadline_ns: deadline,
             anchor,
+            wheels_raw: request.wheels_raw,
             closed: false,
             cancel_sent: false,
         });
@@ -104,6 +130,17 @@ mod base_control {
                 .prepare_base(
                     &request, &source, &state, "owner", &connected, deadline, deadline
                 )
+                .is_err()
+        );
+        let mut redirect = request.clone();
+        redirect.wheels_raw = Some(WheelsRaw {
+            front: -500,
+            left: -500,
+            right: -500,
+        });
+        assert!(
+            control
+                .prepare_base(&redirect, &source, &state, "owner", &connected, 2, 2)
                 .is_err()
         );
         control.base.as_mut().unwrap().closed = true;
@@ -135,6 +172,7 @@ mod base_control {
             seq: 1,
             deadline_ns: 100_000_001,
             anchor: vec![0.0; 9],
+            wheels_raw: request.wheels_raw,
             closed: true,
             cancel_sent: false,
         });

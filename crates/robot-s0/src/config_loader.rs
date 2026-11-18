@@ -159,7 +159,7 @@ pub struct HardwareSection {
     /// 与 `joints/motor_ids` 同序的校准边界容差（raw）；省略为全0。
     #[serde(default)]
     pub calibration_range_tolerances_raw: Option<Vec<u16>>,
-    /// 显式启用右总线六臂位置＋三轮0/+500 raw合同；省略保持旧Position路径。
+    /// 右总线六臂位置与三轮 raw 混合布局。实机轮速仅允许 0/+500。
     #[serde(default)]
     pub feetech_bus2_mixed_raw: bool,
     /// **v0.5 候选 C**：启动是否自动 enable（design §7.2 `auto_enable`，B2 typed 化，
@@ -192,6 +192,13 @@ pub fn resolve_hardware_section<'a>(
     hardware_id: &str,
 ) -> Option<&'a HardwareSection> {
     cfg.hardware.iter().find(|h| h.id == hardware_id)
+}
+
+impl HardwareSection {
+    /// 仅 mock-only 构建的内存串行适配器支持反向模拟。
+    pub(crate) fn simulates_wheel_directions(&self) -> bool {
+        cfg!(feature = "mock-only") && self.adapter == "mock_serial_rt"
+    }
 }
 
 /// resolved `[[hardware]]` 段内容校验错误（v0.5 候选 E 段(2)，PC1）。
@@ -227,7 +234,7 @@ pub enum HardwareSectionError {
     DupMotorId { id: String, motor_id: u8 },
     #[error("[[hardware]] id={id}: 校准边界容差须与 joints 等长且每项在0..=4095")]
     InvalidCalibrationTolerances { id: String },
-    #[error("[[hardware]] id={id}: feetech_bus2_mixed_raw仅适用于feetech_sts3215")]
+    #[error("[[hardware]] id={id}: 当前适配器不支持右总线位置/raw混合配置")]
     MixedRawRequiresFeetech { id: String },
     #[error("[[hardware]] id={id}: 位置/raw混合模式需要完整、匹配的右总线布局")]
     InvalidMixedBus2Layout { id: String },
@@ -267,7 +274,10 @@ pub fn validate_hardware_section(hw: &HardwareSection) -> Result<(), HardwareSec
             });
         }
     }
-    if hw.feetech_bus2_mixed_raw && hw.adapter != "feetech_sts3215" {
+    if hw.feetech_bus2_mixed_raw
+        && hw.adapter != "feetech_sts3215"
+        && !hw.simulates_wheel_directions()
+    {
         return Err(HardwareSectionError::MixedRawRequiresFeetech { id: hw.id.clone() });
     }
     if hw.joints.len() > robot_core::adapter::MAX_JOINTS {

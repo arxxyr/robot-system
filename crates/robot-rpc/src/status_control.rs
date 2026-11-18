@@ -203,7 +203,7 @@ pub(super) enum Operation {
     BaseStop,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WheelsRaw {
     front: i16,
@@ -380,6 +380,9 @@ pub(super) struct View {
 pub(super) struct BaseView {
     pub enabled: bool,
     pub can_hold: bool,
+    #[cfg(feature = "test-base-command")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    directions: Option<&'static [base::Preset; 4]>,
     pub active: bool,
     pub hold_id: Option<String>,
     pub seq: Option<String>,
@@ -393,6 +396,7 @@ struct BaseHold {
     seq: u64,
     deadline_ns: u64,
     anchor: Vec<f64>,
+    wheels_raw: Option<WheelsRaw>,
     closed: bool,
     cancel_sent: bool,
 }

@@ -103,7 +103,7 @@ impl Mirrors {
     }
 
     fn run(&self, shutdown: &watch::Receiver<bool>) -> Result<(), String> {
-        let mut config = iceoryx2::config::Config::default();
+        let mut config = iceoryx2::config::Config::global_config().clone();
         config.global.node.cleanup_dead_nodes_on_creation = false;
         config.global.node.cleanup_dead_nodes_on_destruction = false;
         let node = NodeBuilder::new()

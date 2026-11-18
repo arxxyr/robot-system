@@ -9,6 +9,34 @@ use super::{
 };
 use robot_core::wheel_velocity_profile::COMMAND_TTL_MAX_NS;
 
+#[cfg(feature = "test-base-command")]
+#[derive(serde::Serialize)]
+pub(super) struct Preset {
+    direction: &'static str,
+    wheels_raw: WheelsRaw,
+}
+
+#[cfg(feature = "test-base-command")]
+static DIRECTIONS: std::sync::LazyLock<[Preset; 4]> = std::sync::LazyLock::new(|| {
+    use robot_kinematics_xlerobot::base::BaseDirection::{
+        Backward, Forward, RotateLeft, RotateRight,
+    };
+
+    [
+        ("forward", Forward),
+        ("backward", Backward),
+        ("turn_left", RotateLeft),
+        ("turn_right", RotateRight),
+    ]
+    .map(|(direction, motion)| {
+        let [front, left, right] = motion.wheel_raw();
+        Preset {
+            direction,
+            wheels_raw: WheelsRaw { front, left, right },
+        }
+    })
+});
+
 pub(in crate::status_web) fn wheel_slots(source: &Source) -> Result<[usize; 3], String> {
     if !source.mixed_raw || source.layout.joints.len() != 9 {
         return Err("模拟底盘仅接受现有九槽混合总线".into());
@@ -100,6 +128,8 @@ impl ControlState {
         BaseView {
             enabled,
             can_hold: check.is_ok(),
+            #[cfg(feature = "test-base-command")]
+            directions: enabled.then_some(&DIRECTIONS),
             active,
             hold_id: self.base.as_ref().map(|base| base.id.clone()),
             seq: self.base.as_ref().map(|base| base.seq.to_string()),
@@ -160,13 +190,16 @@ impl ControlState {
         }
         let current = ready(source, state)?;
         let raw = request.wheels_raw.ok_or("缺少三轮原始值")?;
-        if ![raw.front, raw.left, raw.right]
-            .into_iter()
-            .all(robot_adapter_feetech::velocity_profile::Sts3215RawWheelProfile::accepts_raw)
-        {
-            return Err("三轮仅支持已验raw0/+500".into());
+        #[cfg(feature = "test-base-command")]
+        if !robot_kinematics_xlerobot::base::BaseDirection::accepts_simulated_raw([
+            raw.front, raw.left, raw.right,
+        ]) {
+            return Err("轮速组合超出底盘模拟范围".into());
         }
         if let Some(base) = same {
+            if base.wheels_raw != Some(raw) {
+                return Err("同一次按住不能改变轮速或方向".into());
+            }
             if base.owner != owner
                 || seq != base.seq.checked_add(1).ok_or("底盘序号耗尽")?
                 || base.closed
@@ -228,6 +261,7 @@ impl ControlState {
             seq,
             deadline_ns: deadline,
             anchor: anchor.clone(),
+            wheels_raw: request.wheels_raw,
             closed: true,
             cancel_sent: stop,
         });

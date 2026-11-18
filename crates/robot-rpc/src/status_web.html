@@ -64,8 +64,8 @@
     .state-note[data-tone="warn"] { background: #fff7e9; color: var(--amber); }
     .state-note[data-tone="bad"] { background: #fff1ef; color: var(--red); }
     .control-panel { border-top: 1px solid var(--line); padding: 18px 22px; }
-    #base-hold { touch-action: none; user-select: none; }
-    #base-hold[aria-pressed="true"] { background: var(--green); }
+    [data-base-direction] { touch-action: none; user-select: none; }
+    [data-base-direction][aria-pressed="true"] { background: var(--green); }
     .control-panel h4 { margin: 0; font-size: 14px; }
     .control-panel p { margin: 8px 0; font-size: 12px; overflow-wrap: anywhere; }
     .control-scope, .control-limits, .control-enable-note { color: var(--muted); }
@@ -317,9 +317,12 @@
     <section id="panel-base" class="view-panel" role="tabpanel" aria-labelledby="nav-base" hidden>
       <div class="section-row"><h2>底盘</h2></div>
       <div class="resources">
-        <p>模拟三轮同速运行（raw +500），右臂保持原位。松开即请求停止。</p>
+        <p>按住方向键模拟运动，松开停止。右臂保持原位。</p>
         <div class="connection-actions">
-          <button id="base-hold" type="button" aria-pressed="false" disabled>按住运转</button>
+          <button data-base-direction="forward" type="button" aria-pressed="false" disabled>前进</button>
+          <button data-base-direction="backward" type="button" aria-pressed="false" disabled>后退</button>
+          <button data-base-direction="turn_left" type="button" aria-pressed="false" disabled>原地左旋</button>
+          <button data-base-direction="turn_right" type="button" aria-pressed="false" disabled>原地右旋</button>
           <button id="base-stop" type="button" class="secondary" disabled>停止</button>
         </div>
         <p id="base-feedback" role="status">等待状态数据</p>
@@ -798,7 +801,7 @@
         catch { controlRequests.get(bus.id).status = 'unknown'; }
         updateControl(control, bus);
       }
-      const baseButton = document.getElementById('base-hold');
+      const baseButtons = document.querySelectorAll('[data-base-direction]');
       const baseStop = document.getElementById('base-stop');
       const baseFeedback = document.getElementById('base-feedback');
       let baseGesture = null;
@@ -811,11 +814,16 @@
       function renderBase() {
         const bus = baseBus();
         const fresh = bus && connected && activeSession?.socket.readyState === WebSocket.OPEN && statusOf(bus) === 'fresh';
-        setProperty(baseButton, 'disabled', !baseGesture && !(fresh && bus.control.base.can_hold && !bus.control.base.active));
-        setAttribute(baseButton, 'aria-pressed', Boolean(baseGesture));
+        for (const button of baseButtons) {
+          const pressed = baseGesture?.button === button;
+          const available = fresh && bus.control.base.can_hold && !bus.control.base.active
+            && bus.control.base.directions?.some(preset => preset.direction === button.dataset.baseDirection);
+          setProperty(button, 'disabled', baseGesture ? !pressed : !available);
+          setAttribute(button, 'aria-pressed', pressed);
+        }
         setProperty(baseStop, 'disabled', !baseGesture);
-        const status = baseGesture ? '按住中' : baseMessage || (fresh
-          ? (bus.control.base.can_hold ? '可按住运转' : bus.control.base.reason || '请在关节页查看右侧总线状态。')
+        const status = baseGesture ? baseGesture.button.textContent + ' · 按住中' : baseMessage || (fresh
+          ? (bus.control.base.can_hold ? '可按住方向键' : bus.control.base.reason || '请在关节页查看右侧总线状态。')
           : (connected ? '当前配置未开放底盘模拟，或右侧反馈已过期。' : '等待状态连接'));
         setText(baseFeedback, status);
       }
@@ -848,7 +856,7 @@
           return;
         }
         const request = baseFrame(gesture, 'base_hold');
-        request.wheels_raw = { front: 500, left: 500, right: 500 };
+        request.wheels_raw = gesture.wheelsRaw;
         gesture.pending = request.request_id;
         gesture.sentAt = performance.now();
         try { activeSession.socket.send(JSON.stringify(request)); }
@@ -861,13 +869,14 @@
         const random = crypto.randomUUID();
         return millis.slice(0, 8) + '-' + millis.slice(8) + '-7' + random.slice(15);
       }
-      function beginBase(input) {
-        if (baseGesture || baseButton.disabled || document.hidden || activeView !== 'base') return;
+      function beginBase(button, input) {
+        if (baseGesture || button.disabled || document.hidden || activeView !== 'base') return;
         const bus = baseBus();
-        if (!bus || !bus.control.base.can_hold || statusOf(bus) !== 'fresh') return;
+        const preset = bus?.control.base.directions?.find(item => item.direction === button.dataset.baseDirection);
+        if (!preset || !bus.control.base.can_hold || bus.control.base.active || statusOf(bus) !== 'fresh') return;
         baseMessage = '';
         baseStopRequest = null;
-        baseGesture = { id: newBaseActionId(), input, busId: bus.id, processId: bus.control.process_id,
+        baseGesture = { id: newBaseActionId(), input, button, wheelsRaw: preset.wheels_raw, busId: bus.id, processId: bus.control.process_id,
           revision: bus.control.revision, seq: 0, sentAt: performance.now(), session: activeSession };
         sendBaseHold(baseGesture);
         renderBase();
@@ -891,22 +900,28 @@
         }
         g.timer = setTimeout(() => sendBaseHold(g), Math.max(0, 30 - elapsed));
       }
-      baseButton.addEventListener('pointerdown', e => {
-        if (!e.isPrimary || e.button !== 0 || baseGesture) return;
-        e.preventDefault();
-        baseButton.setPointerCapture(e.pointerId);
-        beginBase(e.pointerId);
-      });
-      for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-        baseButton.addEventListener(event, e => { if (baseGesture?.input === e.pointerId) stopBase(); });
+      for (const button of baseButtons) {
+        button.addEventListener('pointerdown', e => {
+          if (!e.isPrimary || e.button !== 0 || baseGesture) return;
+          e.preventDefault();
+          button.setPointerCapture(e.pointerId);
+          beginBase(button, e.pointerId);
+        });
+        for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+          button.addEventListener(event, e => {
+            if (baseGesture?.button === button && baseGesture.input === e.pointerId) stopBase();
+          });
+        }
+        button.addEventListener('keydown', e => {
+          if (![' ', 'Enter'].includes(e.key)) return;
+          e.preventDefault();
+          if (!e.repeat) beginBase(button, e.key);
+        });
+        button.addEventListener('keyup', e => {
+          if (baseGesture?.button === button && baseGesture.input === e.key) stopBase();
+        });
+        button.addEventListener('blur', () => { if (baseGesture?.button === button) stopBase(); });
       }
-      baseButton.addEventListener('keydown', e => {
-        if (![' ', 'Enter'].includes(e.key)) return;
-        e.preventDefault();
-        if (!e.repeat) beginBase(e.key);
-      });
-      baseButton.addEventListener('keyup', e => { if (baseGesture?.input === e.key) stopBase(); });
-      baseButton.addEventListener('blur', () => stopBase());
       baseStop.addEventListener('click', () => stopBase());
       window.addEventListener('blur', () => stopBase());
       function makeJoint(joint) {

@@ -48,14 +48,16 @@ const BUS2_JOINTS: [&str; 9] = [
 #[derive(Clone, Copy, Debug)]
 pub struct XleRobotBus2Layout {
     slots: [usize; 9],
+    simulated_wheels: bool,
 }
 
 impl XleRobotBus2Layout {
     /// # Errors
     /// 右总线九关节的名称/ID 缺失、重复或错配。
     pub fn from_hardware(hardware: &HardwareSection) -> Result<Self, RobotError> {
+        let simulated_wheels = hardware.simulates_wheel_directions();
         if hardware.id != "right_arm_full_with_base"
-            || hardware.adapter != "feetech_sts3215"
+            || !(hardware.adapter == "feetech_sts3215" || simulated_wheels)
             || hardware.joints.len() != 9
             || hardware.motor_ids.len() != 9
         {
@@ -83,7 +85,10 @@ impl XleRobotBus2Layout {
             seen_ids |= 1 << id;
             slots[logical] = slot;
         }
-        Ok(Self { slots })
+        Ok(Self {
+            slots,
+            simulated_wheels,
+        })
     }
 
     /// 将 wire 的完整配置槽位解回既有混合目标，拒绝跨组字段及未批准 raw。
@@ -98,9 +103,11 @@ impl XleRobotBus2Layout {
         if self.slots[..6]
             .iter()
             .any(|&slot| raw_velocities[slot] != 0)
-            || self.slots[6..]
-                .iter()
-                .any(|&slot| positions[slot] != 0.0 || !matches!(raw_velocities[slot], 0 | 500))
+            || self.slots[6..].iter().any(|&slot| {
+                let raw = raw_velocities[slot];
+                positions[slot] != 0.0
+                    || !(matches!(raw, 0 | 500) || (self.simulated_wheels && raw == -500))
+            })
         {
             return Err(RobotError::InvalidParameter(
                 "混合wire的槽位字段或raw速度无效",

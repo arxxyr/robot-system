@@ -36,7 +36,7 @@ mod base_panel {
             "bus_id":bus["id"], "process_id":bus["control"]["process_id"], "revision":revision,
             "operation":operation,"hold_id":hold,"seq":seq.to_string()});
         if operation == "base_hold" {
-            value["wheels_raw"] = json!({"front":500,"left":0,"right":500});
+            value["wheels_raw"] = json!({"front":0,"left":-500,"right":500});
         }
         value
     }
@@ -102,7 +102,7 @@ mod base_panel {
                 flatbuffers::root::<robot_msg::msg::JointCommand<'_>>(&invocation.payload).unwrap();
             assert_eq!(
                 wire.raw_velocities().unwrap().iter().collect::<Vec<_>>(),
-                [0, 0, 0, 0, 0, 0, 500, 500, 0]
+                [0, 0, 0, 0, 0, 0, 500, 0, -500]
             );
             assert!(wire.target().unwrap().iter().all(|v| v == 0.0));
             assert!(wire.source_task_id() > previous_sequence);
@@ -614,7 +614,7 @@ fn spawn_mirrors(
     let stop = Arc::new(AtomicBool::new(false));
     let stopped = Arc::clone(&stop);
     let worker = std::thread::spawn(move || {
-        let mut config = iceoryx2::config::Config::default();
+        let mut config = iceoryx2::config::Config::global_config().clone();
         config.global.node.cleanup_dead_nodes_on_creation = false;
         config.global.node.cleanup_dead_nodes_on_destruction = false;
         let node = NodeBuilder::new()
