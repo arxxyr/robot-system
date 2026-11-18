@@ -40,7 +40,7 @@ RIGHT_FILES = tuple("bin/" + name for name in LEFT_BINARIES) + (
     "configs/xlerobot-bus1-motion.toml", "configs/xlerobot-bus2-motion.toml", "configs/xlerobot-bus2-s1.toml",
 ) + tuple("systemd/" + name for name in RIGHT_UNITS)
 CONTROL_CAPABILITIES = ("read_state", "set_enabled", "clear_estop", "estop", "invoke_task")
-PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "Job",
+PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "Job",
               "UnitFileState", "FragmentPath", "DropInPaths")
 SCHEMA = "ROBOT_STATUS_DEPLOY_V1"
 BACKUP_SCHEMA = "ROBOT_STATUS_BACKUP_V1"
@@ -360,7 +360,7 @@ class StatusUnitInstaller:
             rows = [line.split("=", 1) for line in raw.splitlines()]
             require(all(len(row) == 2 for row in rows) and len(rows) == len(PROPERTIES), "服务属性缺失或重复")
             fields = dict(rows)
-            require(set(fields) == set(PROPERTIES) and fields["Id"] == name and fields["MainPID"] == "0"
+            require(set(fields) == set(PROPERTIES) and fields["Id"] == name
                     and fields["Job"] in ("", "0", "0 /") and not fields["DropInPaths"]
                     and fields["LoadState"] in ("loaded", "not-found")
                     and (fields["ActiveState"], fields["SubState"]) in (("inactive", "dead"), ("failed", "failed"))

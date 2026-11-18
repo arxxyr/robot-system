@@ -279,6 +279,14 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             a.validate_cargo_build(self.cargo("production", "s1", mutate), "production", "s1")
 
+    def test_completion_with_child_already_reaped(self):
+        ref = self.receipt(["test"], "")
+        row = a.read_pinned_json(ref)
+        row["boot_id"] = row.pop("identity")["boot_id"]
+        del row["pid"]
+        ref = self.write(Path(ref["path"]).relative_to(self.root), row)
+        self.assertEqual(a.receipt_boot_id(a.validate_completion(ref)), row["boot_id"])
+
     def test_completion_rejections(self):
         for key, value in (("exit_code", 1), ("reaped", False), ("signals", ["TERM"]),
                            ("runner_error", "timeout"), ("ended_monotonic_ns", 0)):
@@ -364,11 +372,15 @@ class ArtifactTests(unittest.TestCase):
         drift["boot_id"] = "changed"
         with self.assertRaises(ValueError):
             a.validate_installed_snapshot(drift, baseline)
-        for key, value in (("ActiveState", "active"), ("SubState", "running"), ("MainPID", "10")):
+        for key, value in (("ActiveState", "active"), ("SubState", "running"), ("Job", "10")):
             drift = copy.deepcopy(baseline)
             drift["units"][a.BUSINESS_UNITS[0]][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 a.validate_installed_snapshot(drift, drift)
+
+        drift = copy.deepcopy(baseline)
+        drift["units"][a.BUSINESS_UNITS[0]]["MainPID"] = "10"
+        self.assertTrue(a.validate_installed_snapshot(drift, baseline)["valid"])
 
     def test_absent_legacy_unit_is_occupancy_only_and_job_is_rejected(self):
         fields = dict(Id=a.BUSINESS_UNITS[0], LoadState='not-found', ActiveState='inactive', SubState='dead', MainPID='0', Job='0')
@@ -402,6 +414,12 @@ class ArtifactTests(unittest.TestCase):
                     "files": {name: {} for name in [*("installed:" + n for n in a.INSTALLED_NAMES),
                                                      "config:left", "config:right", "config:roles"]}}
 
+        cmd = "{ path=/bin/true ; argv[]=/bin/true ; ignore_errors=no ; start_time=t ; stop_time=t ; pid=12 ; code=exited ; status=0 }"
+        before = snapshot(read(dict(properties, ExecStart=cmd)))
+        after = snapshot(read(dict(properties, ExecStart=cmd.replace("pid=12", "pid=14"))))
+        self.assertTrue(a.validate_installed_snapshot(after, before)["valid"])
+        with self.assertRaises(ValueError):
+            a.validate_installed_snapshot(snapshot(read(dict(properties, ExecStart=cmd.replace("/bin/true", "/bin/false")))), before)
         baseline = snapshot(read(properties))
         for key in a.UNIT_DEPENDENCY_PROPERTIES:
             reordered = dict(properties, **{key: "a.service b.service a.service"})
@@ -466,7 +484,7 @@ class ArtifactTests(unittest.TestCase):
                 a.read_systemd_unit(unit)
         with patch.object(a.subprocess, "run", side_effect=[show(["ExecStop"]), TimeoutError("超时")]), self.assertRaises(TimeoutError):
             a.read_systemd_unit(unit)
-        for missing in (("MainPID",), ("ExecStop", "Environment")):
+        for missing in (("ActiveState",), ("ExecStop", "Environment")):
             with patch.object(a.subprocess, "run", return_value=show(missing)) as run, self.assertRaises(ValueError):
                 a.read_systemd_unit(unit)
             self.assertEqual(run.call_count, 1)

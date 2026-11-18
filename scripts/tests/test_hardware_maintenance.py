@@ -798,7 +798,7 @@ class FeedbackIO:
         self.motor=motor
         self.t=0;self.sequence=0;self.commands=[];self.calls=[]
         self.child=None;self.interrupted=None;self.evidence_errors=[]
-        self.process_snapshots=[];self.journal=io.StringIO()
+        self.journal=io.StringIO()
         self.fail_at=None;self.torque_at=None;self.signal_at=None;self.bad_at=None
         self.slow_at=None;self.slow_ns=0;self.velocity_index=0;self.position_index=0
         self.positions=[1212]*5;self.velocities=[0,50,-50,50,0];self.goal_at=None
@@ -866,7 +866,7 @@ class ClassificationTests(unittest.TestCase):
         names=['rx_trust_marker','rx_trust_marker.bak','estop_latch','estop_latch.bak','rx_trust.lock','estop_latch.lock']
         return (['ref:/first','ref:/next']+[f'protection:{side}/{name}' for side in m.SERIALS for name in names]
                 +[f'service:{unit}' for unit in m.UNITS+m.OLD_UNITS+[m.HANDOFF_UNIT]]
-                +['process_snapshot']+[f"holder:{side}:{'sudo' if elevated else 'ordinary'}" for side in m.SERIALS for elevated in (False,True)]
+                +[f"holder:{side}:{'sudo' if elevated else 'ordinary'}" for side in m.SERIALS for elevated in (False,True)]
                 +['usb:left','usb:right'])
 
     def fixture(self):
@@ -894,7 +894,6 @@ class ClassificationTests(unittest.TestCase):
         with (patch.object(m,'verify_ref',side_effect=lambda r,**k:None if r['path']==reference['path'] else verifier('ref:'+r['path'])),
                 patch.object(m,'verify_protection_file',side_effect=lambda side,name,r:verifier(f'protection:{side}/{name}')),
                 patch.object(m,'inspect_unit',side_effect=lambda io,unit,**k:verifier('service:'+unit)),
-                patch.object(m,'inspect_processes',side_effect=lambda *a,**k:verifier('process_snapshot')),
                 patch.object(m,'inspect_holder',side_effect=lambda io,device,elevated,**k:verifier('holder:'+next(s for s,d in m.DEVICES.items() if d==device)+(':sudo' if elevated else ':ordinary'))),
                 patch.object(m,'usb_identity',side_effect=lambda io,side,b,**k:verifier('usb:'+side)),
                 contextlib.redirect_stdout(io.StringIO())):
@@ -1153,7 +1152,7 @@ class ClassificationTests(unittest.TestCase):
         class IntegratedIO:
             def __init__(self,tool,output):
                 self.regs=idle_rows();self.calls=[];self.child=None;self.interrupted=None;self.commands=[]
-                self.process_snapshots=[];self.evidence_errors=[];self.journal=io.StringIO();self.t=0;self.output=Path(output)
+                self.evidence_errors=[];self.journal=io.StringIO();self.t=0;self.output=Path(output)
                 self.feedback=SnapshotIO(self.regs);self.sequence=0
             def mark_signal(self,*args):raise AssertionError('本例不发送信号')
             def check(self):pass
@@ -1177,7 +1176,7 @@ class ClassificationTests(unittest.TestCase):
         def boot_or_text(path,*args,**kwargs):
             return 'unit-boot' if path==Path('/proc/sys/kernel/random/boot_id') else read_text(path,*args,**kwargs)
         with tempfile.TemporaryDirectory() as temp:
-            namespace=Path(temp).resolve();root=namespace/'approved';root.mkdir();helper=root/'helper.py';helper.write_text('# 纯本机测试helper\n')
+            namespace=Path(temp).resolve();root=namespace/'approved';root.mkdir();helper=root/'helper.py';helper.write_text('raise ImportError("独立维护路径不应载入 S0 辅助模块")\n')
             helper_data=helper.read_bytes();protection={}
             reference=feedback_reference(root/'b2')
             for side in m.SERIALS:
@@ -1198,7 +1197,6 @@ class ClassificationTests(unittest.TestCase):
                   patch.object(m,'verify_ref',return_value=None),patch.object(m,'protected_and_refs'),patch.object(m,'verify_protection_file',return_value=None),
                   patch.object(m,'idle'),patch.object(m,'usb_identity',side_effect=lambda *a,**k:post.append('usb')),
                   patch.object(m,'inspect_unit',side_effect=lambda *a,**k:post.append('unit')),
-                  patch.object(m,'inspect_processes',side_effect=lambda *a,**k:post.append('proc')),
                   patch.object(m,'inspect_holder',side_effect=lambda *a,**k:post.append('holder')),
                   patch.object(m.signal,'signal'),contextlib.redirect_stdout(io.StringIO())):
                 plan=m.make_plan(bindings,root/'run','run',root)
@@ -1224,7 +1222,7 @@ class ClassificationTests(unittest.TestCase):
                 calls=[c for c in executor.calls if c[0]==f'right:{motor}']
                 self.assertEqual(len(calls),12)
                 self.assertTrue(all(c[1]=='read' for c in calls))
-            self.assertEqual(post.count('unit'),20);self.assertEqual(post.count('proc'),1);self.assertEqual(post.count('holder'),4)
+            self.assertEqual(post.count('unit'),20);self.assertEqual(post.count('holder'),4)
             self.assertTrue(Path(str(approval)+'.consumed').is_file())
             self.assertTrue(all(Path(r['path']).read_bytes()==b'unchanged\n' for files in protection.values() for r in files.values()))
 
@@ -3222,7 +3220,7 @@ class WheelFeedbackTests(unittest.TestCase):
     def check_execute_cases(self,faults,*,front=False,left=False):
         for fault in faults:
             root=self.root/str(fault);root.mkdir()
-            helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+            helper=root/'helper.py';helper.write_text('raise ImportError("只读维护路径不应载入 S0 辅助模块")\n')
             bindings=self.bindings();bindings['proc_helper']={'path':str(helper)}
             bindings['protection']={}
             for side in m.SERIALS:
@@ -3249,9 +3247,8 @@ class WheelFeedbackTests(unittest.TestCase):
                   patch.object(Path,'read_text',read_boot),patch.object(m,'RealExecutor',return_value=executor),
                   patch.object(m,'verify_ref',return_value=None),patch.object(m,'protected_and_refs'),patch.object(m,'verify_protection_file',return_value=None),
                   patch.object(m,'idle'),patch.object(m,'usb_identity',return_value=None),patch.object(m,'inspect_unit',return_value=None),
-                  patch.object(m,'inspect_processes',return_value=None,
-                               side_effect=ValueError('后验身份未知') if fault=='post' else None) as process,
-                  patch.object(m,'inspect_holder',return_value=None),
+                  patch.object(m,'inspect_holder',return_value=None,
+                               side_effect=ValueError('设备仍被占用') if fault=='post' else None) as holder,
                   patch.object(m,'snapshot',side_effect=AssertionError('只读不可整机snapshot')) as snapshot,
                   patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')) as motion,
                   patch.object(m,'finish_verification',side_effect=AssertionError('不可STOP收尾')) as finish,
@@ -3263,7 +3260,7 @@ class WheelFeedbackTests(unittest.TestCase):
                 go=self.go(plan,m.time.time_ns());approval=root/'go.json';m.write_new(approval,go)
                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called()
-                self.assertEqual(process.call_count,1)
+                self.assertEqual(holder.call_count,4)
             if fault=='report':
                 self.assertFalse((root/'run/run.json').exists())
                 report=json.loads(messages.getvalue().splitlines()[-1])
@@ -3771,7 +3768,7 @@ class ArmRangeTests(unittest.TestCase):
 
     def test_execute_dispatch_locks_one_shot_go_and_nonuart_finish_in_success_and_failure(self):
         for fault,arm_range_id in [(fault,None) for fault in (None,3,'post','journal','report','expired')]+[(None,3),(3,3)]:
-            root=self.root/f'{fault}-{arm_range_id}';root.mkdir();helper=root/'helper.py';helper.write_text('# 本机空helper\n')
+            root=self.root/f'{fault}-{arm_range_id}';root.mkdir();helper=root/'helper.py';helper.write_text('raise ImportError("只读维护路径不应载入 S0 辅助模块")\n')
             bindings=self.bindings();bindings['proc_helper']={'path':str(helper),
                 'sha256':hashlib.sha256(helper.read_bytes()).hexdigest(),'bytes':helper.stat().st_size}
             bindings['protection']={}
@@ -3799,11 +3796,11 @@ class ArmRangeTests(unittest.TestCase):
                         (Path,'read_text',{'new':read_boot}),(m,'RealExecutor',{'return_value':executor}),
                         (m,'protected_and_refs',{'return_value':None}),(m,'verify_protection_file',{'return_value':None}),
                         (m,'idle',{'return_value':None}),(m,'usb_identity',{'return_value':None}),
-                        (m,'inspect_unit',{'return_value':None}),(m,'inspect_holder',{'return_value':None}),
+                        (m,'inspect_unit',{'return_value':None}),
                         (m,'write_new',{'side_effect':write_report}),(m.signal,'signal',{})):
                     stack.enter_context(patch.object(target,name,**kwargs))
-                process=stack.enter_context(patch.object(m,'inspect_processes',
-                    return_value=None,side_effect=ValueError('后验身份未知') if fault=='post' else None))
+                holder=stack.enter_context(patch.object(m,'inspect_holder',
+                    return_value=None,side_effect=ValueError('设备仍被占用') if fault=='post' else None))
                 pulse=stack.enter_context(patch.object(m,'load_right_pulse_helper',side_effect=AssertionError('不可依赖mixed新ELF/strace')))
                 snapshot=stack.enter_context(patch.object(m,'snapshot',side_effect=AssertionError('不可整机snapshot')))
                 motion=stack.enter_context(patch.object(m,'run_motion_probes',side_effect=AssertionError('不可动作')))
@@ -3818,7 +3815,7 @@ class ArmRangeTests(unittest.TestCase):
                 self.assertEqual(m.execute(plan,go,approval),0 if fault is None else 1)
                 with self.assertRaises(ValueError):m.execute(plan,go,approval)
                 snapshot.assert_not_called();motion.assert_not_called();finish.assert_not_called();safe_off.assert_not_called();pulse.assert_not_called()
-                self.assertEqual(process.call_count,1)
+                self.assertEqual(holder.call_count,4)
             report=json.loads(messages.getvalue().splitlines()[-1]) if fault=='report' else json.loads((root/'run/run.json').read_text())
             self.assertEqual(report['result'],'DIAGNOSTIC_CAPTURED' if fault is None else 'NEEDS_MANUAL_POWER_CUT')
             self.assertEqual(report['arm_range_capture']['status'],'DIAGNOSTIC_CAPTURED' if fault is None else 'FAIL')
@@ -4377,7 +4374,7 @@ class S0MixedBridgeTests(unittest.TestCase):
         self.assertEqual(contract['wheel_ids'],[7,8,9]);self.assertEqual(contract['selected_motor_id'],8)
         self.assertEqual(m.wheel_ids(),[8,9,7])
 
-    def test_right_persistent_rename_and_lock_pid_are_allowed_but_left_or_lock_inode_changes_fail(self):
+    def test_persistent_rename_and_lock_text_are_allowed_but_lock_inode_changes_fail(self):
         right=self.bindings['protection']['right'];left=self.bindings['protection']['left']
         Path(right['rx_trust.lock']['path']).write_text('12345\n')
         marker=Path(right['rx_trust_marker']['path']);replacement=marker.with_name('new-marker')
@@ -4388,7 +4385,7 @@ class S0MixedBridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
         Path(right['estop_latch']['path']).write_bytes(b'1\n')
         Path(left['rx_trust.lock']['path']).write_text('changed\n')
-        with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
+        m.verify_s0_protection(self.bindings,'final')
         Path(left['rx_trust.lock']['path']).write_bytes(b'1\n')
         lock=Path(right['rx_trust.lock']['path']);replacement.write_bytes(b'1\n');replacement.replace(lock)
         with self.assertRaises(ValueError):m.verify_s0_protection(self.bindings,'final')
@@ -4429,39 +4426,22 @@ class S0MixedBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'保护文件身份/权限变化'):
             m.verify_s0_protection(self.bindings,'authorized')
 
-    def test_eacces_identity_uses_original_privileged_snapshot_and_preserves_unknown(self):
-        identity={'pid':123,'start_ticks':0,'boot_id':'boot','pgid':123,'uids':[os.getuid()]*4,
-                  'exe':'/bound/daemon','argv':['/bound/daemon']}
-        executor=SimpleNamespace(output=self.output,process_snapshots=[])
-        probe=lambda _:None
-        helper=SimpleNamespace(read_process=lambda _:{'status':'permission'},privileged_process_probe=probe)
-        def snapshot(*args,**kwargs):
-            self.assertEqual(args[0],123);self.assertIs(kwargs['probe_runner'],probe)
-            return {'related':[identity],'unreadable':[],'clean':False,'ordinary_denied':[{'pid':123}]}
-        helper.process_snapshot=snapshot
-        self.assertEqual(m.s0_process_identity(executor,helper,123),identity)
-        self.assertEqual(executor.process_snapshots[-1]['ordinary_denied'],[{'pid':123}])
-        helper.process_snapshot=lambda *args,**kwargs:{'related':[identity],'unreadable':[{'pid':999}]}
-        with self.assertRaises(ValueError):m.s0_process_identity(executor,helper,123)
-        helper.read_process=lambda _:{'status':'vanished'}
-        with self.assertRaises(ValueError):m.s0_process_identity(executor,helper,123)
-
-    def test_running_process_allowance_is_full_identity_only_and_never_changes_raw_clean(self):
-        identity={'pid':123,'start_ticks':0,'boot_id':'boot','pgid':123,'uids':[os.getuid()]*4,
-                  'exe':'/bound/daemon','argv':['/bound/daemon','--config','/bound/config']}
-        executor=SimpleNamespace(output=self.output,process_snapshots=[])
-        def helper(row,unreadable=()):
-            return SimpleNamespace(privileged_process_probe=lambda _:None,
-                process_snapshot=lambda *args,**kwargs:{'clean':False,'related':[row],'unreadable':list(unreadable)})
-        snapshot=m.inspect_processes(executor,self.bindings,helper(identity),owned=[identity])
-        self.assertFalse(snapshot['clean']);self.assertTrue(snapshot['s0_owned_only'])
-        for key,value in (('pid',124),('start_ticks',1),('boot_id','other'),('pgid',125),
-                          ('uids',[0]*4),('exe','/other'),('argv',['/other'])):
-            bad={**identity,key:value}
-            with self.subTest(key=key),self.assertRaises(ValueError):
-                m.inspect_processes(executor,self.bindings,helper(bad),owned=[identity])
-        with self.assertRaises(ValueError):
-            m.inspect_processes(executor,self.bindings,helper(identity,[{'pid':999}]),owned=[identity])
+    def test_kernel_lock_owner_independent_of_lock_file_text(self):
+        side='right';pid=123
+        files=self.bindings['protection'][side]
+        locks=[]
+        original=Path.read_text
+        for name in ('rx_trust.lock','estop_latch.lock'):
+            ref=files[name];Path(ref['path']).write_text('旧所有者记录')
+            key=f'{os.major(ref["device"]):02x}:{os.minor(ref["device"]):02x}:{ref["inode"]}'
+            locks.append(f'1: FLOCK ADVISORY WRITE {pid} {key} 0 EOF')
+        def current(path,*args,**kwargs):
+            if str(path)=='/proc/locks':return '\n'.join(locks)
+            return original(path,*args,**kwargs)
+        with patch.object(Path,'read_text',current):
+            m.verify_s0_daemon_locks(self.bindings,{'pid':pid},side)
+            with self.assertRaises(ValueError):
+                m.verify_s0_daemon_locks(self.bindings,{'pid':pid+1},side)
 
     def run_bridge(self,fault=None,*,pin_latches=False):
         events=[];identities={};daemon_locks=[];key,active_side=m.s0_plan_entry(self.plan);contract=self.plan[key]
@@ -4517,7 +4497,6 @@ class S0MixedBridgeTests(unittest.TestCase):
             for name in ('rx_trust_marker','rx_trust_marker.bak'):
                 Path(self.bindings['protection'][active_side][name]['path']).write_bytes(b'1\n')
             kwargs['stdout'].write(b'No config\nboot_ready spawned_ns=1 first_exit_ns=2 ready_ns=3\n');kwargs['stdout'].flush()
-            if fault=='daemon_bind':identities[process.pid]['argv']=['wrong']
             return process
         def command(argv,**kwargs):
             if kwargs.get('s0_control'):
@@ -4538,7 +4517,6 @@ class S0MixedBridgeTests(unittest.TestCase):
             self.assertTrue(locks_present(active_side));executor.child=Process(910002,argv);executor.s0_sender_started=True
             if fault=='camera_replace':identities[910010]={**identities[910010],'start_ticks':13}
             if fault=='camera_early_exit':identities.pop(910010)
-            executor.s0_bind_process(executor.child,argv,'sender')
             try:kwargs['mixed_stop_check']()
             except BaseException:
                 identities.pop(executor.child.pid);executor.child=None
@@ -4564,15 +4542,16 @@ class S0MixedBridgeTests(unittest.TestCase):
         executor.command=command
         helper=SimpleNamespace(clean_environment=lambda env:dict(env),
             read_process=lambda pid:({'status':'observed','identity':identities[pid]} if pid in identities else {'pid':pid,'status':'vanished'}),
-            privileged_process_probe=lambda _:None,
-            process_snapshot=lambda *args,**kwargs:{'clean':not identities,'related':list(identities.values()),'unreadable':[]})
+            privileged_process_probe=lambda _:None)
         def holder(*args,**kwargs):
             if args[1] not in m.DEVICES.values():
                 events.append(('camera_holder',args[1],args[2]));self.assertFalse(identities)
                 return {'path':args[1],'elevated':args[2],'stdout_empty':True,'exit_code':1}
             events.append(('holder',));self.assertFalse(identities)
             self.assertTrue(locks_present(held_side));self.assertTrue(locks_present(active_side));return {}
-        def check_owned(*args):self.assertTrue(locks_present(active_side))
+        def check_owned(*args):
+            self.assertTrue(locks_present(active_side))
+            if fault=='daemon_lock':raise ValueError('实际锁持有者不符')
         with contextlib.ExitStack() as stack:
             locks={}
             for side in m.SERIALS:
@@ -4631,11 +4610,11 @@ class S0MixedBridgeTests(unittest.TestCase):
         self.assertFalse(any(event[0]=='holder' for event in events))
         self.assertEqual([event for event in events if event[0]=='signal'],[('signal',signal.SIGTERM)])
 
-    def test_bind_failure_still_terminates_and_waits_for_its_owned_daemon(self):
-        executor,engine,report,events=self.run_bridge('daemon_bind')
+    def test_foreign_kernel_lock_blocks_sender_and_still_reaps_owned_daemon(self):
+        executor,engine,report,events=self.run_bridge('daemon_lock')
         self.assertIn(('signal',signal.SIGTERM),events);self.assertIn(('wait',8.0),events)
-        self.assertIsNone(executor.s0_daemon);self.assertTrue(engine.manual_cut)
-        self.assertTrue(report['s0_cleanup_errors']);self.assertFalse(any(event[0]=='sender' for event in events))
+        self.assertIsNone(executor.s0_daemon);self.assertTrue(executor.s0_post_ready)
+        self.assertFalse(any(event[0]=='sender' for event in events))
 
     def test_sender_unknown_cleanup_stays_manual_even_after_files_and_locks_return(self):
         executor,engine,report,events=self.run_bridge('sender')
@@ -4774,7 +4753,7 @@ class S0PositionBridgeTests(unittest.TestCase):
             self.assertEqual(m.classify_run_result(bad),'FAIL')
 
     def test_left_failure_reclaims_locks_preserves_failure_and_never_retries_sender(self):
-        for fault in ('authorize','daemon_bind','sender','sender_stop','latch','daemon_timeout'):
+        for fault in ('authorize','daemon_lock','sender','sender_stop','latch','daemon_timeout'):
             with self.subTest(fault=fault):
                 self.output=self.root/f'failure-{fault}';self.output.mkdir();self.plan['output']=str(self.output)
                 executor,engine,report,events=self.run_bridge(fault)
@@ -4786,7 +4765,7 @@ class S0PositionBridgeTests(unittest.TestCase):
                     self.assertFalse(executor.s0_post_ready);self.assertIsNotNone(executor.s0_daemon)
                 elif fault=='latch':self.assertFalse(executor.s0_post_ready)
                 else:self.assertTrue(executor.s0_post_ready)
-                if fault!='authorize':self.assertTrue(engine.manual_cut)
+                if fault not in ('authorize','daemon_lock'):self.assertTrue(engine.manual_cut)
                 # 下一次仅为独立软件fixture；恢复原保护绑定，不复用任何运行结果。
                 for side,files in self.bindings['protection'].items():
                     for name,ref in list(files.items()):
@@ -4980,8 +4959,8 @@ class S0CameraBridgeTests(unittest.TestCase):
         self.assertTrue(all(row['terminated'] for row in report['s0_camera_helper_exit_checks']))
 
     def test_pre_ready_failure_still_binds_and_reaps_camera_helpers(self):
-        executor,engine,report,events=self.run_bridge('daemon_bind')
-        self.assertTrue(engine.manual_cut);self.assertIsNone(executor.s0_daemon)
+        executor,engine,report,events=self.run_bridge('daemon_lock')
+        self.assertTrue(executor.s0_post_ready);self.assertIsNone(executor.s0_daemon)
         self.assertEqual(len(report['s0_camera_helpers']),len(self.bindings['cameras']))
         self.assertTrue(all(row['terminated'] for row in report['s0_camera_helper_exit_checks']))
         self.assertFalse(any(event[0]=='sender' for event in events))
@@ -4991,7 +4970,7 @@ class S0CameraBridgeTests(unittest.TestCase):
         identities={1000+index:{'pid':1000+index,'pgid':901,'start_ticks':123,'boot_id':'fixture-boot',
             'uids':[os.getuid()]*4,'state':'R','zombie':False,'exe':camera['python_executable']['path'],
             'argv':m.s0_camera_argv(camera)} for index,camera in enumerate(contract['cameras'])}
-        executor=SimpleNamespace(output=self.output,process_snapshots=[],s0_camera_helpers=[],s0_identities=[],s0_camera_helper_checks=[])
+        executor=SimpleNamespace(output=self.output,s0_camera_helpers=[],s0_camera_helper_checks=[])
         helper=SimpleNamespace(read_process=lambda pid:{'status':'observed','identity':copy.deepcopy(identities[pid])})
         with patch.object(m,'s0_child_pids',return_value=sorted(identities)),patch.object(m,'s0_parent_pid',return_value=901):
             m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
@@ -5006,16 +4985,18 @@ class S0CameraBridgeTests(unittest.TestCase):
             with patch.object(m,'s0_parent_pid',return_value=999),self.assertRaises(ValueError):
                 m.inspect_s0_camera_helpers(executor,helper,contract,daemon,complete=True)
 
-    def test_permission_fallback_selects_helper_parent_group_without_python_allowance(self):
-        identity={'pid':1234,'pgid':901,'boot_id':'fixture-boot','start_ticks':1,'uids':[os.getuid()]*4,
-                  'exe':'/bound/python','argv':['/bound/venv/bin/python','-I','/bound/helper']}
-        executor=SimpleNamespace(output=self.output,process_snapshots=[])
-        def snapshot(group,*args,**kwargs):
-            self.assertEqual(group,901)
-            return {'related':[identity],'unreadable':[],'ordinary_denied':[{'pid':1234}]}
-        helper=SimpleNamespace(read_process=lambda pid:{'status':'permission','before':{'pgid':901}},
-                               process_snapshot=snapshot,privileged_process_probe=lambda _:None)
-        self.assertEqual(m.s0_process_identity(executor,helper,1234),identity)
+    def test_permission_fallback_only_probes_the_selected_camera_pid(self):
+        owner={'pid':1234,'pgid':901,'boot_id':'fixture-boot','start_ticks':1,'uids':[os.getuid()]*4}
+        identity={**owner,'exe':'/bound/python','argv':['/bound/python','/bound/helper']}
+        def probe(candidates):
+            self.assertEqual(candidates,[owner])
+            return {'exit_code':0,'response':{'schema':'P7_PROC_PROBE_V1','reader_euid':0,
+                    'boot_id':owner['boot_id'],'rows':[{'pid':1234,'status':'observed','identity':identity}]}}
+        helper=SimpleNamespace(read_process=lambda pid:{'status':'permission','before':owner},privileged_process_probe=probe)
+        self.assertEqual(m.s0_process_identity(None,helper,owner['pid']),identity)
+        identity['start_ticks']+=1
+        with self.assertRaisesRegex(ValueError,'取证期间变化'):
+            m.s0_process_identity(None,helper,owner['pid'])
 
 
 class S0RightCameraBridgeTests(S0CameraBridgeTests):

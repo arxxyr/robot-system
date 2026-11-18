@@ -32,14 +32,22 @@ BUSINESS_UNITS = tuple(f"{prefix}-{role}-{side}{'-arm' if role == 's0' else ''}.
     "xlerobot-coordinator.service", "xlerobot-web.service", "robot-coordinator.service", "robot-web.service",
     *UNIT_NAMES[1:], *OLD_UNIT_NAMES[1:],
 )
-SYSTEMD_PROPERTIES = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "UnitFileState",
-                      "FragmentPath", "DropInPaths", "Job", "Result", "ExecMainCode", "ExecMainStatus")
-TERMINAL_PROPERTIES = ("ActiveState", "SubState", "MainPID", "Result", "ExecMainCode", "ExecMainStatus")
+UNIT_STATE_PROPERTIES = ("ActiveState", "SubState")
+INSTALL_PROPERTIES = ("Id", "LoadState", *UNIT_STATE_PROPERTIES, "UnitFileState", "FragmentPath", "DropInPaths")
+EXIT_PROPERTIES = ("Result", "ExecMainCode", "ExecMainStatus")
+SYSTEMD_PROPERTIES = (*INSTALL_PROPERTIES, "Job", *EXIT_PROPERTIES)
 PROTECTION_NAMES = ("rx_trust_marker", "rx_trust_marker.bak", "estop_latch", "estop_latch.bak",
                     "rx_trust.lock", "estop_latch.lock")
 CANDIDATE_FILES = {"camera_capture.py", "configs/xlerobot-bus1.toml", "configs/xlerobot-bus2.toml",
                    *("systemd/" + name for name in UNIT_NAMES)}
 CONTENT_KEYS = ("bytes", "sha256", "uid", "gid", "mode")
+
+
+def same_service_state(before, after, *, autostart_changed=()):
+    # 服务退出后的诊断字段可能由 systemd 回收；安装只比较当前状态与来源。
+    return before.keys() == after.keys() and all(
+        row[key] == after[name][key] for name, row in before.items() for key in INSTALL_PROPERTIES
+        if key != "UnitFileState" or name not in autostart_changed)
 
 
 def absolute(path):
@@ -61,6 +69,15 @@ def file_identity(path):
             == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
             "读取期间文件变化：" + str(path))
     return row
+
+
+def protection_lock_identity(path):
+    # 锁可原位改写持有者；同步域由单链接普通文件的实体与权限确定。
+    path = absolute(path)
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "保护锁必须为单链接普通文件：" + str(path))
+    return dict(path=str(path), device=info.st_dev, inode=info.st_ino, uid=info.st_uid, gid=info.st_gid,
+                mode=stat.S_IMODE(info.st_mode), nlink=info.st_nlink)
 
 
 def path_identity(path):
@@ -151,15 +168,14 @@ class S0UnitInstaller:
                 require(key not in fields, "systemctl 属性重复")
                 fields[key] = value
             require(set(fields) == set(SYSTEMD_PROPERTIES) and fields["Id"] == name, "systemctl 属性缺失或身份错误")
-            require(fields["Job"] == "", "服务存在待执行 Job：" + name)
-            require(fields["MainPID"] == "0", "服务仍有主进程：" + name)
+            require(fields["Job"] in ("", "0", "0 /"), "服务存在待执行 Job：" + name)
             # 仅撤销自启可接受本批三 unit 已退出的失败终态；不清除 Result。
             failed_current = (allow_failed_units and name in UNIT_NAMES and fields["LoadState"] == "loaded"
                               and (fields["ActiveState"], fields["SubState"]) == ("failed", "failed"))
             # 同名候选升级仅容纳已停稳的 Dirty 退出，不清除 systemd 保存的失败记录。
             failed_upgrade = (upgrade and name in UNIT_NAMES[1:] and fields["LoadState"] == "loaded"
-                              and tuple(fields[key] for key in TERMINAL_PROPERTIES)
-                              == ("failed", "failed", "0", "exit-code", "1", "1"))
+                              and (fields["ActiveState"], fields["SubState"]) == ("failed", "failed")
+                              and tuple(fields[key] for key in EXIT_PROPERTIES) == ("exit-code", "1", "1"))
             if failed_current or failed_upgrade:
                 pass
             elif name in PREFLIGHT_UNITS:
@@ -241,7 +257,8 @@ class S0UnitInstaller:
             require(set(document["protection"][side]) == set(PROTECTION_NAMES), "保护文件集合错误")
             for name, ref in document["protection"][side].items():
                 require(ref["path"] == str(directory / name), "保护文件路径错误")
-                result[ref["path"]] = file_identity(ref["path"])
+                identity = protection_lock_identity if name.endswith(".lock") else file_identity
+                result[ref["path"]] = identity(ref["path"])
         return result
 
     def _devices(self, document):
@@ -390,9 +407,8 @@ class S0UnitInstaller:
                 receipt["protection_after"] = after["protection"]
                 require(all(value == ("enabled" if enable else "disabled") for value in receipt["after"].values()), "自启状态未达到目标")
                 require(after["targets"] == state["targets"] and after["protection"] == state["protection"], "自启操作期间 unit 或保护文件变化")
-                require(all(after["services"][name] == ({**before, "UnitFileState": after["services"][name]["UnitFileState"]}
-                                                       if name in UNIT_NAMES else before)
-                            for name, before in state["services"].items()), "自启操作期间服务状态变化")
+                require(same_service_state(state["services"], after["services"], autostart_changed=UNIT_NAMES),
+                        "自启操作期间服务状态变化")
                 receipt["status"] = "PASS"
             except BaseException as error:
                 receipt.update(status="FAIL", error=repr(error))
@@ -450,7 +466,7 @@ class S0UnitInstaller:
             require(self._protection(state["document"]) == state["protection"], "备份期间保护状态变化")
             require(self._previous(state["document"]) == state["previous_candidate"], "备份期间上一版源文件身份变化")
             if state["previous_candidate"] is not None:
-                require(self._services(upgrade=True) == state["services"], "备份期间服务状态变化")
+                require(same_service_state(state["services"], self._services(upgrade=True)), "备份期间服务状态变化")
             record = dict(schema=BACKUP_SCHEMA, renames=dict(zip(OLD_UNIT_NAMES, UNIT_NAMES)),
                           candidate=str(self.candidate), manifest_sha256=self.manifest_sha256,
                           unit_directory=str(self.unit_directory), originals=state["targets"], saved=saved,
@@ -491,11 +507,12 @@ class S0UnitInstaller:
             require(old["exists"] is True and same_content(old, expected), "同名升级备份原件不匹配上一版：" + name)
         require(isinstance(record.get("services"), dict)
                 and set(record["services"]) == set((*BUSINESS_UNITS, *PREFLIGHT_UNITS)), "同名升级备份服务集合错误")
-        complete = all(isinstance(service, dict) and set(service) == set(SYSTEMD_PROPERTIES)
-                       for service in record["services"].values())
+        # 旧备份额外保存 MainPID，不用于判断当前服务是否已退出。
+        fields = [set(service) - {"MainPID"} for service in record["services"].values() if isinstance(service, dict)]
+        require(len(fields) == len(record["services"]), "同名升级备份服务属性不完整")
+        complete = all(keys == set(SYSTEMD_PROPERTIES) for keys in fields)
         legacy_properties = set(SYSTEMD_PROPERTIES) - {"ExecMainCode", "ExecMainStatus"}
-        legacy = all(isinstance(service, dict) and set(service) == legacy_properties
-                     for service in record["services"].values())
+        legacy = all(keys == legacy_properties for keys in fields)
         require(complete or legacy, "同名升级备份服务属性不完整")
         for name in UNIT_NAMES:
             service = record["services"][name]
@@ -616,7 +633,7 @@ class S0UnitInstaller:
                 if upgrade:
                     require(all(after[name]["UnitFileState"] == record["services"][name]["UnitFileState"]
                                 for name in UNIT_NAMES), "换入后自启状态与备份不一致")
-                    require(all(all(state["services"][name][key] == after[name][key] for key in TERMINAL_PROPERTIES)
+                    require(all(all(state["services"][name][key] == after[name][key] for key in UNIT_STATE_PROPERTIES)
                                 for name in UNIT_NAMES), "同名升级期间服务终态变化")
                 for name, row in actual.items():
                     expected = record["originals"][name] if rollback else record["new_units"].get(name)
@@ -625,7 +642,7 @@ class S0UnitInstaller:
                             "换入后文件身份不符：" + name)
                 for name in PREFLIGHT_UNITS:
                     before_handoff, after_handoff = state["services"][name], after[name]
-                    require(all(before_handoff[key] == after_handoff[key] for key in ("ActiveState", "SubState", "MainPID")),
+                    require(all(before_handoff[key] == after_handoff[key] for key in UNIT_STATE_PROPERTIES),
                             "preflight 完成态变化：" + name)
                 require(self._protection(state["document"]) == state["protection"], "换入期间保护状态变化")
                 receipt["status"] = "PASS"

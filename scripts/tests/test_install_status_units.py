@@ -38,10 +38,10 @@ class FakeCommands:
         name = argv[2]
         exists = (self.directory / name).exists() and not self.stale_cache
         fields = {"Id": name, "LoadState": "loaded" if exists else "not-found", "ActiveState": "inactive",
-                  "SubState": "dead", "MainPID": "0", "Job": "", "UnitFileState": "disabled" if exists else "",
+                  "SubState": "dead", "Job": "", "UnitFileState": "disabled" if exists else "",
                   "FragmentPath": str(self.directory / name) if exists else "", "DropInPaths": ""}
         fields.update(self.overrides)
-        return subprocess.CompletedProcess(argv, 0, "\n".join(key + "=" + value for key, value in fields.items()), "")
+        return subprocess.CompletedProcess(argv, 0, "\n".join(key + "=" + fields[key] for key in installer.PROPERTIES), "")
 
 
 class StatusInstallTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class StatusInstallTests(unittest.TestCase):
         self.assertEqual(self.subject.check()["result"], "CHECK_PASS")
         self.assertEqual(list(self.units.iterdir()), before)
         self.assertEqual({call[2] for call in self.commands.calls}, set(installer.UNITS))
-        self.commands.overrides = {"MainPID": "123", "ActiveState": "active", "SubState": "running"}
+        self.commands.overrides = {"ActiveState": "active", "SubState": "running"}
         with self.assertRaises(ValueError):
             self.subject.check()
         self.assertEqual(installer.validate_candidate(self.candidate, self.digest)["runtime_commit"], "a" * 40)
@@ -189,7 +189,7 @@ class StatusInstallTests(unittest.TestCase):
             installer.validate_candidate(self.candidate, "0" * 64)
 
     def test_running_jobs_dropins_and_unexpected_fragments_are_rejected(self):
-        for change in ({"MainPID": "42"}, {"Job": "9 /job"}, {"ActiveState": "activating"},
+        for change in ({"ActiveState": "active", "SubState": "running"}, {"Job": "9 /job"}, {"ActiveState": "activating"},
                        {"DropInPaths": "/tmp/override.conf"}, {"UnitFileState": "enabled"},
                        {"FragmentPath": "/usr/lib/systemd/system/other.service"}):
             with self.subTest(change=change):

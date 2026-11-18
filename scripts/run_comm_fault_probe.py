@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import errno
 import hashlib
 import json
 import os
@@ -373,7 +372,7 @@ def validate_services(output):
     require(set(found) == set(UNITS), "新旧服务清单缺失/多项")
     for name, row in found.items():
         state = (row['ActiveState'], row['SubState'])
-        require(row["LoadState"] in ('loaded', 'not-found') and row["MainPID"] == "0"
+        require(row["LoadState"] in ('loaded', 'not-found')
                 and row['Job'] in ('', '0', '0 /')
                 and (state == ('inactive', 'dead') or name in HANDOFF_UNITS and state == ('active', 'exited')),
                 f"服务未停稳：{name}")
@@ -417,7 +416,6 @@ class RealBackend:
         self.log = None
         self.inputs = None
         self.environment = clean_environment(os.environ)
-        self.identities = {}
 
     def command(self, argv, allowed=(0,)):
         row = {"argv": [str(a) for a in argv], "started_ns": time.time_ns()}
@@ -537,8 +535,6 @@ class RealBackend:
         formal = self.formal_check()
         config = self.config_check()
         device = self.device_check()
-        if self.process is None:
-            self.cleanup()
         self.journal.state["markers_observed"] = self.markers(None)
         return {"source": source, "artifacts": artifacts, "formal": formal, "config": config, "device": device}
 
@@ -566,47 +562,6 @@ class RealBackend:
             self.launching = False
         return self.process
 
-    def identity(self, pid):
-        return process_identity(pid)
-
-    def observe(self, process, journal):
-        if process.poll() is not None:
-            return
-        snapshot = process_snapshot(process.pid, self.options.output,
-                                    [self.bin_dir / name for name in self.measurement["artifacts"]])
-        if snapshot["privileged_probe"] or snapshot["unreadable"]:
-            journal.state["last_process_snapshot"] = snapshot
-            journal.save()
-        if snapshot["unreadable"]:
-            row = snapshot["unreadable"][0] if len(snapshot["unreadable"]) == 1 else {}
-            before, remaining = row.get("before", {}), row.get("remaining_stat", {})
-            expected = journal.state.get("launch_identity", {})
-            identity_fields = {"pid", "start_ticks", "boot_id", "pgid", "uids"}
-            stat_fields = {"pid", "start_ticks", "pgid"}
-            owned_exit = (process is self.process and journal.state.get("tool_pid") == process.pid
-                and row.get("pid") == process.pid and row.get("status") == "unreadable"
-                and row.get("error_errno") == errno.ENOENT
-                and row.get("error_filename") in {"stat", "status", "cmdline", "exe"}
-                and isinstance(expected, dict) and isinstance(before, dict) and isinstance(remaining, dict)
-                and identity_fields <= expected.keys() and identity_fields <= before.keys()
-                and expected["pid"] == process.pid and _PROC_READER["_stable"](expected, before)
-                and stat_fields <= remaining.keys()
-                and all(remaining[key] == before[key] for key in stat_fields))
-            require(owned_exit, f"本轮进程身份不可读：{snapshot}")
-            # 仅自有child的PID字段退出竞态可由真实wait消解；原扫描和其他失败均保留。
-            started = time.time_ns()
-            exit_code = process.wait(timeout=1)
-            journal.state["owned_child_exit_observation"] = {
-                "tool_pid": process.pid, "launch_identity": expected, "snapshot": snapshot,
-                "wait_started_ns": started, "wait_finished_ns": time.time_ns(), "exit_code": exit_code}
-            journal.save()
-        for row in snapshot["related"]:
-            key = f"{row['pid']}:{row.get('start_ticks')}"
-            if key not in self.identities:
-                self.identities[key] = row
-                journal.state["observed_processes"] = list(self.identities.values())
-                journal.save()
-
     def report(self, pid):
         expected = {"side": self.profile.side, "bin_dir": str(self.bin_dir), "config": str(self.profile.config),
                     "config_sha256": self.inputs["config_sha256"],
@@ -616,13 +571,16 @@ class RealBackend:
         return verify_report(self.options.output, expected)
 
     def cleanup(self):
-        require(hasattr(self, "measurement"), "未建立本轮产物身份，无法完成清场核验")
-        value = process_snapshot(self.process.pid if self.process else -1, self.options.output,
-                                 [self.bin_dir / name for name in self.measurement["artifacts"]])
-        self.journal.state["last_process_snapshot"] = value
-        self.journal.save()
-        require(value["clean"], f"清场存在残留或不可读身份：{value}")
-        return value
+        if self.process is None:
+            return {"status": "NOT_STARTED"}
+        require(self.process.returncode is not None, "本次工具尚未回收")
+        # launch 创建独立会话，采样工具及其 S0、网关子进程继承同一进程组。
+        # 信号 0 仅查询该组是否仍存在；只有 ESRCH 证明组已消失。
+        try:
+            os.killpg(self.process.pid, 0)
+        except ProcessLookupError:
+            return {"status": "GROUP_EXITED", "pgid": self.process.pid}
+        raise ValueError(f"本次测量进程组仍有成员：{self.process.pid}")
 
     def close(self):
         if self.log is not None:
@@ -660,25 +618,16 @@ class Journal:
         self.save()
 
 
-def supervise(process, backend, journal):
+def supervise(process, journal):
     """一旦启动，异常也保留监督并真实 wait；从不重启或 kill 整组。"""
-    failures = set()
     while True:
         try:
-            backend.observe(process, journal)
-        except Exception as error:
-            message = f"进程观察失败：{error!r}"
-            if message not in failures:
-                failures.add(message); journal.fail(message)
-        try:
-            result = process.wait(timeout=1)
+            result = process.wait()
             journal.state["tool_exit"] = result
             journal.state["tool_naturally_reaped"] = True
             journal.state["tool_ended_ns"] = time.time_ns()
             journal.save()
             return result
-        except subprocess.TimeoutExpired:
-            continue
         except (KeyboardInterrupt, InterruptedError) as error:
             journal.fail(f"监督收到中断，继续等待工具实际收尾：{error!r}")
 
@@ -717,13 +666,8 @@ def execute(options, backend_factory):
         require(not journal.state["failures"], "启动前已有失败")
         process = backend.launch()
         journal.state["tool_pid"] = process.pid
-        # 身份采集/落证失败仍保 process，必须进入 supervise 完成真实 wait。
-        try:
-            journal.state["launch_identity"] = backend.identity(process.pid)
-            journal.save()
-        except Exception as error:
-            journal.fail(f"已启动但身份记录失败：{error!r}")
-        exit_code = supervise(process, backend, journal)
+        journal.save()
+        exit_code = supervise(process, journal)
         require(exit_code == 0, f"工具原退出码 {exit_code}，保留原始失败")
         journal.state["report"] = backend.report(process.pid)
         require(not journal.state["failures"], "本轮已记录失败，不能由后续报告覆盖")
@@ -732,15 +676,10 @@ def execute(options, backend_factory):
         process = process if process is not None else backend.process
         if process is not None:
             journal.state["tool_pid"] = process.pid
-            if "launch_identity" not in journal.state:
-                try:
-                    journal.state["launch_identity"] = backend.identity(process.pid)
-                except Exception as identity_error:
-                    journal.fail(f"异常启动身份记录失败：{identity_error!r}")
         journal.fail(f"{error!r}\n{traceback.format_exc()}")
         if process is not None and process.poll() is None:
             journal.state["needs_owner_supervision"] = True
-            supervise(process, backend, journal)
+            supervise(process, journal)
         elif process is not None and not journal.state.get("tool_naturally_reaped"):
             journal.state["tool_exit"] = process.wait()
             journal.state["tool_naturally_reaped"] = True

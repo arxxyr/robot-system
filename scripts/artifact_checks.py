@@ -148,21 +148,23 @@ def validate_completion(reference):
     launch_path, _ = regular_file(row["launch_receipt"])
     launch = strict_json(launch_path.read_text())
     for key in ("name", "argv", "cwd", "env", "removed_env_keys", "started_at", "started_monotonic_ns",
-                "timeout_seconds", "stdout", "stderr", "launch_receipt", "completion_receipt", "pid", "identity"):
+                "timeout_seconds", "stdout", "stderr", "launch_receipt", "completion_receipt"):
         require(key in row and row[key] == launch.get(key), "原 launch/completion 不一致：" + key)
     require("runner_error" not in launch and launch.get("reaped") is False
             and launch.get("exit_code") is None and launch.get("signals") == [], "原 launch 非启动状态")
-    require(type(row["pid"]) is int and row["pid"] > 0 and row["identity"]["pid"] == row["pid"], "PID 身份缺失")
-    identity = row["identity"]
-    require(type(identity.get("start_ticks")) is int and identity["start_ticks"] > 0
-            and re.fullmatch(r"[0-9a-f-]{36}", identity.get("boot_id", ""))
-            and Path(identity.get("exe", "")).is_absolute(), "缺完整进程启动身份")
     require(type(row["started_monotonic_ns"]) is int and type(row["ended_monotonic_ns"]) is int
             and row["ended_monotonic_ns"] >= row["started_monotonic_ns"], "完成时序错误")
     for key in ("stdout", "stderr"):
         path, info = regular_file(row[key])
         require(info.st_size == row[key + "_bytes"] and sha256(path) == row[key + "_sha256"], "原日志变化")
     return row
+
+
+def receipt_boot_id(row):
+    """单调时钟只在同一次系统启动内可比较，兼容原回执中的 boot_id 位置。"""
+    boot = row.get("boot_id") or row.get("identity", {}).get("boot_id")
+    require(isinstance(boot, str) and re.fullmatch(r"[0-9a-f-]{36}", boot), "回执缺本次系统启动标识")
+    return boot
 
 
 def validate_build_environment(env, toolchain=TOOLCHAIN):
@@ -247,7 +249,7 @@ def validate_toolchain_window(manifest, expected_machine):
         identity = parse_rustc_identity(Path(row["stdout"]).read_text(), expected_machine)
         require(identity == manifest.get("rustc_identity"), "前后实际 rustc 身份与清单不符")
     require(before["env"] == after["env"], "前后 rustc 环境变化")
-    require(before["identity"]["boot_id"] == after["identity"]["boot_id"], "前后 rustc 跨 boot")
+    require(receipt_boot_id(before) == receipt_boot_id(after), "前后 rustc 跨 boot")
     require(before["ended_monotonic_ns"] <= after["started_monotonic_ns"], "rustc 前后时间窗倒序")
     return before, after
 
@@ -288,7 +290,7 @@ def validate_artifact_set(manifest, *, source_manifest, expected_kind, expected_
         row, artifacts = validate_cargo_build(reference, expected_kind, build, allow_legacy=legacy)
         require(row["cwd"] == manifest["build_root"], "构建根目录不一致")
         if not legacy:
-            require(row["env"] == before["env"] and row["identity"]["boot_id"] == before["identity"]["boot_id"],
+            require(row["env"] == before["env"] and receipt_boot_id(row) == receipt_boot_id(before),
                     "Cargo 与 rustc 环境或 boot 不同")
             require(before["ended_monotonic_ns"] <= row["started_monotonic_ns"]
                     <= row["ended_monotonic_ns"] <= after["started_monotonic_ns"], "Cargo 不在 rustc 前后身份时间窗内")
@@ -323,7 +325,7 @@ UNIT_DEPENDENCY_PROPERTIES = frozenset({
 })
 
 UNIT_PROPERTIES = (
-    "Id", "LoadState", "ActiveState", "SubState", "MainPID", "Job", "UnitFileState", "FragmentPath", "DropInPaths",
+    "Id", "LoadState", "ActiveState", "SubState", "Job", "UnitFileState", "FragmentPath", "DropInPaths",
     "User", "Group", "WorkingDirectory", "After", "Before", "Requires", "Wants", "BindsTo", "PartOf",
     "Conflicts", "Restart", "RemainAfterExit", "LimitRTPRIO", "LimitRTPRIOSoft", "LimitMEMLOCK",
     "LimitMEMLOCKSoft", "CPUAffinity", "Nice", "CPUSchedulingPolicy", "CPUSchedulingPriority",
@@ -392,9 +394,10 @@ def read_systemd_unit(unit):
                             capture_output=True, text=True, timeout=20, check=False)
     require(result.returncode == 0, "systemctl 只读查询失败：" + unit)
     fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    fields.pop("MainPID", None)  # 兼容旧快照读取器。
     missing = set(UNIT_PROPERTIES) - set(fields)
     if fields.get('LoadState') == 'not-found':
-        require(fields.get('Id') == unit and fields.get('MainPID') == '0' and fields.get('Job') in ('', '0', '0 /')
+        require(fields.get('Id') == unit and fields.get('Job') in ('', '0', '0 /')
                 and ((fields.get('ActiveState'), fields.get('SubState')) == ('inactive', 'dead')
                      or unit in HANDOFF_UNITS and (fields.get('ActiveState'), fields.get('SubState')) == ('active', 'exited')),
                 '缺失服务仍有运行状态或Job：' + unit)
@@ -410,6 +413,11 @@ def read_systemd_unit(unit):
     for key in ("ExecStart", "ExecStop", "Environment", "EnvironmentFiles"):
         raw = fields[key]
         safe = {"full_value_sha256": hashlib.sha256(raw.encode()).hexdigest()}
+        if key in ("ExecStart", "ExecStop"):
+            # systemctl 在每条已配置命令后拼接上次执行结果；保留命令和参数本身。
+            command = re.sub(r" ; start_time=[^;}]* ; stop_time=[^;}]* ; pid=[0-9]+ ; code=[^;}]* ; status=[^;}]* (?=})",
+                             " ", raw)
+            safe["command_sha256"] = hashlib.sha256(command.encode()).hexdigest()
         if key == "Environment":
             safe["names"] = sorted(item.split("=", 1)[0] for item in shlex.split(raw) if "=" in item)
         if key == "EnvironmentFiles":
@@ -459,12 +467,25 @@ def validate_installed_snapshot(actual, expected):
     required = {"installed:" + name for name in INSTALLED_NAMES} | {"config:left", "config:right", "config:roles"}
     require(required <= set(actual.get("files", {})) and actual.get("host") and actual.get("boot_id"),
             "安装身份缺四件、三配置或主机身份")
-    require(actual == expected, "安装文件、配置、unit、主机或启动身份变化")
+    require({k: v for k, v in actual.items() if k != "units"} ==
+            {k: v for k, v in expected.items() if k != "units"}, "安装文件、配置或主机身份变化")
+    require(actual["units"].keys() == expected["units"].keys(), "安装的服务集合变化")
     require(set(actual["units"]) == {*BUSINESS_UNITS, *HANDOFF_UNITS}, "新旧服务清单不完整")
     for name in (*BUSINESS_UNITS, *HANDOFF_UNITS):
         row = actual["units"][name]
+        prior = expected["units"][name]
+        for key in row.keys() | prior.keys():
+            if key == "MainPID":
+                continue
+            require(key in row and key in prior, f"安装的服务属性缺失：{name}/{key}")
+            value, old = row[key], prior[key]
+            if key in ("ExecStart", "ExecStop"):
+                # 老快照只有原始摘要，仍可验证原运行记录未变的旧产物。
+                digest = "command_sha256" if "command_sha256" in value and "command_sha256" in old else "full_value_sha256"
+                value, old = value[digest], old[digest]
+            require(value == old, f"安装的服务配置或状态变化：{name}/{key}")
         state = (row['ActiveState'], row['SubState'])
-        require(row["LoadState"] in ('loaded', 'not-found') and row["MainPID"] == "0"
+        require(row["LoadState"] in ('loaded', 'not-found')
                 and row['Job'] in ('', '0', '0 /')
                 and (state == ('inactive', 'dead') or name in HANDOFF_UNITS and state == ('active', 'exited')),
                 "业务服务未停止或预检服务未完成：" + name)

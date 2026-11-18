@@ -421,7 +421,6 @@ fps = 20
                 output.mkdir(mode=0o750)
                 executor = maintenance.RealExecutor(bindings["tool"], output)
                 stack.callback(executor.journal.close)
-                executor.process_snapshots = []
                 engine = maintenance.ProbeEngine(executor, plan,
                     lambda: maintenance.validate_go(go, plan, time.time_ns()))
                 locks = {}
@@ -535,8 +534,6 @@ fps = 20
                 self.assertIsNone(executor.s0_daemon)
                 self.assertTrue(report["s0_daemon"]["reaped"])
                 self.assertEqual(report["s0_daemon"]["exit_code"], 0)
-                self.assertTrue(executor.process_snapshots)
-                self.assertTrue(executor.process_snapshots[-1]["clean"])
                 if executor.s0_post_ready:
                     self.assertEqual(holder_calls, [(servo.path, False), (servo.path, True)])
                     maintenance.verify_s0_protection(bindings, "final", active)

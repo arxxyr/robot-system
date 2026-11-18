@@ -465,5 +465,5 @@ def verify_report(directory: Path, expected: dict) -> dict:
         hashes[str(path.relative_to(directory))] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {"status": "PASS", "groups": 4, "samples": 4000, "warmup": 400,
             "attempts": len(attempts), "pids": pids, "original_hashes": hashes,
-            "child_stop_basis": "原始PASS仅在真实gateway/S0 stop各退出0后生成；另核外层PID清场",
+            "child_stop_basis": "原始PASS仅在真实gateway/S0 stop各退出0后生成；外层另核本次工具进程组退出",
             "deployable": False, "D15": "OPEN"}

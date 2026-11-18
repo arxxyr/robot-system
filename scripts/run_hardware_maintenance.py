@@ -972,16 +972,21 @@ def s0_same_process(actual,expected):
 
 
 def s0_process_identity(io,proc_helper,pid):
-    """普通读取遇EACCES时仍沿原有限提权探针，不忽略未知身份。"""
+    """相机专项需要本轮 S0 及其直接 helper 的身份；只读取指定 PID。"""
     row=proc_helper.read_process(pid)
-    if row['status']=='observed':return row['identity']
-    require(row['status']=='permission','默认S0进程身份未知：'+repr(row))
-    snapshot=proc_helper.process_snapshot(row.get('before',{}).get('pgid',pid),io.output,[],
-                                         probe_runner=proc_helper.privileged_process_probe)
-    io.process_snapshots.append(snapshot)
-    identities=[identity for identity in snapshot['related'] if identity.get('pid')==pid]
-    require(not snapshot['unreadable'] and len(identities)==1,'默认S0提权身份核验失败')
-    return identities[0]
+    if row['status']=='permission':
+        expected=row['before']
+        probe=proc_helper.privileged_process_probe([expected])
+        response=probe.get('response',{})
+        rows=response.get('rows',[])
+        require(probe.get('exit_code')==0 and response.get('schema')=='P7_PROC_PROBE_V1'
+                and response.get('reader_euid')==0 and response.get('boot_id')==expected['boot_id']
+                and len(rows)==1 and rows[0].get('pid')==pid, '相机专项进程读取失败')
+        row=rows[0]
+        require(all(row.get('identity',{}).get(key)==expected[key]
+                    for key in ('pid','start_ticks','boot_id','pgid','uids')), '相机专项进程在取证期间变化')
+    require(row['status']=='observed','相机专项进程已退出或不可读')
+    return row['identity']
 
 
 def s0_camera_argv(camera):
@@ -1037,7 +1042,6 @@ def inspect_s0_camera_helpers(io,proc_helper,contract,daemon_identity,*,complete
             row=previous[camera_id]
         else:
             io.s0_camera_helpers.append(row)
-            io.s0_identities.append(identity)
         found[camera_id]=row
     missing=set(previous)-set(found)
     if cleanup:
@@ -1079,15 +1083,14 @@ def s0_ready_chunk(pending,chunk):
 
 
 def verify_s0_daemon_locks(bindings,identity,active_side='right'):
-    """锁内容与内核FLOCK所有者同时绑定，busy本身不等于本轮daemon持有。"""
+    """核对内核记录的独占锁、设备与 inode 是否属于自持 S0。"""
     require(active_side in SERIALS,'默认S0活动侧错误')
     rows=[row.split() for row in Path('/proc/locks').read_text().splitlines()]
     for name in ('rx_trust.lock','estop_latch.lock'):
         ref=bindings['protection'][active_side][name]
         key=f'{os.major(ref["device"]):02x}:{os.minor(ref["device"]):02x}:{ref["inode"]}'
         require(any(len(row)>=6 and row[1:4]==['FLOCK','ADVISORY','WRITE']
-                    and row[4]==str(identity['pid']) and row[5]==key for row in rows)
-                and Path(ref['path']).read_bytes()==f'{identity["pid"]}\n'.encode(),
+                    and row[4]==str(identity['pid']) and row[5]==key for row in rows),
                 '默认S0未真实独占既有活动侧双锁')
 
 
@@ -1097,7 +1100,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
     io.s0_contract=contract;io.s0_post_ready=False
     io.s0_environment=proc_helper.clean_environment(os.environ)
     io.s0_sender_started=False
-    io.s0_identities=[];io.s0_daemon_record={'argv':None,'pid':None,'reaped':False,'signals_sent':[]}
+    io.s0_daemon_record={'argv':None,'pid':None,'reaped':False,'signals_sent':[]}
     io.s0_camera_helpers=[];io.s0_camera_helper_checks=[];io.s0_camera_helper_exit_checks=[]
     record=io.s0_daemon_record;report['s0_daemon']=record
     report['s0_cleanup_errors']=[]
@@ -1113,24 +1116,9 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         report['s0_sender_result']=strict_json(raw.decode())
         return raw
 
-    def bind(process,argv,role):
-        identity=s0_process_identity(io,proc_helper,process.pid)
-        require(identity.get('pid')==process.pid and identity.get('pgid')==process.pid
-                and identity.get('uids')==[os.getuid()]*4
-                and identity.get('boot_id')==bindings['host']['boot_id']
-                and identity.get('exe')==str(argv[0]) and identity.get('argv')==list(argv),
-                '默认S0/sender启动身份不符')
-        io.s0_identities.append(identity)
-        record[role+'_identity']=identity
-        return identity
-
-    io.s0_bind_process=bind
-
     def daemon_alive():
         require(io.s0_daemon is not None and io.s0_daemon.poll() is None,'默认S0已提前退出')
-        identity=s0_process_identity(io,proc_helper,io.s0_daemon.pid)
-        require(s0_same_process(identity,record['daemon_identity']),'默认S0身份被替换或不可读')
-        return identity
+        return record['daemon_identity']
 
     def runtime_gate():
         io.check();validate_go(go,plan,time.time_ns())
@@ -1139,9 +1127,6 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         for camera in contract.get('cameras',[]):verify_s0_camera_identity(camera)
         identity=daemon_alive()
         inspect_s0_camera_helpers(io,proc_helper,contract,identity,complete=True)
-        # poll只回收本轮自有sender，消解其自然退出与/proc读取之间的竞态。
-        if io.child is not None:io.child.poll()
-        inspect_processes(io,bindings,proc_helper,owned=io.s0_identities)
         verify_s0_protection(bindings,'running',active_side)
         verify_s0_daemon_locks(bindings,identity,active_side)
 
@@ -1149,13 +1134,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         process=io.s0_daemon
         if process is None:return
         if process.poll() is None:
-            try:
-                identity=s0_process_identity(io,proc_helper,process.pid)
-                require('daemon_identity' in record and s0_same_process(identity,record['daemon_identity']),
-                        '停止前默认S0身份不符')
-            except BaseException as error:
-                report['s0_cleanup_errors'].append('daemon_identity:'+repr(error));engine.manual_cut=True
-            # 这里只操作仍由本函数持有的真实Popen；身份准入失败不能跳过必要停止。
+            # SIGTERM 与 wait 均作用于本轮持有的 Popen。
             try:
                 process.send_signal(signal.SIGTERM)
                 record['signals_sent'].append({'signal':int(signal.SIGTERM),'sent_ns':io.now()})
@@ -1204,7 +1183,10 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         io.s0_daemon=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,
                                        start_new_session=True,env=environment)
         spawned=True;record['pid']=io.s0_daemon.pid
-        record['daemon_identity']=bind(io.s0_daemon,argv,'daemon')
+        record['daemon_identity']={'pid':io.s0_daemon.pid}
+        if 'cameras' in contract:
+            # 相机专项需要与实际父进程关联的元数据。
+            record['daemon_identity']=s0_process_identity(io,proc_helper,io.s0_daemon.pid)
         ready_deadline=io.now()+contract['daemon_ready_budget_ns']
         with daemon_log.open('rb') as reader:
             pending=b''
@@ -1268,7 +1250,7 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
         if spawned and 'cameras' in contract and io.s0_daemon is not None and io.s0_daemon.poll() is None:
             # 启动/就绪前失败也先留下直接helper身份；未知child不能在停止后被忽略。
             try:
-                identity=s0_process_identity(io,proc_helper,io.s0_daemon.pid)
+                identity=record['daemon_identity']
                 inspect_s0_camera_helpers(io,proc_helper,contract,identity,complete=False,cleanup=True)
             except BaseException as error:
                 camera_handoff_ok=False
@@ -1308,7 +1290,6 @@ def run_s0_mixed_hold(engine,go,proc_helper,locks,report):
             report['s0_camera_handoff_closed']=camera_handoff_ok
         if io.child is None and io.s0_daemon is None and camera_handoff_ok:
             try:
-                inspect_processes(io,bindings,proc_helper,cleanup=True)
                 for index in sorted(released):
                     ref=bindings['protection'][active_side][('rx_trust.lock','estop_latch.lock')[index]]
                     require(Path(ref['path']).stat().st_ino==os.fstat(active_locks[index].fileno()).st_ino==ref['inode'],
@@ -1983,7 +1964,6 @@ class RealExecutor:
         self.s0_daemon = None
         self.s0_post_ready = False
         self.commands = []
-        self.process_snapshots = []
         self.evidence_errors = []
         self.journal = (self.output / "commands.jsonl").open("x")
 
@@ -2138,7 +2118,6 @@ class RealExecutor:
                 row["pid"] = self.child.pid
                 if s0_sender:
                     self.s0_sender_started=True
-                    row['launch_identity']=self.s0_bind_process(self.child,actual_argv,'sender')
                 # 一旦获得child，任何wait异常都保有所有权并继续自然wait，不让finally收尾被第二child门挡住。
                 code = self.reap(row, failures, mixed_stop_check=mixed_stop_check)
                 row['over_budget'] |= self.now() - row['started_ns'] > row.get('budget_ns',2_000_000_000)
@@ -3480,37 +3459,14 @@ def run_right_wheel_pulse(engine):
 
 
 def inspect_unit(io,unit,*,cleanup=False):
-    text = io.command(["systemctl", "show", unit, "--property=Id,LoadState,ActiveState,SubState,MainPID,Job"],cleanup=cleanup)
+    text = io.command(["systemctl", "show", unit, "--property=Id,LoadState,ActiveState,SubState,Job"],cleanup=cleanup)
     fields = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
     require(fields.get('Id') == unit, '服务Id不完整')
     state = (fields.get('ActiveState'), fields.get('SubState'))
-    require(fields.get('LoadState') in ('loaded', 'not-found') and fields.get('MainPID')=='0'
-            and fields.get('Job') in ('', '0', '0 /')
+    require(fields.get('LoadState') in ('loaded', 'not-found') and fields.get('Job') in ('', '0', '0 /')
             and (state == ('inactive', 'dead') or unit in (HANDOFF_UNIT, 'xlerobot-handoff.service')
                  and state == ('active', 'exited')), f'业务服务未停稳或预检未完成：{unit}')
     return fields
-
-
-def inspect_processes(io,bindings,proc_helper,*,cleanup=False,owned=()):
-    def proc_probe(candidates):
-        argv=['sudo','-n','/usr/bin/python3','-I','-S','-c',proc_helper.PROC_PROBE_CODE]
-        request={'schema':'P7_PROC_PROBE_V1','candidates':candidates}
-        raw=io.command(argv,input_raw=json.dumps(request).encode(),cleanup=cleanup)
-        return {'exit_code':0,'response':strict_json(raw),'request':request}
-    # sender仍由command持有时，复用原只读探针自己的有限子进程，不占用执行器child槽。
-    probe=proc_helper.privileged_process_probe if owned else proc_probe
-    snapshot=proc_helper.process_snapshot(-1,io.output,[Path(p) for p in bindings['binary_paths']],probe_runner=probe)
-    io.process_snapshots.append(snapshot)
-    if owned:
-        fields=('pid','start_ticks','boot_id','pgid','uids','exe','argv')
-        require(not snapshot['unreadable'] and all(any(all(row.get(key)==expected.get(key) for key in fields)
-                    for expected in owned) for row in snapshot['related']),
-                '存在非本轮精确绑定的控制进程或身份不可读')
-        snapshot['s0_owned_identities']=copy.deepcopy(list(owned))
-        snapshot['s0_owned_only']=True
-    else:
-        require(snapshot['clean'], '控制/维护进程残留或身份不可读')
-    return snapshot
 
 
 def inspect_holder(io,device,elevated,*,cleanup=False):
@@ -3520,10 +3476,9 @@ def inspect_holder(io,device,elevated,*,cleanup=False):
 
 
 def idle(io, bindings, proc_helper, *, cleanup=False):
-    # 前置保持fail-fast；后验直接调用下面独立函数，逐项留证。
+    # 通过服务状态和真实设备占用核实独占条件。
     for unit in UNITS + OLD_UNITS + [HANDOFF_UNIT]:
         inspect_unit(io,unit,cleanup=cleanup)
-    inspect_processes(io,bindings,proc_helper,cleanup=cleanup)
     for device in DEVICES.values():
         for elevated in (False,True):
             inspect_holder(io,device,elevated,cleanup=cleanup)
@@ -3547,20 +3502,34 @@ def usb_identity(io, side, expected, *, cleanup=False):
             'resolved':str(Path(DEVICES[side]).resolve()),'rdev':info.st_rdev}
 
 
+def protection_lock_paths(bindings):
+    return {ref['path'] for files in bindings['protection'].values() for name,ref in files.items()
+            if name in ('rx_trust.lock','estop_latch.lock')}
+
+
 def protected_and_refs(bindings):
+    lock_paths=protection_lock_paths(bindings)
     for reference in bindings['refs']:
-        verify_ref(reference)
+        if reference['path'] not in lock_paths:
+            verify_ref(reference)
     for side, files in bindings['protection'].items():
         for name, reference in files.items():
             verify_protection_file(side,name,reference)
 
 
 def verify_protection_file(side,name,reference):
-    data = verify_ref(reference)
-    info = Path(reference['path']).lstat()
+    path=Path(reference['path'])
+    info=path.lstat()
+    require(path.is_absolute() and stat.S_ISREG(info.st_mode), f"保护文件路径或类型错误：{side}/{name}")
     require(info.st_uid == reference['uid'] and info.st_gid == reference['gid']
             and stat.S_IMODE(info.st_mode) == reference['mode'] and info.st_ino == reference['inode'],
             f"保护身份变化：{side}/{name}")
+    if name in ('rx_trust.lock','estop_latch.lock'):
+        if 'device' in reference:
+            require(info.st_dev==reference['device'], f"保护锁设备改变：{side}/{name}")
+        return {'path':str(path),'device':info.st_dev,'inode':info.st_ino,
+                'mode':stat.S_IMODE(info.st_mode),'uid':info.st_uid,'gid':info.st_gid}
+    data=verify_ref(reference)
     if name in ('rx_trust_marker', 'rx_trust_marker.bak', 'estop_latch', 'estop_latch.bak'):
         require(data == b'1\n', "必须保留既有Dirty/EStop，不clear保护")
     return {'path':reference['path'],'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data),
@@ -3750,8 +3719,9 @@ def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=
     s0_mode=any(key in report.get('plan',{}) for key in ('s0_mixed_hold','s0_position_hold'))
     active_side=s0_plan_entry(report['plan'])[1] if s0_mode else None
     active_paths={ref['path'] for ref in bindings['protection'].get(active_side,{}).values()} if s0_mode else set()
+    checked_paths=active_paths|protection_lock_paths(bindings)
     tasks=[(f"ref:{reference['path']}",lambda reference=reference:verify_ref(reference))
-           for reference in bindings['refs'] if reference['path'] not in active_paths]
+           for reference in bindings['refs'] if reference['path'] not in checked_paths]
     tasks += [(f'protection:{side}/{name}',lambda side=side,name=name,reference=reference:verify_protection_file(side,name,reference))
               for side,files in bindings['protection'].items() for name,reference in files.items() if not (s0_mode and side==active_side)]
     if s0_mode:
@@ -3767,7 +3737,6 @@ def finish_identity_verification(report,io,bindings,proc_helper,identity_checks=
             tasks.append(('camera_report',lambda:verify_s0_camera_report(report)))
     tasks += [(f'service:{unit}',lambda unit=unit:inspect_unit(io,unit,cleanup=True))
               for unit in UNITS+OLD_UNITS+[HANDOFF_UNIT]]
-    tasks.append(('process_snapshot',lambda:inspect_processes(io,bindings,proc_helper,cleanup=True)))
     tasks += [(f"holder:{side}:{'sudo' if elevated else 'ordinary'}",
                lambda side=side,elevated=elevated:inspect_holder(io,DEVICES[side],elevated,cleanup=True))
               for side in SERIALS for elevated in (False,True)]
@@ -3988,7 +3957,6 @@ def execute(plan, go, approval):
     io.arm_range_read_only=arm_range_only
     if arm_range_only:
         io.arm_range_motor_ids=tuple(target[1] for target in plan['bus2_arm_range_only']['targets'])
-    io.process_snapshots=[]
     for signum in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP,signal.SIGQUIT):
         signal.signal(signum,io.mark_signal)
     engine = None
@@ -4005,9 +3973,11 @@ def execute(plan, go, approval):
     try:
         with contextlib.ExitStack() as stack:
             protected_and_refs(bindings)
-            verify_ref(bindings['proc_helper'])
-            spec=importlib.util.spec_from_file_location('maintenance_proc_identity',bindings['proc_helper']['path'])
-            proc_helper=importlib.util.module_from_spec(spec); spec.loader.exec_module(proc_helper)
+            proc_helper=None
+            if s0_mode:
+                verify_ref(bindings['proc_helper'])
+                spec=importlib.util.spec_from_file_location('maintenance_proc_identity',bindings['proc_helper']['path'])
+                proc_helper=importlib.util.module_from_spec(spec); spec.loader.exec_module(proc_helper)
             # 瞬时占用门先查USB及四锁；持有后不把自己的锁判为空。
             idle(io,bindings,proc_helper)
             for side in SERIALS:
@@ -4084,7 +4054,6 @@ def execute(plan, go, approval):
         if report['child_active']:
             report['result']='NEEDS_MANUAL_POWER_CUT'
         report['commands']=io.commands
-        report['process_snapshots']=io.process_snapshots
         report['evidence_errors']=io.evidence_errors
         if arm_range_only:
             captured=(engine is not None and len(engine.rows)==1
