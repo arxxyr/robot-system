@@ -188,10 +188,28 @@ impl ScriptedBackend {
         ctx: &ActionContext<'_>,
     ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
         let plan = SingleJointPlan::prepare(req, ctx)?;
+        Ok(Self::position_instance(plan))
+    }
+
+    #[cfg(feature = "backend-ik")]
+    pub(super) fn start_ik_joints(
+        req: &ActionRequest,
+        ctx: &ActionContext<'_>,
+        targets: &[(usize, f64)],
+    ) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+        let config = ctx.single_joint_config.ok_or_else(|| {
+            ActionStartError::Rejected("混合总线 IK 需要配置位置约束和到位容差".into())
+        })?;
+        let plan =
+            SingleJointPlan::prepare_positions(req, ctx, config, config.max_duration_ms, targets)?;
+        Ok(Self::position_instance(plan))
+    }
+
+    fn position_instance(plan: SingleJointPlan) -> Box<dyn ActionInstance> {
         // prepare 已检查同一快照、完整维度、配置范围与硬件状态。
         let initial_pose = plan.initial_pose;
         let tick_buf = Vec::with_capacity(initial_pose.len());
-        Ok(Box::new(ScriptedInstance {
+        Box::new(ScriptedInstance {
             cancelled: false,
             decoded_waypoints: vec![DecodedWaypoint {
                 positions: plan.positions,
@@ -205,7 +223,7 @@ impl ScriptedBackend {
             final_published: false,
             tick_buf,
             single_joint: Some(plan.execution),
-        }))
+        })
     }
 }
 

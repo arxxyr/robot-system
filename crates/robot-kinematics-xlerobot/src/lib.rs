@@ -295,6 +295,25 @@ impl XLeRobotArmIkSolver {
             orientation: [cos_p * sin_r, sin_p * cos_r, -sin_p * sin_r, cos_p * cos_r],
         })
     }
+    /// 在下发混合总线前用正解识别被限位或工作空间裁剪的解。误差只覆盖模型计算舍入。
+    pub fn check_solution(&self, target: &Pose, joints_rad: &[f64]) -> Result<(), IkError> {
+        let actual = self.forward_pose(joints_rad)?;
+        let [dx, dy, dz] = std::array::from_fn(|i| actual.translation[i] - target.translation[i]);
+        let position_error = dx.hypot(dy).hypot(dz);
+        // 四元数 q 和 −q 表示同一姿态。比较夹角余弦前先归一化。
+        let norm = target.orientation.iter().map(|q| q * q).sum::<f64>().sqrt();
+        let dot = actual
+            .orientation
+            .iter()
+            .zip(target.orientation)
+            .map(|(a, b)| a * b)
+            .sum::<f64>();
+        if position_error <= 1e-7 && norm > 0.0 && (dot.abs() / norm - 1.0).abs() <= 1e-10 {
+            Ok(())
+        } else {
+            Err(IkError::NoSolution)
+        }
+    }
 }
 
 impl Default for XLeRobotArmIkSolver {

@@ -1,81 +1,6 @@
-//! v0.4 候选 2 round 2 `IkBackend`：笛卡尔 pose IK 解算 + 关节位置一次性
-//! 输出（Q-IK17 (a) single-shot）。
-//!
-//! ## 行为
-//!
-//! - `name()` = `"ik"`（profile `[s1.profile.backends]` 引用名）。
-//! - `supported_kinds()` = `&[ActionKind::Ik]`（v0.4 候选 2 round 2 (2/4)
-//!   atomic land 后的新 variant；详 `crates/robot-s1/src/action.rs`）。
-//! - `supported_schemas()` = `&[SCHEMA_IK_PAYLOAD]`（`0x0000_040C`；
-//!   **不**含 `NO_PAYLOAD_SCHEMA_ID`，跟 hold_pose / mock_dwell 显著区分）。
-//! - `start(req, ctx)`：六项 semantic check + solver.solve() →
-//!   [`IkInstance`] 持 target_joints；first tick publish 一次 cmd，second
-//!   tick `Completed(Success)` 收敛（Q-IK17 (a) single-shot）。
-//! - `tick(ctx)`：首次 tick 复用 [`crate::coordinator::build_hold_command`]
-//!   构 body bytes（source_task_id == `ctx.command_seq`，B3 §3.7 单调契
-//!   约）+ `progress = 1.0` 返 `Continue { command: Some(body) }`；标
-//!   `emitted = true`；下次 tick 返 `Completed(ActionOutcome::Success)`。
-//! - `cancel()`：cooperative，set flag；下次 tick 返
-//!   `Completed(ActionOutcome::PartialSuccess { warning: "cancelled_before_emit" })`
-//!   或 `"cancelled_after_emit"`（视 `emitted` 状态；沿 scripted Q4(a)
-//!   coordinator pending_cancel 路径转 `ActionEvent::Cancelled`）。
-//!
-//! ## semantic check（`start()` 期；Plan §P.3.2 Q-IK10b (i) + 两层错误映射）
-//!
-//! `IkBackend::start()` 按下面顺序短路返第一个错：
-//!
-//! 1. `payload_schema_id == SCHEMA_IK_PAYLOAD`（dispatch 守门已保，本步
-//!    defensive 再断言；不匹配 → [`ActionStartError::Rejected`]）。
-//! 2. `ctx.solver.is_some()`（Q-IK10b (i) startup 校验已拦绝大多数路径；
-//!    runtime 防御性 reject 兜底）。
-//! 3. `req.deadline_ns > ctx.clock.now()`（Plan §P.3.2 #12 (a) deadline
-//!    backend pre-guard；过期 → [`ActionStartError::Rejected`]）。
-//! 4. `flatbuffers::root::<IkPayload>(payload)` decode 成功 → 失败 →
-//!    [`ActionStartError::PayloadDecode`]。
-//! 5. `target_xyz.len() == 3` + `target_quat_xyzw.len() == 4` +
-//!    `seed_joints_rad.len() == 0 || == info().joint_count` → 任一不满
-//!    足 [`ActionStartError::Rejected`]。
-//! 6. `solver.info().joint_count == ctx.hardware.joints.len()` → 不匹配
-//!    [`ActionStartError::HardwareMismatch`]（防 binary 注入了跟当前
-//!    hardware 不匹配的 solver）。
-//! 7. `solver.solve(&pose, seed.as_deref(), None)` → 任一
-//!    [`IkError`] 映射到 [`ActionStartError::Rejected`]（沿 Q-IK16 (a)
-//!    `XLeRobot` clamp 路径走 `Ok(clamped)`，正常不返 `OutOfReach`；其
-//!    它 `InvalidInput` / `NoSolution` / `SingularityTooClose` /
-//!    `DeadlineExceeded` 兜底）。
-//! 8. solver 返 Ok 后再查 deadline post-guard（Plan §P.3.2 #12 (a) 拍
-//!    板 backend 收 None 让 solver 永远不报 `IkError::DeadlineExceeded`，
-//!    backend pre/post guard 是 deadline 唯一权威）。
-//!
-//! ## 两层错误映射（Plan §P.2.3.d）
-//!
-//! | 来源 | `ActionStartError` | 跨进程 `ActionRpcStatus` |
-//! |------|--------------------|--------------------------|
-//! | dispatch 守门 / `payload_schema_id` 错 / solver missing / decode 后字段 semantic 错 / solver `IkError` 全部 | `Rejected(String)` | `FailedPrecondition` |
-//! | `flatbuffers::root::<IkPayload>` verify fail | `PayloadDecode(String)` | `FailedPrecondition` |
-//! | solver `info().joint_count != hardware.joints.len()` | `HardwareMismatch(String)` | `FailedPrecondition` |
-//!
-//! coordinator `submit` 把 `ActionStartError` 透成 `SubmitError::BackendStartFailed`，
-//! gateway `wire.rs:340` 把所有 `FailedPrecondition`-类映射到 RPC
-//! `ActionRpcStatus::FailedPrecondition`。
-//!
-//! ## source_task_id 单调契约（B3 §3.7）
-//!
-//! Ik body 的 `source_task_id` **必须**等于 `ctx.command_seq`，由
-//! `run_action_tick_loop` 透传当前 publish frame 的 `TickState.cmd_seq`
-//! 进 `ActionContext.command_seq`。**不**允许 backend 私有 counter 从
-//! 0 起增 —— 那会让 S0 `ipc_thread::join_command_to_buf` 把
-//! `fb.source_task_id()` 写到 `JointCommandBuf.seq` 时看到 seq 回退，
-//! 破坏 `adapter.rs` 单调递增契约。沿 hold_pose B3 round 2 阻断 1 修法 +
-//! scripted v0.4 候选 1 同款。
-//!
-//! ## inventory 注册
-//!
-//! 整文件 `#[cfg(feature = "backend-ik")]` gate（Q-IK11 (a) 拍板默认 on）。
-//! Feature off 时整文件不 link → `BackendRegistry::from_inventory` 收集
-//! 不到 ik → `[s1.profile.backends = ["ik"]]` 在 `validate_profile_section`
-//! 报 `UnknownBackend`（Q-IK10 (a-i)），符合"配置与编译 profile 不匹配
-//! 启动期 fail-fast"硬约束。
+//! S1 的 IK 后端以肩基座腕点位姿为输入。五轴位置设备沿用单帧求解。
+//! XLeRobot 右侧混合总线按配置名称投影五轴，夹爪保持提交时位置，三轮目标为 raw 0。
+//! 混合请求复用 Scripted 的限速插值、发布回执、到位确认及中断保持。
 
 #![allow(clippy::doc_markdown)]
 
@@ -92,11 +17,7 @@ use robot_msg::schema_id::SCHEMA_IK_PAYLOAD;
 // IkBackend
 // ============================================================================
 
-/// v0.4 候选 2 round 2 第三个真 action backend：笛卡尔 pose IK 解算 +
-/// 关节位置一次性输出。
-///
-/// **零字段** struct：所有状态在 [`IkInstance`] 上；backend 本身仅声明
-/// 能力 + 解码 payload + 调 solver + 创建 instance。
+/// 将笛卡尔请求交给当前求解器，再按硬件布局执行位置命令。
 #[derive(Debug, Clone, Copy)]
 pub struct IkBackend;
 
@@ -207,12 +128,9 @@ impl ActionBackend for IkBackend {
             target_quat_v.get(3),
         ];
 
-        // (6) hardware joint 数 vs solver info().joint_count 一致（防
-        // binary 注入了跟当前 hardware 不匹配的 solver；典型场景：
-        // robot id 变化但 solver 类型没切。HardwareMismatch 路径专给本
-        // 类配置错用）。
+        // 纯位置布局沿用原有维度约束；混合布局在投影时按右臂名称逐槽核对。
         let info_joint_count = solver.info().joint_count;
-        if ctx.hardware.joints.len() != info_joint_count {
+        if !ctx.hardware.feetech_bus2_mixed_raw && ctx.hardware.joints.len() != info_joint_count {
             return Err(ActionStartError::HardwareMismatch(format!(
                 "IkBackend: solver info().joint_count {} != hardware.joints.len() {}",
                 info_joint_count,
@@ -256,6 +174,22 @@ impl ActionBackend for IkBackend {
             )));
         }
 
+        if ctx.hardware.feetech_bus2_mixed_raw {
+            #[cfg(feature = "backend-scripted")]
+            {
+                if fb.frame().is_some_and(|name| !name.is_empty()) {
+                    return Err(ActionStartError::Rejected(
+                        "右臂 IK 只接受默认肩基座坐标系".into(),
+                    ));
+                }
+                return start_right_arm(req, ctx, solver, &pose, &solution.joints_rad);
+            }
+            #[cfg(not(feature = "backend-scripted"))]
+            return Err(ActionStartError::Rejected(
+                "右臂混合 IK 需要 backend-scripted 插值及反馈确认".into(),
+            ));
+        }
+
         // (9) build instance：target_joints owned + 状态 flag。
         Ok(Box::new(IkInstance {
             target_joints: solution.joints_rad,
@@ -263,6 +197,95 @@ impl ActionBackend for IkBackend {
             cancelled: false,
         }))
     }
+}
+
+/// 将五轴解绑定到当前右总线，并在发命令前核对模型能否到达目标以及恢复原姿态。
+#[cfg(feature = "backend-scripted")]
+fn start_right_arm(
+    req: &ActionRequest,
+    ctx: &ActionContext<'_>,
+    solver: &dyn robot_kinematics::ArmIkSolver,
+    goal: &Pose,
+    solution: &[f64],
+) -> Result<Box<dyn ActionInstance>, ActionStartError> {
+    use super::scripted::ScriptedBackend;
+    use robot_kinematics::ArmIkSolver;
+    use robot_kinematics_xlerobot::{Side, XLeRobotArmIkSolver};
+
+    let hardware = ctx.hardware;
+    let model = XLeRobotArmIkSolver::new(Side::Right);
+    let names = &model.info().joint_names;
+    if !hardware.mixed_layout_is_valid()
+        || solver.info().joint_names != *names
+        || solution.len() != names.len()
+        || !hardware
+            .joints
+            .iter()
+            .enumerate()
+            .any(|(slot, name)| name == "right_arm_gripper" && !hardware.is_wheel_slot(slot))
+    {
+        return Err(ActionStartError::HardwareMismatch(
+            "右总线需要五轴右臂、位置夹爪与三个轮速槽".into(),
+        ));
+    }
+
+    let start = ctx
+        .feedback
+        .ok_or_else(|| ActionStartError::Rejected("右臂 IK 缺少提交时完整反馈".into()))?;
+    let limits = ctx
+        .single_joint_config
+        .ok_or_else(|| ActionStartError::Rejected("右臂 IK 缺少位置关节运动约束".into()))?;
+    let mut targets = Vec::with_capacity(names.len());
+    let mut initial = Vec::with_capacity(names.len());
+    let mut tolerances = Vec::with_capacity(names.len());
+    for (name, &angle) in names.iter().zip(solution) {
+        let slot = hardware
+            .joints
+            .iter()
+            .position(|joint| joint.strip_prefix("right_arm_") == Some(name.as_str()))
+            .filter(|&slot| !hardware.is_wheel_slot(slot))
+            .ok_or_else(|| {
+                ActionStartError::HardwareMismatch(format!("右总线缺少 IK 位置关节 {name}"))
+            })?;
+        initial.push(
+            *start
+                .positions
+                .get(slot)
+                .ok_or_else(|| ActionStartError::Rejected("右臂 IK 提交反馈维度不完整".into()))?,
+        );
+        let limit = limits
+            .joints
+            .iter()
+            .find(|limit| limit.name == hardware.joints[slot])
+            .ok_or_else(|| ActionStartError::Rejected(format!("右臂 IK 缺少运动约束 {name}")))?;
+        tolerances.push(limit.tolerance_rad);
+        targets.push((slot, angle));
+    }
+
+    // 上游闭式逆解固定一个肘分支。先验证这个分支能恢复本次真实原位。
+    let initial_pose = model
+        .forward_pose(&initial)
+        .map_err(map_ik_error_to_start_error)?;
+    let recovered = solver
+        .solve(&initial_pose, Some(&initial), None)
+        .map_err(map_ik_error_to_start_error)?;
+    if recovered.joints_rad.len() != initial.len()
+        || !recovered
+            .joints_rad
+            .iter()
+            .zip(&initial)
+            .zip(tolerances)
+            .all(|((&actual, &original), tolerance)| (actual - original).abs() <= tolerance)
+    {
+        return Err(ActionStartError::Rejected(
+            "右臂当前姿态与 IK 分支不一致，无法保证回到原关节位置".into(),
+        ));
+    }
+
+    model
+        .check_solution(goal, solution)
+        .map_err(|error| ActionStartError::Rejected(format!("右臂 IK 目标复核失败：{error}")))?;
+    ScriptedBackend::start_ik_joints(req, ctx, &targets)
 }
 
 // ============================================================================
@@ -962,6 +985,92 @@ mod tests {
         }
     }
 
+    /// 数学上不可达、当前关节不在闭式解分支、坐标系或槽位错误均应在首条命令前拒绝。
+    #[cfg(feature = "backend-scripted")]
+    #[test]
+    fn mixed_ik_rejects_clamped_goals_and_wrong_start_branch() {
+        use crate::coordinator::parse_single_joint_config_from_toml;
+        use crate::state_cache::JointFeedbackSnapshot;
+
+        let bus = parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot-bus2.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        let limits = parse_single_joint_config_from_toml(
+            include_str!("../../../../configs/xlerobot-bus2-motion.toml"),
+            &bus,
+        )
+        .unwrap()
+        .unwrap();
+        let model = XLeRobotArmIkSolver::new(Side::Right);
+        let initial = [-0.2, 0.25, 0.35, -0.1, 0.3];
+        let original = model.forward_pose(&initial).unwrap();
+        let mut goal = original;
+        goal.translation[0] += 0.010;
+        let cfg = CoordinatorConfig::default();
+        let clock = MockClock::new(MonoRawNs(1_000_000_000));
+        let start = |hardware: &HardwareSection, goal: Pose, joints: &[f64], frame: &str| {
+            let mut positions = joints.to_vec();
+            positions.extend([0.1, 0.0, 0.0, 0.0]);
+            let feedback = JointFeedbackSnapshot {
+                stamp_ns: 1_000_000_000,
+                motion_ready: true,
+                positions,
+            };
+            let ctx = ActionContext {
+                single_joint_config: Some(&limits),
+                feedback: Some(&feedback),
+                clock: &clock,
+                layout_id: TEST_LAYOUT_ID,
+                hardware,
+                config: &cfg,
+                anchor_bias: &[],
+                command_seq: 0,
+                scripted_start_pose: Some(&feedback.positions),
+                solver: Some(&model),
+            };
+            let req = ActionRequest {
+                action_id: ActionId::new_v7(),
+                kind: ActionKind::Ik,
+                deadline_ns: u64::MAX,
+                priority: 10,
+                payload_schema_id: SCHEMA_IK_PAYLOAD,
+                payload: build_ik_payload_bytes(&goal.translation, &goal.orientation, &[], frame),
+                idempotency_key: "mixed-ik".into(),
+                source: ActionSource::Internal,
+            };
+            IkBackend.start(&req, &ctx).map(drop)
+        };
+        assert!(start(&bus, goal, &initial, "").is_ok());
+        let mut unreachable = goal;
+        unreachable.translation[0] = 1.0;
+        assert!(matches!(
+            start(&bus, unreachable, &initial, ""),
+            Err(ActionStartError::Rejected(_))
+        ));
+        let mut roll = goal;
+        roll.orientation = [1.0, 0.0, 0.0, 0.0];
+        assert!(matches!(
+            start(&bus, roll, &initial, ""),
+            Err(ActionStartError::Rejected(_))
+        ));
+        let mut other_branch = initial;
+        other_branch[2] = -1.5;
+        assert!(
+            matches!(start(&bus, goal, &other_branch, ""), Err(ActionStartError::Rejected(message)) if message.contains("分支"))
+        );
+        assert!(
+            matches!(start(&bus, goal, &initial, "world"), Err(ActionStartError::Rejected(message)) if message.contains("坐标系"))
+        );
+        let mut swapped = bus;
+        swapped.joints.swap(0, 6);
+        assert!(matches!(
+            start(&swapped, goal, &initial, ""),
+            Err(ActionStartError::HardwareMismatch(_))
+        ));
+    }
+
     /// 只在内存中执行右臂五轴命令，按电机整数刻度回读后再求腕点位置。
     #[test]
     #[allow(
@@ -1004,16 +1113,15 @@ mod tests {
         assert_eq!(cmd.layout_id(), TEST_LAYOUT_ID);
         let target = cmd.target().unwrap();
         assert_eq!(target.len(), start_raw.len());
-        let targets_raw = std::array::from_fn(|i| {
+        let targets_raw: [i32; 5] = std::array::from_fn(|i| {
             let angle = target.get(i);
             let limit = &solver.info().joint_limits[i];
             assert!((limit.min_rad..=limit.max_rad).contains(&angle));
             rad_to_raw(angle as f32)
         });
         assert_eq!(arm.joints, solver.info().joint_names);
-        let readback = simulate_right_arm_command(&arm, start_raw, targets_raw);
 
-        let reached_joints = readback.map(|raw| f64::from(raw_to_rad(raw)));
+        let reached_joints = targets_raw.map(|raw| f64::from(raw_to_rad(raw)));
         let reached = solver.forward_pose(&reached_joints).unwrap();
         let delta_mm: [f64; 3] =
             std::array::from_fn(|i| 1000.0 * (reached.translation[i] - start.translation[i]));
@@ -1043,48 +1151,6 @@ mod tests {
         eprintln!(
             "右臂模型腕点位移 {delta_mm:.3?} mm，位置误差 {error_mm:.3} mm，姿态误差 {orientation_error_deg:.3}°，五轴目标 {degrees:.2?}°，编码器目标 {targets_raw:?} raw"
         );
-    }
-
-    fn simulate_right_arm_command(
-        arm: &HardwareSection,
-        start: [i32; 5],
-        targets: [i32; 5],
-    ) -> [i32; 5] {
-        let bus2 = parse_hardware_section_from_toml(
-            include_str!("../../../../configs/xlerobot-bus2.toml"),
-            "right_arm_full_with_base",
-        )
-        .unwrap();
-        assert_eq!(arm.joints.len(), targets.len());
-        assert_eq!(bus2.joints.len(), 9);
-        // 只投影到模拟右总线。夹爪用非零保持值，三轮用零速；左总线没有命令。
-        let mut before: Vec<i32> = (0..bus2.joints.len())
-            .map(|i| if bus2.is_wheel_slot(i) { 0 } else { 2047 })
-            .collect();
-        let slots: [usize; 5] = std::array::from_fn(|i| {
-            let name = format!("right_arm_{}", arm.joints[i]);
-            let slot = bus2.joints.iter().position(|n| n == &name).unwrap();
-            before[slot] = start[i];
-            slot
-        });
-        let mut after = before.clone();
-        for (id, raw) in arm.motor_ids.iter().zip(targets) {
-            let slot = bus2
-                .motor_ids
-                .iter()
-                .position(|bus_id| bus_id == id)
-                .unwrap();
-            after[slot] = raw;
-        }
-        assert_ne!(before, after);
-        for (i, name) in bus2.joints.iter().enumerate() {
-            if !slots.contains(&i) {
-                assert_eq!(after[i], before[i], "{name} 的模拟目标发生变化");
-            }
-        }
-        let readback = slots.map(|slot| after[slot]);
-        assert_eq!(readback, targets, "配置电机 ID 与五轴的名称顺序不匹配");
-        readback
     }
 
     // ----- 13. tick_second_call_returns_completed_success（single-shot

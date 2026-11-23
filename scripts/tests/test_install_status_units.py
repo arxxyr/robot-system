@@ -423,7 +423,7 @@ class StatusInstallTests(unittest.TestCase):
         candidate, _, _, _ = self.right_control_candidate()
         combined = installer.tomllib.loads((candidate / "configs/xlerobot-bus2-s1.toml").read_text())
         s1 = combined.pop("s1")
-        self.assertEqual(s1["profile"], {"backends": ["scripted"], "command_mode": "joint_position"})
+        self.assertEqual(s1["profile"], {"backends": ["scripted", "ik"], "command_mode": "joint_position"})
         self.assertEqual(combined, original)
         self.assertTrue(combined["hardware"][0]["feetech_bus2_mixed_raw"])
         self.assertEqual(len(s1["single_joint"]["joints"]), 6)

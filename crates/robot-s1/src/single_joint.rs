@@ -1,6 +1,6 @@
-//! 单关节定位的显式运动约束、提交校验与反馈到位判据。
+//! 单关节与右臂 IK 共用的位置约束、插值计划和反馈到位判据。
 //!
-//! 目标只替换提交时完整快照中的一个位置关节；配置缺失时拒绝执行。
+//! 目标只替换提交时快照中选中的位置轴，其他位置轴保持。
 //! 混合总线仅配置位置关节，三轮目标恒为 raw0，轮反馈不参与位置到位判断。
 //! 中断保持使用最后成功发布的目标，不能解释为当前位置或已断扭。
 
@@ -160,9 +160,6 @@ impl SingleJointPlan {
         let config = ctx.single_joint_config.ok_or_else(|| {
             ActionStartError::Rejected("未配置 s1.single_joint，拒绝单关节定位".into())
         })?;
-        config
-            .validate(ctx.hardware)
-            .map_err(ActionStartError::Rejected)?;
         let payload =
             flatbuffers::root::<SingleJointPositionPayload<'_>>(&req.payload).map_err(|error| {
                 ActionStartError::PayloadDecode(format!("单关节请求解码失败：{error}"))
@@ -178,12 +175,27 @@ impl SingleJointPlan {
             .iter()
             .position(|name| payload.joint_name() == name.as_str())
             .ok_or_else(|| ActionStartError::Rejected("单关节请求包含未知关节名称".into()))?;
-        if ctx.hardware.is_wheel_slot(selected) {
-            return Err(ActionStartError::Rejected(
-                "单关节定位只能选择位置关节，三轮目标保持 raw0".into(),
-            ));
-        }
-        let duration_ms = payload.duration_ms();
+        Self::prepare_positions(
+            req,
+            ctx,
+            config,
+            payload.duration_ms(),
+            &[(selected, payload.target_position_rad())],
+        )
+    }
+
+    /// 用本次反馈保持未选位置轴，所选轴共同沿同一时间轴插值并确认到位。
+    pub(crate) fn prepare_positions(
+        req: &ActionRequest,
+        ctx: &ActionContext<'_>,
+        config: &SingleJointConfig,
+        duration_ms: u32,
+        targets: &[(usize, f64)],
+    ) -> Result<Self, ActionStartError> {
+        config
+            .validate(ctx.hardware)
+            .map_err(ActionStartError::Rejected)?;
+
         if duration_ms == 0 || duration_ms > config.max_duration_ms {
             return Err(ActionStartError::Rejected(
                 "单关节运动时长超出显式配置范围".into(),
@@ -233,16 +245,31 @@ impl SingleJointPlan {
         ctx.hardware.clear_wheel_targets(&mut initial_pose);
         execution.target.clone_from(&initial_pose);
         execution.last_published_target.clone_from(&initial_pose);
-        execution.target[selected] = checked_motion_target(
-            payload.target_position_rad(),
-            initial_pose[selected],
-            duration_ms,
-            config
+        for &(slot, target) in targets {
+            let name = ctx
+                .hardware
+                .joints
+                .get(slot)
+                .ok_or_else(|| ActionStartError::Rejected("定位槽位越界".into()))?;
+            if ctx.hardware.is_wheel_slot(slot) {
+                return Err(ActionStartError::Rejected(
+                    "定位只能选择位置关节，三轮目标保持 raw0".into(),
+                ));
+            }
+            let limit = config
                 .joints
                 .iter()
-                .find(|limit| limit.name == ctx.hardware.joints[selected])
-                .ok_or_else(|| ActionStartError::Rejected("所选关节缺少位置约束".into()))?,
-        )?;
+                .find(|limit| limit.name == *name)
+                .ok_or_else(|| ActionStartError::Rejected("所选关节缺少位置约束".into()))?;
+            execution.target[slot] = if req.kind == crate::action::ActionKind::Ik
+                && ctx.hardware.feetech_bus2_mixed_raw
+            {
+                let raw = checked_encoder_target(target, initial_pose[slot], duration_ms, limit)?;
+                f64::from(robot_adapter_feetech::raw_to_rad(raw))
+            } else {
+                checked_motion_target(target, initial_pose[slot], duration_ms, limit)?
+            };
+        }
         Ok(Self {
             initial_pose,
             positions: execution.target.clone(),
@@ -307,6 +334,26 @@ fn checked_motion_target(
         ));
     }
     Ok(target)
+}
+
+/// 右臂 IK 和只读维护计划共用电机实际接收的整数刻度，原浮点解与取整目标均须合法。
+#[cfg(feature = "backend-scripted")]
+#[allow(clippy::cast_possible_truncation, reason = "沿用 S0 的 f32 编码入口")]
+pub fn checked_encoder_target(
+    requested: f64,
+    start: f64,
+    duration_ms: u32,
+    limit: &JointMotionLimits,
+) -> Result<i32, ActionStartError> {
+    let target = checked_motion_target(requested, start, duration_ms, limit)?;
+    let raw = robot_adapter_feetech::rad_to_raw(target as f32);
+    checked_motion_target(
+        f64::from(robot_adapter_feetech::raw_to_rad(raw)),
+        start,
+        duration_ms,
+        limit,
+    )?;
+    Ok(raw)
 }
 
 pub(crate) fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {

@@ -37,7 +37,7 @@ calibration_paths = [
 ]
 
 [s1.profile]
-backends = ["scripted"]
+backends = ["scripted", "ik"]
 command_mode = "joint_position"
 
 # 现场画面已确认：机器人自身右腕接 USB 端口 2.1。

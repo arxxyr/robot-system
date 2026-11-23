@@ -1443,10 +1443,13 @@ pub fn validate_profile_section(
         if !registry.has(name) {
             return Err(ProfileError::UnknownBackend { name: name.clone() });
         }
-        if hardware.feetech_bus2_mixed_raw
-            && !matches!(name.as_str(), "hold_pose" | "scripted" | "mock_dwell")
-            && !(cfg!(feature = "test-base-command") && name == "simulated_base_command")
-        {
+        let supports_mixed = match name.as_str() {
+            "hold_pose" | "scripted" | "mock_dwell" => true,
+            "ik" => cfg!(all(feature = "backend-ik", feature = "backend-scripted")),
+            "simulated_base_command" => cfg!(feature = "test-base-command"),
+            _ => false,
+        };
+        if hardware.feetech_bus2_mixed_raw && !supports_mixed {
             return Err(ProfileError::UnsupportedMixedBackend {
                 backend: name.clone(),
             });
@@ -2039,10 +2042,10 @@ impl Coordinator {
             None
         };
 
-        // v0.5 候选 E 段(5) D3 第 1 条：Scripted 起点 = 提交时当前位
-        // （state cache 最新鲜帧）；其余 kind 恒 None（穷举 match 让新增
-        // ActionKind 编译期显式表态）。
+        // 混合 IK 与 Scripted 同取提交时的总线快照，保留夹爪位置。
+        let mixed_ik = req.kind == ActionKind::Ik && self.hardware.feetech_bus2_mixed_raw;
         let feedback = match req.kind {
+            ActionKind::Ik if mixed_ik => Some(self.fetch_scripted_start_snapshot(clock)?),
             ActionKind::Scripted => Some(self.fetch_scripted_start_snapshot(clock)?),
             ActionKind::DwellMs | ActionKind::HoldPose | ActionKind::Ik => None,
         };
@@ -2069,8 +2072,8 @@ impl Coordinator {
         };
         // start 失败：状态不转移，仍 Idle。
         let instance = backend.start(&req, &ctx)?;
-        let needs_feedback =
-            req.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
+        let needs_feedback = mixed_ik
+            || req.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
         #[cfg(feature = "test-base-command")]
         let needs_feedback = {
             if let Some(sequence) = base_sequence {
@@ -3382,14 +3385,13 @@ joints  = ["j0"]
 
     #[test]
     fn mixed_profile_rejects_unadapted_backend_at_startup() {
-        static IK: ProfileTestBackend = ProfileTestBackend { name: "ik" };
-        let registry = BackendRegistry::from_explicit(&[&IK]);
+        let registry = BackendRegistry::from_explicit(&[&PROFILE_STUB_OTHER]);
         let profile = ProfileSection {
-            backends: vec!["ik".into()],
+            backends: vec!["other".into()],
             command_mode: "joint_position".into(),
         };
         assert!(
-            matches!(validate_profile_section(&profile, &registry, &mixed_test_hardware(), 9), Err(ProfileError::UnsupportedMixedBackend { backend }) if backend == "ik")
+            matches!(validate_profile_section(&profile, &registry, &mixed_test_hardware(), 9), Err(ProfileError::UnsupportedMixedBackend { backend }) if backend == "other")
         );
     }
     static PROFILE_STUB_OTHER: ProfileTestBackend = ProfileTestBackend { name: "other" };
@@ -4613,6 +4615,11 @@ backends = 42
         use robot_transport::mock::MockChannel;
         use robot_transport::traits::Publisher;
         use std::sync::Arc;
+
+        #[cfg(feature = "backend-ik")]
+        mod bus2_ik {
+            include!("bus2_ik_tests.rs");
+        }
 
         static REAL_SCRIPTED: RealScriptedBackend = RealScriptedBackend;
         const LAYOUT: u64 = 0x5EED_0000_0000_0001;

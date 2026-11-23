@@ -128,5 +128,13 @@ robot-kinematics-xlerobot = { workspace = true, optional = true }
 # 单一实现（自 robot-s0 迁入 robot-health；工作区内部依赖边，0 新外部 crate）。
 robot-health              = { workspace = true }
 
+# 只读维护例程：以传入的五个编码器计数计算往返目标，不连接总线。
+[[example]]
+name = "arm-ik-roundtrip"
+required-features = ["backend-ik", "backend-scripted"]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

@@ -295,13 +295,8 @@ pub enum ActionSource {
 /// - `anchor_bias`：启动锚定的 bias（构造期固化，**不再变**），供
 ///   `HoldPose` 每 tick 读作真实输出目标（v0.5 候选 E Spec D3 第 5 条 /
 ///   CodeMap B10 边界：HoldPose 0 改）。
-/// - `scripted_start_pose`（v0.5 候选 E 段(5) 加，Spec D3 第 1 条）：
-///   **仅** `submit` Scripted 路径由 coordinator 从常驻 state cache
-///   （[`crate::state_cache`]）取"提交时当前位"填 `Some`；其余路径
-///   （cancel / tick / 非 Scripted submit）恒 `None`。Scripted `start()`
-///   缺此值 → `ActionStartError::Rejected`，**绝不** fallback 到
-///   `anchor_bias`（静默跳变危险）。与 `anchor_bias` 物理隔离：两者
-///   同时存在但语义不同——前者是 per-action 起点，后者是启动锚点。
+/// - `scripted_start_pose` 是 Scripted 与混合总线 IK 提交时的完整位置快照，
+///   由当前状态缓存校验布局和新鲜度后提供；缺失时拒绝动作。
 /// - `command_seq`：本 tick 即将 publish 的
 ///   `JointCommand` frame 的 `source_task_id` / `FrameHeader.seq`，由
 ///   [`crate::coordinator::run_action_tick_loop`] 维护
@@ -319,14 +314,9 @@ pub struct ActionContext<'a> {
     pub hardware: &'a HardwareSection,
     pub config: &'a CoordinatorConfig,
     pub anchor_bias: &'a [f64],
-    /// Scripted segment0 `from` = 提交时当前位（v0.5 候选 E 段(5)，Spec
-    /// D3 第 1 条）。仅 `Coordinator::submit` 的 `ActionKind::Scripted`
-    /// 路径填 `Some`（来源 = `StateCacheHandle::latest_fresh`，校验
-    /// joint_count + layout_id + 新鲜度）；cancel / tick_action / 其它
-    /// kind 恒 `None`。长度 == `hardware.joints.len()`（cache 已校验；
-    /// backend 再防御断言）。
+    /// Scripted 与混合总线 IK 的插值起点，仅在提交时从本次总线反馈取得。
     pub scripted_start_pose: Option<&'a [f64]>,
-    /// 单关节定位的显式运动配置；未配置时不得接受该请求。
+    /// 单关节与混合 IK 共用的显式位置约束和到位参数。
     pub single_joint_config: Option<&'a crate::single_joint::SingleJointConfig>,
     /// 本次检查得到的同一完整反馈；缺失或失效时为 None。
     pub feedback: Option<&'a crate::state_cache::JointFeedbackSnapshot>,
