@@ -6,7 +6,7 @@
 //!
 //! # 算法源
 //!
-//! 直接移植自 dimos `arm_ik.py`（中文 doc 完整化版本，5-DOF 闭式解）；
+//! 源自 dimos `arm_ik.py` 的 5-DOF 闭式解；
 //! dimos 端上游为 `XLeRobot` `SO101Robot.py` `SO101Kinematics.inverse_kinematics`。
 //! 闭式解策略（沿 dimos `arm_ik.py`）：
 //!
@@ -16,6 +16,10 @@
 //!    `THETA2_OFFSET` 连杆弯折补偿）。
 //! 3. `wrist_flex`：末端俯仰补偿（目标 pitch 减前两关节累计 pitch）。
 //! 4. `wrist_roll`：目标姿态 roll 直接映射。
+//!
+//! 正解沿用逆解定义的肘屈曲角（零代表两杆伸直）。原版正解把它当成内角，
+//! 导致非直角处的腕点位置以及依赖该位置的腕俯仰补偿存在偏差。
+//! 本模型的位置参考点是前臂连杆末端的腕点，未包含腕部到夹尖的工具偏移。
 //!
 //! 5-DOF 整体性质：闭式 + O(1) sub-µs 量级；不依赖外部数值库。
 //!
@@ -260,6 +264,37 @@ impl XLeRobotArmIkSolver {
         };
         Self { info, side }
     }
+
+    /// 从五个电机关节角（弧度）求 IK 模型的腕点位姿。肩基座为原点，X 前、Y 左、Z 上，单位米。
+    ///
+    /// 四元数沿用逆解的输入约定：肩部水平旋转已计入 XYZ，姿态只编码模型估算的
+    /// 俯仰和腕部翻滚。这两个角不描述有工具偏移的夹尖在机身中的完整朝向。
+    pub fn forward_pose(&self, joints_rad: &[f64]) -> Result<Pose, IkError> {
+        let &[pan, lift, elbow, wrist_flex, roll] = joints_rad else {
+            return Err(IkError::InvalidInput {
+                reason: format!("正解需要五个关节角，收到 {} 个", joints_rad.len()),
+            });
+        };
+        for (index, (angle, limit)) in joints_rad.iter().zip(&self.info.joint_limits).enumerate() {
+            if !(limit.min_rad..=limit.max_rad).contains(angle) {
+                return Err(IkError::InvalidInput {
+                    reason: format!(
+                        "关节 {} 的角度 {angle} 超出模型限位或非有限值",
+                        self.info.joint_names[index]
+                    ),
+                });
+            }
+        }
+        let (radius, z) = planar_fk(lift, elbow);
+        let (sin_pan, cos_pan) = pan.sin_cos();
+        let pitch = arm_elevation(radius, z) + wrist_flex;
+        let (sin_p, cos_p) = (pitch * 0.5).sin_cos();
+        let (sin_r, cos_r) = (roll * 0.5).sin_cos();
+        Ok(Pose {
+            translation: [radius * cos_pan, self.side.sign() * radius * sin_pan, z],
+            orientation: [cos_p * sin_r, sin_p * cos_r, -sin_p * sin_r, cos_p * cos_r],
+        })
+    }
 }
 
 impl Default for XLeRobotArmIkSolver {
@@ -365,10 +400,7 @@ fn planar_ik(px: f64, pz: f64) -> (f64, f64) {
     (shoulder_lift_rad, elbow_flex_rad)
 }
 
-/// 2-DOF 平面 FK（沿 dimos `arm_ik.py:157-168` `_planar_fk` 同款移
-/// 植）。
-///
-/// 用于 `wrist_flex` 末端俯仰估算。
+/// 平面正解。两段从肩到腕的向量分别位于 θ1 和 θ1−θ2，θ2 是逆解给出的屈曲角。
 fn planar_fk(shoulder_lift_rad: f64, elbow_flex_rad: f64) -> (f64, f64) {
     let half_pi = std::f64::consts::FRAC_PI_2;
     let joint_shoulder = half_pi - shoulder_lift_rad;
@@ -376,11 +408,19 @@ fn planar_fk(shoulder_lift_rad: f64, elbow_flex_rad: f64) -> (f64, f64) {
 
     let theta1 = joint_shoulder - THETA1_OFFSET;
     let theta2 = joint_elbow - THETA2_OFFSET;
-    let pi = std::f64::consts::PI;
-
-    let px = L2.mul_add((theta1 + theta2 - pi).cos(), L1 * theta1.cos());
-    let pz = L2.mul_add((theta1 + theta2 - pi).sin(), L1 * theta1.sin());
+    let (forearm_sin, forearm_cos) = (theta1 - theta2).sin_cos();
+    let px = L2.mul_add(forearm_cos, L1 * theta1.cos());
+    let pz = L2.mul_add(forearm_sin, L1 * theta1.sin());
     (px, pz)
+}
+
+/// 沿用上游腕部俯仰补偿的肩到腕射线仰角；水平投影退化时取零。
+fn arm_elevation(horizontal: f64, height: f64) -> f64 {
+    if horizontal > HORIZONTAL_DIST_EPS {
+        height.atan2(horizontal)
+    } else {
+        0.0
+    }
 }
 
 // ── trait impl ──────────────────────────────────────────────────────
@@ -466,11 +506,7 @@ impl ArmIkSolver for XLeRobotArmIkSolver {
 
         // ── 3. wrist_flex：末端俯仰补偿 ────────────────────────────
         let (_fk_px, fk_z) = planar_fk(shoulder_lift, elbow_flex);
-        let current_pitch_estimate = if horizontal_dist > HORIZONTAL_DIST_EPS {
-            fk_z.atan2(horizontal_dist)
-        } else {
-            0.0
-        };
+        let current_pitch_estimate = arm_elevation(horizontal_dist, fk_z);
         let wrist_flex_raw = pitch - current_pitch_estimate;
         let wrist_flex = clamp_to_limit(wrist_flex_raw, &WRIST_FLEX_LIMIT);
 
@@ -538,45 +574,80 @@ mod tests {
         }
     }
 
-    /// AC-3 lib unit #2: FK round-trip （`IK → FK` 方向；避免
-    /// elbow-up vs elbow-down 双解歧义）。
-    ///
-    /// 取工作空间内目标 `(target_px, target_pz)` → [`planar_ik`] 解
-    /// 出 motor 角 `(shoulder_lift, elbow_flex)` → [`planar_fk`] 反
-    /// 推 `(fk_px, fk_pz)` → assert 跟原目标接近（abs <= 1e-6）。
-    ///
-    /// **不**用 `IK(FK(joints))` 方向 —— 闭式解多个分支（elbow-up /
-    /// elbow-down），dimos `_planar_ik` 固定一条分支，原 joints 可能
-    /// 落在另一分支，round-trip fail 不能证明 IK 错（仅证 elbow 二
-    /// 义性，跟本测目标无关）。
-    ///
-    /// [`planar_ik`]: super::planar_ik
-    /// [`planar_fk`]: super::planar_fk
+    /// 几何基准独立于逆解：上臂仰 60°，前臂水平，肩到腕的投影
+    /// 分别为 115.9 mm × cos(60°) + 135 mm 和 115.9 mm × sin(60°)。
+    #[test]
+    fn forward_pose_matches_known_arm_geometry() {
+        use std::f64::consts::FRAC_PI_6;
+        let joints = [
+            FRAC_PI_6,
+            0.278_803_361_449_573_63,
+            -0.240_273_271_146_262_96,
+            0.1,
+            -0.4,
+        ];
+        let radius = 0.192_95;
+        let height = 0.100_372_344_298_616_44;
+        for (side, direction) in [(Side::Right, 1.0), (Side::Left, -1.0)] {
+            let pose = XLeRobotArmIkSolver::new(side)
+                .forward_pose(&joints)
+                .unwrap();
+            let expected = [radius * FRAC_PI_6.cos(), direction * radius * 0.5, height];
+            for (actual, expected) in pose.translation.into_iter().zip(expected) {
+                assert!((actual - expected).abs() < EPS);
+            }
+            let (roll, pitch, yaw) = super::quat_to_euler(&pose.orientation);
+            assert!((pitch - (height.atan2(radius) + joints[3])).abs() < EPS);
+            assert!((roll - joints[4]).abs() < EPS);
+            assert!(yaw.abs() < EPS);
+        }
+    }
+
+    /// 上游 `assets/xlerobot/xlerobot.urdf` 的 `Pitch` 轴到 `Wrist_Pitch` 轴距离只依赖肘角。
+    /// 参考值取两段 origin 向量 (0,112.57,28) 和 (0,5.2,134.9) mm；
+    /// 后一段先绕 X 转 −1.5708 + (电机肘角 + π/2)，再与前一段相加取模。
+    #[test]
+    fn shoulder_to_wrist_distance_matches_urdf() {
+        let arm = XLeRobotArmIkSolver::new(Side::Right);
+        for (elbow_rad, urdf_mm) in [(0.35, 171.938_614), (0.240_690_068_5, 181.616_312)] {
+            let joints = [-0.2, 0.25, elbow_rad, -0.1, 0.3];
+            let [x, y, z] = arm.forward_pose(&joints).unwrap().translation;
+            let distance_mm = x.hypot(y).hypot(z) * 1000.0;
+            assert!(
+                (distance_mm - urdf_mm).abs() <= 1.0,
+                "肘角 {elbow_rad}，肩腕距离 {distance_mm} mm，URDF 参考 {urdf_mm} mm"
+            );
+        }
+    }
+
+    #[test]
+    fn forward_pose_rejects_invalid_joint_angles() {
+        let arm = solver();
+        for len in [0, 4, 6] {
+            assert!(arm.forward_pose(&[0.0; 6][..len]).is_err());
+        }
+        for (index, limit) in arm.info().joint_limits.iter().enumerate() {
+            for invalid in [
+                limit.min_rad - 1e-4,
+                limit.max_rad + 1e-4,
+                f64::NAN,
+                f64::INFINITY,
+            ] {
+                let mut joints = [0.0; 5];
+                joints[index] = invalid;
+                assert!(arm.forward_pose(&joints).is_err());
+            }
+        }
+    }
+
+    /// 三个可达且未饱和的平面目标，在同一几何模型内应只剩浮点误差。
     #[test]
     fn fk_round_trip_2dof_planar() {
-        // tolerance = 1e-2 m (10 mm)：dimos 闭式解通过 `THETA1_OFFSET`
-        // / `THETA2_OFFSET` 连杆弯折角补偿，不是严格几何反演，IK→FK
-        // 有 ~1 mm 量级残留（沿 dimos `arm_ik.py:46-48` 偏移定义；实测
-        // (px=0.15, pz=0.10) 残留 ≈ 0.001 m）。本测仅 sanity-check IK/FK
-        // 闭环，非 sub-mm 精度认证。
-        const FK_RT_TOLERANCE: f64 = 1e-2;
-
-        let target_horizontal = 0.15_f64;
-        let target_height = 0.10_f64;
-        let (shoulder_lift, elbow_flex) = super::planar_ik(target_horizontal, target_height);
-        let (fk_horizontal, fk_height) = super::planar_fk(shoulder_lift, elbow_flex);
-        assert!(
-            (fk_horizontal - target_horizontal).abs() < FK_RT_TOLERANCE,
-            "horizontal round-trip: target={target_horizontal:.9} \
-             fk={fk_horizontal:.9} diff={:.9} (tolerance={FK_RT_TOLERANCE})",
-            fk_horizontal - target_horizontal,
-        );
-        assert!(
-            (fk_height - target_height).abs() < FK_RT_TOLERANCE,
-            "height round-trip: target={target_height:.9} fk={fk_height:.9} \
-             diff={:.9} (tolerance={FK_RT_TOLERANCE})",
-            fk_height - target_height,
-        );
+        for (radius, height) in [(0.15, 0.10), (0.20, 0.10), (0.16, 0.05)] {
+            let (lift, elbow) = super::planar_ik(radius, height);
+            let (actual_radius, actual_height) = super::planar_fk(lift, elbow);
+            assert!((actual_radius - radius).hypot(actual_height - height) < EPS);
+        }
     }
 
     /// AC-3 lib unit #3: out-of-reach → Ok(clamped within workspace

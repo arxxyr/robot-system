@@ -400,7 +400,9 @@ mod tests {
     use super::*;
 
     use crate::action::{ActionId, ActionKind, ActionRequest, ActionSource};
-    use crate::coordinator::{CoordinatorConfig, HardwareSection};
+    use crate::coordinator::{
+        CoordinatorConfig, HardwareSection, parse_hardware_section_from_toml,
+    };
     use flatbuffers::{FlatBufferBuilder, root};
     use robot_core::time::{MockClock, MonoRawNs};
     use robot_kinematics::ArmIkSolver;
@@ -415,19 +417,11 @@ mod tests {
 
     /// 5-DOF XLeRobot hardware section（matches XLeRobotArmIkSolver.info()）。
     fn xlerobot_hardware() -> HardwareSection {
-        HardwareSection {
-            id: "test_arm".into(),
-            joints: vec![
-                "shoulder_pan".into(),
-                "shoulder_lift".into(),
-                "elbow_flex".into(),
-                "wrist_flex".into(),
-                "wrist_roll".into(),
-            ],
-            motor_ids: vec![1, 2, 3, 4, 5],
-            feetech_bus2_mixed_raw: false,
-            calibration_range_tolerances_raw: None,
-        }
+        parse_hardware_section_from_toml(
+            include_str!("../../../../configs/ik-backend-smoke.toml"),
+            "ik_arm",
+        )
+        .unwrap()
     }
 
     /// 构造一个最小合法 `IkPayload` fbs body bytes。
@@ -966,6 +960,131 @@ mod tests {
                 "target[{i}] = {got}, expected {want}"
             );
         }
+    }
+
+    /// 只在内存中执行右臂五轴命令，按电机整数刻度回读后再求腕点位置。
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "复用 S0 从 f32 关节目标到编码器整数的转换"
+    )]
+    fn offline_right_arm_forward_10mm() {
+        use robot_adapter_feetech::{rad_to_raw, raw_to_rad};
+        let solver = XLeRobotArmIkSolver::new(Side::Right);
+        let start_raw = [1917, 2210, 2275, 1982, 2243];
+        let start_joints = start_raw.map(|raw| f64::from(raw_to_rad(raw)));
+        let start = solver.forward_pose(&start_joints).unwrap();
+        let mut goal = start;
+        goal.translation[0] += 0.010;
+        let payload =
+            build_ik_payload_bytes(&goal.translation, &goal.orientation, &start_joints, "");
+        let (mut action, cfg, arm, anchor, clock) =
+            fresh_instance_with_payload(payload, start_joints.to_vec(), 1_000_000_000, &solver);
+        let mut ctx = ActionContext {
+            single_joint_config: None,
+            feedback: None,
+            clock: &clock,
+            layout_id: TEST_LAYOUT_ID,
+            hardware: &arm,
+            config: &cfg,
+            anchor_bias: &anchor,
+            command_seq: TEST_CMD_SEQ,
+            scripted_start_pose: None,
+            solver: Some(&solver),
+        };
+        let ActionTickOutput::Continue {
+            command: Some(body),
+            ..
+        } = action.tick(&mut ctx).unwrap()
+        else {
+            panic!("首拍应产生位置命令")
+        };
+        let cmd = root::<FbJointCommand<'_>>(body.as_bytes()).unwrap();
+        assert_eq!(cmd.mode(), ControlMode::Position);
+        assert_eq!(cmd.layout_id(), TEST_LAYOUT_ID);
+        let target = cmd.target().unwrap();
+        assert_eq!(target.len(), start_raw.len());
+        let targets_raw = std::array::from_fn(|i| {
+            let angle = target.get(i);
+            let limit = &solver.info().joint_limits[i];
+            assert!((limit.min_rad..=limit.max_rad).contains(&angle));
+            rad_to_raw(angle as f32)
+        });
+        assert_eq!(arm.joints, solver.info().joint_names);
+        let readback = simulate_right_arm_command(&arm, start_raw, targets_raw);
+
+        let reached_joints = readback.map(|raw| f64::from(raw_to_rad(raw)));
+        let reached = solver.forward_pose(&reached_joints).unwrap();
+        let delta_mm: [f64; 3] =
+            std::array::from_fn(|i| 1000.0 * (reached.translation[i] - start.translation[i]));
+        let [dx, dy, dz] = delta_mm;
+        let error_mm = (dx - 10.0).hypot(dy).hypot(dz);
+        assert!(
+            error_mm <= 2.0,
+            "腕点位移 {delta_mm:?} mm，目标误差 {error_mm} mm"
+        );
+        let dot: f64 = goal
+            .orientation
+            .iter()
+            .zip(reached.orientation)
+            .map(|(a, b)| a * b)
+            .sum();
+        assert!(dot.is_finite());
+        let orientation_error_deg = (2.0 * dot.abs().min(1.0).acos()).to_degrees();
+        assert!(
+            orientation_error_deg < 1.0,
+            "模型姿态偏差 {orientation_error_deg}°"
+        );
+        assert!(matches!(
+            action.tick(&mut ctx).unwrap(),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        let degrees = target.iter().map(f64::to_degrees).collect::<Vec<_>>();
+        eprintln!(
+            "右臂模型腕点位移 {delta_mm:.3?} mm，位置误差 {error_mm:.3} mm，姿态误差 {orientation_error_deg:.3}°，五轴目标 {degrees:.2?}°，编码器目标 {targets_raw:?} raw"
+        );
+    }
+
+    fn simulate_right_arm_command(
+        arm: &HardwareSection,
+        start: [i32; 5],
+        targets: [i32; 5],
+    ) -> [i32; 5] {
+        let bus2 = parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot-bus2.toml"),
+            "right_arm_full_with_base",
+        )
+        .unwrap();
+        assert_eq!(arm.joints.len(), targets.len());
+        assert_eq!(bus2.joints.len(), 9);
+        // 只投影到模拟右总线。夹爪用非零保持值，三轮用零速；左总线没有命令。
+        let mut before: Vec<i32> = (0..bus2.joints.len())
+            .map(|i| if bus2.is_wheel_slot(i) { 0 } else { 2047 })
+            .collect();
+        let slots: [usize; 5] = std::array::from_fn(|i| {
+            let name = format!("right_arm_{}", arm.joints[i]);
+            let slot = bus2.joints.iter().position(|n| n == &name).unwrap();
+            before[slot] = start[i];
+            slot
+        });
+        let mut after = before.clone();
+        for (id, raw) in arm.motor_ids.iter().zip(targets) {
+            let slot = bus2
+                .motor_ids
+                .iter()
+                .position(|bus_id| bus_id == id)
+                .unwrap();
+            after[slot] = raw;
+        }
+        assert_ne!(before, after);
+        for (i, name) in bus2.joints.iter().enumerate() {
+            if !slots.contains(&i) {
+                assert_eq!(after[i], before[i], "{name} 的模拟目标发生变化");
+            }
+        }
+        let readback = slots.map(|slot| after[slot]);
+        assert_eq!(readback, targets, "配置电机 ID 与五轴的名称顺序不匹配");
+        readback
     }
 
     // ----- 13. tick_second_call_returns_completed_success（single-shot
