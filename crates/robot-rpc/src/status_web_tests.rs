@@ -29,6 +29,7 @@ fn source(bus: u8, endpoint: String) -> Source {
         endpoint,
         robot_id: robot.robot.id,
         hardware_id: hardware.id.clone(),
+        feetech_position: hardware.adapter == "feetech_sts3215",
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),
@@ -94,6 +95,85 @@ fn real_bus_layouts_and_wheel_identity_come_from_config() {
             .iter()
             .all(|joint| joint.position_rad.is_none())
     );
+}
+
+#[test]
+fn pose_feedback_preserves_measured_raw_and_active_bounds() {
+    let mut bus = source(2, String::new());
+    let profile =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus2-motion.toml");
+    bus.motion = Some(control::MotionConfig::load(&profile, &bus).unwrap());
+    let mut state = SourceState::new(bus);
+    let mut data = sample(&state.source, 1);
+    let elbow = state
+        .source
+        .layout
+        .joints
+        .iter()
+        .position(|name| name == "right_arm_elbow_flex")
+        .unwrap();
+    data.position_rad[elbow] = f64::from(robot_adapter_feetech::raw_to_rad(2997));
+    state.accept(Ok(data), 1);
+    let view = state.view(1, 2000);
+    assert_eq!(view.joints[elbow].position_raw, Some(2997));
+    assert_eq!(view.joints[elbow].target_range_raw, Some([812, 2991]));
+    assert!(
+        view.joints
+            .iter()
+            .filter(|joint| joint.mode == "velocity_raw")
+            .all(|joint| joint.position_raw.is_none() && joint.target_range_raw.is_none())
+    );
+    state.source.feetech_position = false;
+    let view = state.view(1, 2000);
+    assert_eq!(view.joints[elbow].position_raw, None);
+    assert_eq!(view.joints[elbow].target_range_raw, None);
+}
+
+#[tokio::test]
+async fn pose_assets_match_configured_position_joints() {
+    let (state, _latest, _stop, _incoming) = web_state();
+    let app = router(state);
+    let response = app
+        .clone()
+        .oneshot(request("GET", "/assets/status-pose.js"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/javascript; charset=utf-8"
+    );
+    let response = app
+        .oneshot(request("GET", "/assets/xlerobot-pose.json"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    let model: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    for index in [1, 2] {
+        let bus = source(index, String::new());
+        let identity = &model["buses"][&bus.id];
+        assert_eq!(identity["robot_id"], bus.robot_id);
+        assert_eq!(identity["hardware_id"], bus.hardware_id);
+        let mut joints = model["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|node| node["bus"] == bus.id)
+            .map(|node| node["joint"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        let view = SourceState::new(bus).view(1, 2000);
+        let mut expected = view
+            .joints
+            .iter()
+            .filter(|joint| joint.mode == "position")
+            .map(|joint| joint.name.as_str())
+            .collect::<Vec<_>>();
+        joints.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(joints, expected);
+    }
 }
 
 #[test]

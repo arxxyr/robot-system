@@ -18,6 +18,7 @@ fn source(mixed: bool) -> Source {
         endpoint: String::new(),
         robot_id: "robot".into(),
         hardware_id: "arm".into(),
+        feetech_position: true,
         mixed_raw: mixed,
         calibration_range_tolerances_raw: None,
         layout: HardwareLayout {

@@ -98,6 +98,8 @@ struct RobotIdentity {
 struct HardwareIdentity {
     id: String,
     #[serde(default)]
+    adapter: String,
+    #[serde(default)]
     feetech_bus2_mixed_raw: bool,
     #[serde(default)]
     calibration_range_tolerances_raw: Option<Vec<u16>>,
@@ -110,6 +112,7 @@ struct Source {
     endpoint: String,
     robot_id: String,
     hardware_id: String,
+    feetech_position: bool,
     mixed_raw: bool,
     calibration_range_tolerances_raw: Option<Vec<u16>>,
     layout: HardwareLayout,
@@ -209,6 +212,7 @@ impl StatusConfig {
                 endpoint: entry.endpoint,
                 robot_id: robot.robot.id,
                 hardware_id: hardware.id.clone(),
+                feetech_position: hardware.adapter == "feetech_sts3215",
                 mixed_raw: hardware.feetech_bus2_mixed_raw,
                 calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
                 layout,
@@ -386,6 +390,17 @@ struct JointView {
     motor_id: u8,
     mode: &'static str,
     position_rad: Option<f64>,
+    position_raw: Option<i32>,
+    target_range_raw: Option<[i32; 2]>,
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "串口位置使用 f32 编码；先验证输入范围"
+)]
+fn feetech_raw(position: f64) -> Option<i32> {
+    (position.is_finite() && position.abs() <= f64::from(f32::MAX))
+        .then(|| robot_adapter_feetech::rad_to_raw(position as f32))
 }
 
 struct ReportedStatus {
@@ -490,6 +505,36 @@ impl SourceState {
         Ok(())
     }
 
+    fn joint_view(&self, index: usize, name: &str, motor_id: u8) -> JointView {
+        let velocity = self.source.mixed_raw && (7..=9).contains(&motor_id);
+        let radians = self
+            .last
+            .as_ref()
+            .filter(|_| !velocity)
+            .map(|last| last.position_rad[index]);
+        let (position_raw, target_range_raw) = if self.source.feetech_position && !velocity {
+            let range = self
+                .source
+                .motion
+                .as_ref()
+                .and_then(|motion| motion.position_range(name));
+            (
+                radians.and_then(feetech_raw),
+                range.and_then(|[lo, hi]| Some([feetech_raw(lo)?, feetech_raw(hi)?])),
+            )
+        } else {
+            (None, None)
+        };
+        JointView {
+            name: name.to_owned(),
+            motor_id,
+            mode: if velocity { "velocity_raw" } else { "position" },
+            position_rad: radians,
+            position_raw,
+            target_range_raw,
+        }
+    }
+
     fn view(&self, now_ns: u64, stale_after_ms: u64) -> BusView {
         let age_ms = self
             .last
@@ -511,19 +556,7 @@ impl SourceState {
             .iter()
             .zip(&self.source.layout.motor_ids)
             .enumerate()
-            .map(|(index, (name, &motor_id))| {
-                let velocity = self.source.mixed_raw && (7..=9).contains(&motor_id);
-                JointView {
-                    name: name.clone(),
-                    motor_id,
-                    mode: if velocity { "velocity_raw" } else { "position" },
-                    position_rad: if velocity {
-                        None
-                    } else {
-                        self.last.as_ref().map(|last| last.position_rad[index])
-                    },
-                }
-            })
+            .map(|(index, (name, &motor_id))| self.joint_view(index, name, motor_id))
             .collect();
         let mut control = self.control.view(self.source.motion.as_ref());
         if control.enabled && !control.busy {
@@ -791,6 +824,24 @@ fn router(state: WebState) -> Router {
         .route(
             "/",
             axum::routing::get(|| async { Html(include_str!("status_web.html")) }),
+        )
+        .route(
+            "/assets/xlerobot-pose.json",
+            axum::routing::get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/json")],
+                    include_str!("pose_assets/model.json"),
+                )
+            }),
+        )
+        .route(
+            "/assets/status-pose.js",
+            axum::routing::get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("status_pose.js"),
+                )
+            }),
         )
         .route("/api/state", axum::routing::get(state_json))
         .route("/api/ws", axum::routing::get(state_socket))

@@ -77,6 +77,11 @@ pub(super) struct JointLimit {
 }
 
 impl MotionConfig {
+    pub(super) fn position_range(&self, name: &str) -> Option<[f64; 2]> {
+        let joint = self.joints.iter().find(|joint| joint.name == name)?;
+        Some([joint.min_position_rad, joint.max_position_rad])
+    }
+
     #[allow(
         clippy::cast_possible_truncation,
         reason = "先检查f64有限及f32范围，再核对实际编码值"

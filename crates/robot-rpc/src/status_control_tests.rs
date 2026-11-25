@@ -257,6 +257,7 @@ fn source(bus: u8) -> Source {
         endpoint: "http://127.0.0.1:1".into(),
         robot_id: robot.robot.id,
         hardware_id: hardware.id.clone(),
+        feetech_position: hardware.adapter == "feetech_sts3215",
         mixed_raw: hardware.feetech_bus2_mixed_raw,
         calibration_range_tolerances_raw: hardware.calibration_range_tolerances_raw.clone(),
         layout: load_hardware_layout(&path, &hardware.id).unwrap(),

@@ -597,6 +597,13 @@ impl ClearTxnStore {
 enum StepFailure<T> {
     Before(StageError),
     Operation(StageError),
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "操作成功后注入失败仅用于测试，生产构建共用相同的恢复分支"
+        )
+    )]
     After(StageError, T),
 }
 

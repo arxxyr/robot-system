@@ -174,7 +174,7 @@
     .feedback-strip[data-tone="warn"] { border-color: #edd9af; background: #fffaf0; }
     #global-feedback-summary { font-weight: 600; flex-shrink: 0; }
     #global-alert { color: var(--muted); overflow-wrap: anywhere; }
-    .dashboard-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; border-bottom: 1px solid var(--line); margin-top: 12px; }
+    .dashboard-nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; border-bottom: 1px solid var(--line); margin-top: 12px; }
     .dashboard-tab { padding: 10px 12px; text-align: center; text-decoration: none; color: var(--muted); font-size: 14px; border-bottom: 3px solid transparent; }
     .dashboard-tab[aria-selected="true"] { color: var(--blue); border-bottom-color: var(--blue); font-weight: 650; }
     a:focus-visible, summary:focus-visible { outline: 3px solid #91b9db; outline-offset: 3px; }
@@ -233,6 +233,19 @@
       .robot-service-value { font-size: 11px; } .robot-service-core-label { font-size: 10px; }
       .robot-service-body { padding: 11px 12px; }
     }
+    .pose-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 270px); gap: 16px; align-items: start; }
+    .pose-scene, .pose-inspector { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; }
+    #pose-canvas { display: block; width: 100%; height: clamp(330px, 54vh, 560px); touch-action: none; border-radius: 9px 9px 0 0; }
+    .pose-scene figcaption { border-top: 1px solid var(--line); padding: 9px 16px; color: var(--muted); font-size: 12px; }
+    .pose-inspector { padding: 16px; }
+    .pose-inspector label { display: block; margin-bottom: 6px; font-weight: 600; }
+    .pose-inspector select { font: inherit; width: 100%; padding: 6px; color: var(--ink); }
+    .pose-inspector dl { margin: 16px 0 0; font-variant-numeric: tabular-nums; }
+    .pose-inspector dt { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+    .pose-inspector dd { margin: 2px 0 0; }
+    #pose-freshness, #pose-message { color: var(--muted); font-size: 13px; }
+    #pose-limit-note { color: var(--amber); font-weight: 600; }
+    @media (max-width: 700px) { .pose-layout { grid-template-columns: minmax(0, 1fr); } #pose-canvas { height: 360px; } }
   </style>
 </head>
 <body>
@@ -252,6 +265,7 @@
         <a id="nav-overview" class="dashboard-tab" role="tab" aria-controls="overview" aria-selected="true" tabindex="0" href="#overview" data-view="overview">总览</a>
         <a id="nav-camera" class="dashboard-tab" role="tab" aria-controls="panel-camera" aria-selected="false" tabindex="-1" href="#camera" data-view="camera">相机</a>
         <a id="nav-joints" class="dashboard-tab" role="tab" aria-controls="panel-joints" aria-selected="false" tabindex="-1" href="#joints" data-view="joints">关节</a>
+        <a id="nav-pose" class="dashboard-tab" role="tab" aria-controls="panel-pose" aria-selected="false" tabindex="-1" href="#pose" data-view="pose">可视化</a>
         <a id="nav-base" class="dashboard-tab" role="tab" aria-controls="panel-base" aria-selected="false" tabindex="-1" href="#base" data-view="base">底盘</a>
         <a id="nav-resources" class="dashboard-tab" role="tab" aria-controls="resources" aria-selected="false" tabindex="-1" href="#resources" data-view="resources">资源</a>
       </nav>
@@ -314,6 +328,28 @@
       <div class="section-row"><h2>总线与关节</h2><span id="summary">等待状态数据</span></div>
       <div id="buses" class="buses"><div class="empty"><strong>尚未连接状态源</strong><p>连接后，按当前机器人配置显示设备及反馈。没有反馈时保留“未知”。</p></div></div>
     </section>
+    <section id="panel-pose" class="view-panel" role="tabpanel" aria-labelledby="nav-pose" hidden>
+      <div class="section-row"><h2>机器人姿态</h2></div>
+      <p id="pose-freshness">等待总线反馈</p>
+      <p id="pose-message" role="status" hidden></p>
+      <div class="pose-layout">
+        <figure class="pose-scene">
+          <canvas id="pose-canvas" aria-label="XLeRobot 关节姿态，可拖动旋转视角，也可用旁边的列表选择关节"></canvas>
+          <figcaption>拖动旋转视角，点选关节查看反馈。灰色表示缺少当前姿态。底盘固定为参考坐标。</figcaption>
+        </figure>
+        <div id="pose-details" class="pose-inspector">
+          <label for="pose-joint">查看关节</label>
+          <select id="pose-joint" disabled aria-label="选择姿态关节"></select>
+          <dl>
+            <dt>反馈状态</dt><dd id="pose-source">等待反馈</dd>
+            <dt>电机角度</dt><dd id="pose-angle">—</dd>
+            <dt>编码器位置（换算）</dt><dd id="pose-raw">—</dd>
+            <dt>主动目标范围</dt><dd id="pose-range">—</dd>
+          </dl>
+          <p id="pose-limit-note" hidden></p>
+        </div>
+      </div>
+    </section>
     <section id="panel-base" class="view-panel" role="tabpanel" aria-labelledby="nav-base" hidden>
       <div class="section-row"><h2>底盘</h2></div>
       <div class="resources">
@@ -346,9 +382,11 @@
       const safetyText = { TorqueUnknown: '扭矩未知', TorqueOn: '总线上扭', StopCommanded: '已请求停止', TorqueOffConfirmed: '已确认断扭', StopFailed: '停止失败', AdapterUncertain: '未确认' };
       const statusText = { fresh: '反馈正常', stale: '反馈超时', unavailable: '无可用反馈', invalid: '反馈不匹配' };
       const jointLabels = { shoulder_pan: '肩部旋转', shoulder_lift: '肩部抬升', elbow_flex: '肘关节', wrist_flex: '腕部俯仰', wrist_roll: '腕部旋转', gripper: '夹爪', head_motor_1: '头部关节 1', head_motor_2: '头部关节 2', base_left_wheel: '左轮', base_front_wheel: '前轮', base_right_wheel: '右轮' };
-      const views = ['overview', 'camera', 'joints', 'base', 'resources'];
-      const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), base: document.getElementById('panel-base'), resources: elements.resources };
+      const views = ['overview', 'camera', 'joints', 'pose', 'base', 'resources'];
+      const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), pose: document.getElementById('panel-pose'), base: document.getElementById('panel-base'), resources: elements.resources };
       let activeView = 'overview';
+      const pose = Object.fromEntries(['canvas', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
+      let poseView, poseModel, poseLoading;
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
       let activeSession = null;
@@ -442,6 +480,8 @@
           setAttribute(tab, 'aria-selected', name === view);
           setAttribute(tab, 'tabindex', name === view ? '0' : '-1');
         }
+        poseView?.setVisible(view === 'pose' && !document.hidden);
+        if (view === 'pose' && !poseView && !document.hidden) void loadPose();
         if (focus) document.getElementById(`nav-${view}`).focus();
         if (changed) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         renderCurrentView();
@@ -452,6 +492,69 @@
         renderResourcesData();
         renderResourcesStatus();
         if (activeView === 'camera') for (const camera of cameraCards) renderCameraAge(camera);
+      }
+      async function loadPose() {
+        if (poseLoading || poseView) return;
+        poseLoading = true;
+        setText(pose.message, '正在加载机器人模型…');
+        pose.message.hidden = false;
+        try {
+          const [module, model] = await Promise.all([
+            import('/assets/status-pose.js'),
+            fetch('/assets/xlerobot-pose.json').then(response => {
+              if (!response.ok) throw new Error();
+              return response.json();
+            })
+          ]);
+          poseModel = model;
+          poseView = module.createPoseView(pose.canvas, model, selectPoseJoint);
+          for (const entry of model.nodes.filter(entry => entry.joint)) {
+            const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
+            pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
+          }
+          pose.joint.disabled = false;
+          pose.message.hidden = true;
+          poseView.setVisible(activeView === 'pose' && !document.hidden);
+          selectPoseJoint(pose.joint.value);
+        } catch {
+          setText(pose.message, '模型加载失败。重进「可视化」可重试。');
+        } finally {
+          poseLoading = false;
+        }
+      }
+      function selectPoseJoint(name) {
+        pose.joint.value = name;
+        poseView.select(name);
+        renderPose();
+      }
+      pose.joint.addEventListener('change', () => selectPoseJoint(pose.joint.value));
+      function renderPose() {
+        if (!poseView || activeView !== 'pose' || document.hidden) return;
+        const sources = Object.entries(poseModel.buses);
+        const buses = (snapshot?.buses || []).filter(bus => {
+          const identity = poseModel.buses[bus.id];
+          return identity && identity.robot_id === bus.robot_id && identity.hardware_id === bus.hardware_id;
+        }).map(bus => ({ ...bus, data_status: statusOf(bus) }));
+        poseView.update(buses);
+        setText(pose.freshness, sources.map(([id]) => {
+          const bus = buses.find(item => item.id === id);
+          return `${bus?.label || id} · ${statusText[bus?.data_status || 'unavailable']}`;
+        }).join('　/　'));
+        const binding = poseModel.nodes.find(entry => entry.joint === pose.joint.value);
+        const bus = buses.find(item => item.id === binding?.bus);
+        const joint = bus?.joints.find(item => item.name === binding.joint && item.mode === 'position');
+        const valid = Number.isFinite(joint?.position_rad);
+        const raw = joint?.position_raw;
+        const range = joint?.target_range_raw;
+        const hasRange = Array.isArray(range) && range.length === 2 && range.every(Number.isSafeInteger);
+        const status = statusText[bus?.data_status || 'unavailable'];
+        setText(pose.source, joint ? `${bus.id} · ID${joint.motor_id} · ${status}${valid && bus.data_status !== 'fresh' ? '（最后反馈）' : ''}` : status);
+        setText(pose.angle, valid ? `${(joint.position_rad * 180 / Math.PI).toFixed(1)}°` : '—');
+        setText(pose.raw, valid && Number.isSafeInteger(raw) ? `${raw} raw` : '—');
+        setText(pose.range, hasRange ? `${range[0]} 至 ${range[1]} raw` : '未提供');
+        const delta = valid && Number.isSafeInteger(raw) && hasRange ? Math.max(range[0] - raw, raw - range[1]) : 0;
+        if (delta > 0) setText(pose['limit-note'], `${bus.data_status === 'fresh' ? '反馈' : '最后反馈'}${raw > range[1] ? '高于上限' : '低于下限'} ${delta} raw`);
+        setProperty(pose['limit-note'], 'hidden', !(delta > 0));
       }
       function renderGlobalFeedback() {
         if (document.hidden) return;
@@ -1016,6 +1119,7 @@
       function render() {
         if (document.hidden) return;
         if (activeView === 'base') renderBase();
+        if (activeView === 'pose') renderPose();
         renderGlobalFeedback();
         renderOverviewBuses();
         setText(document.getElementById('access-mode'), snapshot?.buses.some(bus => controlView(bus)?.enabled) ? '监控与控制 · 动作需明确操作' : '只读监控 · 未开放动作');
@@ -1572,6 +1676,8 @@
         else void startPreview();
       });
       document.addEventListener('visibilitychange', () => {
+        poseView?.setVisible(!document.hidden && activeView === 'pose');
+        if (!document.hidden && activeView === 'pose' && !poseView) void loadPose();
         if (document.hidden) {
           stopBase();
           stopResources('页面在后台，资源读取已暂停。');
