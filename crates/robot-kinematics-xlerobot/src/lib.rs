@@ -94,6 +94,7 @@
 //! [`KinematicInfo::joint_names`]: robot_kinematics::KinematicInfo
 
 pub mod base;
+pub mod preview;
 
 use robot_kinematics::{ArmIkSolver, IkError, IkSolution, JointLimit, KinematicInfo, Pose};
 
@@ -247,13 +248,10 @@ impl XLeRobotArmIkSolver {
     pub fn new(side: Side) -> Self {
         let info = KinematicInfo {
             joint_count: 5,
-            joint_names: vec![
-                "shoulder_pan".to_string(),
-                "shoulder_lift".to_string(),
-                "elbow_flex".to_string(),
-                "wrist_flex".to_string(),
-                "wrist_roll".to_string(),
-            ],
+            joint_names: preview::ARM_JOINT_NAMES
+                .iter()
+                .map(|&name| name.to_owned())
+                .collect(),
             joint_limits: vec![
                 SHOULDER_PAN_LIMIT,
                 SHOULDER_LIFT_LIMIT,

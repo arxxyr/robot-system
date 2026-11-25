@@ -269,18 +269,12 @@ fn start_right_arm(
     let recovered = solver
         .solve(&initial_pose, Some(&initial), None)
         .map_err(map_ik_error_to_start_error)?;
-    if recovered.joints_rad.len() != initial.len()
-        || !recovered
-            .joints_rad
-            .iter()
-            .zip(&initial)
-            .zip(tolerances)
-            .all(|((&actual, &original), tolerance)| (actual - original).abs() <= tolerance)
-    {
-        return Err(ActionStartError::Rejected(
-            "右臂当前姿态与 IK 分支不一致，无法保证回到原关节位置".into(),
-        ));
-    }
+    robot_kinematics_xlerobot::preview::check_return_branch(
+        &recovered.joints_rad,
+        &initial,
+        &tolerances,
+    )
+    .map_err(ActionStartError::Rejected)?;
 
     model
         .check_solution(goal, solution)

@@ -50,6 +50,54 @@ pub fn rad_to_raw(rad: f32) -> i32 {
     tick.saturating_add(i32::from(STS3215_MAX_POSITION))
 }
 
+/// 同时检查请求位置及 S0 实际传输的 f32 表示，主动目标不扩展限位。
+#[must_use]
+#[allow(clippy::cast_possible_truncation, reason = "检查 S0 实际 f32 编码")]
+pub fn within_active_range(position: f64, range: [f64; 2]) -> bool {
+    let range = range[0]..=range[1];
+    position.abs() <= f64::from(f32::MAX)
+        && range.contains(&position)
+        && range.contains(&f64::from(position as f32))
+}
+
+/// 沿 S1 的线性插值核对本段时长所需的速率，返回实际 f32 命令值。
+#[allow(clippy::cast_possible_truncation, reason = "已校验 S0 实际 f32 编码")]
+pub fn checked_motion_position(
+    requested: f64,
+    start: f64,
+    duration_ms: u32,
+    range: [f64; 2],
+    max_velocity_rad_s: f64,
+) -> Result<f64, &'static str> {
+    if !within_active_range(requested, range) {
+        return Err("单关节目标或实际 f32 编码值不是有限值或超出配置范围");
+    }
+    let target = f64::from(requested as f32);
+    let distance = (requested - start).abs().max((target - start).abs());
+    let speed = distance / (f64::from(duration_ms) / 1_000.0);
+    if !speed.is_finite() || !max_velocity_rad_s.is_finite() || speed > max_velocity_rad_s {
+        return Err("单关节目标与时长要求的速率超过配置限制");
+    }
+    Ok(target)
+}
+
+/// 右臂 IK 实际执行及预览共用。原浮点解、f32 表示、取整后的编码器位置都须合法。
+#[allow(clippy::cast_possible_truncation, reason = "沿用 S0 的 f32 编码入口")]
+pub fn checked_position_target(
+    requested: f64,
+    start: f64,
+    duration_ms: u32,
+    range: [f64; 2],
+    max_velocity_rad_s: f64,
+) -> Result<i32, &'static str> {
+    let check =
+        |position| checked_motion_position(position, start, duration_ms, range, max_velocity_rad_s);
+    let target = check(requested)?;
+    let raw = rad_to_raw(target as f32);
+    check(f64::from(raw_to_rad(raw)))?;
+    Ok(raw)
+}
+
 /// 从原校准派生的运动范围计算原位保持允许范围，不改变主动目标限位。
 /// 零容差保留原范围；非零容差要求端点就是可往返的 12-bit f32 校准值。
 /// 只扩展范围并在 raw 硬边界饱和，不裁剪实际位置或目标。

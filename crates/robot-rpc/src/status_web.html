@@ -371,6 +371,24 @@
           <p id="pose-limit-note" hidden></p>
         </div>
       </div>
+      <details class="pose-calibration" id="ik-preview">
+        <summary>右臂腕点 IK 预览</summary>
+        <p>从一次五轴反馈计算腕俯仰轴沿右肩基座 X 轴前移 10 毫米并返回。预览只读，结果保留到下次点击。</p>
+        <button type="button" class="secondary" id="ik-run" disabled>预览前移 10 毫米并返回</button>
+        <p id="ik-status" role="status"></p>
+        <div id="ik-result" hidden>
+          <p id="ik-points"></p>
+          <p>前移：<output id="ik-forward"></output></p>
+          <p>回程：<output id="ik-return"></output></p>
+          <details>
+            <summary>五轴编码器位置（raw）</summary>
+            <div class="table-wrap"><table aria-label="五轴起点与两程目标">
+              <thead><tr><th>右臂关节</th><th>本次起点</th><th>前移目标</th><th>回程目标</th></tr></thead>
+              <tbody id="ik-joints"></tbody>
+            </table></div>
+          </details>
+        </div>
+      </details>
       <details class="pose-calibration cal-help">
         <summary>校准操作说明</summary>
         <p>网页模型与实物角度有偏差时，先用「对齐网页模型」。如果还需要重设电机零位或行程，先校准电机，再对齐模型。</p>
@@ -578,6 +596,7 @@
           ]);
           poseModel = model;
           poseView = module.createPoseView(pose.canvas, model, selectPoseJoint);
+          module.initWristPreview(jointLabel);
           for (const entry of model.nodes.filter(entry => entry.joint)) {
             const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
             pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));

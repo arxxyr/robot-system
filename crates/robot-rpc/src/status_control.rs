@@ -69,11 +69,11 @@ pub(super) struct MotionConfig {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct JointLimit {
-    name: String,
-    min_position_rad: f64,
-    max_position_rad: f64,
-    max_velocity_rad_s: f64,
-    tolerance_rad: f64,
+    pub(super) name: String,
+    pub(super) min_position_rad: f64,
+    pub(super) max_position_rad: f64,
+    pub(super) max_velocity_rad_s: f64,
+    pub(super) tolerance_rad: f64,
 }
 
 impl MotionConfig {

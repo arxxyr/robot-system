@@ -39,6 +39,8 @@ mod control;
 mod calibration;
 #[path = "status_camera.rs"]
 mod camera;
+#[path = "status_ik.rs"]
+mod ik;
 #[path = "status_resources.rs"]
 mod resources;
 
@@ -865,6 +867,10 @@ fn router(state: WebState) -> Router {
             }),
         )
         .route("/api/state", axum::routing::get(state_json))
+        .route(
+            "/api/kinematics/right-arm/preview",
+            axum::routing::get(ik::preview),
+        )
         .route("/api/ws", axum::routing::get(state_socket))
         .with_state(state)
         .merge(cameras)

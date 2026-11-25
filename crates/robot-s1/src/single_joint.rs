@@ -320,49 +320,39 @@ fn checked_motion_target(
     duration_ms: u32,
     limit: &JointMotionLimits,
 ) -> Result<f64, ActionStartError> {
-    if !valid_position(requested_target, limit) {
-        return Err(ActionStartError::Rejected(
-            "单关节目标或实际 f32 编码值不是有限值或超出配置范围".into(),
-        ));
-    }
-    let target = position_for_s0(requested_target);
-    let distance = (requested_target - start).abs().max((target - start).abs());
-    let required_velocity = distance / (f64::from(duration_ms) / 1_000.0);
-    if !required_velocity.is_finite() || required_velocity > limit.max_velocity_rad_s {
-        return Err(ActionStartError::Rejected(
-            "单关节目标与时长要求的速率超过配置限制".into(),
-        ));
-    }
-    Ok(target)
+    robot_adapter_feetech::convert::checked_motion_position(
+        requested_target,
+        start,
+        duration_ms,
+        [limit.min_position_rad, limit.max_position_rad],
+        limit.max_velocity_rad_s,
+    )
+    .map_err(|message| ActionStartError::Rejected(message.into()))
 }
 
 /// 右臂 IK 和只读维护计划共用电机实际接收的整数刻度，原浮点解与取整目标均须合法。
 #[cfg(feature = "backend-scripted")]
-#[allow(clippy::cast_possible_truncation, reason = "沿用 S0 的 f32 编码入口")]
 pub fn checked_encoder_target(
     requested: f64,
     start: f64,
     duration_ms: u32,
     limit: &JointMotionLimits,
 ) -> Result<i32, ActionStartError> {
-    let target = checked_motion_target(requested, start, duration_ms, limit)?;
-    let raw = robot_adapter_feetech::rad_to_raw(target as f32);
-    checked_motion_target(
-        f64::from(robot_adapter_feetech::raw_to_rad(raw)),
+    robot_adapter_feetech::convert::checked_position_target(
+        requested,
         start,
         duration_ms,
-        limit,
-    )?;
-    Ok(raw)
+        [limit.min_position_rad, limit.max_position_rad],
+        limit.max_velocity_rad_s,
+    )
+    .map_err(|message| ActionStartError::Rejected(message.into()))
 }
 
 pub(crate) fn valid_position(position: f64, limit: &JointMotionLimits) -> bool {
-    position.is_finite()
-        && position.abs() <= f64::from(f32::MAX)
-        && position >= limit.min_position_rad
-        && position <= limit.max_position_rad
-        && position_for_s0(position) >= limit.min_position_rad
-        && position_for_s0(position) <= limit.max_position_rad
+    robot_adapter_feetech::convert::within_active_range(
+        position,
+        [limit.min_position_rad, limit.max_position_rad],
+    )
 }
 
 fn hold_range(limit: &JointMotionLimits, tolerance_raw: u16) -> Option<(f64, f64)> {

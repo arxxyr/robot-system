@@ -1,3 +1,40 @@
+// 预览取服务端同一帧的反馈。画布后续收到的姿态只更新实时模型。
+export function initWristPreview(jointLabel) {
+  const ui = Object.fromEntries(['run', 'status', 'result', 'points', 'forward', 'return', 'joints']
+    .map(name => [name, document.getElementById('ik-' + name)]));
+  const xyz = values => values.map(value => Math.round(value)).join(', ');
+  const verdict = leg => leg.error || (leg.joints_raw ? '通过' : '前移未通过，回程未计算');
+  ui.run.disabled = false;
+  ui.run.addEventListener('click', async () => {
+    if (ui.run.disabled) return;
+    ui.run.disabled = true;
+    ui.result.hidden = true;
+    ui.status.textContent = '正在读取右臂反馈并计算…';
+    try {
+      const response = await fetch('/api/kinematics/right-arm/preview', {cache: 'no-store'});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || '服务返回 HTTP ' + response.status);
+      ui.points.textContent = '右肩基座 XYZ（毫米）　起点 (' + xyz(result.start.xyz_mm)
+        + ') → 前移目标 (' + xyz(result.target_xyz_mm) + ')';
+      ui.forward.textContent = verdict(result.forward);
+      ui.return.textContent = verdict(result.return);
+      ui.joints.replaceChildren(...result.joint_names.map((name, i) => {
+        const row = document.createElement('tr');
+        const values = [jointLabel(name), result.start.joints_raw[i],
+          result.forward.joints_raw?.[i], result.return.joints_raw?.[i]];
+        for (const value of values) row.insertCell().textContent = value ?? '—';
+        return row;
+      }));
+      ui.status.textContent = '本次起点已固定 · bus2 反馈帧 ' + result.stamp_ns;
+      ui.result.hidden = false;
+    } catch (error) {
+      ui.status.textContent = '无法预览：' + error.message;
+    } finally {
+      ui.run.disabled = false;
+    }
+  });
+}
+
 // URDF 变换为行主序 3×4 仿射矩阵，最后一行恒为 [0, 0, 0, 1]。
 function origin([x, y, z], [roll, pitch, yaw]) {
   const a = Math.cos(roll), b = Math.sin(roll);
