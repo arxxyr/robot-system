@@ -91,10 +91,111 @@ test('页面丢失响应后只允许查询维护事实，过期反馈撤销模�
     assert.equal(el('next').hidden, true);
     maintenance.phase = 'centered';
     await el('refresh').fire('click');
-    assert.equal(el('next').textContent, '记录第一端');
+    assert.equal(el('next').textContent, '记录第一个端点');
     assert.deepEqual(calls.filter(call => call.method === 'POST').map(call => call.body), [{action:'center', session:'test', bus:'bus2'}]);
+    panel.leave();
   } finally {
     globalThis.document = doc;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('网页按所选电机标零，最大和最小手摆记录，切换关节不能对旧会话发写入', async () => {
+  const elements = new Map();
+  const element = id => {
+    if (!elements.has(id)) elements.set(id, {listeners:{},
+      addEventListener(type, cb) { this.listeners[type] = cb; },
+      async fire(type) { this.listeners[type]({detail:1}); await new Promise(resolve => setImmediate(resolve)); }});
+    return elements.get(id);
+  };
+  const doc = globalThis.document, originalWindow = globalThis.window, originalFetch = globalThis.fetch;
+  const target = {bus:'bus2', joint:'right_arm_wrist_roll'};
+  let selected = target, permit = false, delayRead = false, releaseRead, refreshPosition;
+  const originalTimer = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, millis, ...args) => {
+    if (millis === 500) { refreshPosition = callback; return; }
+    return originalTimer(callback, millis, ...args);
+  };
+  const calls = [];
+  const el = id => element('cal-' + id);
+  const context = () => ({binding:selected, bus:{id:selected.bus, control:{enabled:true}}, fresh:false});
+  let session = null;
+  const phases = {center:'centered', sample1:'sampled1', sample2:'sampled2', save:'saved'};
+  globalThis.document = {getElementById:element};
+  globalThis.window = {confirm:() => permit};
+  globalThis.fetch = async (url, options) => {
+    const body = options.body && JSON.parse(options.body);
+    if (!body) {
+      const value = session || {ok:false,phase:'idle',error:'尚未开启'};
+      if (delayRead) await new Promise(resolve => { releaseRead = resolve; });
+      return {ok:value.ok, json:async () => value};
+    }
+    calls.push(body);
+    if (url.endsWith('/start')) {
+      assert.deepEqual(body, {...target, supported:true});
+      session = {...target, session:'test', ok:true, phase:'ready'};
+    } else {
+      session = {...session, phase:phases[body.action]};
+      if (body.action === 'sample1') session.sample1 = 3500;
+      if (body.action === 'sample2') session.sample2 = 600;
+    }
+    return {ok:session.ok, json:async () => session};
+  };
+  try {
+    const panel = createCalibrationPanel(context, () => {}, feedbackAngle);
+    el('motor').open = true;
+    await el('motor').fire('toggle');
+    assert.equal(el('start').hidden, false);
+    await el('start').fire('click');
+    assert.deepEqual(calls, []);
+    permit = true;
+    await el('start').fire('click');
+    assert.equal(el('next').textContent, '标零（写入电机）');
+    selected = {bus:'bus1', joint:'head_motor_1'};
+    panel.refresh();
+    assert.equal(el('next').hidden, true);
+    await el('next').fire('click');
+    assert.equal(calls.length, 1);
+    selected = target;
+    panel.refresh();
+    await el('next').fire('click');
+    assert.equal(session.phase, 'centered');
+    delayRead = true;
+    refreshPosition();
+    await el('next').fire('click');
+    assert.deepEqual(calls.at(-1), {action:'sample1', bus:target.bus, session:'test'});
+    delayRead = false;
+    releaseRead();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(el('next').textContent, '记录另一个端点');
+    await el('next').fire('click');
+    assert.deepEqual(calls.at(-1), {action:'sample2', bus:target.bus, session:'test'});
+    assert.match(el('motor-readings').textContent, /限位范围 600 至 3500 raw/);
+    await el('next').fire('click');
+    assert.equal(session.phase, 'saved');
+    session.phase = 'centered';
+    await el('refresh').fire('click');
+    const writesBefore = calls.length;
+    session = {...session, ok:true, phase:'recovery', position_warning:'检测到跨越编码器边界，请恢复并重选中位'};
+    refreshPosition();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls.length, writesBefore);
+    assert.match(el('motor-status').textContent, /检测到跨越编码器边界/);
+    assert.match(el('motor-status').textContent, /请恢复并重选中位/);
+    assert.equal(el('next').textContent, '恢复原电机校准');
+    panel.leave();
+    // 重连后的首次 GET 只剩交接记录，校准保存和服务归还失败需同时展示。
+    session = {...target, ok:true, phase:'failed', error:'恢复保护待机失败', calibration_result:'saved'};
+    el('motor').open = true;
+    await el('motor').fire('toggle');
+    assert.match(el('motor-status').textContent, /电机校准已保存/);
+    assert.match(el('motor-status').textContent, /恢复保护待机失败/);
+    assert.equal(calls.length, writesBefore);
+    panel.leave();
+  } finally {
+    globalThis.document = doc;
+    globalThis.setTimeout = originalTimer;
+    globalThis.window = originalWindow;
     globalThis.fetch = originalFetch;
   }
 });

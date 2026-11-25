@@ -21,9 +21,9 @@ export function fitPose(binding, first, second) {
   return {sign, offset: arc(a + arc(b-a)/2)};
 }
 
-async function request(path, method = 'GET', data) {
+async function request(path, method = 'GET', data, timeoutMs = 8000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const result = await fetch('/api/calibration/' + path, {
       method, mode: 'same-origin', signal: controller.signal, cache: 'no-store',
@@ -31,7 +31,11 @@ async function request(path, method = 'GET', data) {
       body: data ? JSON.stringify(data) : undefined,
     });
     const value = await result.json();
-    if (!result.ok) throw new Error(value.error || '请求失败（HTTP ' + result.status + '）。');
+    if (!result.ok) {
+      const failure = new Error(value.error || '请求失败（HTTP ' + result.status + '）。');
+      failure.reply = value;
+      throw failure;
+    }
     return value;
   } finally {
     clearTimeout(timeout);
@@ -39,9 +43,9 @@ async function request(path, method = 'GET', data) {
 }
 
 const motorSteps = {
-  ready: ['支撑关节，手摆到中位。', 'center', '确认中位并写电机零位'],
-  centered: ['手动摆到第一个端点。', 'sample1', '记录第一端'],
-  sampled1: ['手动摆到另一端。', 'sample2', '记录第二端'],
+  ready: ['校准已就绪。手摆到参考中位，停稳后点击标零，写入电机 EEPROM。', 'center', '标零（写入电机）'],
+  centered: ['已标零。手动摆到最大或最小位置，停稳后记录。', 'sample1', '记录第一个端点'],
+  sampled1: ['请手动摆到另一端，停稳后记录。', 'sample2', '记录另一个端点'],
   sampled2: ['请核对两个端点，再写入电机并保存此关节校准。', 'save', '写入限位并保存'],
   saved: ['电机校准已保存。'],
   cancelled: ['会话已取消。'],
@@ -51,11 +55,11 @@ const motorSteps = {
 
 export function createCalibrationPanel(getSample, display, feedbackAngle) {
   const ids = ['model', 'joint', 'model-step', 'angle-label', 'angle', 'measures', 'model-result',
-    'record', 'save', 'discard', 'default', 'motor', 'motor-status', 'motor-readings', 'refresh', 'next', 'cancel'];
+    'record', 'save', 'discard', 'default', 'motor', 'start', 'motor-status', 'motor-readings', 'refresh', 'next', 'cancel'];
   const ui = Object.fromEntries(ids.map(id => [id, document.getElementById('cal-' + id)]));
   let overrides = {}, loaded = false, modelBusy = false;
   let selection = '', sourceSession, points = [], candidate = null;
-  let motor = null, motorBusy = false, motorEpoch = 0;
+  let motor = null, motorBusy = false, motorEpoch = 0, motorMessage = '', poll;
 
   function showMapping() {
     const merged = {...overrides};
@@ -87,6 +91,7 @@ export function createCalibrationPanel(getSample, display, feedbackAngle) {
 
   function refresh() {
     const {binding, fresh, label} = freshContext();
+    if (ui.motor.open) renderMotor();
     if (!binding || !ui.model.open) return;
     const stage = points.length;
     const jaw = Boolean(binding.range);
@@ -189,56 +194,110 @@ export function createCalibrationPanel(getSample, display, feedbackAngle) {
   ui.save.addEventListener('click', () => void store(false));
   ui.default.addEventListener('click', () => void store(true));
 
-  function renderMotor(message) {
-    const step = motorSteps[motor?.phase];
+  const handoffLabels = {
+    idle: '点击开启时会交接所选侧总线，随后在这里给单个电机标零。',
+    starting: '正在交接该侧总线，请等待。',
+    serving: '维护会话正在交接，请读取维护状态。若维护已中断，可重新开启同一关节以恢复。',
+    returning: '维护会话已结束，正在归还该侧总线。',
+    returned: '该侧已恢复保护待机。',
+    failed: '维护交接未完成。',
+  };
+  const terminal = ['saved', 'restored', 'cancelled'];
+  function renderMotor() {
+    const {binding, label, bus} = getSample();
+    const selected = binding && motor?.bus === binding.bus && motor?.joint === binding.joint;
+    const step = Object.hasOwn(motorSteps, motor?.phase) ? motorSteps[motor.phase] : null;
+    const reconnect = ['starting','serving','returning'].includes(motor?.phase);
+    const startable = ['idle','failed','returned'].includes(motor?.phase) || (reconnect && selected);
+    ui.start.textContent = reconnect ? '重新接入所选电机校准' : '开启所选电机校准';
+    ui.start.hidden = !startable || !binding
+      || bus?.control?.enabled === false;
+    ui.start.disabled = motorBusy;
     ui.refresh.disabled = motorBusy;
-    ui.next.hidden = !step?.[1];
+    ui.next.hidden = !selected || !step?.[1];
     ui.next.textContent = step?.[2] || '';
     ui.next.disabled = motorBusy;
-    ui.cancel.hidden = !motor || !['ready', 'centered', 'sampled1', 'sampled2'].includes(motor.phase);
+    ui.cancel.hidden = !selected || !['ready', 'centered', 'sampled1', 'sampled2'].includes(motor?.phase);
     ui.cancel.textContent = motor?.phase === 'ready' ? '取消会话' : '撤销校准并恢复原值';
     ui.cancel.disabled = motorBusy;
-    const title = motor ? motor.bus + ' · ' + motor.joint + '　' : '';
-    ui['motor-status'].textContent = title + (message || step?.[0] || '等待查询维护会话。');
+    const target = motor?.joint ? motor.bus + ' · ' + motor.joint : label || binding?.joint || '';
+    const hint = step && !selected ? '请先选中本会话的关节，再操作。' : '';
+    const outcome = terminal.includes(motor?.calibration_result) ? motorSteps[motor.calibration_result][0] : '';
+    ui['motor-status'].textContent = [target, motorMessage, outcome, motor?.error, motor?.position_warning, hint,
+      step?.[0] || handoffLabels[motor?.phase] || (!motorMessage && '等待读取维护状态。')].filter(Boolean).join('　');
     const readings = [['position','当前位置'],['center','中位'],['sample1','第一端'],['sample2','第二端']];
-    ui['motor-readings'].textContent = readings.filter(([key]) => Number.isSafeInteger(motor?.[key]))
-      .map(([key,label]) => label + ' ' + motor[key] + ' raw').join('　');
+    const values = readings.filter(([key]) => Number.isSafeInteger(motor?.[key]))
+      .map(([key,label]) => label + ' ' + motor[key] + ' raw');
+    if (Number.isSafeInteger(motor?.sample1) && Number.isSafeInteger(motor?.sample2)) {
+      values.push('限位范围 ' + Math.min(motor.sample1, motor.sample2) + ' 至 ' + Math.max(motor.sample1, motor.sample2) + ' raw');
+    }
+    ui['motor-readings'].textContent = values.join('　');
   }
-  async function motorRequest(action) {
-    if (motorBusy || !ui.motor.open) return;
-    if (action && (!motor || !(action === motorSteps[motor.phase]?.[1] || (action === 'cancel' && !ui.cancel.hidden)))) return;
+  function validMotorState(value) {
+    return value && (Object.hasOwn(handoffLabels, value.phase) || (Object.hasOwn(motorSteps, value.phase)
+      && value.session && value.joint && ['bus1','bus2'].includes(value.bus)));
+  }
+  async function motorRequest(action, background = false) {
+    if (motorBusy || !ui.motor.open || document.hidden) return;
+    const {binding, label} = getSample();
+    const starting = action === 'start';
+    const writing = Boolean(action) && !starting;
     const previous = motor;
+    if (starting && (!binding || ui.start.hidden || !window.confirm(
+      '开启 ' + binding.bus + ' · ' + (label || binding.joint) + ' 的校准？请确认机械臂已支撑，该侧已断扭、急停锁存。此侧控制服务会交出串口。'))) return;
+    if (writing && (!motor || binding?.joint !== motor.joint || binding?.bus !== motor.bus
+      || !(action === motorSteps[motor.phase]?.[1] || (action === 'cancel' && !ui.cancel.hidden)))) return;
+
+    clearTimeout(poll);
     const epoch = ++motorEpoch;
-    motorBusy = true;
-    renderMotor(action ? '等待维护会话回执…' : '正在读取维护状态…');
+    // 读回在途时仍接受现场点击，后返回的旧读数由 epoch 丢弃。
+    motorBusy = !background;
+    if (!background) motorMessage = starting ? '正在交接所选侧总线，请等待…' : action ? '等待维护会话回执…' : '正在读取维护状态…';
+    renderMotor();
     try {
-      const result = await request('motor', action ? 'POST' : 'GET', action ? {action, session:previous.session, bus:previous.bus} : undefined);
+      const result = starting
+        ? await request('motor/start', 'POST', {bus:binding.bus, joint:binding.joint, supported:true}, 80000)
+        : await request('motor', action ? 'POST' : 'GET', action ? {action, session:previous.session, bus:previous.bus} : undefined);
       if (epoch !== motorEpoch) return;
-      if (!Object.hasOwn(motorSteps, result.phase) || !result.session || !result.joint ||
-          !['bus1','bus2'].includes(result.bus) || (action && (result.session !== previous.session || result.bus !== previous.bus || result.joint !== previous.joint)))
+      if (!validMotorState(result)
+        || (starting && (result.bus !== binding.bus || result.joint !== binding.joint))
+        || (writing && (result.session !== previous.session || result.bus !== previous.bus || result.joint !== previous.joint)))
         throw new Error('会话状态不匹配。');
       motor = result;
-      renderMotor(result.ok ? null : result.error || '操作失败，请核对维护状态。');
+      motorMessage = '';
     } catch (err) {
       if (epoch !== motorEpoch) return;
-      motor = null;
-      renderMotor((action ? '结果待核对，请读取维护状态。' : '无法读取维护会话。') + err.message);
+      const reply = err.reply;
+      // 校准拒绝也可能带回 recovery，保留同一会话的恢复按钮及原始原因。
+      const known = validMotorState(reply) && (!action || (writing && previous?.session
+        && reply.session === previous.session && reply.bus === previous.bus && reply.joint === previous.joint));
+      motor = known ? reply : null;
+      motorMessage = known ? '' : (action ? '结果待核对，请读取维护状态。' : '读取失败。') + err.message;
     } finally {
       if (epoch === motorEpoch) {
         motorBusy = false;
-        ui.refresh.disabled = ui.next.disabled = ui.cancel.disabled = false;
+        renderMotor();
+        if (ui.motor.open && !document.hidden) {
+          if (['centered','sampled1','sampled2'].includes(motor?.phase))
+            poll = setTimeout(() => void motorRequest(undefined, true), 500);
+          else if (terminal.includes(motor?.phase) || ['starting','returning'].includes(motor?.phase))
+            poll = setTimeout(() => void motorRequest(undefined, true), 2000);
+        }
       }
     }
   }
   function forgetMotor() {
+    clearTimeout(poll);
     motorEpoch++;
     motor = null;
     motorBusy = false;
+    motorMessage = '';
     renderMotor();
   }
   ui.motor.addEventListener('toggle', () => {
     if (ui.motor.open) void motorRequest(); else forgetMotor();
   });
+  ui.start.addEventListener('click', () => void motorRequest('start'));
   ui.refresh.addEventListener('click', () => void motorRequest());
   ui.next.addEventListener('click', event => {
     // 同一位置的按钮会推进到下一步，双击只能确认一次。

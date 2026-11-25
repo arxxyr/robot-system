@@ -12,7 +12,7 @@ User=loosqk
 Group=loosqk
 StateDirectory=robot-status
 StateDirectoryMode=0700
-# 网页通过本机套接字查询现场开启的单关节维护会话。
+# 开放校准的网页使用本机启动套接字交接所选侧，并通过会话套接字操作单关节。
 RuntimeDirectory=robot-joint-calibration
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes

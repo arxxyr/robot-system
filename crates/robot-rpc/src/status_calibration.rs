@@ -1,4 +1,4 @@
-//! 网页模型修正单独保存；舵机校准命令只转发至现场已开启的维护会话。
+//! 网页模型修正单独保存；舵机校准由本机单关节维护入口执行。
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -10,7 +10,7 @@ use std::time::Duration;
 use axum::extract::{DefaultBodyLimit, State, rejection::JsonRejection};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -29,6 +29,7 @@ struct Calibration {
     socket: Arc<PathBuf>,
     requests: Arc<Semaphore>,
     controlled_buses: Vec<String>,
+    starting: Arc<Semaphore>,
 }
 
 pub(super) fn router(controlled_buses: Vec<String>) -> Router {
@@ -44,12 +45,14 @@ fn routes(directory: PathBuf, socket: PathBuf, controlled_buses: Vec<String>) ->
             "/api/calibration/motor",
             get(motor_status).post(motor_command),
         )
+        .route("/api/calibration/motor/start", post(start_motor))
         .layer(DefaultBodyLimit::max(1024))
         .with_state(Calibration {
             directory: Arc::new(directory),
             socket: Arc::new(socket),
             requests: Arc::new(Semaphore::new(8)),
             controlled_buses,
+            starting: Arc::new(Semaphore::new(1)),
         })
 }
 
@@ -82,6 +85,7 @@ struct PoseModel {
 
 #[derive(Deserialize)]
 struct PoseNode {
+    bus: Option<String>,
     joint: Option<String>,
     range: Option<[f64; 2]>,
 }
@@ -211,6 +215,77 @@ async fn model_request(state: Calibration, change: Option<Change>) -> Response {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StartMotor {
+    bus: String,
+    joint: String,
+    supported: bool,
+}
+
+async fn start_motor(
+    State(state): State<Calibration>,
+    headers: HeaderMap,
+    command: Result<Json<StartMotor>, JsonRejection>,
+) -> Response {
+    if !super::same_origin(&headers) {
+        return error(StatusCode::FORBIDDEN, "启动单电机校准需要同源请求");
+    }
+    let Json(command) = match command {
+        Ok(value) => value,
+        Err(cause) => return error(cause.status(), cause.body_text()),
+    };
+    if !state.controlled_buses.contains(&command.bus) {
+        return error(StatusCode::FORBIDDEN, "这条总线未开放网页控制");
+    }
+    if !command.supported {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "请先确认机械臂有支撑、现场可手动移动关节",
+        );
+    }
+    if !POSE.nodes.iter().any(|node| {
+        node.bus.as_deref() == Some(&command.bus) && node.joint.as_deref() == Some(&command.joint)
+    }) {
+        return error(StatusCode::BAD_REQUEST, "所选总线没有这个可校准的位置关节");
+    }
+    let Ok(_permit) = state.starting.try_acquire() else {
+        return error(StatusCode::CONFLICT, "已有校准交接正在进行，请读取维护状态");
+    };
+    let packet = json!({"action":"start","bus":command.bus,"joint":command.joint});
+    let socket = state.socket.with_file_name("start.sock");
+    let result = tokio::time::timeout(Duration::from_secs(75), exchange(&socket, &packet)).await;
+    match result {
+        Ok(Ok(reply)) if reply["ok"] == true => {
+            if reply["bus"] != command.bus
+                || reply["joint"] != command.joint
+                || reply["session"]
+                    .as_str()
+                    .is_none_or(|id| uuid::Uuid::parse_str(id).is_err())
+                || !matches!(
+                    reply["phase"].as_str(),
+                    Some("ready" | "centered" | "sampled1" | "sampled2" | "recovery")
+                )
+            {
+                return error(
+                    StatusCode::BAD_GATEWAY,
+                    "开启结果与所选电机不符，请读取维护状态",
+                );
+            }
+            Json(reply).into_response()
+        }
+        Ok(Ok(reply)) => (StatusCode::CONFLICT, Json(reply)).into_response(),
+        Ok(Err(cause)) => error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("维护入口通讯失败：{cause}"),
+        ),
+        Err(_) => error(
+            StatusCode::GATEWAY_TIMEOUT,
+            "维护交接回执超时，请读取维护状态",
+        ),
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum MotorAction {
@@ -259,6 +334,7 @@ async fn motor_request(state: &Calibration, command: Value) -> Response {
     let Ok(_permit) = state.requests.try_acquire() else {
         return error(StatusCode::TOO_MANY_REQUESTS, "校准请求过多");
     };
+    let reading = command["action"] == "status";
     let result =
         tokio::time::timeout(Duration::from_secs(3), exchange(&state.socket, &command)).await;
     match result {
@@ -270,7 +346,13 @@ async fn motor_request(state: &Calibration, command: Value) -> Response {
                 io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
             ) =>
         {
-            error(StatusCode::SERVICE_UNAVAILABLE, "现场维护会话尚未开启")
+            if reading {
+                return handoff_status(state.socket.with_file_name("handoff.json")).await;
+            }
+            error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "当前维护会话未连接，请读取维护状态",
+            )
         }
         Ok(Err(cause)) => error(
             StatusCode::BAD_GATEWAY,
@@ -280,6 +362,40 @@ async fn motor_request(state: &Calibration, command: Value) -> Response {
             StatusCode::GATEWAY_TIMEOUT,
             "维护会话响应超时，请重新读取状态",
         ),
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct Handoff {
+    bus: String,
+    joint: String,
+    phase: String,
+    error: Option<String>,
+    calibration_result: Option<String>,
+}
+
+async fn handoff_status(path: PathBuf) -> Response {
+    // 原子交接记录可在释放串口、恢复保护待机期间读取，读状态不启动维护进程。
+    let read = tokio::task::spawn_blocking(move || -> io::Result<Handoff> {
+        let file = File::open(path)?;
+        let mut bytes = Vec::new();
+        file.take(MAX_REPLY + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_REPLY {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "交接记录过大"));
+        }
+        Ok(serde_json::from_slice(&bytes)?)
+    })
+    .await;
+    match read {
+        Ok(Ok(row)) => Json(json!({"ok":true,"bus":row.bus,"joint":row.joint,
+            "phase":row.phase,"error":row.error,"calibration_result":row.calibration_result}))
+        .into_response(),
+        Ok(Err(cause)) if cause.kind() == io::ErrorKind::NotFound => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"ok":false,"phase":"idle","error":"现场维护会话尚未开启"})),
+        )
+            .into_response(),
+        _ => error(StatusCode::BAD_GATEWAY, "无法读取维护交接记录"),
     }
 }
 
@@ -521,6 +637,81 @@ mod tests {
             StatusCode::OK
         );
         worker.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_only_the_confirmed_position_joint_and_await_real_session() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("session.sock");
+        let app = routes(directory.path().into(), socket.clone(), vec!["bus2".into()]);
+        let origin = "http://robot.test";
+        let joint = "right_arm_wrist_roll";
+        let command = json!({"bus":"bus2", "joint":joint, "supported":true});
+        for (body, caller, status) in [
+            (command.clone(), "http://other.test", StatusCode::FORBIDDEN),
+            (
+                json!({"bus":"bus1","joint":"head_motor_1","supported":true}),
+                origin,
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                json!({"bus":"bus2","joint":"left_arm_wrist_roll","supported":true}),
+                origin,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                json!({"bus":"bus2","joint":"wheel_front","supported":true}),
+                origin,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                json!({"bus":"bus2","joint":joint,"supported":false}),
+                origin,
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            assert_eq!(
+                call(app.clone(), "POST", "motor/start", body, caller)
+                    .await
+                    .0,
+                status
+            );
+        }
+        let listener = UnixListener::bind(socket.with_file_name("start.sock")).unwrap();
+        let pending = tokio::spawn(call(
+            app.clone(),
+            "POST",
+            "motor/start",
+            command.clone(),
+            origin,
+        ));
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&line).unwrap(),
+            json!({"action":"start","bus":"bus2","joint":joint})
+        );
+        assert_eq!(
+            call(app.clone(), "POST", "motor/start", command, origin)
+                .await
+                .0,
+            StatusCode::CONFLICT
+        );
+        let ready = json!({"ok":true, "session":uuid::Uuid::now_v7().to_string(), "bus":"bus2", "joint":joint, "phase":"ready"});
+        stream
+            .get_mut()
+            .write_all(format!("{ready}\n").as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(pending.await.unwrap(), (StatusCode::OK, ready));
+        fs::write(socket.with_file_name("handoff.json"), br#"{"bus":"bus2","joint":"right_arm_wrist_roll","phase":"failed","error":"handoff failed","calibration_result":"saved"}"#).unwrap();
+        let (status, report) = call(app, "GET", "motor", Value::Null, origin).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(report["phase"], "failed");
+        assert_eq!(report["error"], "handoff failed");
+        assert_eq!(report["calibration_result"], "saved");
     }
 
     #[tokio::test]

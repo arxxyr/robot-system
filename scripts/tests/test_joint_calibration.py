@@ -171,6 +171,77 @@ class SessionTests(unittest.TestCase):
         self.assertFalse(self.call("save")["ok"])
         self.assertEqual(self.hw.calls, ["center"])
 
+    def test_crossing_single_turn_seam_in_either_direction_requires_restore(self):
+        for positions in ((1000, 1, 0, 4095), (3000, 4094, 4095, 0), (1000, 1, -1)):
+            with self.subTest(positions=positions):
+                self.ok("center")
+                for raw in positions[:-1]:
+                    self.hw.registers["Present_Position"] = raw
+                    self.assertEqual(self.ok("status")["phase"], "centered")
+                self.hw.registers["Present_Position"] = positions[-1]
+                failed = self.call("sample1")
+                self.assertFalse(failed["ok"])
+                self.assertEqual(failed["phase"], "recovery")
+                self.assertIn("重新标零", failed["position_warning"])
+                self.assertFalse(self.call("save")["ok"])
+                self.session = self.open()
+                self.assertEqual(self.ok("status")["position_warning"], failed["position_warning"])
+                self.ok("restore")
+                self.assertEqual(self.file.read_bytes(), self.baseline)
+                self.session = self.open()
+
+    def test_large_mechanical_range_via_middle_is_valid(self):
+        self.ok("center")
+        self.hw.registers["Present_Position"] = 4050
+        self.ok("sample1")
+        for raw in (3050, 2050, 1050):
+            self.hw.registers["Present_Position"] = raw
+            self.ok("status")
+        self.hw.registers["Present_Position"] = 50
+        self.ok("sample2")
+        self.ok("save")
+        self.assertEqual(self.session.read_registers()["range_min"], 50)
+        self.assertEqual(self.session.read_registers()["range_max"], 4050)
+
+    def test_lost_sampling_does_not_guess_a_range(self):
+        self.ok("center")
+        delayed = self.session.last_sample_at + m.MAX_SAMPLE_GAP_SECONDS + 0.01
+        with patch.object(m.time, "monotonic", return_value=delayed):
+            self.assertEqual(self.ok("status")["phase"], "recovery")
+        self.assertIn("采样中断", self.ok("status")["position_warning"])
+        self.assertFalse(self.call("sample1")["ok"])
+        self.assertEqual(self.hw.calls, ["center"])
+
+    def test_sampling_continues_while_browser_is_disconnected(self):
+        self.ok("center")
+        readings = iter([1000, 1, 4095])
+        crossed = threading.Event()
+        original = self.hw.get
+
+        def get(register):
+            if register == "Present_Position":
+                value = next(readings, 4095)
+                if value == 4095:
+                    crossed.set()
+                return value
+            return original(register)
+
+        path = self.directory / "s"
+        with patch.object(self.hw, "get", side_effect=get):
+            thread = threading.Thread(target=m.serve, args=(path, self.session, 0), daemon=True)
+            thread.start()
+            self.assertTrue(crossed.wait(timeout=3))
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(2)
+                connection.connect(str(path))
+                request = dict(action="restore", bus="bus1", session=self.session.data["session"])
+                connection.sendall(json.dumps(request).encode() + b"\n")
+                result = json.loads(connection.makefile("rb").readline())
+            self.assertEqual(result["phase"], "restored")
+            self.assertIn("1 → 4095", result["position_warning"])
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
     def test_wrong_mode_torque_motion_or_unrepresentable_offset_block_center(self):
         for reg, value in (("Torque_Enable", 1), ("Operating_Mode", 1), ("Present_Velocity", 30),
                            ("Present_Position", 4095 - self.hw.original["homing_offset"])):

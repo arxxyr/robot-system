@@ -20,6 +20,8 @@ S0 当前状态与 roadmap 见 [S0 HAL 状态](../../docs/s0_hal_status.md)。RP
 
 `robot-gateway-bus1.service`、`robot-gateway-bus2.service`对齐两份full配置与身份，分别绑定本机50061/50062；`robot-status.service`独立运行只读HTTP/WebSocket页面。三份均只设置`After`，无`Requires/Wants`，不会拉起S0或S1；S0不反向依赖它们，无首帧时页面显示无反馈。
 
+启用[网页单电机校准](../../docs/control_plan.md#网页单关节校准)的安装另带 `robot-joint-calibration.socket` 和 `robot-joint-calibration@.service`。socket 在本机等待维护请求。操作员在已开放控制的总线上选关节、确认开启后，systemd 才按该请求启动校准进程。模板的解释器、脚本路径须与本机安装对应。
+
 这些模板不在S0安装器、发布矩阵或自启清单内。状态部署入口会冻结产物并渲染绝对路径，不直接复制模板覆盖当前正式安装。原网关保留原生控制RPC；默认只读候选使用[rpc-roles-status.toml](../../configs/rpc-roles-status.toml)的空凭据表与viewer权限，不授予控制能力，也不覆盖原角色表。只读模式不发送控制请求；显式控制模式见下文。当前构建方式见[WebSocket入口](../../docs/control_plan.md#当前websocket入口)；浏览器不设置token，外部接入管理由用户已有系统承担。
 
 状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；当前部署已核对实际限额，结果见[当前状态](../../docs/s0_hal_status.md)，不据此推断未来相机预览负载峰值。

@@ -1,0 +1,16 @@
+[Unit]
+Description=Robot single joint calibration start socket
+
+[Socket]
+ExecStartPre=/usr/bin/install -d -m 0700 -o loosqk -g loosqk /run/robot-joint-calibration
+ListenStream=/run/robot-joint-calibration/start.sock
+SocketUser=loosqk
+SocketGroup=loosqk
+SocketMode=0600
+DirectoryMode=0700
+Accept=yes
+MaxConnections=4
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

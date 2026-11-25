@@ -305,8 +305,16 @@ def feedback_contract(motor):
 def left_stop_contract(*,motor=7):
     """保留旧入口名，按motor统一处理底盘三轮；默认物理7供既有只读入口使用。"""
     require(type(motor) is int and motor in WHEEL_STOP_TARGETS,'停止稳定性仅接受固定底盘三轮')
+    return wheel_stop_contract(WHEEL_PULSE_TARGETS[WHEEL_STOP_TARGETS[motor]])
+
+
+def wheel_stop_contract(target):
+    """从调用方已核实的配置轮位生成同一份停止复核参数。"""
+    side,motor,name=target
+    require(side=='right' and motor in (7,8,9) and name in {f'base_{role}_wheel' for role in WHEEL_ROLES},
+            '底盘停止合同需要已绑定的右总线轮位')
     return {'version':f'RIGHT{motor}_STABILITY_V1',
-            'target':list(WHEEL_PULSE_TARGETS[WHEEL_STOP_TARGETS[motor]]),
+            'target':list(target),
             'raw_tool':dict(RIGHT_PULSE_RAW),'reads':14,'register_writes':0,
             'sample_offsets_ns':[0,250_000_000,500_000_000,750_000_000,1_000_000_000],
             'capture_budget_ns':1_500_000_000,'torque_enable':0,'goal_velocity':0,

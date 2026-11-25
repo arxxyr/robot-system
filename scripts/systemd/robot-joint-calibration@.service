@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot single joint calibration handoff
+
+[Service]
+User=loosqk
+Group=loosqk
+SupplementaryGroups=dialout
+ExecStart=/home/loosqk/repo/dimensional-applications/.venv/bin/python /home/loosqk/repo/robot/robot-system/scripts/joint_calibration_handoff.py
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=robot-joint-calibration
+UMask=0077
+CPUAffinity=0-3

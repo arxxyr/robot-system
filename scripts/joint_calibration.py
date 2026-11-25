@@ -34,6 +34,8 @@ SIDES = {"xlerobot_bus1_full": ("bus1", "left"), "xlerobot_bus2_full": ("bus2", 
 REGS = {"homing_offset": "Homing_Offset", "range_min": "Min_Position_Limit",
         "range_max": "Max_Position_Limit"}
 TERMINAL = {"saved", "cancelled", "restored"}
+POSITION_SAMPLE_SECONDS = 0.05
+MAX_SAMPLE_GAP_SECONDS = 0.5
 
 
 def durable_replace(path, data, *, preserve=False):
@@ -111,12 +113,12 @@ def target(config, joint, motion_config=None):
     return bus, side, motors, files[0], tolerance
 
 
-def check_installed_guard(bus, state, config, runner=subprocess.run):
+def check_installed_guard(bus, state, config, runner=subprocess.run, *, active_state="inactive"):
     unit = f"robot-s0-{bus}.service"
     show = runner(["systemctl", "show", unit, "--property=LoadState,ActiveState,NeedDaemonReload"],
                   capture_output=True, text=True, timeout=5, check=True).stdout.splitlines()
-    require(set(show) == {"LoadState=loaded", "ActiveState=inactive", "NeedDaemonReload=no"},
-            "请先完成原停机交接并加载新 unit；维护工具不启停服务")
+    require(set(show) == {"LoadState=loaded", f"ActiveState={active_state}", "NeedDaemonReload=no"},
+            "所选 S0 的运行状态或已加载配置不符合本次交接")
     # 读取管理器实际已加载的命令行，覆盖 drop-in 或同名旧副本的情形。
     invocation = runner(["systemctl", "show", unit, "--property=ExecStart", "--value"],
                         capture_output=True, text=True, timeout=5, check=True).stdout
@@ -246,6 +248,7 @@ class Session:
         self.pending = state / f"{bus}.pending.json"
         self.last = state / f"{bus}.last.json"
         self.position = None
+        self.last_sample_at = None
         identity = dict(bus=bus, joint=joint, motor_id=motor_id, path=str(path))
         if self.pending.exists():
             self.data = strict_json(self.pending.read_bytes())
@@ -278,6 +281,29 @@ class Session:
 
     def persist(self):
         durable_replace(self.pending, encode_json(self.data))
+
+    def observe_position(self):
+        # 标零后连续看手动行程。0 和 4095 物理相邻，但 EEPROM 限位只能表示一个线性区间。
+        previous = self.position
+        try:
+            value = self.hw.get("Present_Position")
+        except Exception as exc:
+            reason = f"连续读取位置失败：{exc}"
+        else:
+            now = time.monotonic()
+            self.position = value
+            if not 0 <= value <= 4095:
+                reason = f"位置 {value} 超出单圈限位 0…4095"
+            elif self.last_sample_at is None or now - self.last_sample_at > MAX_SAMPLE_GAP_SECONDS:
+                reason = "连续位置采样中断，无法判断手动行程是否跨过单圈边界"
+            elif abs(value - previous) >= 2048:
+                reason = f"相邻读数 {previous} → {value} 跳变至少半圈，无法确认连续行程"
+            else:
+                self.last_sample_at = now
+                return
+        self.data["position_warning"] = f"{reason}。请恢复原校准，在机械行程中间重新标零。"
+        self.data["phase"] = "recovery"
+        self.persist()
 
     def finish(self, phase):
         self.guard(locked=True)
@@ -322,7 +348,9 @@ class Session:
         require((action == "status" and not token) or token == row["session"], "会话已过期")
         phase = row["phase"]
         if action == "status":
-            if phase not in TERMINAL and phase != "recovery":
+            if phase in ("centered", "sampled1"):
+                self.observe_position()
+            elif phase == "ready":
                 self.position = self.hw.get("Present_Position")
             return
         if phase in TERMINAL:
@@ -344,7 +372,7 @@ class Session:
             self.file_row(last, old)
             self.finish("cancelled" if action == "cancel" else "restored")
             return
-        require(phase != "recovery", "状态不确定，请先恢复备份")
+        require(phase != "recovery", row.get("position_warning") or "状态不确定，请先恢复备份")
         if action in ("center", "sample1", "sample2") and row[action] is not None:
             return
         if action == "center":
@@ -362,11 +390,14 @@ class Session:
                     abs(self.position - 2047) * math.tau / 4096 <= self.tolerance,
                     "中位读回偏离 2047，超出该关节到位容差")
             row.update(phase="centered", center=self.position)
+            self.last_sample_at = time.monotonic()
         elif action in ("sample1", "sample2"):
             expected = "centered" if action == "sample1" else "sampled1"
             require(phase == expected, "请按顺序采集两个端点")
             self.guard(locked=True)
-            value = self.hw.get("Present_Position")
+            self.observe_position()
+            require(row["phase"] != "recovery", row.get("position_warning"))
+            value = self.position
             distance = min(abs(value - row["center"]), abs(value - 2047))
             require(0 <= value <= 4095 and distance * math.tau / 4096 > self.tolerance,
                     "端点需超出本关节的中位容差，请实际移动到可用行程端点")
@@ -404,10 +435,11 @@ class Session:
         except Exception as exc:
             error = str(exc)
         result = {k: self.data[k] for k in ("session", "bus", "joint", "phase", "center", "sample1", "sample2")}
-        return dict(result, ok=error is None, position=self.position, error=error)
+        return dict(result, ok=error is None, position=self.position,
+                    position_warning=self.data.get("position_warning"), error=error)
 
 
-def serve(path, session, terminal_grace=30):
+def serve(path, session, terminal_grace=30, *, on_ready=None):
     # 父目录由当前用户独占，上一轮意外退出只会留下 socket 节点。
     if path.exists():
         require(stat.S_ISSOCK(path.lstat().st_mode), "维护 socket 路径被占用")
@@ -417,9 +449,18 @@ def serve(path, session, terminal_grace=30):
         try:
             path.chmod(0o600)
             server.listen(4)
-            server.settimeout(1)
+            if on_ready is not None:
+                on_ready()
             terminal_since = None
             while terminal_since is None or time.monotonic() - terminal_since < terminal_grace:
+                if session.data["phase"] in ("centered", "sampled1"):
+                    remaining = session.last_sample_at + POSITION_SAMPLE_SECONDS - time.monotonic()
+                    if remaining <= 0:
+                        session.observe_position()
+                        remaining = POSITION_SAMPLE_SECONDS
+                    server.settimeout(remaining)
+                else:
+                    server.settimeout(1)
                 try:
                     connection, _ = server.accept()
                 except TimeoutError:

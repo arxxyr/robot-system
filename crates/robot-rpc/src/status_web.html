@@ -382,17 +382,11 @@
         </ol>
         <h3>校准单个电机</h3>
         <ol>
-          <li>现场支撑机械臂，按维护流程断扭、锁存急停并停用所选侧 S1/S0。在 Orin 开启该关节的维护会话，展开「校准单个电机」，核对总线和关节名。</li>
-          <li>手动摆到行程中位并停稳。<strong>点「确认中位并写电机零位」就会写入电机 EEPROM</strong>，将当前位置标为约 2047 raw，并临时放开原限位。</li>
-          <li>依次摆到两个实际端点，停稳后分别点「记录第一端」和「记录第二端」。核对两端读数，再点「写入限位并保存」。</li>
-          <li>回执超时先点「读取维护状态」。维护进程中断后，用同一配置和关节重开会话，按提示恢复。结束后按原流程检查停止，重新使能前核对该关节的目标范围。</li>
+          <li>在模型或列表选中一个位置关节。支撑机械臂，在「关节」页确认该侧已断扭且急停锁存。回到「可视化 → 校准单个电机」点击「开启所选电机校准」，确认现场条件，等页面显示该电机已就绪。</li>
+          <li>手动把关节摆到参考中位并停稳，点击「标零（写入电机）」。<strong>这一步就会写入 EEPROM</strong>，把当前位置标为约 2047 raw，并临时放开旧限位。</li>
+          <li>手动摆到一个实际端点，停稳后点击记录；再摆到另一个端点并记录。最大、最小可以任一端先。页面按实测编码器值给出最小和最大 raw，核对后点击「写入限位并保存」。</li>
+          <li>如果手动运动跨过编码器 0/4095 边界，按页面提示恢复原校准，重新选中位。回执中断时先点「读取维护状态」；结束后核对该侧归还保护待机的结果。</li>
         </ol>
-        <details>
-          <summary>在 Orin 开启维护会话（以右腕 ID5 为例）</summary>
-          <p>完成该侧维护交接后，在项目根目录运行以下命令。先将 <code>BUS_CONFIG</code> 和 <code>S1_CONFIG</code> 分别设为已安装的 <code>robot-s0-bus2.service</code> 和 <code>robot-s1-bus2.service</code> 启动参数 <code>--config</code> 指向的路径。</p>
-          <pre><code>/home/loosqk/repo/dimensional-applications/.venv/bin/python scripts/joint_calibration.py \
-  --config "$BUS_CONFIG" --motion-config "$S1_CONFIG" --joint right_arm_wrist_roll</code></pre>
-        </details>
       </details>
       <details id="cal-model" class="pose-calibration">
         <summary>对齐网页模型</summary>
@@ -411,10 +405,11 @@
       </details>
       <details id="cal-motor" class="pose-calibration">
         <summary>校准单个电机</summary>
-        <p>先在机器人上为一个位置关节开启维护会话。确认中位会写入电机零位并重设旧限位，操作前请断扭并支撑机械臂。</p>
+        <p>选一个位置关节，支撑机械臂并确认该侧断扭、急停锁存后开启校准。手摆到中位、最大和最小位置，每次停稳再点对应按钮。</p>
         <p id="cal-motor-status" role="status">等待查询维护会话。</p>
         <p><output id="cal-motor-readings"></output></p>
         <div class="cal-actions">
+          <button type="button" class="primary" id="cal-start" hidden>开启所选电机校准</button>
           <button type="button" class="secondary" id="cal-refresh">读取维护状态</button>
           <button type="button" class="primary" id="cal-next" hidden></button>
           <button type="button" class="secondary" id="cal-cancel" hidden>结束会话</button>
