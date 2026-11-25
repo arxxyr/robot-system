@@ -35,6 +35,8 @@ mod command;
 #[path = "status_control.rs"]
 mod control;
 
+#[path = "status_calibration.rs"]
+mod calibration;
 #[path = "status_camera.rs"]
 mod camera;
 #[path = "status_resources.rs"]
@@ -820,6 +822,16 @@ async fn manage_connections(
 fn router(state: WebState) -> Router {
     let cameras = camera::router(state.cameras.clone());
     let resources = resources::router(state.resources.clone());
+    let calibration = calibration::router(
+        state
+            .latest
+            .borrow()
+            .buses
+            .iter()
+            .filter(|bus| bus.control.enabled)
+            .map(|bus| bus.id.clone())
+            .collect(),
+    );
     Router::new()
         .route(
             "/",
@@ -843,11 +855,21 @@ fn router(state: WebState) -> Router {
                 )
             }),
         )
+        .route(
+            "/assets/status-calibration.js",
+            axum::routing::get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("status_calibration.js"),
+                )
+            }),
+        )
         .route("/api/state", axum::routing::get(state_json))
         .route("/api/ws", axum::routing::get(state_socket))
         .with_state(state)
         .merge(cameras)
         .merge(resources)
+        .merge(calibration)
         .layer(axum::middleware::from_fn(
             |request: axum::extract::Request, next: axum::middleware::Next| async {
                 let mut response = next.run(request).await;

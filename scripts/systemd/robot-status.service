@@ -10,6 +10,12 @@ StartLimitBurst=5
 Type=simple
 User=loosqk
 Group=loosqk
+StateDirectory=robot-status
+StateDirectoryMode=0700
+# 网页通过本机套接字查询现场开启的单关节维护会话。
+RuntimeDirectory=robot-joint-calibration
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 WorkingDirectory=/home/loosqk/repo/robot/robot-system
 ExecStart=/home/loosqk/repo/robot/robot-system/target/release/robot-status \
     --config /etc/robot/xlerobot-status.toml

@@ -70,9 +70,23 @@ function tint(color, light) {
 }
 
 // 夹爪电机行程按现有校准映射至 URDF 张角。控制面板关闭时可用快照的 raw 范围。
-function feedbackAngle(node, bus, feedback) {
+export function feedbackAngle(node, bus, feedback) {
   if (feedback?.mode !== 'position' || !Number.isFinite(feedback.position_rad)) return null;
-  if (!node.range) return (node.sign ?? 1)*feedback.position_rad + (node.offset ?? 0);
+  const mapping = node.displayMapping || node;
+  if (!node.range) return (mapping.sign ?? 1)*feedback.position_rad + (mapping.offset ?? 0);
+  const jawAngle = fraction => {
+    const [closed, open] = node.range;
+    return closed + (open-closed)*Math.max(0, Math.min(1, fraction));
+  };
+  if (mapping.motor_range) {
+    const [first, second] = mapping.motor_range;
+    if (!Number.isFinite(first) || !Number.isFinite(second) || first === second) return null;
+    // 本机夹爪的闭合至张开行程小于半圈，以短弧中点为参考，可跨编码器零点。
+    const arc = value => Math.atan2(Math.sin(value), Math.cos(value));
+    const travel = arc(second-first);
+    if (Math.abs(travel) < 1e-8) return null;
+    return jawAngle(0.5 + arc(feedback.position_rad-(first+travel/2))/travel);
+  }
   const limit = bus.control?.joints?.find(joint => joint.name === node.joint);
   let span = [limit?.min_position_rad, limit?.max_position_rad];
   let value = feedback.position_rad;
@@ -81,8 +95,7 @@ function feedbackAngle(node, bus, feedback) {
     value = feedback.position_raw;
   }
   if (!span || !span.every(Number.isFinite) || span[1] <= span[0] || !Number.isFinite(value)) return null;
-  const [closed, open] = node.range;
-  return closed + (open-closed)*(value-span[0])/(span[1]-span[0]);
+  return jawAngle((value-span[0])/(span[1]-span[0]));
 }
 
 const neutral = [164, 176, 185], selectedColor = [247, 163, 54];
@@ -379,6 +392,12 @@ export function createPoseView(canvas, model, onSelect) {
   document.addEventListener('visibilitychange', redraw);
   return {
     update, setPanMode, resetView,
+    setOverrides(overrides) {
+      for (const node of moving) {
+        node.displayMapping = overrides[node.joint] ?? null;
+        node.stamp = null;
+      }
+    },
     zoomBy(factor) { zoomAt(factor, 0, 0); },
     select(jointName) { if (selected !== jointName) { selected = jointName; redraw(); } },
     setVisible(value) {

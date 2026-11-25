@@ -3,6 +3,7 @@
 # 安装前冻结产物/配置；启动前仍须当轮现场确认，见README.md。
 
 [Unit]
+AssertPathExists=!/var/lib/robot-joint-calibration/bus1.pending.json
 Description=XLeRobot S0 daemon (bus1 full, guard-wrapped)
 Documentation=file:///home/loosqk/repo/robot/robot-system/scripts/systemd/README.md
 After=network-online.target dev-ttyACM0.device

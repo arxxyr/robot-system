@@ -248,6 +248,13 @@
     .pose-inspector dt { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
     .pose-inspector dd { margin: 2px 0 0; }
     #pose-freshness, #pose-message { color: var(--muted); font-size: 13px; }
+    .pose-calibration { margin-top: 16px; padding: 12px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; }
+    .pose-calibration summary { font-weight: 650; cursor: pointer; }
+    .pose-calibration p { margin: 9px 0; }
+    .pose-calibration output { font-variant-numeric: tabular-nums; }
+    .pose-calibration input { font: inherit; width: 6em; margin: 0 5px; }
+    .cal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .cal-actions button { white-space: normal; }
     #pose-limit-note { color: var(--amber); font-weight: 600; }
     @media (max-width: 700px) { .pose-layout { grid-template-columns: minmax(0, 1fr); } #pose-canvas { height: 360px; } }
   </style>
@@ -359,6 +366,32 @@
           <p id="pose-limit-note" hidden></p>
         </div>
       </div>
+      <details id="cal-model" class="pose-calibration">
+        <summary>对齐网页模型</summary>
+        <p id="cal-joint"></p>
+        <p>手动摆姿态前，先断扭并支撑机械臂。角度以关节自身的 URDF 零位和正方向为准。</p>
+        <p id="cal-model-step"></p>
+        <label id="cal-angle-label">实物关节角度 <input id="cal-angle" type="number" step="any" min="-360" max="360">°</label>
+        <p><output id="cal-measures"></output></p>
+        <p id="cal-model-result" role="status"></p>
+        <div class="cal-actions">
+          <button type="button" class="primary" id="cal-record" disabled>记录姿态</button>
+          <button type="button" class="primary" id="cal-save" hidden>确认误差可接受并保存</button>
+          <button type="button" class="secondary" id="cal-discard" hidden>重新采样</button>
+          <button type="button" class="secondary" id="cal-default" disabled>恢复本关节默认显示</button>
+        </div>
+      </details>
+      <details id="cal-motor" class="pose-calibration">
+        <summary>校准单个电机</summary>
+        <p>先在机器人上为一个位置关节开启维护会话。确认中位会写入电机零位并重设旧限位，操作前请断扭并支撑机械臂。</p>
+        <p id="cal-motor-status" role="status">等待查询维护会话。</p>
+        <p><output id="cal-motor-readings"></output></p>
+        <div class="cal-actions">
+          <button type="button" class="secondary" id="cal-refresh">读取维护状态</button>
+          <button type="button" class="primary" id="cal-next" hidden></button>
+          <button type="button" class="secondary" id="cal-cancel" hidden>结束会话</button>
+        </div>
+      </details>
     </section>
     <section id="panel-base" class="view-panel" role="tabpanel" aria-labelledby="nav-base" hidden>
       <div class="section-row"><h2>底盘</h2></div>
@@ -396,7 +429,7 @@
       const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), pose: document.getElementById('panel-pose'), base: document.getElementById('panel-base'), resources: elements.resources };
       let activeView = 'overview';
       const pose = Object.fromEntries(['canvas', 'tools', 'zoom-in', 'zoom-out', 'pan', 'reset', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
-      let poseView, poseModel, poseLoading;
+      let poseView, poseModel, poseLoading, calibration;
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
       let activeSession = null;
@@ -483,6 +516,7 @@
         if (push && window.location.hash !== `#${view}`) window.history.pushState(null, '', `#${view}`);
         if (activeView === 'camera' && view !== 'camera' && preview) stopPreview('已离开相机页，画面已暂停；返回后点击“查看画面”继续。');
         if (activeView === 'base' && changed) stopBase();
+        if (activeView === 'pose' && changed) calibration?.leave();
         activeView = view;
         for (const name of views) {
           setProperty(panels[name], 'hidden', name !== view);
@@ -491,7 +525,9 @@
           setAttribute(tab, 'tabindex', name === view ? '0' : '-1');
         }
         poseView?.setVisible(view === 'pose' && !document.hidden);
-        if (view === 'pose' && !poseView && !document.hidden) void loadPose();
+        if (view === 'pose' && !document.hidden && changed) {
+          if (poseView) void calibration?.load(); else void loadPose();
+        }
         if (focus) document.getElementById(`nav-${view}`).focus();
         if (changed) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         renderCurrentView();
@@ -509,8 +545,9 @@
         setText(pose.message, '正在加载机器人模型…');
         pose.message.hidden = false;
         try {
-          const [module, model] = await Promise.all([
+          const [module, calibrationModule, model] = await Promise.all([
             import('/assets/status-pose.js'),
+            import('/assets/status-calibration.js'),
             fetch('/assets/xlerobot-pose.json').then(response => {
               if (!response.ok) throw new Error();
               return response.json();
@@ -522,6 +559,10 @@
             const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
             pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
           }
+          calibration = calibrationModule.createCalibrationPanel(
+            poseSample, (overrides) => { poseView.setOverrides(overrides); renderPose(); }, module.feedbackAngle,
+          );
+          void calibration.load();
           pose.joint.disabled = false;
           pose.tools.disabled = false;
           pose.message.hidden = true;
@@ -550,6 +591,19 @@
         poseView.resetView();
         setAttribute(pose.pan, 'aria-pressed', false);
       });
+      function selectedPoseBus(binding) {
+        const bus = snapshot?.buses.find(item => item.id === binding?.bus);
+        const identity = poseModel?.buses[binding?.bus];
+        return bus && identity?.robot_id === bus.robot_id && identity.hardware_id === bus.hardware_id ? bus : null;
+      }
+      function poseSample() {
+        const binding = poseModel.nodes.find(item => item.joint === pose.joint.value);
+        const bus = selectedPoseBus(binding);
+        const joint = bus?.joints.find(item => item.name === binding?.joint && item.mode === 'position');
+        const fresh = activeView === 'pose' && !document.hidden && bus && statusOf(bus) === 'fresh'
+          && Number.isFinite(joint?.position_rad);
+        return { binding, bus, joint, fresh, session: activeSession, label: pose.joint.selectedOptions[0]?.textContent };
+      }
       function renderPose() {
         if (!poseView || activeView !== 'pose' || document.hidden) return;
         const sources = Object.entries(poseModel.buses);
@@ -577,6 +631,7 @@
         const delta = valid && Number.isSafeInteger(raw) && hasRange ? Math.max(range[0] - raw, raw - range[1]) : 0;
         if (delta > 0) setText(pose['limit-note'], `${bus.data_status === 'fresh' ? '反馈' : '最后反馈'}${raw > range[1] ? '高于上限' : '低于下限'} ${delta} raw`);
         setProperty(pose['limit-note'], 'hidden', !(delta > 0));
+        calibration?.refresh();
       }
       function renderGlobalFeedback() {
         if (document.hidden) return;
@@ -1699,8 +1754,11 @@
       });
       document.addEventListener('visibilitychange', () => {
         poseView?.setVisible(!document.hidden && activeView === 'pose');
-        if (!document.hidden && activeView === 'pose' && !poseView) void loadPose();
+        if (!document.hidden && activeView === 'pose') {
+          if (poseView) void calibration?.load(); else void loadPose();
+        }
         if (document.hidden) {
+          calibration?.leave();
           stopBase();
           stopResources('页面在后台，资源读取已暂停。');
           if (preview) stopPreview('页面已切到后台，画面暂停；返回后可重新查看。');
