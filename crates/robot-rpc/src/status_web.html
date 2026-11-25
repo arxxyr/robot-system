@@ -253,6 +253,11 @@
     .pose-calibration p { margin: 9px 0; }
     .pose-calibration output { font-variant-numeric: tabular-nums; }
     .pose-calibration input { font: inherit; width: 6em; margin: 0 5px; }
+    .cal-help { line-height: 1.55; }
+    .cal-help h3 { margin: 14px 0 4px; font-size: 1rem; }
+    .cal-help ol { margin: 4px 0 12px; padding-inline-start: 1.6em; }
+    .cal-help li + li { margin-top: 4px; }
+    .cal-help pre { white-space: pre-wrap; overflow-wrap: anywhere; }
     .cal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .cal-actions button { white-space: normal; }
     #pose-limit-note { color: var(--amber); font-weight: 600; }
@@ -366,6 +371,29 @@
           <p id="pose-limit-note" hidden></p>
         </div>
       </div>
+      <details class="pose-calibration cal-help">
+        <summary>校准操作说明</summary>
+        <p>网页模型与实物角度有偏差时，先用「对齐网页模型」。如果还需要重设电机零位或行程，先校准电机，再对齐模型。</p>
+        <h3>对齐网页模型</h3>
+        <ol>
+          <li>连接状态流，在模型或关节列表中选中目标关节，展开「对齐网页模型」。手动摆姿态前先支撑机械臂并断扭。</li>
+          <li>以该关节的模型零位和正方向为准，摆两个明显不同的姿态。每次停稳后输入实物角度（度），记录姿态。夹爪先记录闭合，再记录张开。</li>
+          <li>摆第三个姿态（夹爪取中间开度），输入实测角度，点「记录复核姿态」。看清模型与实物的角差后再保存。保存只影响网页显示，可以点「恢复本关节默认显示」撤回。</li>
+        </ol>
+        <h3>校准单个电机</h3>
+        <ol>
+          <li>现场支撑机械臂，按维护流程断扭、锁存急停并停用所选侧 S1/S0。在 Orin 开启该关节的维护会话，展开「校准单个电机」，核对总线和关节名。</li>
+          <li>手动摆到行程中位并停稳。<strong>点「确认中位并写电机零位」就会写入电机 EEPROM</strong>，将当前位置标为约 2047 raw，并临时放开原限位。</li>
+          <li>依次摆到两个实际端点，停稳后分别点「记录第一端」和「记录第二端」。核对两端读数，再点「写入限位并保存」。</li>
+          <li>回执超时先点「读取维护状态」。维护进程中断后，用同一配置和关节重开会话，按提示恢复。结束后按原流程检查停止，重新使能前核对该关节的目标范围。</li>
+        </ol>
+        <details>
+          <summary>在 Orin 开启维护会话（以右腕 ID5 为例）</summary>
+          <p>完成该侧维护交接后，在项目根目录运行以下命令。先将 <code>BUS_CONFIG</code> 和 <code>S1_CONFIG</code> 分别设为已安装的 <code>robot-s0-bus2.service</code> 和 <code>robot-s1-bus2.service</code> 启动参数 <code>--config</code> 指向的路径。</p>
+          <pre><code>/home/loosqk/repo/dimensional-applications/.venv/bin/python scripts/joint_calibration.py \
+  --config "$BUS_CONFIG" --motion-config "$S1_CONFIG" --joint right_arm_wrist_roll</code></pre>
+        </details>
+      </details>
       <details id="cal-model" class="pose-calibration">
         <summary>对齐网页模型</summary>
         <p id="cal-joint"></p>
