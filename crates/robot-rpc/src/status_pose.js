@@ -109,8 +109,12 @@ export function createPoseView(canvas, model, onSelect) {
     ...solid(shape), node: byName.get(shape.node), color: rgb(shape.color),
   }));
 
-  let azimuth = -2.32, elevation = 0.21;
-  let visible = false, frame = 0, selected = null, pointer = null;
+  const defaultAzimuth = -2.32, defaultElevation = 0.21;
+  let azimuth = defaultAzimuth, elevation = defaultElevation;
+  let zoom = 1, panX = 0, panY = 0, panMode = false;
+  let visible = false, frame = 0, selected = null;
+  const pointers = new Map();
+  let pinch = null;
   let markers = [], surfaces = [];
 
   function redraw() {
@@ -129,15 +133,15 @@ export function createPoseView(canvas, model, onSelect) {
     }
     context.setTransform(pixelsX/width, 0, 0, pixelsY/height, 0, 0);
     context.clearRect(0, 0, width, height);
-    const scale = Math.min(width/1.16, height/1.48);
+    const scale = zoom*Math.min(width/1.16, height/1.48);
     const ca = Math.cos(azimuth), sa = Math.sin(azimuth);
     const ce = Math.cos(elevation), se = Math.sin(elevation);
     function project([x, y, z]) {
       const forward = ca*x + sa*y;
       const vertical = z - 0.59;
       return [
-        width/2 + scale*(-sa*x + ca*y),
-        height/2 - scale*(ce*vertical - se*forward),
+        width/2 + panX + scale*(-sa*x + ca*y),
+        height/2 + panY - scale*(ce*vertical - se*forward),
         ce*forward + se*vertical,
       ];
     }
@@ -252,41 +256,138 @@ export function createPoseView(canvas, model, onSelect) {
       }
     }
   }
+  // 锚点使用以画布中心为原点的 CSS 像素，缩放后仍指向同一模型位置。
+  function boundZoom(value) { return Math.max(0.5, Math.min(4, value)); }
+  function zoomAt(factor, x, y) {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const next = boundZoom(zoom*factor);
+    if (next === zoom) return;
+    const ratio = next/zoom;
+    panX = x + (panX-x)*ratio;
+    panY = y + (panY-y)*ratio;
+    zoom = next;
+    redraw();
+  }
+  function clearPointers() {
+    for (const id of pointers.keys()) {
+      if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    }
+    pointers.clear();
+    pinch = null;
+  }
+  function setPanMode(value) {
+    clearPointers();
+    panMode = value;
+    canvas.style.cursor = panMode ? 'move' : 'grab';
+  }
+  function resetView() {
+    setPanMode(false);
+    azimuth = defaultAzimuth;
+    elevation = defaultElevation;
+    zoom = 1;
+    panX = panY = 0;
+    redraw();
+  }
+
   canvas.style.touchAction = 'none';
+  setPanMode(false);
+  canvas.addEventListener('wheel', e => {
+    if (!e.deltaY) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rect.height : 1;
+    const factor = Math.exp(Math.max(-3, Math.min(3, -e.deltaY*unit*0.002)));
+    zoomAt(factor, e.clientX-rect.left-rect.width/2, e.clientY-rect.top-rect.height/2);
+  }, {passive: false});
+
+  const arrowPan = {ArrowLeft: [-32, 0], ArrowRight: [32, 0], ArrowUp: [0, -32], ArrowDown: [0, 32]};
+  canvas.addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !Object.hasOwn(arrowPan, e.key)) return;
+    e.preventDefault();
+    const [dx, dy] = arrowPan[e.key];
+    panX += dx;
+    panY += dy;
+    redraw();
+  });
+  function touchPair() {
+    const [a, b] = pointers.values();
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (a.x+b.x)/2-rect.left-rect.width/2,
+      y: (a.y+b.y)/2-rect.top-rect.height/2,
+      distance: Math.hypot(a.x-b.x, a.y-b.y),
+    };
+  }
   canvas.addEventListener('pointerdown', e => {
-    if (pointer || e.button !== 0) return;
-    pointer = {id: e.pointerId, x: e.clientX, y: e.clientY, azimuth, elevation, dragged: false};
+    if (e.button !== 0 || pointers.size >= 2) return;
+    const [first] = pointers.values();
+    if (first && (first.type !== 'touch' || e.pointerType !== 'touch')) return;
+    pointers.set(e.pointerId, {
+      type: e.pointerType, x: e.clientX, y: e.clientY,
+      startX: e.clientX, startY: e.clientY, dragged: Boolean(first),
+    });
+    if (first) {
+      first.dragged = true;
+      pinch = {...touchPair(), panX, panY, zoom};
+    }
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', e => {
-    if (e.pointerId !== pointer?.id) return;
-    const dx = e.clientX-pointer.x, dy = e.clientY-pointer.y;
-    if (!pointer.dragged && Math.hypot(dx,dy) < 4) return;
-    pointer.dragged = true;
-    azimuth = pointer.azimuth-dx*0.009;
-    elevation = Math.max(-0.25, Math.min(1.2, pointer.elevation+dy*0.009));
+    const pointer = pointers.get(e.pointerId);
+    if (!pointer) return;
+    const {x, y} = pointer;
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    let dx = pointer.x-x, dy = pointer.y-y;
+    if (pointers.size === 2) {
+      // 以双指落下时的两点为基准，触及缩放上下限后平移也不会积累误差。
+      const pair = touchPair();
+      zoom = pinch.distance >= 1 ? boundZoom(pinch.zoom*pair.distance/pinch.distance) : pinch.zoom;
+      panX = pair.x - (pinch.x-pinch.panX)*zoom/pinch.zoom;
+      panY = pair.y - (pinch.y-pinch.panY)*zoom/pinch.zoom;
+      if (pinch.distance < 1 && pair.distance >= 1) pinch = {...pair, panX, panY, zoom};
+    } else {
+      if (!pointer.dragged) {
+        dx = pointer.x-pointer.startX;
+        dy = pointer.y-pointer.startY;
+        if (Math.hypot(dx, dy) < 4) return;
+        pointer.dragged = true;
+      }
+      if (panMode) {
+        panX += dx;
+        panY += dy;
+      } else {
+        azimuth -= dx*0.009;
+        elevation = Math.max(-0.25, Math.min(1.2, elevation+dy*0.009));
+      }
+    }
     redraw();
   });
   canvas.addEventListener('pointerup', e => {
-    if (e.pointerId !== pointer?.id) return;
-    const click = !pointer.dragged;
-    pointer = null;
-    if (click) {
+    const pointer = pointers.get(e.pointerId);
+    pointers.delete(e.pointerId);
+    if (pointer && !pointer.dragged) {
       const rect = canvas.getBoundingClientRect();
       pick(e.clientX-rect.left, e.clientY-rect.top);
     }
   });
-  canvas.addEventListener('lostpointercapture', () => { pointer = null; });
+  const endPointer = e => pointers.delete(e.pointerId);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('lostpointercapture', endPointer);
   const size = new ResizeObserver(redraw);
   size.observe(canvas);
   document.addEventListener('visibilitychange', redraw);
   return {
-    update,
+    update, setPanMode, resetView,
+    zoomBy(factor) { zoomAt(factor, 0, 0); },
     select(jointName) { if (selected !== jointName) { selected = jointName; redraw(); } },
     setVisible(value) {
       visible = value;
       if (visible) redraw();
-      else if (frame) { cancelAnimationFrame(frame); frame = 0; }
+      else {
+        clearPointers();
+        if (frame) { cancelAnimationFrame(frame); frame = 0; }
+      }
     },
   };
 }

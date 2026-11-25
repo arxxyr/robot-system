@@ -235,6 +235,10 @@
     }
     .pose-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 270px); gap: 16px; align-items: start; }
     .pose-scene, .pose-inspector { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; }
+    .pose-tools { margin: 0; border: 0; border-bottom: 1px solid var(--line); min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+    .pose-tools button { flex: none; padding: 6px 12px; min-height: 38px; font-size: 13px; }
+    .pose-tools button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+    #pose-canvas:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
     #pose-canvas { display: block; width: 100%; height: clamp(330px, 54vh, 560px); touch-action: none; border-radius: 9px 9px 0 0; }
     .pose-scene figcaption { border-top: 1px solid var(--line); padding: 9px 16px; color: var(--muted); font-size: 12px; }
     .pose-inspector { padding: 16px; }
@@ -334,8 +338,14 @@
       <p id="pose-message" role="status" hidden></p>
       <div class="pose-layout">
         <figure class="pose-scene">
-          <canvas id="pose-canvas" aria-label="XLeRobot 关节姿态，可拖动旋转视角，也可用旁边的列表选择关节"></canvas>
-          <figcaption>拖动旋转视角，点选关节查看反馈。灰色表示缺少当前姿态。底盘固定为参考坐标。</figcaption>
+          <fieldset id="pose-tools" class="pose-tools" aria-label="视角工具" disabled>
+            <button type="button" class="secondary" id="pose-zoom-in">放大</button>
+            <button type="button" class="secondary" id="pose-zoom-out">缩小</button>
+            <button type="button" class="secondary" id="pose-pan" aria-pressed="false" title="切换拖动平移">平移</button>
+            <button type="button" class="secondary" id="pose-reset" title="恢复默认角度、缩放和居中位置">复位视角</button>
+          </fieldset>
+          <canvas id="pose-canvas" tabindex="0" aria-label="XLeRobot 关节姿态" aria-describedby="pose-help"></canvas>
+          <figcaption id="pose-help">拖动旋转，点关节看反馈。滚轮缩放，双指可缩放和平移。画布聚焦时可用方向键平移。灰色表示缺少当前反馈，底盘固定。</figcaption>
         </figure>
         <div id="pose-details" class="pose-inspector">
           <label for="pose-joint">查看关节</label>
@@ -385,7 +395,7 @@
       const views = ['overview', 'camera', 'joints', 'pose', 'base', 'resources'];
       const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), pose: document.getElementById('panel-pose'), base: document.getElementById('panel-base'), resources: elements.resources };
       let activeView = 'overview';
-      const pose = Object.fromEntries(['canvas', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
+      const pose = Object.fromEntries(['canvas', 'tools', 'zoom-in', 'zoom-out', 'pan', 'reset', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
       let poseView, poseModel, poseLoading;
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
@@ -513,6 +523,7 @@
             pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
           }
           pose.joint.disabled = false;
+          pose.tools.disabled = false;
           pose.message.hidden = true;
           poseView.setVisible(activeView === 'pose' && !document.hidden);
           selectPoseJoint(pose.joint.value);
@@ -528,6 +539,17 @@
         renderPose();
       }
       pose.joint.addEventListener('change', () => selectPoseJoint(pose.joint.value));
+      pose['zoom-in'].addEventListener('click', () => poseView.zoomBy(1.25));
+      pose['zoom-out'].addEventListener('click', () => poseView.zoomBy(1 / 1.25));
+      pose.pan.addEventListener('click', () => {
+        const enabled = pose.pan.getAttribute('aria-pressed') !== 'true';
+        poseView.setPanMode(enabled);
+        setAttribute(pose.pan, 'aria-pressed', enabled);
+      });
+      pose.reset.addEventListener('click', () => {
+        poseView.resetView();
+        setAttribute(pose.pan, 'aria-pressed', false);
+      });
       function renderPose() {
         if (!poseView || activeView !== 'pose' || document.hidden) return;
         const sources = Object.entries(poseModel.buses);
