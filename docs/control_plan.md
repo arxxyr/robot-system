@@ -88,9 +88,10 @@ flowchart TD
 
 **模型对齐**。在「可视化」选关节，展开「对齐网页模型」。以该关节的 URDF 零位和转轴为参考，摆两个明显不同的姿态，各输入实物角度（度）并记录。网页读取同一状态连接上的反馈，预览方向和零位修正。再摆第三个姿态，核对显示的角差，满意后保存。夹爪前两次分别记录闭合和张开，再用一个中间开度复核。保存结果位于 Orin 的 `/var/lib/robot-status/model-calibration.json`。其他浏览器重新进入可视化后共用这份修正，也可以逐关节恢复模型默认值。
 
-**电机标定**。现场先支撑机械臂，按维护交接流程断扭、锁存并停用所选侧的 S1/S0。部署带校准中断保护的 S0 unit 后，由现场人员在 Orin 运行一次[单关节维护入口](../scripts/joint_calibration.py)。例如选择右腕 ID5，在项目根目录运行：
+**电机标定**。现场先支撑机械臂，按维护交接流程断扭、锁存并停用所选侧的 S1/S0。然后在 Orin 的本次安装目录运行[单关节维护入口](../scripts/joint_calibration.py)。以下示例选择右腕 ID5。
 
 ```sh
+cd /home/loosqk/robot-checks/web-calibration-deploy-81fbeb2
 /home/loosqk/repo/dimensional-applications/.venv/bin/python scripts/joint_calibration.py \
   --config "$BUS_CONFIG" --motion-config "$S1_CONFIG" --joint right_arm_wrist_roll
 ```
