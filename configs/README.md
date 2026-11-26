@@ -7,7 +7,7 @@
 | 用途 | 文件 | 边界 |
 |---|---|---|
 | 全总线硬件配置 | [bus1](xlerobot-bus1.toml)、[bus2](xlerobot-bus2.toml) | bus1管左臂、头部及头/左腕RGB；bus2管右臂、底盘及右腕RGB；默认入口实机验收见[当前状态](../docs/s0_hal_status.md) |
-| 左侧S1软件入口 | [bus1](xlerobot-bus1.toml)、原运动片段与[robot-s1-bus1.service](../scripts/systemd/robot-s1-bus1.service) | 保持8关节顺序和现有scripted profile；显式左侧控制模式生成合成S1配置，同一进程处理多次任务。`Restart=no`，异常后确认断扭并人工恢复；运行状态见[当前状态](../docs/s0_hal_status.md) |
+| 双侧 S1 入口 | [左侧服务](../scripts/systemd/robot-s1-bus1.service)、[右侧服务](../scripts/systemd/robot-s1-bus2.service) | 左侧沿 bus1 的八个位置槽和 `scripted` 后端，右侧沿 bus2 的六位置、三轮速槽和 `scripted`、`ik` 后端。每个 S1 读取同侧独立合成的配置。 |
 | 左侧单关节运动片段 | [xlerobot-bus1-motion.toml](xlerobot-bus1-motion.toml) | 仅含左侧8关节的`[s1.single_joint]`约束；部署合成时同时读取当前bus1的`[s1.profile]`，不依赖旧S0配置包含S1后端；不是完整设备配置，不单独安装或自动使能 |
 | 右侧单关节运动片段 | [xlerobot-bus2-motion.toml](xlerobot-bus2-motion.toml) | 右臂六个位置关节的约束由单关节和五轴 IK 共用。控制安装器与 bus2 的 `scripted`、`ik` 后端配置合成 S1 候选。IK 保持夹爪原位，三轮保持 raw 0 |
 | 单关节软件夹具 | [single-joint-smoke.toml](single-joint-smoke.toml) | 两关节mock配置，只用于新载荷、限位、取消和到位测试；其中数值不是XLeRobot实机运动参数 |
@@ -23,11 +23,15 @@
 
 `[s1.single_joint]`是可选动作配置，缺失时拒绝新的单关节请求，原完整向量Scripted不受影响。当前S0使用的bus1/bus2均未添加；控制安装器只在独立候选生成同侧`xlerobot-bus1-s1.toml`或`xlerobot-bus2-s1.toml`供S1使用，不修改两份S0配置。参数为`max_duration_ms`、`settle_timeout_ms`和`stable_window_ms`，均须非零，稳定窗口严格小于到位超时；`[[s1.single_joint.joints]]`按`name`完整覆盖所选hardware的位置关节，明确`min_position_rad`、`max_position_rad`、`max_velocity_rad_s`和`tolerance_rad`，不提供默认运动限值。到位超时从末目标成功发布开始计时。
 
-`joints[].tolerance_rad`是单关节到位容差的唯一配置，按关节分别填写；正常到位、取消保持及单关节执行走廊使用同一值。用户已授权到位误差在20raw内通过，两侧运动片段使用原Feetech f32换算覆盖±20raw的最大rad差，并严格小于21raw的最小rad差；精确数值以该TOML为准。维护demo已修复丢弃此配置并硬编码4raw的问题，Orin软件验证及左腕单次主动取消的±20raw配置容差实机复验均通过，证据见[当前状态](../docs/s0_hal_status.md#通讯与控制todo)。原运动范围、速率、800毫秒到位超时与200毫秒稳定窗口不变；默认hold及启用前锚点一致性仍沿原检查，历史±4raw自动FAIL不追改。
+| 用途 | 配置或来源 | 本机行为 |
+|---|---|---|
+| S0 校准边界、S1 原位保持范围 | 同一 `hardware.calibration_range_tolerances_raw` | 两侧位置槽为 20 raw，轮槽为 0。非零容差只用于原校准端点派生的保持范围。主动目标仍受运动片段的原始范围限制。 |
+| 网页使能前原位对齐 | 每个状态源的 `control.enable_alignment_tolerance_rad` | 对照新鲜反馈与命令镜像。本机候选约 4 raw。 |
+| S1 到位与取消保持 | 每个位置关节的 `s1.single_joint.joints[].tolerance_rad` | 运动片段覆盖 ±20 raw，超出 20 raw 不接受。末目标发布后留 800 毫秒到位并连续稳定 200 毫秒。 |
 
-右侧混合总线的单关节请求只允许选择臂位置关节；运动片段仅覆盖六个位置槽，完整九槽布局沿同份`motor_ids`解析。三轮命令目标始终为raw 0，轮反馈不作为rad位置限位或到位依据，现有三轮停止复核保持。
+五轴回位复用各关节的 `max_velocity_rad_s` 和 `tolerance_rad`。S1 当前固定五轴电机目标为 0 rad（2047 raw），网页模型偏移只影响显示。完成电机标零后，先核对主动目标范围和图示姿态的实测五轴值。[校准与回位说明](../docs/control_plan.md#单臂回初始位姿)
 
-实际部署仍须核对现有校准、产物和具体计划，S0继续执行原校准限制。Web使能原位、S1保持和单关节反馈复用同份hardware的`calibration_range_tolerances_raw`，缺省为0；非零容差只适用于由原raw校准精确换算的运动端点，按原转换函数派生保持范围，不裁剪实际位置。主动目标仍严格落在运动片段的原范围内，到位仍使用独立`tolerance_rad`；断扭、停速和其他停止判据不变。两份运动片段与测试夹具均不得作为完整生产配置安装。
+右侧九槽布局沿 `joints` 与 `motor_ids` 解析。单关节定位、回位及右臂 IK 都保持三轮 raw 0；三轮速度反馈按独立停止规则核验。运动片段和软件夹具仅用于其声明的用途。
 
 ## 按矩阵打包
 
@@ -37,10 +41,9 @@
 
 ## Web控制候选
 
-现有状态配置的`[control].enabled`缺省为`false`。`install_status_units.py prepare --left-control`仅开启bus1源的`control.motion_config`和原`control.enable_alignment_tolerance_rad`，引用已有运动片段，不复制限位或±20raw到位容差；bus2仍只读。候选仅管理左S1、左网关和Web三个unit，不改右网关或S0。服务端沿既有`ROBOT_TOKEN`与gRPC角色校验，正式只读网关不会因Web开关获得控制权限。
+仓库[网页配置](xlerobot-status.toml)默认关闭运动控制，每个页面共用已有 gRPC、任务、相机和资源快照。安装器在候选目录生成同侧 S1 配置、Web 配置和内部凭据。候选类型决定安装范围：
 
-prepare须以unit的service User执行，在部署候选生成权限0600的`rpc-roles-web-control.toml`和`web-control.env`，确保服务可读；凭据不进Git或浏览器。准备不操作服务，后续check/backup/install/rollback沿[现有流程](../scripts/systemd/README.md#状态服务安装与回滚)，安装不自动启动。当前部署状态见[TODO8.3](../docs/s0_hal_status.md#通讯与控制todo)；候选、脚本和预检完成后再确认现场并通知启动。
+- 左侧用 `prepare --left-control`，生成 bus1 控制配置，安装左侧 S1、左网关和同一 Web。
+- 右侧用 `prepare --right-control --existing-control-candidate <已验收的左侧候选>`，沿用左侧设置，在同一 Web 开放 bus2 六个位置关节。安装范围为右侧 S1、右网关和 Web。正式底盘方向控制仍关闭。
 
-控制复用一个Web进程、每源一条gRPC连接和共享任务快照，不按页面创建S1、网关、采样或任务订阅。S1只在Idle、无任务、新鲜确认断扭且无故障时对齐当前保持目标；Web使能前独立核对推进的反馈和命令镜像。对齐容差不借用±20raw到位容差，滑条仍松手单次提交。S1异常后不自动重启；确认断扭并沿原维护接口人工恢复，不靠重启、清错或重发绕过未知结果。
-
-右侧接入使用同一安装器的`--right-control --existing-control-candidate <已验左候选>`，仅管理右S1、右网关和同一个Web。复用左候选凭据及左运动配置，Web保留左侧控制并增加bus2的六位置关节；三轮只保留raw 0速度目标，不提供位置滑条。实际开放和验收状态见[当前状态](../docs/s0_hal_status.md#通讯与控制todo)。
+控制候选的 `prepare` 由 unit 的服务用户执行。仅该服务用户可读取权限为 0600 的角色文件和环境文件，凭据留在机器人。文件安装、启停和实机验收是独立步骤。[安装与回滚](../scripts/systemd/README.md#状态服务安装与回滚) · [当前部署](../docs/s0_hal_status.md)

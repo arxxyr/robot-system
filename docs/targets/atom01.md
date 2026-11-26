@@ -2,13 +2,13 @@
 
 > 上游参考实现：https://github.com/Roboparty/atom01_deploy.git （ROS 2 Humble + C++17）
 > 本地仓库位置：`~/repo/robot/atom01_deploy`
-> 用途：后续构型研究与训练／部署合同参考。当前0.1.0没有ATOM01硬件适配或实机验收；下文上游能力及拟议crate不是本项目已交付能力。
+> 用途：后续构型研究与训练／部署合同参考。当前接入范围为 XLeRobot。ATOM01 本地适配与实机验收待后续构型阶段开展。
 
 ---
 
 ## 文档骨架说明
 
-本文件按 [`targets/README.md`](README.md) 约定的 6 节骨架组织：
+本文件按下表组织，冻结范围以[目标合同登记规则](README.md)为准。
 
 | 节 | 性质 | 改动流程 |
 |---|---|---|
@@ -20,7 +20,7 @@
 | §6 风险与门槛 | 工程风险清单 | PR 直接改 |
 | §7 参考 | 外部链接 | PR 直接改 |
 
-**当前工作顺序**：见 [当前状态与下一步](../s0_hal_status.md)；本目标合同不表示已完成 ATOM01 接入或验收。
+当前工作顺序见[项目待办](../../TODO.md)。
 **源码级 walkthrough（commit-pinned 快照）**：见 [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md)。
 
 ---
@@ -499,7 +499,7 @@ loop {
 | 原上游仓库 | https://github.com/Roboparty/atom01_deploy.git |
 | 本地仓库位置 | `~/repo/robot/atom01_deploy` |
 | 源码快照文档（commit `d983373`） | [`atom01_inference_node_d983373.md`](atom01_inference_node_d983373.md) |
-| 当前工作顺序 | [当前状态与下一步](../s0_hal_status.md) |
+| 平台验收范围 | [当前状态](../s0_hal_status.md) |
 | inference_node 主逻辑 | `atom01_deploy/src/inference/src/inference_node.{hpp,cpp}` |
 | 启动脚本 / Fast DDS profile | `atom01_deploy/tools/start_robot.sh`、`assets/rt_fastdds_profile.xml` |
 | `RobotInterface`（硬件封装） | `atom01_deploy/src/inference/src/robot_interface.{cpp,hpp}` |
@@ -509,7 +509,3 @@ loop {
 | 原栈 CLAUDE.md | `atom01_deploy/CLAUDE.md` |
 | 达妙电机 ID 标定 | [RoboParty 文档](https://roboparty.feishu.cn/wiki/Sh5vw7QFZimO5Skxzficro2Pnkf) |
 | HiPNUC 协议手册 | [HiPNUC 官网](https://www.hipnuc.com/resource_hi14.html) |
-
----
-
-**文档整理**：2026-11-12。§2合同及指定上游快照未变；旧阶段编号保留为研究背景，不代表当前发布排期。

@@ -1,6 +1,6 @@
 # 部署目标：XLeRobot 双臂、头部与三轮底盘
 
-当前软件版本为 **0.1.0**；XLeRobot 是首个已验证后端。完成范围及下一步只维护在 [S0 HAL 当前状态](../s0_hal_status.md)，本文件保留硬件对应关系、目标合同和实现入口。
+XLeRobot 是通用控制架构的首个实机后端。本文件记录硬件对应关系、目标合同和实现入口。现场验收见[当前状态](../s0_hal_status.md)，开发顺序见[项目待办](../../TODO.md)。
 
 实际调用链参考现有 XLeRobot Python 实现及本项目适配器；历史 dimos 路径仅用于追溯，不作为当前安装路径或自动迁移计划。整理本页不改变 §2 的安全与训练／部署合同。
 
@@ -127,7 +127,8 @@
 | Feetech协议、校准与适配 | [robot-adapters/feetech](../../crates/robot-adapters/feetech/) |
 | 总线执行与分组 | [serial_tick.rs](../../crates/robot-s0/src/serial_tick.rs)、[grouped_position.rs](../../crates/robot-s0/src/grouped_position.rs) |
 | RGB采集与帧槽 | [camera.rs](../../crates/robot-s0/src/camera.rs)、[camera_capture.py](../../scripts/camera_capture.py)；复用V4L2/OpenCV入口，无独立相机crate |
-| 运动学 | [robot-kinematics-xlerobot](../../crates/robot-kinematics-xlerobot/)；手臂IK和三轮SI数学模型已有软件实现，实机轮速仍以raw合同为准 |
+| 运动学 | [机型运动学库](../../crates/robot-kinematics-xlerobot/)提供手臂 IK 与三轮数学模型。右臂腕点目标沿用 S1 九槽混合总线，网页可做只读预览 |
+| 标定与模型 | [网页控制说明](../control_plan.md)区分电机零位和行程、URDF 显示对齐，以及 S1 五轴回位目标 |
 | 观测 | [robot-viz](../../crates/robot-viz/)；读取状态与RGB镜像，不参与执行器控制 |
 | 维护与部署 | [维护入口](../../scripts/run_hardware_maintenance.py)、[systemd说明](../../scripts/systemd/README.md) |
 
@@ -139,12 +140,12 @@
 
 ## 5. 后续范围
 
-后续先沿现有S1 scripted入口验证控制权取得、原位保持和停止释放。硬件fail-safe、SI底盘标定、深度／IMU及策略接入按实际需求单独推进，不将旧v0.4/v0.5阶段编号作为当前排期。
+双侧 S1 已完成受监督网页单关节控制验收。标定、实际回位和右臂 IK 的实机验证顺序见[项目待办](../../TODO.md)。
 
 ## 6. 未闭环边界
 
 - D15仍为`OPEN/DEFERRED`、`deployable=false`；软件停止、systemd重启和受监督测试不替代独立硬件失活保护。
-- 三轮raw `0/+500`和±50静止复核不能推导SI速度、里程计或任意速度范围已验。
+- 已架空核对单轮 −500 raw 转向和四种方向组合。地面行进距离、停车距离及 SI 里程计仍待验证。
 - 相机RGB已接入；启动恢复分支的软件通过不能证明USB失流根因或长期稳定性解决。
 - 两侧分别验收不代表双总线同时动作通过；无现场确认不追加动作。
 

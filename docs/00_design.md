@@ -3,7 +3,7 @@
 > **项目**：`robot-system`；`robot-core`是定义统一契约的crate。
 > **目标**：为多种机器人（XLeRobot、Piper、移动底盘、未来四足/人形）提供统一的 Rust 内核。S0/S1/S2 三层分离、iceoryx2 + FlatBuffers 传输、RPC 作为对外边界。
 > **适用平台**：Linux x86_64 / Linux arm64（Jetson）；Windows 只做 S2 客户端。
-> **状态**：设计版本v0.1.2 **已冻结**；它不是当前软件发布版本0.0.1。合并了 v0.1.1 + v0.1.2 修订 + 评审补充 3 条（`SampleWriter` 生命周期、`frame_header_size ≤ 4096`、RtSnapshot 内存序）。实际完成范围与下一步见 [当前状态](s0_hal_status.md)。
+> **冻结设计 v0.1.2** 包含 v0.1.1、v0.1.2 修订及三项评审补充（`SampleWriter` 生命周期、`frame_header_size ≤ 4096`、RtSnapshot 内存序）。软件发布版本独立编号。已实现和验收的范围见[当前状态](s0_hal_status.md)，开发顺序见[项目待办](../TODO.md)。
 > **变更历程**：v0 → v0.1（附录 C）→ v0.1.1（附录 D）→ v0.1.2（附录 E）。旧快照已退出工作树，按Git历史查阅，不恢复archive目录。
 > **阅读边界**：正文的接口、目标和阶段编号属于冻结设计；未实现组件、性能目标及原阶段计划不能当作当前能力。当前首个后端为XLeRobot，SerialRT和RGB路径已落地；本次整理只对齐名称、入口和已登记的构建方式，不新增设计。
 
@@ -1305,7 +1305,7 @@ panic = "unwind"
 ```
 
 - FlatBuffers 通过 `build.rs` 调 `flatc` 生成代码；`flatc` 由 `3rd-party/` vendor，不依赖系统。
-- iceoryx2 走 crates.io；如需本地 patch，`[patch.crates-io]` 指向 vendor 路径。
+- iceoryx2 系列由 Cargo 解析。根工作区对 `iceoryx2` 和 `iceoryx2-cal` 启用本地补丁，保留严格请求／响应语义。[补丁来源与边界](../3rd-party/ICEORYX2_VENDOR_SOURCE.md)
 - CI仅由`v`前缀SemVer标签触发，普通分支与PR不触发；实际jobs与参数以 [ci.yml](../.github/workflows/ci.yml) 为准。以下为冻结检查顺序及目标，全程仅nightly：
   1. `cargo fmt --all --check`
   2. `cargo clippy --all --all-targets -- -D warnings`
@@ -1314,7 +1314,7 @@ panic = "unwind"
   5. `cargo deny check`
   6. 额外：allocation-guard 测试（release + debug）、FlatBuffers schema 兼容性、1 h soak（夜间 job）、`kill -9 s0` fail-safe 验证（v0.2+）
 - nightly 回归风险缓解：CI 支持 pin 具体 nightly 日期（`rust-toolchain.toml` 写 `channel = "nightly-YYYY-MM-DD"`），周期性手动升级 + 观察；若新日期破坏核心 crate 则原地回滚到上一已验证日期，**不回切 stable**。
-- 发布沿 [AGENTS.md](../AGENTS.md) 与 [配置矩阵](../configs/package-matrix.toml)：`robot-system-v${version}+${git_sha7}-${package_id}.tar.gz`。当前软件版本0.0.1、矩阵项`xlerobot-orin-s0`；包内提交、master和新增SemVer标签须一致，旧标签不覆盖。
+- 发布沿 [AGENTS.md](../AGENTS.md) 与 [配置矩阵](../configs/package-matrix.toml)：`robot-system-v${version}+${git_sha7}-${package_id}.tar.gz`。软件版本取根 `Cargo.toml` 的 `workspace.package.version`。矩阵项 `xlerobot-orin-s0` 生成 Orin 的 S0 包。包内提交、master 发布提交及新 SemVer 标签须一致。
 
 ---
 
@@ -1426,7 +1426,7 @@ robot_id remap
 
 ## 11. 原设计阶段划分（历史规划）
 
-本节保留冻结时的阶段定义，不作为软件0.0.1的当前完成清单或排期；实际下一步只看 [当前状态](s0_hal_status.md)。
+以下编号和周期沿用设计冻结时的估计。实际交付进度见[当前状态](s0_hal_status.md)，近期优先级见[项目待办](../TODO.md)。
 
 ### 11.1 版本与交付
 

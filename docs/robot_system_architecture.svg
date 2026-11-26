@@ -1,8 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title description">
   <title id="title">robot-system 通用机器人控制架构</title>
-  <desc id="description">通用机器人控制架构。上层应用与规划中的 S2 为规划方向；已有控制入口和 RPC 网关、S1 动作执行在 S0 硬件抽象层之上。S0 下接执行器和传感器适配，再连接实际硬件。右侧列出配置、构建交付、安装回滚、日志健康和保护支持。当前实机验证后端为 XLeRobot，systemd 手动启停与保护待机自启已验，D15 延期。</desc>
+  <desc id="description">首个后端 XLeRobot 使用同一 Web 服务和两侧 gRPC 网关。每侧 S1 向同侧 S0 提交动作，网关也可直接向 S0 查询状态或发送急停。S0 通过独占串口驱动执行器，独立采集 RGB。S2 在规划中。右侧列出配置、交付、日志与保护。</desc>
   <!-- 架构来源：docs/00_design.md、docs/s0_hal_status.md；实际入口为 robot-cli、robot-rpc、robot-s1、robot-s0，以及 Feetech 与 RGB 适配实现。 -->
-  <!-- 验证边界：2026-11-12，软件0.0.1；XLeRobot左右分别受监督通过，保护待机自启已验，D15未闭环，不表示可无人值守。 -->
   <defs>
     <style>
       text { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
@@ -28,27 +27,27 @@
   </defs>
   <rect width="1600" height="1200" fill="white"/>
   <text x="48" y="64" class="title">robot-system 通用机器人控制架构</text>
-  <text x="48" y="104" class="subtitle">当前里程碑：S0 全身硬件抽象层；XLeRobot 是首个已验证后端</text>
+  <text x="48" y="104" class="subtitle">首个后端 XLeRobot · 双总线控制 · 三路 RGB 观测</text>
 
   <rect x="48" y="138" width="1152" height="132" rx="16" class="blue"/>
   <text x="74" y="181" class="layer">上层应用与规划</text>
   <text x="624" y="222" text-anchor="middle" class="box-title">S2 慎思层与应用编排（规划）</text>
-  <text x="624" y="252" text-anchor="middle" class="small">尚未作为当前运行模块交付</text>
+  <text x="624" y="252" text-anchor="middle" class="small">读取状态、提交任务、核对结果</text>
   <path d="M624 274 V310" class="down" stroke-dasharray="7 6"/>
 
   <rect x="48" y="322" width="1152" height="186" rx="16" class="blue"/>
   <text x="74" y="365" class="layer">接口与任务控制</text>
   <rect x="74" y="386" width="312" height="98" rx="12" class="blue-box"/>
-  <text x="230" y="426" text-anchor="middle" class="box-title">控制入口</text>
-  <text x="230" y="463" text-anchor="middle" class="body">命令行 · 控制客户端</text>
+  <text x="230" y="426" text-anchor="middle" class="box-title">Web 与命令行入口</text>
+  <text x="230" y="463" text-anchor="middle" class="body">浏览器共享 Orin Web 服务</text>
   <path d="M388 436 H438" class="down"/>
   <rect x="450" y="386" width="312" height="98" rx="12" class="blue-box"/>
-  <text x="606" y="426" text-anchor="middle" class="box-title">RPC 网关</text>
-  <text x="606" y="463" text-anchor="middle" class="body">鉴权 · 幂等 · 请求转发</text>
+  <text x="606" y="426" text-anchor="middle" class="box-title">双侧 gRPC 网关</text>
+  <text x="606" y="463" text-anchor="middle" class="body">状态与急停接 S0</text>
   <path d="M764 436 H814" class="down"/>
   <rect x="826" y="386" width="348" height="98" rx="12" class="blue-box"/>
   <text x="1000" y="426" text-anchor="middle" class="box-title">S1 动作执行</text>
-  <text x="1000" y="463" text-anchor="middle" class="body">保持 · 脚本动作 · 逆运动学</text>
+  <text x="1000" y="463" text-anchor="middle" class="body">保持 · 单关节 · 回位 · IK</text>
   <path d="M560 512 V564" class="down"/>
   <path d="M688 564 V514" class="up"/>
   <text x="537" y="544" text-anchor="end" class="small">命令与安全控制</text>
@@ -100,6 +99,6 @@
   <text x="1391" y="984" text-anchor="middle" class="body">贯穿开发与交付</text>
   <text x="1391" y="1022" text-anchor="middle" class="small">软件通过 ≠ 可无人值守</text>
 
-  <text x="48" y="1130" class="note">当前实机验证：XLeRobot（左右分别受监督通过）；手动启停及保护待机自启已验；D15 延期。</text>
-  <text x="48" y="1170" class="note">S1 完整服务链待实机验收；双总线同时联动尚未验收。框表示职责，实线表示主要命令或状态流。</text>
+  <text x="48" y="1130" class="note">左右腕已分别通过网页单关节往返验收。双臂五轴回位已部署，待标定后分侧实测。</text>
+  <text x="48" y="1170" class="note">实机运行需现场看护。主机或 S0 失活时的独立硬件断能（D15）仍待验证。</text>
 </svg>

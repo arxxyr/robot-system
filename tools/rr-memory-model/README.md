@@ -77,7 +77,7 @@ MODEL <测试名> kind=<positive|negative_control|capability_boundary> <字段>=
   恰一胜者，清理赢后迟到的 finish / hint / prepare 都不重开。
 - 合法复用（正常关闭后 `prepare(REQ2)`）成功；复用代次仍 Open 时旧请求分类为 Unknown。
 
-**尚待 R2 的调用方前提（本包只记录反例，不解决）：**
+**调用方前提**：严格 RR 端点在 [iceoryx2 补丁](../../3rd-party/ICEORYX2_VENDOR_SOURCE.md)中实现，下列前提须由端点持有的原始路由和 pin 保证。
 
 - `classify_prepared` 只看单一状态字。复用代次关闭后的 CLOSED 与初始 CLOSED 是同一个值，
   原语对旧请求同样返回 Closed（能力边界测试记录非零反例）。因此"旧请求完成"只有在

@@ -4,8 +4,7 @@ robot-system使用`tracing`结构化日志；初始化实现在 [robot-logging](
 
 ## 使用要点
 
-1. **bin 不用写 init 代码**：只要 `Cargo.toml` 依赖 `robot-logging`，
-   `#[ctor::ctor]` 会在 `main` 运行前自动装上 tracing subscriber。
+1. S0、S1、网关和 Web 的入口显式调用 `robot_logging::init()`。`robot-logging` 链入后也通过 ctor 在 `main` 前尝试初始化，重复调用幂等。
 2. **lib / bin 打日志**：`tracing::info!(motor_id = 6, "handshake ok")` —— 用
    结构化字段（`k = v`），不要 `format!` 拼字符串。
 3. **错误打印**：`tracing::error!(?err, "feetech connect failed")` —— 保留
@@ -159,17 +158,14 @@ RUST_LOG=robot_adapter_feetech=debug  # 仅 feetech adapter 走 debug
    tracing       = { workspace = true }
    ```
 
-2. 完成。`#[ctor::ctor]` 会在 main 前自动 install subscriber。
-3. 代码里直接用：
+2. 在 bin 入口调用 `let _ = robot_logging::init();`，确保二进制链接日志初始化实现。
+3. 在非实时路径写结构化事件：
 
    ```rust
    tracing::info!(motor_id = 6, adapter = "feetech_sts3215", "built adapter");
    tracing::warn!(?err, attempt = 2, "sync_read retry");
    tracing::error!(?err, "connect failed");
    ```
-
-可选：main 里显式 `let _ = robot_logging::init();` 作为 self-documenting anchor
-（幂等，重复调 safe）。
 
 ## lib 接入步骤
 

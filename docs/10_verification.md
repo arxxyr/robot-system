@@ -1,6 +1,6 @@
 # 10 · 验证与测试
 
-本文件维护验证合同和工具入口；当前完成边界、阻塞和下一步只维护在 [S0 HAL 当前状态](s0_hal_status.md)。冻结指标以 [00_design.md](00_design.md) 为准，已登记偏离以 [CHANGELOG.md](CHANGELOG.md) 为准。软件、安装、运行、实际动作和停止分别验收，历史 PASS 不代表当前通过。
+本文件维护验证合同和可复现的软件入口。已取得的证据与待验边界见[当前状态](s0_hal_status.md)，下一步见[根目录待办](../TODO.md)。冻结指标以 [00_design.md](00_design.md) 为准，已登记偏离以 [CHANGELOG.md](CHANGELOG.md) 为准。软件、安装、运行、实际动作和停止分别验收，历史 PASS 不代表当前通过。
 
 ## 10.1 指标与适用范围
 
@@ -30,7 +30,7 @@ cargo fmt --all
 CARGO_TARGET_DIR=target/verify-current cargo clippy --all --all-targets -- -D warnings
 ```
 
-完整 CI 的 feature、平台、release 实件和环境变量以 [.github/workflows/ci.yml](../.github/workflows/ci.yml) 为准，仅推送`v`前缀SemVer标签触发；普通分支及PR不触发。CI 的 fmt、Clippy、测试和构建按既有顺序执行。当前workflow不自动创建Release或上传安装包，标签推送成功也不代表CI通过。macOS 只能证明适用的纯软件路径；Linux 调度、systemd 与 S0 Linux 路径需在现有 Linux 环境验证。
+完整 CI 的 feature、平台、release 实件和环境变量以 [.github/workflows/ci.yml](../.github/workflows/ci.yml) 为准，工作流先匹配 `v` 前缀的候选标签，再完整校验 SemVer，通过后才执行构建和测试。普通分支及 PR 不触发。CI 的 fmt、Clippy、测试和构建按既有顺序执行。当前workflow不自动创建Release或上传安装包，标签推送成功也不代表CI通过。macOS 只能证明适用的纯软件路径；Linux 调度、systemd 与 S0 Linux 路径需在现有 Linux 环境验证。
 
 | 任务 | 实际入口 |
 |---|---|
@@ -42,6 +42,8 @@ CARGO_TARGET_DIR=target/verify-current cargo clippy --all --all-targets -- -D wa
 | EStop 与进程恢复 | [clear_estop_e2e.rs](../crates/robot-tests/src/bin/clear_estop_e2e.rs)、[crash_restart_smoke.rs](../crates/robot-tests/src/bin/crash_restart_smoke.rs) |
 | systemd 外层 watchdog | [freeze_systemd_smoke.rs](../crates/robot-tests/src/bin/freeze_systemd_smoke.rs)、[sd_watchdog_smoke.rs](../crates/robot-tests/src/bin/sd_watchdog_smoke.rs)；freeze hook 只能出现在测试构建 |
 | S1 与网关闭环 | [scripted_backend_smoke.rs](../crates/robot-tests/src/bin/scripted_backend_smoke.rs)、[ik_backend_smoke.rs](../crates/robot-tests/src/bin/ik_backend_smoke.rs)、[pubsub_cleanup_smoke.rs](../crates/robot-tests/src/bin/pubsub_cleanup_smoke.rs)、[robotctl_smoke.rs](../crates/robot-tests/src/bin/robotctl_smoke.rs) |
+| 双臂分侧回位与右臂腕点 IK | [S1 回位与取消用例](../crates/robot-s1/src/action_backend/scripted.rs)、[九槽 IK 往返及到位测试](../crates/robot-s1/src/bus2_ik_tests.rs)。在同一隔离目标目录分别运行 `cargo test -p robot-s1 --lib arm_home` 与 `cargo test -p robot-s1 --lib bus2_ik`。 |
+| 网页可视化与校准 | [URDF 视图](../scripts/tests/test_web_urdf.mjs)、[IK 预览](../scripts/tests/test_web_ik_preview.mjs)、[模型与电机校准界面](../scripts/tests/test_web_calibration.mjs)、[单关节校准工具](../scripts/tests/test_joint_calibration.py)、[校准交接](../scripts/tests/test_joint_calibration_handoff.py)。软件夹具独立于实机 EEPROM 操作。 |
 | 通信故障与持久化反例 | [comm_fault_e2e.rs](../crates/robot-tests/src/bin/comm_fault_e2e.rs)、[comm_fault](../crates/robot-tests/src/comm_fault/)、[final_stop_transport.rs](../crates/robot-tests/tests/final_stop_transport.rs) |
 | H2 原件完整性与报告 | [artifact_checks.py](../scripts/artifact_checks.py)、[comm_fault_report.py](../scripts/comm_fault_report.py)、[scripts/tests](../scripts/tests/) |
 | 安装、服务验收与回滚 | [systemd 维护说明](../scripts/systemd/README.md)；文件存在、已安装、服务运行和物理验收分别记录 |
@@ -53,8 +55,9 @@ CARGO_TARGET_DIR=target/verify-current cargo clippy --all --all-targets -- -D wa
 
 - 记录源码提交、输入清单及 SHA、产物 SHA、工具链、features/profile、实际命令、退出码、配置及校准身份。测试数去重，子集不累加，ignored 与未运行项独立列出。
 - 延迟比较使用同一测量边界和可比环境：机器、内核、CPU governor、调度类/优先级、每线程亲和性、iceoryx2 版本及实际时钟。`MONOTONIC` 与 `MONOTONIC_RAW` 不混算；host write、t0、t1、ACK 与物理终点分别留戳。
+- 页面只读验收观察同一连接上两源时间推进、8/9 槽布局和真实模型资源，记录发送的控制帧数。分侧回位的实机验收另需当次五轴目标、误差、保持轴及三轮状态、停止读回和现场观察。
 - 每轮使用新 run 和独占目录，保留原日志、原帧、读回、失败和现场回执。摘要只能引用原件，不能改写 FAIL、UNKNOWN、NOT_OBSERVED 或 NOT_RUN。
-- 硬件前先备齐产物、固定解释器、脚本、进程检查与 PLAN_ONLY，再确认当轮现场条件。动作前通知；过期或已消费 GO 不复用，不以历史现场授权为当前事实。
+- 硬件前先备齐产物、固定解释器、具体脚本、设备占用检查与 PLAN_ONLY，再确认当轮现场条件。动作前通知；过期或已消费 GO 不复用，不以历史现场授权为当前事实。
 - 停止必须有真实读回、持久化、子进程退出与锁归还证据；“进程退出”或“串口不可达”不能单独证明电机安全。未知结果不自动重试。
 - 日志、原帧、性能报告和测试结果留在既有本地或Orin位置，不提交Git，不再维护evidence/perf资料目录。当前状态仅保留结论与边界；发布保留必要manifest、提交身份和校验值，历史流水账通过Git查询。
 
