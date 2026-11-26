@@ -26,7 +26,7 @@ S0 的安装器、发布矩阵和三个自启 unit 均独立于这一组上层�
 
 状态页模板的初始资源预算为`CPUAffinity=0-3`、`CPUQuota=50%`、`MemoryHigh=128M`、`MemoryMax=256M`、`TasksMax=32`；CPU预算合计为半个逻辑核，任务数统计OS进程/线程而非Tokio任务。语义见[systemd资源控制](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)。退出最多等待5秒，60秒内最多启动5次。只限制独立Web服务，不修改S0/S1服务；当前部署已核对实际限额，结果见[当前状态](../../docs/s0_hal_status.md)，不据此推断未来相机预览负载峰值。
 
-完整 URDF 由网页服务通过 `ROBOT_STATUS_URDF_DIR` 加载，目录包含经校验的 `xlerobot.urdf` 与 `meshes/`。网页显示修正保存在其 `StateDirectory=robot-status`。维护时以已安装服务的 `systemctl cat`、`ExecStart`、环境路径及候选清单核对身份。仓库模板中的 `target/release` 是渲染输入，现场可能使用隔离候选的二进制路径。以上网页资源与校准套接字需分别核实，三 unit 安装器的清单只覆盖下表所列服务。
+完整 URDF 由网页服务通过 `ROBOT_STATUS_URDF_DIR` 加载，目录包含经校验的 `xlerobot.urdf` 与 `meshes/`。三只全向轮的安装位姿和共享网格随 `robot-status` 编译，继续使用原模型目录。网页显示修正保存在其 `StateDirectory=robot-status`。维护时以已安装服务的 `systemctl cat`、`ExecStart`、环境路径及候选清单核对身份。仓库模板中的 `target/release` 是渲染输入，现场可能使用隔离候选的二进制路径。以上网页资源与校准套接字需分别核实，三 unit 安装器的清单只覆盖下表所列服务。
 
 ### 状态服务安装与回滚
 
