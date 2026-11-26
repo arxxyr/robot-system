@@ -2077,6 +2077,7 @@ impl Coordinator {
                 req.payload_schema_id,
                 robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
                     | robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+                    | robot_msg::schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD
             );
         #[cfg(feature = "test-base-command")]
         let needs_feedback = {

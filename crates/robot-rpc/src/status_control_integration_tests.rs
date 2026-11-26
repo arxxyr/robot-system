@@ -287,11 +287,25 @@ impl RobotControl for FakeControl {
                 .lock()
                 .unwrap()
                 .push(command.clone());
-        } else if command.payload_schema_id == robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD {
-            let home =
+        } else if matches!(
+            command.payload_schema_id,
+            robot_msg::schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD
+                | robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+        ) {
+            let hardware_id = if command.payload_schema_id
+                == robot_msg::schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD
+            {
+                assert_eq!(self.state.hardware_id, "left_arm_full_with_head");
+                flatbuffers::root::<robot_msg::msg::LeftArmHomePayload<'_>>(&command.payload)
+                    .unwrap()
+                    .hardware_id()
+            } else {
+                assert_eq!(self.state.hardware_id, "right_arm_full_with_base");
                 flatbuffers::root::<robot_msg::msg::RightArmHomePayload<'_>>(&command.payload)
-                    .unwrap();
-            assert_eq!(home.hardware_id(), self.state.hardware_id);
+                    .unwrap()
+                    .hardware_id()
+            };
+            assert_eq!(hardware_id, self.state.hardware_id);
             assert_eq!(
                 command.kind,
                 crate::proto::ActionKindProto::ActionKindScripted as i32
@@ -1246,48 +1260,53 @@ async fn disconnected_inflight_timeout_stays_unknown_and_is_not_replayed() {
 }
 
 #[tokio::test]
+async fn left_arm_home_shares_the_task_identity_replay_and_cancel() {
+    verify_arm_home(0, "left_arm_home", command).await;
+}
+
+#[tokio::test]
 async fn right_arm_home_shares_the_task_identity_replay_and_cancel() {
+    verify_arm_home(1, "right_arm_home", right_command).await;
+}
+
+async fn verify_arm_home(bus: usize, op: &str, bus_command: fn(&Value, &str, &str) -> Value) {
     let fixture = Fixture::start(10, false, 500).await;
     let mut browser = fixture.same_origin().await;
     let initial = fresh(&mut browser).await;
-    let home = right_command(&initial, "home-once", "right_arm_home");
+    let home = bus_command(&initial, "home-once", op);
     send(&mut browser, &home).await;
     let accepted = reply(&mut browser, "home-once").await;
     assert_eq!(accepted["status"], "accepted", "{accepted}");
     send(&mut browser, &home).await;
     assert_eq!(reply(&mut browser, "home-once").await, accepted);
     let executing = next_matching(&mut browser, |state| {
-        state["buses"][1]["control"]["task"]["state"] == "executing"
+        state["buses"][bus]["control"]["task"]["state"] == "executing"
     })
     .await;
     assert_eq!(
-        executing["buses"][1]["control"]["task"]["action_id"],
+        executing["buses"][bus]["control"]["task"]["action_id"],
         accepted["action_id"]
     );
-    send(
-        &mut browser,
-        &right_command(&executing, "home-busy", "right_arm_home"),
-    )
-    .await;
+    send(&mut browser, &bus_command(&executing, "home-busy", op)).await;
     assert_eq!(reply(&mut browser, "home-busy").await["status"], "rejected");
     send(
         &mut browser,
-        &right_command(&executing, "home-cancel", "cancel"),
+        &bus_command(&executing, "home-cancel", "cancel"),
     )
     .await;
     let cancel = reply(&mut browser, "home-cancel").await;
     assert_eq!(cancel["status"], "accepted");
     assert_eq!(cancel["action_id"], accepted["action_id"]);
     next_matching(&mut browser, |state| {
-        state["buses"][1]["control"]["task"]["state"] == "cancelled"
+        state["buses"][bus]["control"]["task"]["state"] == "cancelled"
     })
     .await;
-    let right = &fixture.calls[1];
-    assert_eq!(right.invokes.load(Ordering::Relaxed), 1);
-    assert_eq!(right.cancellations.load(Ordering::Relaxed), 1);
-    assert_eq!(right.enables.load(Ordering::Relaxed), 0);
-    assert_eq!(right.clears.load(Ordering::Relaxed), 0);
-    assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 0);
+    let selected = &fixture.calls[bus];
+    assert_eq!(selected.invokes.load(Ordering::Relaxed), 1);
+    assert_eq!(selected.cancellations.load(Ordering::Relaxed), 1);
+    assert_eq!(selected.enables.load(Ordering::Relaxed), 0);
+    assert_eq!(selected.clears.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[1 - bus].invokes.load(Ordering::Relaxed), 0);
     drop(browser);
     fixture.finish().await;
 }

@@ -1,10 +1,10 @@
 //! Scripted 动作后端：关节位置插值、驻留与单关节实测到位确认。
 //!
-//! 同一 `scripted` profile 接受完整向量、单关节定位与右臂固定回位。
+//! 同一 `scripted` profile 接受完整向量、单关节定位与所选侧手臂固定回位。
 //! `ScriptedPayload` 保留完整向量、
 //! 多 waypoint、末目标发布后完成的行为；`SingleJointPositionPayload` 仅替换
 //! 提交时新鲜完整快照中的一个目标，受显式运动配置、任务期限和反馈判据约束。
-//! 右臂回位从同一帧取五轴起点与夹爪保持值，共用插值实例和反馈到位判据。
+//! 回位从同一帧取五轴起点及其余位置轴的保持值，共用插值实例和反馈到位判据。
 //!
 //! 新单关节请求只选择位置关节，混合总线三轮目标保持 raw0。末目标发布成功后
 //! 继续保持末目标，只有其后新鲜反馈中的全部位置关节连续满足各自容差及稳定
@@ -29,7 +29,8 @@ use crate::coordinator::build_hold_command;
 use crate::single_joint::{SingleJointExecution, SingleJointPlan, position_for_s0};
 use robot_msg::msg::ScriptedPayload as FbScriptedPayload;
 use robot_msg::schema_id::{
-    SCHEMA_RIGHT_ARM_HOME_PAYLOAD, SCHEMA_SCRIPTED_PAYLOAD, SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+    SCHEMA_LEFT_ARM_HOME_PAYLOAD, SCHEMA_RIGHT_ARM_HOME_PAYLOAD, SCHEMA_SCRIPTED_PAYLOAD,
+    SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
 };
 
 // ============================================================================
@@ -62,6 +63,7 @@ impl ActionBackend for ScriptedBackend {
             SCHEMA_SCRIPTED_PAYLOAD,
             SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
             SCHEMA_RIGHT_ARM_HOME_PAYLOAD,
+            SCHEMA_LEFT_ARM_HOME_PAYLOAD,
         ];
         SCHEMAS
     }
@@ -74,8 +76,11 @@ impl ActionBackend for ScriptedBackend {
         if req.payload_schema_id == SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD {
             return Self::start_single_joint(req, ctx);
         }
-        if req.payload_schema_id == SCHEMA_RIGHT_ARM_HOME_PAYLOAD {
-            return SingleJointPlan::right_arm_home(req, ctx).map(Self::position_instance);
+        if matches!(
+            req.payload_schema_id,
+            SCHEMA_LEFT_ARM_HOME_PAYLOAD | SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+        ) {
+            return SingleJointPlan::arm_home(req, ctx).map(Self::position_instance);
         }
         // (1) defensive payload_schema_id check（dispatch 已守门，这里
         // 再防御性确认；如未来 dispatch 路径漂移可立刻定位）。
@@ -856,6 +861,7 @@ mod tests {
                 SCHEMA_SCRIPTED_PAYLOAD,
                 SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
                 SCHEMA_RIGHT_ARM_HOME_PAYLOAD,
+                SCHEMA_LEFT_ARM_HOME_PAYLOAD,
             ]
         );
     }
@@ -1930,6 +1936,7 @@ mod single_joint_tests {
     use crate::state_cache::JointFeedbackSnapshot;
     use flatbuffers::FlatBufferBuilder;
     use robot_core::time::{MockClock, MonoRawNs, RobotClock};
+    use robot_kinematics_xlerobot::Side;
     use robot_msg::msg::{
         JointCommand, SingleJointPositionPayload, SingleJointPositionPayloadArgs,
     };
@@ -2538,26 +2545,40 @@ mod single_joint_tests {
         targets
     }
 
-    fn home_request(fixture: &Fixture, hardware: &str) -> ActionRequest {
-        use robot_msg::msg::{RightArmHomePayload, RightArmHomePayloadArgs};
+    fn home_request(fixture: &Fixture, hardware: &str, side: Side) -> ActionRequest {
+        use robot_msg::msg::{
+            LeftArmHomePayload, LeftArmHomePayloadArgs, RightArmHomePayload,
+            RightArmHomePayloadArgs,
+        };
 
         let mut builder = FlatBufferBuilder::new();
-        let hardware_id = builder.create_string(hardware);
-        let root = RightArmHomePayload::create(
-            &mut builder,
-            &RightArmHomePayloadArgs {
-                hardware_id: Some(hardware_id),
-            },
-        );
-        builder.finish(root, None);
+        let hardware_id = Some(builder.create_string(hardware));
+        let payload_schema_id = match side {
+            Side::Left => {
+                let root = LeftArmHomePayload::create(
+                    &mut builder,
+                    &LeftArmHomePayloadArgs { hardware_id },
+                );
+                builder.finish(root, None);
+                SCHEMA_LEFT_ARM_HOME_PAYLOAD
+            }
+            Side::Right => {
+                let root = RightArmHomePayload::create(
+                    &mut builder,
+                    &RightArmHomePayloadArgs { hardware_id },
+                );
+                builder.finish(root, None);
+                SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+            }
+        };
         ActionRequest {
             action_id: ActionId::new_v7(),
             kind: ActionKind::Scripted,
             deadline_ns: fixture.clock.now().0 + 40_000_000_000,
             priority: 10,
-            payload_schema_id: SCHEMA_RIGHT_ARM_HOME_PAYLOAD,
+            payload_schema_id,
             payload: builder.finished_data().to_vec(),
-            idempotency_key: "右臂回位模拟".into(),
+            idempotency_key: "单臂回位模拟".into(),
             source: ActionSource::Internal,
         }
     }
@@ -2579,7 +2600,7 @@ mod single_joint_tests {
             .position(|&id| id == 5)
             .unwrap();
         feedback[wrist] = -2.5;
-        let request = home_request(&fixture, &fixture.hardware.id);
+        let request = home_request(&fixture, &fixture.hardware.id, Side::Right);
         let mut instance = fixture.start_from(&request, &feedback).unwrap();
         let mut source = feedback.clone();
         fixture.hardware.clear_wheel_targets(&mut source);
@@ -2629,7 +2650,7 @@ mod single_joint_tests {
     fn right_arm_home_cancel_holds_last_published_positions_and_zero_wheels() {
         let fixture = Fixture::mixed();
         let feedback = mixed_feedback(&fixture);
-        let request = home_request(&fixture, &fixture.hardware.id);
+        let request = home_request(&fixture, &fixture.hardware.id, Side::Right);
         let mut instance = fixture.start_from(&request, &feedback).unwrap();
         mixed_command(
             fixture.ready_tick(instance.as_mut(), 0, &feedback),
@@ -2651,20 +2672,20 @@ mod single_joint_tests {
     fn right_arm_home_rejects_wrong_identity_layout_deadline_and_feedback() {
         let mut fixture = Fixture::mixed();
         let feedback = mixed_feedback(&fixture);
-        let request = home_request(&fixture, &fixture.hardware.id);
+        let request = home_request(&fixture, &fixture.hardware.id, Side::Right);
         assert!(
             fixture
-                .start_from(&home_request(&fixture, "其他总线"), &feedback)
+                .start_from(&home_request(&fixture, "其他总线", Side::Right), &feedback)
                 .is_err()
         );
         assert!(fixture.start_from(&request, &feedback[..3]).is_err());
         let mut invalid = feedback.clone();
         invalid[0] = f64::NAN;
         assert!(fixture.start_from(&request, &invalid).is_err());
-        let mut short = home_request(&fixture, &fixture.hardware.id);
+        let mut short = home_request(&fixture, &fixture.hardware.id, Side::Right);
         short.deadline_ns = fixture.clock.now().0 + 10_000_000_000;
         assert!(fixture.start_from(&short, &feedback).is_err());
-        let mut bad_payload = home_request(&fixture, &fixture.hardware.id);
+        let mut bad_payload = home_request(&fixture, &fixture.hardware.id, Side::Right);
         bad_payload.payload.clear();
         assert!(matches!(
             fixture.start_from(&bad_payload, &feedback),
@@ -2680,9 +2701,135 @@ mod single_joint_tests {
         assert!(fixture.start_from(&request, &feedback).is_err());
         let left = Fixture::new();
         assert!(
-            left.start_from(&home_request(&left, &left.hardware.id), &START)
+            left.start_from(&home_request(&left, &left.hardware.id, Side::Right), &START)
                 .is_err()
         );
+    }
+
+    fn left_home_fixture() -> Fixture {
+        let mut fixture = Fixture::new();
+        fixture.hardware = crate::coordinator::parse_hardware_section_from_toml(
+            include_str!("../../../../configs/xlerobot-bus1.toml"),
+            "left_arm_full_with_head",
+        )
+        .unwrap();
+        fixture.limits = crate::coordinator::parse_single_joint_config_from_toml(
+            include_str!("../../../../configs/xlerobot-bus1-motion.toml"),
+            &fixture.hardware,
+        )
+        .unwrap()
+        .unwrap();
+        fixture
+    }
+
+    #[test]
+    fn left_arm_home_holds_gripper_and_both_head_axes_until_arrival_or_cancel() {
+        let fixture = left_home_fixture();
+        let start = [0.25, -0.5, 1.0, -0.75, 2.5, 0.375, -0.25, 0.5];
+        let goal = [0.0, 0.0, 0.0, 0.0, 0.0, start[5], start[6], start[7]];
+        let request = home_request(&fixture, &fixture.hardware.id, Side::Left);
+        let mut instance = fixture.start_from(&request, &start).unwrap();
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 0, &start)),
+            start
+        );
+        let middle = command(fixture.ready_tick(instance.as_mut(), 12_500, &start));
+        assert_eq!(
+            middle,
+            std::array::from_fn::<_, 8, _>(|i| f64::midpoint(start[i], goal[i]))
+        );
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 25_000, &middle)),
+            goal
+        );
+        let mut settled = goal;
+        settled[2] = f64::from(robot_adapter_feetech::raw_to_rad(2047 - 20));
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 25_020, &settled)),
+            goal
+        );
+        assert!(matches!(
+            fixture.ready_tick(instance.as_mut(), 25_220, &settled),
+            ActionTickOutput::Completed(ActionOutcome::Success)
+        ));
+        assert_eq!(instance.successful_hold_target(), Some(goal.to_vec()));
+
+        fixture.clock.set(MonoRawNs(BASE_NS));
+        let mut instance = fixture.start_from(&request, &start).unwrap();
+        command(fixture.ready_tick(instance.as_mut(), 0, &start));
+        assert_eq!(
+            command(fixture.ready_tick(instance.as_mut(), 12_500, &start)),
+            middle
+        );
+        instance.cancel(&mut fixture.context(None)).unwrap();
+        assert!(matches!(
+            fixture
+                .tick(instance.as_mut(), 12_520, None, false)
+                .unwrap(),
+            ActionTickOutput::Completed(ActionOutcome::PartialSuccess { .. })
+        ));
+        assert_eq!(instance.interrupted_hold_target(), Some(middle));
+    }
+
+    #[test]
+    fn left_arm_home_rejects_cross_bus_and_incomplete_head_layouts() {
+        let mut left = left_home_fixture();
+        let right = Fixture::mixed();
+        for (fixture, side) in [(&left, Side::Right), (&right, Side::Left)] {
+            let start = vec![0.0; fixture.hardware.joints.len()];
+            assert!(
+                fixture
+                    .start_from(&home_request(fixture, &fixture.hardware.id, side), &start)
+                    .is_err()
+            );
+        }
+        let request = home_request(&left, &left.hardware.id, Side::Left);
+        left.hardware.joints[7] = "head_motor_1".into();
+        assert!(left.start_from(&request, &[0.0; 8]).is_err());
+        left.hardware.joints[7] = "head_motor_2".into();
+        left.hardware.motor_ids.swap(4, 7);
+        assert!(left.start_from(&request, &[0.0; 8]).is_err());
+    }
+
+    #[test]
+    fn arm_home_slots_follow_paired_config_order_but_reject_wrong_physical_ids() {
+        use robot_kinematics_xlerobot::arm_home_slots;
+        for (mut fixture, side) in [
+            (left_home_fixture(), Side::Left),
+            (Fixture::mixed(), Side::Right),
+        ] {
+            let hardware = &mut fixture.hardware;
+            hardware.joints.rotate_left(2);
+            hardware.motor_ids.rotate_left(2);
+            let slots = |hw: &HardwareSection| {
+                arm_home_slots(
+                    side,
+                    &hw.id,
+                    &hw.joints,
+                    &hw.motor_ids,
+                    hw.feetech_bus2_mixed_raw,
+                )
+            };
+            assert_eq!(
+                slots(hardware)
+                    .unwrap()
+                    .map(|slot| hardware.motor_ids[slot]),
+                [1, 2, 3, 4, 5]
+            );
+            let ids = |id| {
+                hardware
+                    .motor_ids
+                    .iter()
+                    .position(|&value| value == id)
+                    .unwrap()
+            };
+            let (wrist, grip, other1, other2) = (ids(5), ids(6), ids(7), ids(8));
+            hardware.motor_ids.swap(wrist, grip);
+            assert!(slots(hardware).is_err());
+            hardware.motor_ids.swap(wrist, grip);
+            hardware.motor_ids.swap(other1, other2);
+            assert_eq!(slots(hardware).is_ok(), side == Side::Right);
+        }
     }
 
     #[test]

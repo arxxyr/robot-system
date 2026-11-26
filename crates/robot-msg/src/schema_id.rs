@@ -125,6 +125,8 @@ pub const SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD: u32 = 0x0000_040F;
 
 /// 右臂五轴固定初始位姿；独立类型确保旧版 S1 在分发时拒绝。
 pub const SCHEMA_RIGHT_ARM_HOME_PAYLOAD: u32 = 0x0000_0410;
+/// 左臂五轴固定初始位姿，左夹爪与两头轴保持接单位置。
+pub const SCHEMA_LEFT_ARM_HOME_PAYLOAD: u32 = 0x0000_0411;
 
 // -----------------------------------------------------------------------------
 // deprecated 登记
@@ -188,6 +190,7 @@ pub const SCHEMA_REGISTRY: &[(u32, &str)] = &[
         SCHEMA_RIGHT_ARM_HOME_PAYLOAD,
         "robot.msg.RightArmHomePayload",
     ),
+    (SCHEMA_LEFT_ARM_HOME_PAYLOAD, "robot.msg.LeftArmHomePayload"),
 ];
 
 /// 按 `schema_id` 查规范名；未知返回 `None`。

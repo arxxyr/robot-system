@@ -12,7 +12,7 @@ use crate::coordinator::HardwareSection;
 #[cfg(feature = "backend-scripted")]
 use crate::state_cache::JointFeedbackSnapshot;
 #[cfg(feature = "backend-scripted")]
-use robot_msg::msg::{RightArmHomePayload, SingleJointPositionPayload};
+use robot_msg::msg::{LeftArmHomePayload, RightArmHomePayload, SingleJointPositionPayload};
 
 /// 单关节定位参数；数值须由当前硬件校准和已验证的运动限制明确给出。
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -189,56 +189,59 @@ impl SingleJointPlan {
         )
     }
 
-    pub(crate) fn right_arm_home(
+    pub(crate) fn arm_home(
         req: &ActionRequest,
         ctx: &ActionContext<'_>,
     ) -> Result<Self, ActionStartError> {
-        use robot_kinematics_xlerobot::{right_arm_home_duration_ms, right_arm_joint_names};
+        use robot_kinematics_xlerobot::{Side, arm_home_duration_ms, arm_home_slots};
+        use robot_msg::schema_id::{SCHEMA_LEFT_ARM_HOME_PAYLOAD, SCHEMA_RIGHT_ARM_HOME_PAYLOAD};
 
-        let payload =
-            flatbuffers::root::<RightArmHomePayload<'_>>(&req.payload).map_err(|error| {
-                ActionStartError::PayloadDecode(format!("右臂回位请求无效：{error}"))
-            })?;
         let hardware = ctx.hardware;
-        let layout_error =
-            || ActionStartError::Rejected("右臂回位需要具名的右臂六关节与三轮混合布局".into());
-        if payload.hardware_id() != hardware.id
-            || !hardware.feetech_bus2_mixed_raw
-            || !hardware.mixed_layout_is_valid()
-        {
-            return Err(layout_error());
-        }
-        let slot_of = |name: &str| {
-            hardware
-                .joints
-                .iter()
-                .position(|joint| joint == name)
-                .ok_or_else(layout_error)
+        let decode_error =
+            |error| ActionStartError::PayloadDecode(format!("手臂回位请求无效：{error}"));
+        let (side, requested_hardware) = match req.payload_schema_id {
+            SCHEMA_LEFT_ARM_HOME_PAYLOAD => (
+                Side::Left,
+                flatbuffers::root::<LeftArmHomePayload<'_>>(&req.payload)
+                    .map_err(decode_error)?
+                    .hardware_id(),
+            ),
+            SCHEMA_RIGHT_ARM_HOME_PAYLOAD => (
+                Side::Right,
+                flatbuffers::root::<RightArmHomePayload<'_>>(&req.payload)
+                    .map_err(decode_error)?
+                    .hardware_id(),
+            ),
+            _ => return Err(ActionStartError::Rejected("未知的回位请求".into())),
         };
-        if hardware.is_wheel_slot(slot_of("right_arm_gripper")?) {
-            return Err(layout_error());
+        if requested_hardware != hardware.id {
+            return Err(ActionStartError::Rejected(
+                "回位请求的硬件身份不匹配".into(),
+            ));
         }
-        for wheel in ["base_front_wheel", "base_left_wheel", "base_right_wheel"] {
-            if !hardware.is_wheel_slot(slot_of(wheel)?) {
-                return Err(layout_error());
-            }
-        }
+        let slots = arm_home_slots(
+            side,
+            &hardware.id,
+            &hardware.joints,
+            &hardware.motor_ids,
+            hardware.feetech_bus2_mixed_raw,
+        )
+        .map_err(|reason| ActionStartError::Rejected(reason.into()))?;
         let config = ctx
             .single_joint_config
-            .ok_or_else(|| ActionStartError::Rejected("右臂回位缺少运动约束".into()))?;
+            .ok_or_else(|| ActionStartError::Rejected("手臂回位缺少运动约束".into()))?;
         let feedback = ctx
             .feedback
-            .ok_or_else(|| ActionStartError::Rejected("右臂回位缺少本次反馈".into()))?;
+            .ok_or_else(|| ActionStartError::Rejected("手臂回位缺少本次反馈".into()))?;
         let mut targets = [(0, 0.0); 5];
         let mut start = [0.0; 5];
         let mut speeds = [0.0; 5];
-        for (axis, name) in right_arm_joint_names().iter().enumerate() {
-            let slot = slot_of(name)?;
-            if hardware.is_wheel_slot(slot) {
-                return Err(layout_error());
-            }
+        for (axis, slot) in slots.into_iter().enumerate() {
+            let name = &hardware.joints[slot];
             targets[axis] = (slot, 0.0);
-            start[axis] = position_for_s0(*feedback.positions.get(slot).ok_or_else(layout_error)?);
+            start[axis] = position_for_s0(*feedback.positions.get(slot).ok_or_else(|| {
+                ActionStartError::Rejected("回位反馈维度与硬件布局不匹配".into())
+            })?);
             speeds[axis] = config
                 .joints
                 .iter()
@@ -246,7 +249,7 @@ impl SingleJointPlan {
                 .ok_or_else(|| ActionStartError::Rejected(format!("缺少回位速率：{name}")))?
                 .max_velocity_rad_s;
         }
-        let duration_ms = right_arm_home_duration_ms(start, speeds)
+        let duration_ms = arm_home_duration_ms(start, speeds)
             .map_err(|message| ActionStartError::Rejected(message.into()))?;
         Self::prepare_positions(req, ctx, config, duration_ms, &targets)
     }
@@ -330,8 +333,11 @@ impl SingleJointPlan {
                 .ok_or_else(|| ActionStartError::Rejected("所选关节缺少位置约束".into()))?;
             execution.target[slot] = if (req.kind == crate::action::ActionKind::Ik
                 && ctx.hardware.feetech_bus2_mixed_raw)
-                || req.payload_schema_id == robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
-            {
+                || matches!(
+                    req.payload_schema_id,
+                    robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+                        | robot_msg::schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD
+                ) {
                 let raw = checked_encoder_target(target, initial_pose[slot], duration_ms, limit)?;
                 f64::from(robot_adapter_feetech::raw_to_rad(raw))
             } else {

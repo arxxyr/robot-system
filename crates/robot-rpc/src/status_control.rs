@@ -18,7 +18,7 @@ use crate::proto::{
     TaskStatus,
 };
 use robot_core::time::RobotClock;
-use robot_kinematics_xlerobot::{right_arm_home_duration_ms, right_arm_joint_names};
+use robot_kinematics_xlerobot::{Side, arm_home_duration_ms, arm_home_slots};
 
 #[path = "status_base.rs"]
 mod base;
@@ -200,6 +200,7 @@ fn hold_range(joint: &JointLimit, source: &Source, slot: usize) -> Result<(f64, 
 #[serde(rename_all = "snake_case")]
 pub(super) enum Operation {
     Move,
+    LeftArmHome,
     RightArmHome,
     Cancel,
     Enable,
@@ -211,8 +212,16 @@ pub(super) enum Operation {
 }
 
 impl Operation {
+    fn home_side(self) -> Option<Side> {
+        match self {
+            Self::LeftArmHome => Some(Side::Left),
+            Self::RightArmHome => Some(Side::Right),
+            _ => None,
+        }
+    }
+
     fn starts_motion(self) -> bool {
-        matches!(self, Self::Move | Self::RightArmHome)
+        matches!(self, Self::Move | Self::LeftArmHome | Self::RightArmHome)
     }
 }
 
@@ -520,8 +529,8 @@ impl ControlState {
             {
                 return Err("定位要求已使能、确认上扭且输出活动；不会自动使能".into());
             }
-            let duration = if request.operation == Operation::RightArmHome {
-                home_duration_bound(request, source, state, motion)?
+            let duration = if let Some(side) = request.operation.home_side() {
+                home_duration_bound(side, &request.bus_id, source, state, motion)?
             } else {
                 validate_move(request, motion, state)?
             };
@@ -577,7 +586,9 @@ impl ControlState {
         ));
         let rpc_id = uuid::Uuid::now_v7().to_string();
         let action_id = match request.operation {
-            Operation::Move | Operation::RightArmHome => Some(rpc_id.clone()),
+            Operation::Move | Operation::LeftArmHome | Operation::RightArmHome => {
+                Some(rpc_id.clone())
+            }
             Operation::Cancel => self.task.as_ref().map(|task| task.action_id.clone()),
             _ => None,
         };
@@ -725,30 +736,32 @@ fn command_meta(
 }
 
 fn home_duration_bound(
-    request: &Request,
+    side: Side,
+    bus_id: &str,
     source: &Source,
     state: &BusView,
     motion: &MotionConfig,
 ) -> Result<u32, String> {
-    if request.bus_id != "bus2"
-        || source.id != "bus2"
-        || source.robot_id != "xlerobot_bus2_full"
-        || source.hardware_id != "right_arm_full_with_base"
-        || !source.feetech_position
-    {
-        return Err("回初始位姿仅适用于 XLeRobot 右臂九槽混合总线".into());
+    let (bus, robot) = match side {
+        Side::Left => ("bus1", "xlerobot_bus1_full"),
+        Side::Right => ("bus2", "xlerobot_bus2_full"),
+    };
+    if bus_id != bus || source.id != bus || source.robot_id != robot || !source.feetech_position {
+        return Err("手臂回位请求与总线身份不匹配".into());
     }
-    base_wheel_slots(source)?;
+    let slots = arm_home_slots(
+        side,
+        &source.hardware_id,
+        &source.layout.joints,
+        &source.layout.motor_ids,
+        source.mixed_raw,
+    )
+    .map_err(str::to_owned)?;
     // S1 从接收任务时的新反馈起步。以各轴可接受的最远起点预算，同一时长算法覆盖两个采样时刻。
     let mut farthest = [0.0; 5];
     let mut speeds = [0.0; 5];
-    for (axis, name) in right_arm_joint_names().iter().enumerate() {
-        let slot = source
-            .layout
-            .joints
-            .iter()
-            .position(|joint| joint == name)
-            .ok_or_else(|| format!("缺少回位关节 {name}"))?;
+    for (axis, slot) in slots.into_iter().enumerate() {
+        let name = &source.layout.joints[slot];
         let limit = motion
             .joints
             .iter()
@@ -769,7 +782,7 @@ fn home_duration_bound(
         farthest[axis] = min.abs().max(max.abs());
         speeds[axis] = limit.max_velocity_rad_s;
     }
-    right_arm_home_duration_ms(farthest, speeds).map_err(str::to_owned)
+    arm_home_duration_ms(farthest, speeds).map_err(str::to_owned)
 }
 
 fn validate_move(request: &Request, motion: &MotionConfig, state: &BusView) -> Result<u32, String> {
@@ -813,7 +826,9 @@ fn definitely_rejected(code: tonic::Code) -> bool {
 
 fn accepted_message(operation: Operation) -> &'static str {
     match operation {
-        Operation::Move | Operation::RightArmHome => "任务已接收，等待新鲜反馈到位及任务终态",
+        Operation::Move | Operation::LeftArmHome | Operation::RightArmHome => {
+            "任务已接收，等待新鲜反馈到位及任务终态"
+        }
         Operation::Cancel => "取消请求已接收；取消不等于断扭，等待任务终态",
         Operation::Enable => "使能回执已收到；等待新鲜TorqueOn反馈后再定位",
         Operation::Disable => "断扭回执已收到；仍以新鲜TorqueOffConfirmed反馈确认",
@@ -879,6 +894,55 @@ impl RpcReply {
     }
 }
 
+fn position_task(request: &Request, source: &Source, meta: CommandMeta) -> InvokeTaskCommand {
+    let mut builder = FlatBufferBuilder::with_capacity(256);
+    let hardware = builder.create_string(&source.hardware_id);
+    let schema = match request.operation.home_side() {
+        Some(Side::Left) => {
+            let payload = robot_msg::msg::LeftArmHomePayload::create(
+                &mut builder,
+                &robot_msg::msg::LeftArmHomePayloadArgs {
+                    hardware_id: Some(hardware),
+                },
+            );
+            builder.finish(payload, None);
+            robot_msg::schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD
+        }
+        Some(Side::Right) => {
+            let payload = robot_msg::msg::RightArmHomePayload::create(
+                &mut builder,
+                &robot_msg::msg::RightArmHomePayloadArgs {
+                    hardware_id: Some(hardware),
+                },
+            );
+            builder.finish(payload, None);
+            robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+        }
+        None => {
+            let joint = builder.create_string(request.joint.as_deref().unwrap_or_default());
+            let payload = robot_msg::msg::SingleJointPositionPayload::create(
+                &mut builder,
+                &robot_msg::msg::SingleJointPositionPayloadArgs {
+                    hardware_id: Some(hardware),
+                    joint_name: Some(joint),
+                    target_position_rad: request.target_position_rad.unwrap_or_default(),
+                    duration_ms: request.duration_ms.unwrap_or_default(),
+                },
+            );
+            builder.finish(payload, None);
+            robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
+        }
+    };
+    InvokeTaskCommand {
+        meta: Some(meta),
+        kind: ActionKindProto::ActionKindScripted as i32,
+        deadline_ns: 0,
+        priority: 10,
+        payload_schema_id: schema,
+        payload: builder.finished_data().to_vec(),
+    }
+}
+
 async fn invoke_rpc(
     client: &mut RobotControlClient<Channel>,
     request: &Request,
@@ -893,47 +957,10 @@ async fn invoke_rpc(
         request
     }
     match request.operation {
-        Operation::Move | Operation::RightArmHome => {
-            let mut builder = FlatBufferBuilder::with_capacity(256);
-            let hardware = builder.create_string(&source.hardware_id);
-            let schema = if request.operation == Operation::RightArmHome {
-                let payload = robot_msg::msg::RightArmHomePayload::create(
-                    &mut builder,
-                    &robot_msg::msg::RightArmHomePayloadArgs {
-                        hardware_id: Some(hardware),
-                    },
-                );
-                builder.finish(payload, None);
-                robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
-            } else {
-                let joint = builder.create_string(request.joint.as_deref().unwrap_or_default());
-                let payload = robot_msg::msg::SingleJointPositionPayload::create(
-                    &mut builder,
-                    &robot_msg::msg::SingleJointPositionPayloadArgs {
-                        hardware_id: Some(hardware),
-                        joint_name: Some(joint),
-                        target_position_rad: request.target_position_rad.unwrap_or_default(),
-                        duration_ms: request.duration_ms.unwrap_or_default(),
-                    },
-                );
-                builder.finish(payload, None);
-                robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
-            };
-            client
-                .invoke_task(bounded(
-                    InvokeTaskCommand {
-                        meta: Some(meta),
-                        kind: ActionKindProto::ActionKindScripted as i32,
-                        deadline_ns: 0,
-                        priority: 10,
-                        payload_schema_id: schema,
-                        payload: builder.finished_data().to_vec(),
-                    },
-                    timeout,
-                ))
-                .await
-                .map(|reply| RpcReply::Task(reply.into_inner()))
-        }
+        Operation::Move | Operation::LeftArmHome | Operation::RightArmHome => client
+            .invoke_task(bounded(position_task(request, source, meta), timeout))
+            .await
+            .map(|reply| RpcReply::Task(reply.into_inner())),
         Operation::Cancel => client
             .cancel_task(bounded(
                 CancelTaskCommand {

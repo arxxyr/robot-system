@@ -484,9 +484,9 @@
       let busOrder = [];
       // 每条总线只保存本页面最后一次请求；任务事实来自服务端共享快照。
       const controlRequests = new Map();
-      const controlOperations = ['move', 'right_arm_home', 'cancel', 'enable', 'disable', 'estop', 'clear_estop'];
+      const controlOperations = ['move', 'left_arm_home', 'right_arm_home', 'cancel', 'enable', 'disable', 'estop', 'clear_estop'];
       const controlTaskStates = ['pending', 'executing', 'completed', 'failed', 'cancelled', 'unknown'];
-      const controlOperationText = { base_hold: '底盘按住', base_stop: '底盘停止', move: '定位', right_arm_home: '右臂回初始位姿', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
+      const controlOperationText = { base_hold: '底盘按住', base_stop: '底盘停止', move: '定位', left_arm_home: '左臂回初始位姿', right_arm_home: '右臂回初始位姿', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
       const networkCards = new Map();
       let networkOrder = [];
       const robotServiceCards = new Map();
@@ -821,10 +821,19 @@
         panel.setAttribute('aria-label', `${bus.label || bus.id}控制`);
         const heading = node('div', 'bus-title-row');
         const badge = node('span', 'badge', '只读');
-        const rightArm = bus.id === 'bus2' && bus.robot_id === 'xlerobot_bus2_full' && bus.hardware_id === 'right_arm_full_with_base';
-        heading.append(node('h4', '', rightArm ? '右臂控制' : '单关节控制'), badge);
-        const scope = node('p', 'control-scope', rightArm
-          ? '定位只动所选关节。回初始位姿至少 10 秒，按最慢轴限速自动延长，五轴同步到位。夹爪保持开度，三轮目标为零。'
+        let homeOperation, scopeText, title = '单关节控制';
+        if (bus.id === 'bus1' && bus.robot_id === 'xlerobot_bus1_full' && bus.hardware_id === 'left_arm_full_with_head') {
+          homeOperation = 'left_arm_home';
+          title = '左臂控制';
+          scopeText = '左夹爪和头部保持原位。';
+        } else if (bus.id === 'bus2' && bus.robot_id === 'xlerobot_bus2_full' && bus.hardware_id === 'right_arm_full_with_base') {
+          homeOperation = 'right_arm_home';
+          title = '右臂控制';
+          scopeText = '右夹爪保持开度，三轮目标为零。';
+        }
+        heading.append(node('h4', '', title), badge);
+        const scope = node('p', 'control-scope', homeOperation
+          ? `定位只动所选关节。回初始位姿至少 10 秒，按最慢轴限速自动延长，五轴同步到位。${scopeText}`
           : `操作范围为本总线全部 ${bus.joints.length} 个电机；仅所选位置关节运动。`);
         const form = node('form', 'control-form');
         const joint = node('select', 'control-joint');
@@ -842,8 +851,8 @@
         const limits = node('p', 'control-limits');
         const actions = node('div', 'control-actions');
         const buttons = {};
-        for (const [operation, text, className] of [['move', '执行定位', 'primary'], ['right_arm_home', '右臂回初始位姿', 'secondary'], ['cancel', '取消任务', 'secondary'], ['enable', '总线使能', 'secondary'], ['disable', '总线断扭', 'secondary'], ['estop', '急停', 'danger'], ['clear_estop', '解除急停', 'secondary']]) {
-          if (operation === 'right_arm_home' && !rightArm) continue;
+        for (const [operation, text, className] of [['move', '执行定位', 'primary'], [homeOperation, controlOperationText[homeOperation], 'secondary'], ['cancel', '取消任务', 'secondary'], ['enable', '总线使能', 'secondary'], ['disable', '总线断扭', 'secondary'], ['estop', '急停', 'danger'], ['clear_estop', '解除急停', 'secondary']]) {
+          if (!operation) continue;
           const button = node('button', className, text);
           button.type = 'button'; button.dataset.operation = operation;
           button.disabled = true;
@@ -854,7 +863,7 @@
         const task = node('p', 'control-task', '当前无共享任务。');
         const result = node('p', 'control-result'); result.setAttribute('role', 'status');
         panel.append(heading, scope, currentPosition, form, limits, actions, enableNote, task, result);
-        const control = { panel, badge, form, joint, target, slider, currentPosition, duration, limits, actions, buttons, enableNote, task, result, scope, signature: null, busId: bus.id, gesture: null, manualDuration: false };
+        const control = { panel, badge, form, joint, target, slider, homeOperation, currentPosition, duration, limits, actions, buttons, enableNote, task, result, scope, signature: null, busId: bus.id, gesture: null, manualDuration: false };
         joint.addEventListener('change', () => {
           cancelSlider(control);
           const current = snapshot?.buses.find(item => item.id === control.busId);
@@ -990,7 +999,7 @@
         for (const input of [control.joint, control.target, control.duration]) setProperty(input, 'disabled', !canChange);
         setProperty(control.slider, 'disabled', !canMove || !selected);
         setProperty(control.buttons.move, 'disabled', !canMove || !controlTarget(control, config));
-        if (control.buttons.right_arm_home) setProperty(control.buttons.right_arm_home, 'disabled', !canMove);
+        if (control.homeOperation) setProperty(control.buttons[control.homeOperation], 'disabled', !canMove);
         const awaitingOperation = operation => request?.status === 'pending' && request.operation === operation;
         setProperty(control.buttons.cancel, 'disabled', !online || awaitingOperation('cancel') || !config?.task || !['pending', 'executing', 'unknown'].includes(config.task.state));
         setProperty(control.buttons.disable, 'disabled', !online || awaitingOperation('disable'));

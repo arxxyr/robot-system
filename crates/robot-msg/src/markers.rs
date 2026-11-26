@@ -178,6 +178,10 @@ pub struct SingleJointPositionPayload;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RightArmHomePayload;
 
+/// [`msg::LeftArmHomePayload`] 的类型标记。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LeftArmHomePayload;
+
 /// Marker for [`msg::IkPayload`]（v0.4 候选 2 round 2 `IkBackend`
 /// `InvokeTask` payload；笛卡尔 pose + 5-DOF IK 解算入口）。
 #[derive(Debug, Clone, Copy, Default)]
@@ -365,6 +369,13 @@ impl BodyMarker for RightArmHomePayload {
     const SCHEMA_NAME: &'static str = "robot.msg.RightArmHomePayload";
     const BLOB_EMBEDDED: bool = false;
     type Root<'a> = msg::RightArmHomePayload<'a>;
+}
+
+impl BodyMarker for LeftArmHomePayload {
+    const SCHEMA_ID: u32 = schema_id::SCHEMA_LEFT_ARM_HOME_PAYLOAD;
+    const SCHEMA_NAME: &'static str = "robot.msg.LeftArmHomePayload";
+    const BLOB_EMBEDDED: bool = false;
+    type Root<'a> = msg::LeftArmHomePayload<'a>;
 }
 
 impl BodyMarker for SingleJointPositionPayload {

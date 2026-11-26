@@ -476,6 +476,44 @@ fn move_respects_state_motion_units_and_wheel_exclusion() {
 }
 
 #[test]
+fn left_arm_home_requires_its_bus_with_gripper_and_head() {
+    let left = source(1);
+    let right = source(2);
+    let control = ControlState::new(true, "process-1");
+    let home = request(Operation::LeftArmHome);
+    assert!(
+        control
+            .preflight(&home, &left, &view(&left))
+            .unwrap()
+            .unwrap()
+            > 20_000
+    );
+    let misrouted = Request {
+        bus_id: "bus2".into(),
+        ..home.clone()
+    };
+    assert!(
+        control
+            .preflight(&misrouted, &right, &view(&right))
+            .is_err()
+    );
+    let mut wrong_layout = left.clone();
+    wrong_layout.layout.joints[7] = "base_front_wheel".into();
+    assert!(
+        control
+            .preflight(&home, &wrong_layout, &view(&wrong_layout))
+            .is_err()
+    );
+    let mut override_pose = home;
+    override_pose.target_position_rad = Some(0.2);
+    assert!(
+        control
+            .preflight(&override_pose, &left, &view(&left))
+            .is_err()
+    );
+}
+
+#[test]
 fn right_arm_home_requires_the_enabled_right_bus_and_fixed_parameters() {
     let right = source(2);
     let control = ControlState::new(true, "process-1");

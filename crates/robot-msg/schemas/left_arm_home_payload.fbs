@@ -1,0 +1,8 @@
+// Scripted 左臂回初始位姿。五轴目标固定，插值时长由 S1 按本次反馈计算。
+namespace robot.msg;
+
+table LeftArmHomePayload {
+    hardware_id: string (required);
+}
+
+root_type LeftArmHomePayload;

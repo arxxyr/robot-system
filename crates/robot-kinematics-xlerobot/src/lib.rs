@@ -96,10 +96,75 @@
 pub mod base;
 pub mod preview;
 
-/// 按运动学模型的轴序返回右臂五个位置关节的硬件名称。
+/// 按运动学模型的轴序返回所选侧五个位置关节的硬件名称。
+#[must_use]
+pub fn arm_joint_names(side: Side) -> [String; 5] {
+    let prefix = match side {
+        Side::Left => "left_arm",
+        Side::Right => "right_arm",
+    };
+    preview::ARM_JOINT_NAMES.map(|name| format!("{prefix}_{name}"))
+}
+
+/// 右臂 IK 等既有调用方使用的五轴名称。
 #[must_use]
 pub fn right_arm_joint_names() -> [String; 5] {
-    preview::ARM_JOINT_NAMES.map(|name| format!("right_arm_{name}"))
+    arm_joint_names(Side::Right)
+}
+
+/// 核对该侧总线的完整布局，按模型轴序返回五个主动位置槽。
+/// 关节的实际槽号取自配置；右侧三轮在 ID7–9 范围内可自由排列。
+pub fn arm_home_slots(
+    side: Side,
+    hardware_id: &str,
+    joints: &[String],
+    motor_ids: &[u8],
+    mixed_raw: bool,
+) -> Result<[usize; 5], &'static str> {
+    let (count, gripper) = match (side, hardware_id, mixed_raw) {
+        (Side::Left, "left_arm_full_with_head", false) => (8, "left_arm_gripper"),
+        (Side::Right, "right_arm_full_with_base", true) => (9, "right_arm_gripper"),
+        _ => return Err("手臂回位的总线身份或模式不匹配"),
+    };
+    if joints.len() != usize::from(count)
+        || motor_ids.len() != joints.len()
+        || !(1..=count).all(|id| motor_ids.contains(&id))
+    {
+        return Err("手臂回位的电机布局不匹配");
+    }
+    let slot_of = |name: &str| {
+        joints
+            .iter()
+            .position(|joint| joint == name)
+            .ok_or("回位布局缺少具名关节")
+    };
+    if motor_ids[slot_of(gripper)?] != 6 {
+        return Err("夹爪与电机 ID6 不匹配");
+    }
+    match side {
+        Side::Left => {
+            if motor_ids[slot_of("head_motor_1")?] != 7 || motor_ids[slot_of("head_motor_2")?] != 8
+            {
+                return Err("两头轴与电机 ID7、ID8 不匹配");
+            }
+        }
+        Side::Right => {
+            for wheel in ["base_front_wheel", "base_left_wheel", "base_right_wheel"] {
+                if motor_ids[slot_of(wheel)?] < 7 {
+                    return Err("轮子映射到了手臂位置槽");
+                }
+            }
+        }
+    }
+    let mut slots = [0; 5];
+    for (axis, name) in arm_joint_names(side).iter().enumerate() {
+        let slot = slot_of(name)?;
+        if usize::from(motor_ids[slot]) != axis + 1 {
+            return Err("五轴回位关节与电机 ID1 至 ID5 不匹配");
+        }
+        slots[axis] = slot;
+    }
+    Ok(slots)
 }
 
 /// 五轴共用同一条线性轨迹。至少 10 秒，按最慢轴向上取整到毫秒。
@@ -108,28 +173,31 @@ pub fn right_arm_joint_names() -> [String; 5] {
     clippy::cast_sign_loss,
     reason = "向上取整后已核对 u32 范围"
 )]
-pub fn right_arm_home_duration_ms(
+pub fn arm_home_duration_ms(
     start_rad: [f64; 5],
     max_velocity_rad_s: [f64; 5],
 ) -> Result<u32, &'static str> {
     let mut duration_ms = 10_000;
     for (start, speed_limit) in start_rad.into_iter().zip(max_velocity_rad_s) {
         if !start.is_finite() || !speed_limit.is_finite() || speed_limit <= 0.0 {
-            return Err("右臂回位起点或速率限制无效");
+            return Err("手臂回位起点或速率限制无效");
         }
         let travel = start.abs();
         let milliseconds = (travel / speed_limit * 1_000.0).ceil();
         if milliseconds > f64::from(u32::MAX) {
-            return Err("右臂回位时长超出可表示范围");
+            return Err("手臂回位时长超出可表示范围");
         }
         duration_ms = duration_ms.max(milliseconds as u32);
         // 用与实际目标检查相同的除法处理浮点边界，防止取整后仍微超速。
         if travel / (f64::from(duration_ms) / 1_000.0) > speed_limit {
-            duration_ms = duration_ms.checked_add(1).ok_or("右臂回位时长溢出")?;
+            duration_ms = duration_ms.checked_add(1).ok_or("手臂回位时长溢出")?;
         }
     }
     Ok(duration_ms)
 }
+
+/// 右臂既有 API；两侧共用同一时长计算。
+pub use arm_home_duration_ms as right_arm_home_duration_ms;
 
 use robot_kinematics::{ArmIkSolver, IkError, IkSolution, JointLimit, KinematicInfo, Pose};
 
