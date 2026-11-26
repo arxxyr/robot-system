@@ -29,7 +29,8 @@ backend-hold-pose  = []
 # 文件不 link → BackendRegistry::from_inventory 收集不到 scripted →
 # `[s1.profile.backends = ["scripted"]]` 启动期 fail-fast，符合
 # "配置与编译 profile 不匹配启动期 fail-fast"硬约束。
-backend-scripted   = []
+# 固定右臂回位复用机型的五轴顺序与限速时长，其他定位仍沿原 scripted 执行器。
+backend-scripted   = ["dep:robot-kinematics-xlerobot"]
 # IkBackend（笛卡尔 pose IK 解算 + 关节位置一次性输出），进 default features，
 # 沿 hold_pose / mock_dwell / scripted 同款策略。Feature off 时整文
 # 件不 link → BackendRegistry::from_inventory 收集不到 ik →
@@ -44,8 +45,8 @@ backend-scripted   = []
 # **dep policy**：`robot-kinematics`（trait crate）**永远**链接（零 runtime
 # 依赖，仅 `ArmIkSolver` trait + POD 共享类型；让 `ActionContext::solver` /
 # `Coordinator::solver` 字段不必 cfg gate）；只 `robot-kinematics-xlerobot`
-# （impl crate）由本 feature optional gate（XLeRobotArmIkSolver 实例化
-# 只在 robot-s1 binary，按 backend-ik feature 走 cfg 路径）。
+# （机型实现）由 backend-ik 或 backend-scripted 启用；IK solver 实例化
+# 仍只在 robot-s1 binary 按 backend-ik feature 走 cfg 路径。
 backend-ik         = ["dep:robot-kinematics-xlerobot"]
 # v0.5 候选 E 段(8)（Spec P.2.7 R5-5/R6-5）：test-only freeze hook——cfg 守门
 # `liveness::freeze_check` + `freeze_control`（`/<robot_id>/s1/test/freeze`
@@ -64,7 +65,7 @@ test-freeze-hook   = []
 # `mock_dwell`（分发键重合，dispatch 取首个命中）。
 test-fault-backend = []
 # 仅软件模拟：复用原 InvokeTask 与混合 JointCommand，不进入默认或发布构建。
-test-base-command = ["backend-scripted", "dep:robot-kinematics-xlerobot"]
+test-base-command = ["backend-scripted"]
 
 # v0.3 B1 (2/3)：mock_s1 / robot-s1 显式列出 [[bin]]。
 # - mock_s1：v0.2 起 ballet / bench / 真机摆动测试工具（保留；非 production

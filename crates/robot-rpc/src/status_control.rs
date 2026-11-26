@@ -18,6 +18,7 @@ use crate::proto::{
     TaskStatus,
 };
 use robot_core::time::RobotClock;
+use robot_kinematics_xlerobot::{right_arm_home_duration_ms, right_arm_joint_names};
 
 #[path = "status_base.rs"]
 mod base;
@@ -199,6 +200,7 @@ fn hold_range(joint: &JointLimit, source: &Source, slot: usize) -> Result<(f64, 
 #[serde(rename_all = "snake_case")]
 pub(super) enum Operation {
     Move,
+    RightArmHome,
     Cancel,
     Enable,
     Disable,
@@ -206,6 +208,12 @@ pub(super) enum Operation {
     ClearEstop,
     BaseHold,
     BaseStop,
+}
+
+impl Operation {
+    fn starts_motion(self) -> bool {
+        matches!(self, Self::Move | Self::RightArmHome)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -463,21 +471,27 @@ impl ControlState {
         }
     }
 
-    fn preflight(&self, request: &Request, source: &Source, state: &BusView) -> Result<(), String> {
+    fn preflight(
+        &self,
+        request: &Request,
+        source: &Source,
+        state: &BusView,
+    ) -> Result<Option<u64>, String> {
         request.validate_shape()?;
         if request.is_base() {
             return Err("底盘命令必须经过本连接的有界入口".into());
         }
-        if !self.enabled || source.motion.is_none() {
-            return Err("此总线未开放Web控制，未发送".into());
-        }
+        let motion = source
+            .motion
+            .as_ref()
+            .filter(|_| self.enabled)
+            .ok_or("此总线未开放Web控制，未发送")?;
         if request.process_id != self.process_id || request.revision != self.revision.to_string() {
             return Err("控制版本已变化；请查看最新状态后重新操作，本请求未发送".into());
         }
-        if matches!(
-            request.operation,
-            Operation::Move | Operation::ClearEstop | Operation::Enable
-        ) {
+        if request.operation.starts_motion()
+            || matches!(request.operation, Operation::ClearEstop | Operation::Enable)
+        {
             if self.task.as_ref().is_some_and(TaskView::busy) {
                 return Err("总线已有进行中或结果未知的任务，未发送".into());
             }
@@ -489,7 +503,7 @@ impl ControlState {
         {
             return Err("未配置使能原位对齐容差，未发送使能".into());
         }
-        if request.operation == Operation::Move {
+        if request.operation.starts_motion() {
             if self.after_stamp_ns.is_some_and(|after| {
                 state
                     .stamp_ns
@@ -499,9 +513,23 @@ impl ControlState {
             }) {
                 return Err("上次写入后尚无推进的源反馈，定位未发送".into());
             }
-            validate_move(request, source, state)?;
+            if state.control_link.as_deref() != Some("Ok")
+                || state.mode.as_deref() != Some("Enabled")
+                || state.safety_state.as_deref() != Some("TorqueOn")
+                || state.output_mode.as_deref() != Some("Active")
+            {
+                return Err("定位要求已使能、确认上扭且输出活动；不会自动使能".into());
+            }
+            let duration = if request.operation == Operation::RightArmHome {
+                home_duration_bound(request, source, state, motion)?
+            } else {
+                validate_move(request, motion, state)?
+            };
+            return Ok(Some(
+                u64::from(duration) + u64::from(motion.settle_timeout_ms) + 5_000,
+            ));
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(super) async fn dispatch(
@@ -520,18 +548,16 @@ impl ControlState {
         {
             return reply.clone();
         }
-        if let Err(error) = self.preflight(&request, source, state) {
-            return Reply::rejected(Some(&request), self.revision, error);
-        }
+        let task_timeout_ms = match self.preflight(&request, source, state) {
+            Ok(budget) => budget,
+            Err(error) => return Reply::rejected(Some(&request), self.revision, error),
+        };
         let enable_stamp = match prepare_operation(&request, source, &mut rpc).await {
             Ok(stamp) => stamp,
             Err(error) => return Reply::rejected(Some(&request), self.revision, error),
         };
         let Some(next_revision) = self.revision.checked_add(1) else {
             return Reply::rejected(Some(&request), self.revision, "控制版本耗尽，未发送");
-        };
-        let Some(motion) = source.motion.as_ref() else {
-            return Reply::rejected(Some(&request), self.revision, "缺少运动配置，未发送");
         };
         if request.operation == Operation::Cancel && !self.task.as_ref().is_some_and(TaskView::busy)
         {
@@ -551,11 +577,11 @@ impl ControlState {
         ));
         let rpc_id = uuid::Uuid::now_v7().to_string();
         let action_id = match request.operation {
-            Operation::Move => Some(rpc_id.clone()),
+            Operation::Move | Operation::RightArmHome => Some(rpc_id.clone()),
             Operation::Cancel => self.task.as_ref().map(|task| task.action_id.clone()),
             _ => None,
         };
-        if request.operation == Operation::Move {
+        if request.operation.starts_motion() {
             self.task = Some(TaskView {
                 action_id: rpc_id.clone(),
                 state: "unknown",
@@ -563,7 +589,7 @@ impl ControlState {
                 error: Some("请求已派发，等待明确任务状态".into()),
             });
         }
-        let meta = command_meta(&request, source, &rpc_id, motion, &rpc);
+        let meta = command_meta(&request, source, &rpc_id, task_timeout_ms, &rpc);
         self.close_base_for(request.operation);
         let result = tokio::select! {
             _ = rpc.shutdown.changed() => Err("Web关闭时RPC结果未知；不自动重发"),
@@ -577,7 +603,7 @@ impl ControlState {
             Ok(Ok(response)) if response.matches(&rpc_id) => {
                 reply.status = "accepted";
                 reply.message = accepted_message(request.operation).into();
-                if request.operation == Operation::Move {
+                if request.operation.starts_motion() {
                     self.task = Some(TaskView {
                         action_id: rpc_id,
                         state: "pending",
@@ -588,7 +614,7 @@ impl ControlState {
             }
             Ok(Err(status)) if definitely_rejected(status.code()) => {
                 reply.message = format!("gRPC拒绝 {:?}：{}", status.code(), status.message());
-                if request.operation == Operation::Move {
+                if request.operation.starts_motion() {
                     self.task = Some(TaskView {
                         action_id: rpc_id,
                         state: "failed",
@@ -679,14 +705,11 @@ fn command_meta(
     request: &Request,
     source: &Source,
     rpc_id: &str,
-    motion: &MotionConfig,
+    task_timeout_ms: Option<u64>,
     rpc: &RpcContext<'_>,
 ) -> CommandMeta {
-    let timeout_ms = if request.operation == Operation::Move {
-        u64::from(request.duration_ms.unwrap_or(0)) + u64::from(motion.settle_timeout_ms) + 5_000
-    } else {
-        u64::try_from(rpc.timeout.as_millis()).unwrap_or(u64::MAX)
-    };
+    let timeout_ms = task_timeout_ms
+        .unwrap_or_else(|| u64::try_from(rpc.timeout.as_millis()).unwrap_or(u64::MAX));
     CommandMeta {
         request_id: rpc_id.into(),
         source: "robot-status".into(),
@@ -701,15 +724,55 @@ fn command_meta(
     }
 }
 
-fn validate_move(request: &Request, source: &Source, state: &BusView) -> Result<(), String> {
-    if state.control_link.as_deref() != Some("Ok")
-        || state.mode.as_deref() != Some("Enabled")
-        || state.safety_state.as_deref() != Some("TorqueOn")
-        || state.output_mode.as_deref() != Some("Active")
+fn home_duration_bound(
+    request: &Request,
+    source: &Source,
+    state: &BusView,
+    motion: &MotionConfig,
+) -> Result<u32, String> {
+    if request.bus_id != "bus2"
+        || source.id != "bus2"
+        || source.robot_id != "xlerobot_bus2_full"
+        || source.hardware_id != "right_arm_full_with_base"
+        || !source.feetech_position
     {
-        return Err("单关节定位要求已使能、确认上扭且输出活动；不会自动使能".into());
+        return Err("回初始位姿仅适用于 XLeRobot 右臂九槽混合总线".into());
     }
-    let motion = source.motion.as_ref().ok_or("缺少运动配置")?;
+    base_wheel_slots(source)?;
+    // S1 从接收任务时的新反馈起步。以各轴可接受的最远起点预算，同一时长算法覆盖两个采样时刻。
+    let mut farthest = [0.0; 5];
+    let mut speeds = [0.0; 5];
+    for (axis, name) in right_arm_joint_names().iter().enumerate() {
+        let slot = source
+            .layout
+            .joints
+            .iter()
+            .position(|joint| joint == name)
+            .ok_or_else(|| format!("缺少回位关节 {name}"))?;
+        let limit = motion
+            .joints
+            .iter()
+            .find(|joint| joint.name == *name)
+            .ok_or_else(|| format!("缺少 {name} 的运动配置"))?;
+        let (min, max) = hold_range(limit, source, slot)?;
+        let current = state
+            .joints
+            .get(slot)
+            .filter(|joint| joint.name == *name && joint.mode == "position")
+            .and_then(|joint| joint.position_rad)
+            .ok_or_else(|| format!("{name} 缺少新鲜位置反馈"))?;
+        if !(min..=max).contains(&current)
+            || !(limit.min_position_rad..=limit.max_position_rad).contains(&0.0)
+        {
+            return Err(format!("{name} 的起点或回位目标越出校准范围"));
+        }
+        farthest[axis] = min.abs().max(max.abs());
+        speeds[axis] = limit.max_velocity_rad_s;
+    }
+    right_arm_home_duration_ms(farthest, speeds).map_err(str::to_owned)
+}
+
+fn validate_move(request: &Request, motion: &MotionConfig, state: &BusView) -> Result<u32, String> {
     let name = request.joint.as_deref().ok_or("缺少关节名")?;
     let joint = motion
         .joints
@@ -733,7 +796,7 @@ fn validate_move(request: &Request, source: &Source, state: &BusView) -> Result<
     {
         return Err("目标、时长或所需速率超出原运动配置，未发送".into());
     }
-    Ok(())
+    Ok(duration)
 }
 
 fn definitely_rejected(code: tonic::Code) -> bool {
@@ -750,7 +813,7 @@ fn definitely_rejected(code: tonic::Code) -> bool {
 
 fn accepted_message(operation: Operation) -> &'static str {
     match operation {
-        Operation::Move => "任务已接收，等待新鲜反馈到位及任务终态",
+        Operation::Move | Operation::RightArmHome => "任务已接收，等待新鲜反馈到位及任务终态",
         Operation::Cancel => "取消请求已接收；取消不等于断扭，等待任务终态",
         Operation::Enable => "使能回执已收到；等待新鲜TorqueOn反馈后再定位",
         Operation::Disable => "断扭回执已收到；仍以新鲜TorqueOffConfirmed反馈确认",
@@ -830,20 +893,32 @@ async fn invoke_rpc(
         request
     }
     match request.operation {
-        Operation::Move => {
+        Operation::Move | Operation::RightArmHome => {
             let mut builder = FlatBufferBuilder::with_capacity(256);
             let hardware = builder.create_string(&source.hardware_id);
-            let joint = builder.create_string(request.joint.as_deref().unwrap_or_default());
-            let payload = robot_msg::msg::SingleJointPositionPayload::create(
-                &mut builder,
-                &robot_msg::msg::SingleJointPositionPayloadArgs {
-                    hardware_id: Some(hardware),
-                    joint_name: Some(joint),
-                    target_position_rad: request.target_position_rad.unwrap_or_default(),
-                    duration_ms: request.duration_ms.unwrap_or_default(),
-                },
-            );
-            builder.finish(payload, None);
+            let schema = if request.operation == Operation::RightArmHome {
+                let payload = robot_msg::msg::RightArmHomePayload::create(
+                    &mut builder,
+                    &robot_msg::msg::RightArmHomePayloadArgs {
+                        hardware_id: Some(hardware),
+                    },
+                );
+                builder.finish(payload, None);
+                robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+            } else {
+                let joint = builder.create_string(request.joint.as_deref().unwrap_or_default());
+                let payload = robot_msg::msg::SingleJointPositionPayload::create(
+                    &mut builder,
+                    &robot_msg::msg::SingleJointPositionPayloadArgs {
+                        hardware_id: Some(hardware),
+                        joint_name: Some(joint),
+                        target_position_rad: request.target_position_rad.unwrap_or_default(),
+                        duration_ms: request.duration_ms.unwrap_or_default(),
+                    },
+                );
+                builder.finish(payload, None);
+                robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
+            };
             client
                 .invoke_task(bounded(
                     InvokeTaskCommand {
@@ -851,8 +926,7 @@ async fn invoke_rpc(
                         kind: ActionKindProto::ActionKindScripted as i32,
                         deadline_ns: 0,
                         priority: 10,
-                        payload_schema_id:
-                            robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD,
+                        payload_schema_id: schema,
                         payload: builder.finished_data().to_vec(),
                     },
                     timeout,

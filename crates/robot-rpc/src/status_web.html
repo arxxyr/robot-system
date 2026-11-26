@@ -471,6 +471,7 @@
       let activeView = 'overview';
       const pose = Object.fromEntries(['canvas', 'tools', 'zoom-in', 'zoom-out', 'pan', 'reset', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
       let poseView, poseModel, poseLoading, calibration;
+      let poseOverrides = {};
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
       let activeSession = null;
@@ -483,9 +484,9 @@
       let busOrder = [];
       // 每条总线只保存本页面最后一次请求；任务事实来自服务端共享快照。
       const controlRequests = new Map();
-      const controlOperations = ['move', 'cancel', 'enable', 'disable', 'estop', 'clear_estop'];
+      const controlOperations = ['move', 'right_arm_home', 'cancel', 'enable', 'disable', 'estop', 'clear_estop'];
       const controlTaskStates = ['pending', 'executing', 'completed', 'failed', 'cancelled', 'unknown'];
-      const controlOperationText = { base_hold: '底盘按住', base_stop: '底盘停止', move: '定位', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
+      const controlOperationText = { base_hold: '底盘按住', base_stop: '底盘停止', move: '定位', right_arm_home: '右臂回初始位姿', cancel: '取消任务', enable: '使能', disable: '断扭', estop: '急停', clear_estop: '解除急停' };
       const networkCards = new Map();
       let networkOrder = [];
       const robotServiceCards = new Map();
@@ -586,39 +587,48 @@
         setText(pose.message, '正在加载机器人模型…');
         pose.message.hidden = false;
         try {
-          const [module, calibrationModule, model] = await Promise.all([
+          const [module, calibrationModule, urdfModule] = await Promise.all([
             import('/assets/status-pose.js'),
             import('/assets/status-calibration.js'),
-            fetch('/assets/xlerobot-pose.json').then(response => {
-              if (!response.ok) throw new Error();
-              return response.json();
-            })
+            import('/assets/status-urdf.js'),
           ]);
-          poseModel = model;
-          poseView = module.createPoseView(pose.canvas, model, selectPoseJoint);
-          module.initWristPreview(jointLabel);
-          for (const entry of model.nodes.filter(entry => entry.joint)) {
-            const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
-            pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
+          if (!poseModel) {
+            const response = await fetch('/assets/xlerobot-pose.json');
+            if (!response.ok) throw new Error('无法读取关节映射');
+            poseModel = await response.json();
+            module.initWristPreview(jointLabel);
+            for (const entry of poseModel.nodes) {
+              const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
+              pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
+            }
+            calibration = calibrationModule.createCalibrationPanel(poseSample, overrides => {
+              poseOverrides = overrides;
+              poseView?.setOverrides(overrides); renderPose();
+            }, module.feedbackAngle);
+            pose.joint.disabled = false;
+            renderPose();
           }
-          calibration = calibrationModule.createCalibrationPanel(
-            poseSample, (overrides) => { poseView.setOverrides(overrides); renderPose(); }, module.feedbackAngle,
-          );
           void calibration.load();
-          pose.joint.disabled = false;
+          const model = await urdfModule.loadUrdf(poseModel.nodes);
+          const report = message => {
+            setText(pose.message, message);
+            pose.message.hidden = !message;
+          };
+          poseView = module.createPoseView(pose.canvas, model, selectPoseJoint, urdfModule.meshRenderer, report);
+          poseView.setOverrides(poseOverrides);
           pose.tools.disabled = false;
-          pose.message.hidden = true;
+          report('');
           poseView.setVisible(activeView === 'pose' && !document.hidden);
           selectPoseJoint(pose.joint.value);
-        } catch {
-          setText(pose.message, '模型加载失败。重进「可视化」可重试。');
+        } catch (error) {
+          setText(pose.message, '模型加载失败：' + error.message + '。重进「可视化」可重试。');
         } finally {
           poseLoading = false;
         }
       }
       function selectPoseJoint(name) {
         pose.joint.value = name;
-        poseView.select(name);
+        poseView?.select(name);
         renderPose();
       }
       pose.joint.addEventListener('change', () => selectPoseJoint(pose.joint.value));
@@ -647,13 +657,13 @@
         return { binding, bus, joint, fresh, session: activeSession, label: pose.joint.selectedOptions[0]?.textContent };
       }
       function renderPose() {
-        if (!poseView || activeView !== 'pose' || document.hidden) return;
+        if (!poseModel || activeView !== 'pose' || document.hidden) return;
         const sources = Object.entries(poseModel.buses);
         const buses = (snapshot?.buses || []).filter(bus => {
           const identity = poseModel.buses[bus.id];
           return identity && identity.robot_id === bus.robot_id && identity.hardware_id === bus.hardware_id;
         }).map(bus => ({ ...bus, data_status: statusOf(bus) }));
-        poseView.update(buses);
+        poseView?.update(buses);
         setText(pose.freshness, sources.map(([id]) => {
           const bus = buses.find(item => item.id === id);
           return `${bus?.label || id} · ${statusText[bus?.data_status || 'unavailable']}`;
@@ -811,8 +821,11 @@
         panel.setAttribute('aria-label', `${bus.label || bus.id}控制`);
         const heading = node('div', 'bus-title-row');
         const badge = node('span', 'badge', '只读');
-        heading.append(node('h4', '', '单关节控制'), badge);
-        const scope = node('p', 'control-scope', `操作范围为本总线全部 ${bus.joints.length} 个电机；仅所选位置关节运动，轮子目标保持零速。`);
+        const rightArm = bus.id === 'bus2' && bus.robot_id === 'xlerobot_bus2_full' && bus.hardware_id === 'right_arm_full_with_base';
+        heading.append(node('h4', '', rightArm ? '右臂控制' : '单关节控制'), badge);
+        const scope = node('p', 'control-scope', rightArm
+          ? '定位只动所选关节。回初始位姿至少 10 秒，按最慢轴限速自动延长，五轴同步到位。夹爪保持开度，三轮目标为零。'
+          : `操作范围为本总线全部 ${bus.joints.length} 个电机；仅所选位置关节运动。`);
         const form = node('form', 'control-form');
         const joint = node('select', 'control-joint');
         const target = node('input', 'control-target');
@@ -829,7 +842,8 @@
         const limits = node('p', 'control-limits');
         const actions = node('div', 'control-actions');
         const buttons = {};
-        for (const [operation, text, className] of [['move', '执行定位', 'primary'], ['cancel', '取消任务', 'secondary'], ['enable', '总线使能', 'secondary'], ['disable', '总线断扭', 'secondary'], ['estop', '急停', 'danger'], ['clear_estop', '解除急停', 'secondary']]) {
+        for (const [operation, text, className] of [['move', '执行定位', 'primary'], ['right_arm_home', '右臂回初始位姿', 'secondary'], ['cancel', '取消任务', 'secondary'], ['enable', '总线使能', 'secondary'], ['disable', '总线断扭', 'secondary'], ['estop', '急停', 'danger'], ['clear_estop', '解除急停', 'secondary']]) {
+          if (operation === 'right_arm_home' && !rightArm) continue;
           const button = node('button', className, text);
           button.type = 'button'; button.dataset.operation = operation;
           button.disabled = true;
@@ -880,7 +894,7 @@
         });
         slider.addEventListener('keyup', event => finishSlider(control, 'keyboard', event.key));
         slider.addEventListener('blur', () => cancelSlider(control));
-        for (const operation of controlOperations) buttons[operation].addEventListener('click', () => sendControl(control, operation));
+        for (const [operation, button] of Object.entries(buttons)) button.addEventListener('click', () => sendControl(control, operation));
         return control;
       }
       function updateControlDuration(control, bus) {
@@ -976,6 +990,7 @@
         for (const input of [control.joint, control.target, control.duration]) setProperty(input, 'disabled', !canChange);
         setProperty(control.slider, 'disabled', !canMove || !selected);
         setProperty(control.buttons.move, 'disabled', !canMove || !controlTarget(control, config));
+        if (control.buttons.right_arm_home) setProperty(control.buttons.right_arm_home, 'disabled', !canMove);
         const awaitingOperation = operation => request?.status === 'pending' && request.operation === operation;
         setProperty(control.buttons.cancel, 'disabled', !online || awaitingOperation('cancel') || !config?.task || !['pending', 'executing', 'unknown'].includes(config.task.state));
         setProperty(control.buttons.disable, 'disabled', !online || awaitingOperation('disable'));
@@ -1009,7 +1024,7 @@
         if (!bus || !controlOperations.includes(operation)) return;
         updateControl(control, bus);
         const config = controlView(bus);
-        if (!config?.enabled || control.buttons[operation].disabled || activeSession?.socket.readyState !== WebSocket.OPEN) return;
+        if (!config?.enabled || !control.buttons[operation] || control.buttons[operation].disabled || activeSession?.socket.readyState !== WebSocket.OPEN) return;
         if (operation === 'clear_estop' && !window.confirm(`确认解除“${bus.label || bus.id}”的急停锁存？解除不会自动使能电机。`)) return;
         const request = { type: 'control', request_id: crypto.randomUUID(), bus_id: bus.id, process_id: config.process_id, revision: config.revision, operation };
         if (operation === 'move') {

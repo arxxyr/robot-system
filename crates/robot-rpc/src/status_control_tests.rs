@@ -476,6 +476,58 @@ fn move_respects_state_motion_units_and_wheel_exclusion() {
 }
 
 #[test]
+fn right_arm_home_requires_the_enabled_right_bus_and_fixed_parameters() {
+    let right = source(2);
+    let control = ControlState::new(true, "process-1");
+    let home = Request {
+        bus_id: "bus2".into(),
+        ..request(Operation::RightArmHome)
+    };
+    let state = view(&right);
+    assert!(control.preflight(&home, &right, &state).unwrap().unwrap() > 20_000);
+    let left = source(1);
+    assert!(control.preflight(&home, &left, &view(&left)).is_err());
+    let mut offline = state.clone();
+    offline.data_status = "stale";
+    assert!(control.preflight(&home, &right, &offline).is_err());
+    let mut off = state.clone();
+    off.safety_state = Some("TorqueOffConfirmed".into());
+    assert!(control.preflight(&home, &right, &off).is_err());
+    let mut fault = state.clone();
+    fault.fault_code = Some(1);
+    assert!(control.preflight(&home, &right, &fault).is_err());
+    let mut invalid = state.clone();
+    invalid.joints[0].position_rad = Some(f64::NAN);
+    assert!(control.preflight(&home, &right, &invalid).is_err());
+    // 速度槽的轮名来自已加载的硬件配置；不接受缺轮或错配的位置布局。
+    let mut missing_wheel = right.clone();
+    missing_wheel.layout.joints[6] = "unknown".into();
+    assert!(control.preflight(&home, &missing_wheel, &state).is_err());
+
+    let data = serde_json::json!({"type":"control", "request_id":"home", "bus_id":"bus2",
+        "process_id":"process-1", "revision":"0", "operation":"right_arm_home"});
+    for (key, value) in [
+        ("joint", serde_json::json!("right_arm_gripper")),
+        ("target_position_rad", serde_json::json!(0.1)),
+        ("duration_ms", serde_json::json!(10000)),
+        (
+            "wheels_raw",
+            serde_json::json!({"front":500,"left":0,"right":0}),
+        ),
+        ("targets", serde_json::json!([0.2])),
+    ] {
+        let mut overridden = data.clone();
+        overridden[key] = value;
+        if let Ok(request) = serde_json::from_value::<Request>(overridden) {
+            assert!(
+                control.preflight(&request, &right, &state).is_err(),
+                "{key}"
+            );
+        }
+    }
+}
+
+#[test]
 fn calibrated_hold_tolerance_never_expands_selected_web_target() {
     let source = source(2);
     let mut state = view(&source);

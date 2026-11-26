@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use robot_adapter_feetech::{convert::checked_position_target, raw_to_rad};
-use robot_kinematics_xlerobot::preview::{ARM_JOINT_NAMES, right_wrist_roundtrip};
+use robot_kinematics_xlerobot::{preview::right_wrist_roundtrip, right_arm_joint_names};
 use serde_json::{Value, json};
 
 pub(super) async fn preview(State(state): State<WebState>) -> Response {
@@ -47,7 +47,7 @@ fn plan(snapshot: &Snapshot) -> Result<Value, String> {
         return Err("bus2 身份或布局与 XLeRobot 右臂九槽混合总线不符".into());
     }
     let stamp_ns = bus.stamp_ns.as_deref().ok_or("右臂反馈缺少源帧时间戳")?;
-    let joint_names = ARM_JOINT_NAMES.map(|name| format!("right_arm_{name}"));
+    let joint_names = right_arm_joint_names();
     let mut start_raw = [0; 5];
     let mut limits = Vec::with_capacity(joint_names.len());
     for (i, name) in joint_names.iter().enumerate() {

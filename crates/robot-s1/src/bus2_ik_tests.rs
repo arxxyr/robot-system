@@ -52,8 +52,8 @@ impl Bus2 {
             hardware,
             LAYOUT,
             anchor,
-            BackendRegistry::from_explicit(&[&IkBackend]),
-            vec!["ik".into()],
+            BackendRegistry::from_explicit(&[&IkBackend, &RealScriptedBackend]),
+            vec!["ik".into(), "scripted".into()],
             Some(Box::new(solver)),
         )
         .with_single_joint_config(Some(limits));
@@ -245,4 +245,44 @@ fn bus2_ik_arrival_uses_configured_encoder_tolerance() {
             );
         }
     }
+}
+
+#[test]
+fn right_arm_home_reads_live_bus2_feedback_through_completion() {
+    use robot_msg::msg::{RightArmHomePayload, RightArmHomePayloadArgs};
+
+    let mut sim = Bus2::new();
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let hardware_id = builder.create_string(&sim.coord.hardware.id);
+    let root = RightArmHomePayload::create(&mut builder, &RightArmHomePayloadArgs {hardware_id: Some(hardware_id)});
+    builder.finish(root, None);
+    let id = ActionId::new_v7();
+    let ticket = sim.coord.submit(ActionRequest {
+        action_id: id,
+        kind: ActionKind::Scripted,
+        priority: 10,
+        deadline_ns: sim.clock.now().0 + 12_000_000_000,
+        payload_schema_id: robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD,
+        payload: builder.finished_data().to_vec(),
+        idempotency_key: id.to_string(),
+        source: ActionSource::Internal,
+    }, &sim.clock).unwrap();
+    let gripper = sim.feedback[sim.gripper];
+    for frame in 0..=550_u64 {
+        if let Some(body) = sim.coord.tick_action(&sim.clock, frame + 1) {
+            let target = decode_target(&body);
+            assert_mixed_target(body.as_bytes(), &sim.coord.hardware, &target);
+            assert_eq!(target[sim.gripper], gripper);
+            for &slot in &sim.arm { sim.feedback[slot] = target[slot]; }
+            sim.coord.command_published(sim.clock.now().0);
+        } else {
+            assert!(frame > 500);
+            assert!(matches!(sim.coord.status(ticket.action_id), Some(ActionStatus::Completed(ActionOutcome::Success))));
+            assert_eq!(sim.arm.map(|slot| sim.feedback[slot]), [0.0; 5]);
+            return;
+        }
+        sim.clock.advance(DurationNs::from_nanos(20_000_000));
+        sim.publish_feedback();
+    }
+    panic!("右臂回位经过 10 秒插值与配置的稳定窗口仍未完成");
 }

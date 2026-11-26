@@ -43,6 +43,8 @@ mod camera;
 mod ik;
 #[path = "status_resources.rs"]
 mod resources;
+#[path = "status_urdf.rs"]
+mod urdf;
 
 const MAX_SOURCES: usize = 2;
 const MAX_STREAMS: usize = 8;
@@ -858,6 +860,15 @@ fn router(state: WebState) -> Router {
             }),
         )
         .route(
+            "/assets/status-urdf.js",
+            axum::routing::get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("status_urdf.js"),
+                )
+            }),
+        )
+        .route(
             "/assets/status-calibration.js",
             axum::routing::get(|| async {
                 (
@@ -876,12 +887,14 @@ fn router(state: WebState) -> Router {
         .merge(cameras)
         .merge(resources)
         .merge(calibration)
+        .merge(urdf::router())
         .layer(axum::middleware::from_fn(
             |request: axum::extract::Request, next: axum::middleware::Next| async {
                 let mut response = next.run(request).await;
                 response
                     .headers_mut()
-                    .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                    .entry(header::CACHE_CONTROL)
+                    .or_insert(HeaderValue::from_static("no-store"));
                 response.headers_mut().insert(
                     header::X_CONTENT_TYPE_OPTIONS,
                     HeaderValue::from_static("nosniff"),

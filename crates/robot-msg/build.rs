@@ -54,7 +54,7 @@ fn main() {
     let schemas_dir = manifest_dir.join("schemas");
     let old_dir = schemas_dir.join("old");
 
-    let current_schemas: [&str; 16] = [
+    let current_schemas: [&str; 17] = [
         "blob.fbs",
         "frame_header.fbs",
         "joint.fbs",
@@ -69,6 +69,7 @@ fn main() {
         "action_event.fbs",
         "scripted_payload.fbs",
         "single_joint_position_payload.fbs",
+        "right_arm_home_payload.fbs",
         "ik_payload.fbs",
         // v0.5 候选 C：include "clear_estop.fbs" 复用 RpcRole/RpcStatus（同
         // action_status.fbs / action_request.fbs 模式）。

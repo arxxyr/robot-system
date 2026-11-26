@@ -2073,7 +2073,11 @@ impl Coordinator {
         // start 失败：状态不转移，仍 Idle。
         let instance = backend.start(&req, &ctx)?;
         let needs_feedback = mixed_ik
-            || req.payload_schema_id == robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD;
+            || matches!(
+                req.payload_schema_id,
+                robot_msg::schema_id::SCHEMA_SINGLE_JOINT_POSITION_PAYLOAD
+                    | robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD
+            );
         #[cfg(feature = "test-base-command")]
         let needs_feedback = {
             if let Some(sequence) = base_sequence {

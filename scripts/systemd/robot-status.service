@@ -23,6 +23,7 @@ Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=5s
 Environment=ROBOT_LOG_FORMAT=json
+Environment=ROBOT_STATUS_URDF_DIR=/home/loosqk/repo/dimensional-applications/assets/xlerobot
 Environment=RUST_LOG=info
 StandardOutput=journal
 StandardError=journal

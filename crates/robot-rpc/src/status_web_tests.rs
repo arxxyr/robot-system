@@ -133,16 +133,14 @@ fn pose_feedback_preserves_measured_raw_and_active_bounds() {
 async fn pose_assets_match_configured_position_joints() {
     let (state, _latest, _stop, _incoming) = web_state();
     let app = router(state);
-    let response = app
-        .clone()
-        .oneshot(request("GET", "/assets/status-pose.js"))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
+    for path in ["/assets/status-pose.js", "/assets/status-urdf.js"] {
+        let response = app.clone().oneshot(request("GET", path)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+    }
     let response = app
         .oneshot(request("GET", "/assets/xlerobot-pose.json"))
         .await

@@ -96,6 +96,41 @@
 pub mod base;
 pub mod preview;
 
+/// 按运动学模型的轴序返回右臂五个位置关节的硬件名称。
+#[must_use]
+pub fn right_arm_joint_names() -> [String; 5] {
+    preview::ARM_JOINT_NAMES.map(|name| format!("right_arm_{name}"))
+}
+
+/// 五轴共用同一条线性轨迹。至少 10 秒，按最慢轴向上取整到毫秒。
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "向上取整后已核对 u32 范围"
+)]
+pub fn right_arm_home_duration_ms(
+    start_rad: [f64; 5],
+    max_velocity_rad_s: [f64; 5],
+) -> Result<u32, &'static str> {
+    let mut duration_ms = 10_000;
+    for (start, speed_limit) in start_rad.into_iter().zip(max_velocity_rad_s) {
+        if !start.is_finite() || !speed_limit.is_finite() || speed_limit <= 0.0 {
+            return Err("右臂回位起点或速率限制无效");
+        }
+        let travel = start.abs();
+        let milliseconds = (travel / speed_limit * 1_000.0).ceil();
+        if milliseconds > f64::from(u32::MAX) {
+            return Err("右臂回位时长超出可表示范围");
+        }
+        duration_ms = duration_ms.max(milliseconds as u32);
+        // 用与实际目标检查相同的除法处理浮点边界，防止取整后仍微超速。
+        if travel / (f64::from(duration_ms) / 1_000.0) > speed_limit {
+            duration_ms = duration_ms.checked_add(1).ok_or("右臂回位时长溢出")?;
+        }
+    }
+    Ok(duration_ms)
+}
+
 use robot_kinematics::{ArmIkSolver, IkError, IkSolution, JointLimit, KinematicInfo, Pose};
 
 // ── 连杆参数（沿 dimos `arm_ik.py:42-52`）────────────────────────────
@@ -546,7 +581,7 @@ impl ArmIkSolver for XLeRobotArmIkSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::{Side, XLeRobotArmIkSolver};
+    use super::{Side, XLeRobotArmIkSolver, right_arm_home_duration_ms};
     use robot_kinematics::{ArmIkSolver, IkError, JointLimit, Pose};
 
     const EPS: f64 = 1e-9;
@@ -569,6 +604,30 @@ mod tests {
 
     /// AC-3 lib unit #1: 工作空间内典型点（夹爪正前方 0.15 m）→ Ok +
     /// 所有关节在限位内。
+    #[test]
+    fn right_arm_home_uses_slowest_axis_and_rounds_up_to_milliseconds() {
+        let speeds = [0.01, 0.1, 0.1, 0.2, 0.1];
+        assert_eq!(right_arm_home_duration_ms([0.0; 5], speeds), Ok(10_000));
+        assert_eq!(
+            right_arm_home_duration_ms([0.099, 0.4, 0.1, 0.2, 0.9], speeds),
+            Ok(10_000)
+        );
+        assert_eq!(
+            right_arm_home_duration_ms([0.12, 0.4, 0.1, 0.2, 0.9], speeds),
+            Ok(12_000)
+        );
+        assert_eq!(
+            right_arm_home_duration_ms([0.12, 0.4, 0.1, 0.2, -2.50001], speeds),
+            Ok(25_001)
+        );
+        for value in [f64::NAN, f64::INFINITY, f64::MAX] {
+            assert!(right_arm_home_duration_ms([value; 5], speeds).is_err());
+        }
+        for speed in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::MIN_POSITIVE] {
+            assert!(right_arm_home_duration_ms([1.0; 5], [speed; 5]).is_err());
+        }
+    }
+
     #[test]
     fn solve_workspace_interior_returns_ok_with_joints_within_limits() {
         let target = Pose {

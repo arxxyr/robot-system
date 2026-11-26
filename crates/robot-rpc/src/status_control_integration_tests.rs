@@ -287,6 +287,17 @@ impl RobotControl for FakeControl {
                 .lock()
                 .unwrap()
                 .push(command.clone());
+        } else if command.payload_schema_id == robot_msg::schema_id::SCHEMA_RIGHT_ARM_HOME_PAYLOAD {
+            let home =
+                flatbuffers::root::<robot_msg::msg::RightArmHomePayload<'_>>(&command.payload)
+                    .unwrap();
+            assert_eq!(home.hardware_id(), self.state.hardware_id);
+            assert_eq!(
+                command.kind,
+                crate::proto::ActionKindProto::ActionKindScripted as i32
+            );
+            // 模拟配置的腕轴最远端约 3 rad，0.1 rad/s 的轨迹必须允许 20 秒以上及到位观察时间。
+            assert!(command.meta.as_ref().unwrap().timeout_ms >= 35_000);
         } else {
             assert_eq!(
                 command.payload_schema_id,
@@ -861,6 +872,7 @@ async fn left_only_control_rejects_every_right_bus_write_without_rpc() {
     // 伪造合法形状和当前版本的右侧请求，证明拒绝来自总线配置边界。
     for operation in [
         "move",
+        "right_arm_home",
         "enable",
         "disable",
         "cancel",
@@ -1103,7 +1115,6 @@ fn command(snapshot: &Value, id: &str, operation: &str) -> Value {
     request
 }
 
-#[cfg(target_os = "linux")]
 fn right_command(snapshot: &Value, id: &str, operation: &str) -> Value {
     let mut request = command(snapshot, id, operation);
     let control = &snapshot["buses"][1]["control"];
@@ -1231,6 +1242,53 @@ async fn disconnected_inflight_timeout_stays_unknown_and_is_not_replayed() {
     assert!(fixture.calls[0].task_reads.load(Ordering::Relaxed) > 0);
     assert_eq!(fixture.calls[0].task_streams.load(Ordering::Relaxed), 0);
     drop(second);
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn right_arm_home_shares_the_task_identity_replay_and_cancel() {
+    let fixture = Fixture::start(10, false, 500).await;
+    let mut browser = fixture.same_origin().await;
+    let initial = fresh(&mut browser).await;
+    let home = right_command(&initial, "home-once", "right_arm_home");
+    send(&mut browser, &home).await;
+    let accepted = reply(&mut browser, "home-once").await;
+    assert_eq!(accepted["status"], "accepted", "{accepted}");
+    send(&mut browser, &home).await;
+    assert_eq!(reply(&mut browser, "home-once").await, accepted);
+    let executing = next_matching(&mut browser, |state| {
+        state["buses"][1]["control"]["task"]["state"] == "executing"
+    })
+    .await;
+    assert_eq!(
+        executing["buses"][1]["control"]["task"]["action_id"],
+        accepted["action_id"]
+    );
+    send(
+        &mut browser,
+        &right_command(&executing, "home-busy", "right_arm_home"),
+    )
+    .await;
+    assert_eq!(reply(&mut browser, "home-busy").await["status"], "rejected");
+    send(
+        &mut browser,
+        &right_command(&executing, "home-cancel", "cancel"),
+    )
+    .await;
+    let cancel = reply(&mut browser, "home-cancel").await;
+    assert_eq!(cancel["status"], "accepted");
+    assert_eq!(cancel["action_id"], accepted["action_id"]);
+    next_matching(&mut browser, |state| {
+        state["buses"][1]["control"]["task"]["state"] == "cancelled"
+    })
+    .await;
+    let right = &fixture.calls[1];
+    assert_eq!(right.invokes.load(Ordering::Relaxed), 1);
+    assert_eq!(right.cancellations.load(Ordering::Relaxed), 1);
+    assert_eq!(right.enables.load(Ordering::Relaxed), 0);
+    assert_eq!(right.clears.load(Ordering::Relaxed), 0);
+    assert_eq!(fixture.calls[0].invokes.load(Ordering::Relaxed), 0);
+    drop(browser);
     fixture.finish().await;
 }
 
