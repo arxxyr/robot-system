@@ -520,16 +520,22 @@ fn request(method: &str, path: &str) -> Request<Body> {
         .unwrap()
 }
 
-const IK_PATH: &str = "/api/kinematics/right-arm/preview";
+const RIGHT_IK_PATH: &str = "/api/kinematics/right-arm/preview";
+const LEFT_IK_PATH: &str = "/api/kinematics/left-arm/preview";
 const IK_START: [i32; 5] = [1917, 2210, 2275, 1982, 2243];
 
-fn right_ik_feedback(raw: [i32; 5]) -> (SourceState, RobotState) {
-    let mut bus = source(2, String::new());
-    let config =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/xlerobot-bus2-motion.toml");
+fn ik_feedback(side: Side, raw: [i32; 5]) -> (SourceState, RobotState) {
+    let bus_number = match side {
+        Side::Left => 1,
+        Side::Right => 2,
+    };
+    let mut bus = source(bus_number, String::new());
+    let config = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../configs/xlerobot-bus{bus_number}-motion.toml"
+    ));
     bus.motion = Some(control::MotionConfig::load(&config, &bus).unwrap());
     let mut frame = sample(&bus, 1);
-    for (axis, tick) in robot_kinematics_xlerobot::preview::ARM_JOINT_NAMES
+    for (name, tick) in robot_kinematics_xlerobot::arm_joint_names(side)
         .iter()
         .zip(raw)
     {
@@ -537,15 +543,15 @@ fn right_ik_feedback(raw: [i32; 5]) -> (SourceState, RobotState) {
             .layout
             .joints
             .iter()
-            .position(|name| *name == format!("right_arm_{axis}"))
+            .position(|joint| joint == name)
             .unwrap();
         frame.position_rad[slot] = f64::from(robot_adapter_feetech::raw_to_rad(tick));
     }
     (SourceState::new(bus), frame)
 }
 
-async fn ik_json(app: Router, status: StatusCode) -> serde_json::Value {
-    let response = app.oneshot(request("GET", IK_PATH)).await.unwrap();
+async fn ik_json(app: Router, path: &str, status: StatusCode) -> serde_json::Value {
+    let response = app.oneshot(request("GET", path)).await.unwrap();
     assert_eq!(response.status(), status);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let body = to_bytes(response.into_body(), 8192).await.unwrap();
@@ -555,7 +561,7 @@ async fn ik_json(app: Router, status: StatusCode) -> serde_json::Value {
 #[tokio::test]
 async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_leg() {
     let (state, latest, _stop, _incoming) = web_state();
-    let (mut bus, frame) = right_ik_feedback(IK_START);
+    let (mut bus, frame) = ik_feedback(Side::Right, IK_START);
     bus.accept(Ok(frame), 1);
     let view = bus.view(1, 2000);
     let publish = |bus| {
@@ -566,7 +572,7 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
     };
     publish(view.clone());
     let app = router(state);
-    let solved = ik_json(app.clone(), StatusCode::OK).await;
+    let solved = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
     assert_eq!(solved["joint_names"][0], "right_arm_shoulder_pan");
     assert_eq!(solved["stamp_ns"], "1");
     assert_eq!(solved["start"]["joints_raw"], serde_json::json!(IK_START));
@@ -581,10 +587,10 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
     assert_eq!(target[1], start[1]);
     assert_eq!(target[2], start[2]);
 
-    let (mut measured, edge) = right_ik_feedback([2086, 1068, 2997, 2336, 1009]);
+    let (mut measured, edge) = ik_feedback(Side::Right, [2086, 1068, 2997, 2336, 1009]);
     measured.accept(Ok(edge), 1);
     publish(measured.view(1, 2000));
-    let blocked = ik_json(app.clone(), StatusCode::OK).await;
+    let blocked = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
     assert!(blocked["forward"]["joints_raw"].is_array());
     let reason = blocked["return"]["error"].as_str().unwrap();
     assert!(
@@ -602,7 +608,7 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
         .unwrap()
         .max_position_rad = f64::from(robot_adapter_feetech::raw_to_rad(1920));
     publish(view);
-    let blocked = ik_json(app, StatusCode::OK).await;
+    let blocked = ik_json(app, RIGHT_IK_PATH, StatusCode::OK).await;
     assert!(
         blocked["forward"]["error"]
             .as_str()
@@ -614,6 +620,97 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
 }
 
 #[tokio::test]
+async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_commands() {
+    let (mut state, latest, _stop, _incoming) = web_state();
+    state.clock = Arc::new(MockClock::new(MonoRawNs(2)));
+    let (commands, mut operations) = mpsc::channel(control::MAILBOX_CAPACITY);
+    state.commands = commands;
+    state.control_enabled = true;
+    let (mut left, mut frame) = ik_feedback(Side::Left, IK_START);
+    frame.stamp_ns = 2;
+    left.accept(Ok(frame), 2);
+    let (mut right, frame) = ik_feedback(Side::Right, IK_START);
+    right.accept(Ok(frame), 2);
+    let app = router(state);
+    let publish = |buses| {
+        latest.send_replace(Snapshot {
+            stale_after_ms: 2000,
+            buses,
+        })
+    };
+    let left = left.view(2, 2000);
+    let right = right.view(2, 2000);
+    publish(vec![right.clone(), left.clone()]);
+    let solved = ik_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
+    let other = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
+    assert_eq!(solved["stamp_ns"], "2");
+    assert_eq!(other["stamp_ns"], "1");
+    assert_eq!(
+        solved["joint_names"],
+        serde_json::json!(robot_kinematics_xlerobot::arm_joint_names(Side::Left))
+    );
+    assert_eq!(solved["start"]["joints_raw"], serde_json::json!(IK_START));
+    assert_eq!(solved["return"]["joints_raw"], serde_json::json!(IK_START));
+    assert!(solved["forward"]["joints_raw"].is_array());
+    let origin = &solved["start"]["xyz_mm"];
+    let target = &solved["target_xyz_mm"];
+    let right_y = other["start"]["xyz_mm"][1].as_f64().unwrap();
+    assert!(right_y.abs() > 1.0);
+    assert!((origin[1].as_f64().unwrap() + right_y).abs() < 1e-9);
+    assert!((target[0].as_f64().unwrap() - origin[0].as_f64().unwrap() - 10.0).abs() < 1e-9);
+    assert_eq!(target[1], origin[1]);
+    assert_eq!(target[2], origin[2]);
+
+    let mut restricted = left.clone();
+    restricted
+        .control
+        .joints
+        .iter_mut()
+        .find(|joint| joint.name == "left_arm_shoulder_pan")
+        .unwrap()
+        .max_position_rad = f64::from(robot_adapter_feetech::raw_to_rad(1920));
+    publish(vec![restricted, right.clone()]);
+    let blocked = ik_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
+    assert!(
+        blocked["forward"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("left_arm_shoulder_pan")
+    );
+    assert!(blocked["return"]["joints_raw"].is_null());
+    assert_eq!(
+        ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await,
+        other
+    );
+
+    let mut bad_head = left.clone();
+    bad_head
+        .joints
+        .iter_mut()
+        .find(|joint| joint.name == "head_motor_2")
+        .unwrap()
+        .motor_id = 7;
+    publish(vec![bad_head, right.clone()]);
+    assert!(
+        ik_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
+            .as_str()
+            .unwrap()
+            .contains("布局")
+    );
+    publish(vec![right]);
+    assert!(
+        ik_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
+            .as_str()
+            .unwrap()
+            .contains("bus1")
+    );
+    assert!(matches!(
+        operations.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
 async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() {
     let (mut state, latest, _stop, _incoming) = web_state();
     let clock = Arc::new(MockClock::new(MonoRawNs(1)));
@@ -621,12 +718,12 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     let app = router(state);
     let unavailable = StatusCode::SERVICE_UNAVAILABLE;
     assert!(
-        ik_json(app.clone(), unavailable).await["error"]
+        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("bus2")
     );
-    let (mut bus, frame) = right_ik_feedback(IK_START);
+    let (mut bus, frame) = ik_feedback(Side::Right, IK_START);
     let publish = |bus: &SourceState| {
         latest.send_replace(Snapshot {
             stale_after_ms: 2000,
@@ -637,7 +734,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     publish(&bus);
     clock.set(MonoRawNs(3_000_000_000));
     assert!(
-        ik_json(app.clone(), unavailable).await["error"]
+        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("stale")
@@ -648,7 +745,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(invalid), 1);
     publish(&bus);
     assert!(
-        ik_json(app.clone(), unavailable).await["error"]
+        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("invalid")
@@ -658,7 +755,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(invalid), 1);
     publish(&bus);
     assert!(
-        ik_json(app.clone(), unavailable).await["error"]
+        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("非有限")
@@ -667,7 +764,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(frame), 1);
     publish(&bus);
     assert!(
-        ik_json(app, unavailable).await["error"]
+        ik_json(app, RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("运动约束")
@@ -678,7 +775,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
 async fn http_without_token_remains_read_only_and_removes_sse() {
     let (state, _latest, _stop, _incoming) = web_state();
     let app = router(state.clone());
-    for path in ["/api/state", "/api/ws", "/api/kinematics/right-arm/preview"] {
+    for path in ["/api/state", "/api/ws", LEFT_IK_PATH, RIGHT_IK_PATH] {
         assert_eq!(
             app.clone()
                 .oneshot(request("POST", path))

@@ -19,6 +19,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::{Json, Router};
 use futures_util::SinkExt;
 use robot_core::time::{RobotClock, SystemClock};
+use robot_kinematics_xlerobot::Side;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
 use tokio::task::JoinSet;
@@ -879,8 +880,16 @@ fn router(state: WebState) -> Router {
         )
         .route("/api/state", axum::routing::get(state_json))
         .route(
+            "/api/kinematics/left-arm/preview",
+            axum::routing::get(async |State(state): State<WebState>| {
+                ik::preview(&state, Side::Left)
+            }),
+        )
+        .route(
             "/api/kinematics/right-arm/preview",
-            axum::routing::get(ik::preview),
+            axum::routing::get(async |State(state): State<WebState>| {
+                ik::preview(&state, Side::Right)
+            }),
         )
         .route("/api/ws", axum::routing::get(state_socket))
         .with_state(state)

@@ -372,8 +372,13 @@
         </div>
       </div>
       <details class="pose-calibration" id="ik-preview">
-        <summary>右臂腕点 IK 预览</summary>
-        <p>从一次五轴反馈计算腕俯仰轴沿右肩基座 X 轴前移 10 毫米并返回。预览只读，结果保留到下次点击。</p>
+        <summary>腕点 IK 只读预览</summary>
+        <p>用所选手臂一帧五轴反馈，计算腕俯仰轴沿同侧肩基座 X 轴前移 10 毫米及返回的目标。</p>
+        <label for="ik-side">手臂</label>
+        <select id="ik-side">
+          <option value="left">左臂（bus1）</option>
+          <option value="right" selected>右臂（bus2）</option>
+        </select>
         <button type="button" class="secondary" id="ik-run" disabled>预览前移 10 毫米并返回</button>
         <p id="ik-status" role="status"></p>
         <div id="ik-result" hidden>
@@ -383,7 +388,7 @@
           <details>
             <summary>五轴编码器位置（raw）</summary>
             <div class="table-wrap"><table aria-label="五轴起点与两程目标">
-              <thead><tr><th>右臂关节</th><th>本次起点</th><th>前移目标</th><th>回程目标</th></tr></thead>
+              <thead><tr><th>关节</th><th>本次起点</th><th>前移目标</th><th>回程目标</th></tr></thead>
               <tbody id="ik-joints"></tbody>
             </table></div>
           </details>
@@ -470,7 +475,7 @@
       const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), pose: document.getElementById('panel-pose'), base: document.getElementById('panel-base'), resources: elements.resources };
       let activeView = 'overview';
       const pose = Object.fromEntries(['canvas', 'tools', 'zoom-in', 'zoom-out', 'pan', 'reset', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
-      let poseView, poseModel, poseLoading, calibration;
+      let poseView, poseModel, poseLoading, calibration, resetWristPreview;
       let poseOverrides = {};
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
@@ -596,7 +601,7 @@
             const response = await fetch('/assets/xlerobot-pose.json');
             if (!response.ok) throw new Error('无法读取关节映射');
             poseModel = await response.json();
-            module.initWristPreview(jointLabel);
+            resetWristPreview = module.initWristPreview(jointLabel);
             for (const entry of poseModel.nodes) {
               const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
               pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
@@ -1597,6 +1602,7 @@
       }
       function closeSession() {
         stopBase();
+        resetWristPreview?.();
         const previous = activeSession;
         activeSession = null;
         connected = false;

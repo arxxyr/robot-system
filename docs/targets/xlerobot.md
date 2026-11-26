@@ -127,7 +127,7 @@ XLeRobot 是通用控制架构的首个实机后端。本文件记录硬件对�
 | Feetech协议、校准与适配 | [robot-adapters/feetech](../../crates/robot-adapters/feetech/) |
 | 总线执行与分组 | [serial_tick.rs](../../crates/robot-s0/src/serial_tick.rs)、[grouped_position.rs](../../crates/robot-s0/src/grouped_position.rs) |
 | RGB采集与帧槽 | [camera.rs](../../crates/robot-s0/src/camera.rs)、[camera_capture.py](../../scripts/camera_capture.py)；复用V4L2/OpenCV入口，无独立相机crate |
-| 运动学 | [机型运动学库](../../crates/robot-kinematics-xlerobot/)提供手臂 IK 与三轮数学模型。右臂腕点目标沿用 S1 九槽混合总线，网页可做只读预览 |
+| 运动学 | [机型运动学库](../../crates/robot-kinematics-xlerobot/)提供手臂 IK 与三轮数学模型。网页可按侧计算腕点预览，右臂执行路径使用 S1 九槽混合总线 |
 | 标定与模型 | [网页控制说明](../control_plan.md)区分电机零位和行程、URDF 显示对齐，以及 S1 五轴回位目标 |
 | 观测 | [robot-viz](../../crates/robot-viz/)；读取状态与RGB镜像，不参与执行器控制 |
 | 维护与部署 | [维护入口](../../scripts/run_hardware_maintenance.py)、[systemd说明](../../scripts/systemd/README.md) |

@@ -1,20 +1,35 @@
 // 预览取服务端同一帧的反馈。画布后续收到的姿态只更新实时模型。
 export function initWristPreview(jointLabel) {
-  const ui = Object.fromEntries(['run', 'status', 'result', 'points', 'forward', 'return', 'joints']
+  const ui = Object.fromEntries(['side', 'run', 'status', 'result', 'points', 'forward', 'return', 'joints']
     .map(name => [name, document.getElementById('ik-' + name)]));
   const xyz = values => values.map(value => Math.round(value)).join(', ');
   const verdict = leg => leg.error || (leg.joints_raw ? '通过' : '前移未通过，回程未计算');
+  let pending;
+  function reset() {
+    pending?.abort();
+    pending = null;
+    ui.status.textContent = '';
+    ui.result.hidden = true;
+    ui.run.disabled = false;
+  }
+  ui.side.addEventListener('change', reset);
   ui.run.disabled = false;
   ui.run.addEventListener('click', async () => {
     if (ui.run.disabled) return;
+    const side = ui.side.value;
+    const label = side === 'left' ? '左' : '右';
+    const bus = side === 'left' ? 'bus1' : 'bus2';
+    const request = new AbortController();
+    pending = request;
     ui.run.disabled = true;
     ui.result.hidden = true;
-    ui.status.textContent = '正在读取右臂反馈并计算…';
+    ui.status.textContent = `正在读取${bus} ${label}臂反馈并计算…`;
     try {
-      const response = await fetch('/api/kinematics/right-arm/preview', {cache: 'no-store'});
+      const response = await fetch(`/api/kinematics/${side}-arm/preview`, {cache: 'no-store', signal: request.signal});
       const result = await response.json();
+      if (request.signal.aborted) return;
       if (!response.ok) throw new Error(result.error || '服务返回 HTTP ' + response.status);
-      ui.points.textContent = '右肩基座 XYZ（毫米）　起点 (' + xyz(result.start.xyz_mm)
+      ui.points.textContent = label + '肩基座 XYZ（毫米）　起点 (' + xyz(result.start.xyz_mm)
         + ') → 前移目标 (' + xyz(result.target_xyz_mm) + ')';
       ui.forward.textContent = verdict(result.forward);
       ui.return.textContent = verdict(result.return);
@@ -25,14 +40,18 @@ export function initWristPreview(jointLabel) {
         for (const value of values) row.insertCell().textContent = value ?? '—';
         return row;
       }));
-      ui.status.textContent = '本次起点已固定 · bus2 反馈帧 ' + result.stamp_ns;
+      ui.status.textContent = `本次起点已固定 · ${bus} 反馈帧 ${result.stamp_ns}`;
       ui.result.hidden = false;
     } catch (error) {
-      ui.status.textContent = '无法预览：' + error.message;
+      if (!request.signal.aborted) ui.status.textContent = '无法预览：' + error.message;
     } finally {
-      ui.run.disabled = false;
+      if (pending === request) {
+        pending = null;
+        ui.run.disabled = false;
+      }
     }
   });
+  return reset;
 }
 
 // URDF 变换为行主序 3×4 仿射矩阵，最后一行恒为 [0, 0, 0, 1]。

@@ -1,17 +1,16 @@
-//! 固定右腕点预览只使用当前总线缓存和 S1 的运动配置。
+//! 双侧腕点预览各自使用同侧总线的一帧反馈和 S1 运动约束。
 
 use super::{Snapshot, WebState, feetech_raw};
 use axum::Json;
-use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use robot_adapter_feetech::{convert::checked_position_target, raw_to_rad};
-use robot_kinematics_xlerobot::{preview::right_wrist_roundtrip, right_arm_joint_names};
+use robot_kinematics_xlerobot::{Side, arm_home_slots, preview::wrist_roundtrip};
 use serde_json::{Value, json};
 
-pub(super) async fn preview(State(state): State<WebState>) -> Response {
+pub(super) fn preview(state: &WebState, side: Side) -> Response {
     let snapshot = state.latest.borrow().at_time(state.clock.now().0);
-    match plan(&snapshot) {
+    match plan(&snapshot, side) {
         Ok(plan) => Json(plan).into_response(),
         Err(error) => (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -21,41 +20,49 @@ pub(super) async fn preview(State(state): State<WebState>) -> Response {
     }
 }
 
-fn plan(snapshot: &Snapshot) -> Result<Value, String> {
+fn plan(snapshot: &Snapshot, side: Side) -> Result<Value, String> {
+    let (bus_id, robot_id, label) = match side {
+        Side::Left => ("bus1", "xlerobot_bus1_full", "左臂"),
+        Side::Right => ("bus2", "xlerobot_bus2_full", "右臂"),
+    };
     let bus = snapshot
         .buses
         .iter()
-        .find(|bus| bus.id == "bus2")
-        .ok_or("尚无 bus2 状态")?;
+        .find(|bus| bus.id == bus_id)
+        .ok_or_else(|| format!("尚无 {bus_id} 状态"))?;
     if bus.data_status != "fresh" {
         return Err(format!(
-            "右臂反馈不可用（{}）{}",
+            "{label}反馈不可用（{}）{}",
             bus.data_status,
             bus.error.as_deref().unwrap_or("")
         ));
     }
-    if bus.robot_id != "xlerobot_bus2_full"
-        || bus.hardware_id != "right_arm_full_with_base"
-        || bus.joints.len() != 9
-        || bus
-            .joints
-            .iter()
-            .filter(|joint| joint.mode == "velocity_raw")
-            .count()
-            != 3
-    {
-        return Err("bus2 身份或布局与 XLeRobot 右臂九槽混合总线不符".into());
+    let mixed_raw = side == Side::Right;
+    let modes_match = bus.joints.iter().all(|joint| {
+        let expected = if mixed_raw && (7..=9).contains(&joint.motor_id) {
+            "velocity_raw"
+        } else {
+            "position"
+        };
+        joint.mode == expected
+    });
+    if bus.robot_id != robot_id || !modes_match {
+        return Err(format!("{bus_id} 的机器人身份或关节模式与{label}不符"));
     }
-    let stamp_ns = bus.stamp_ns.as_deref().ok_or("右臂反馈缺少源帧时间戳")?;
-    let joint_names = right_arm_joint_names();
+    let names: Vec<_> = bus.joints.iter().map(|joint| joint.name.clone()).collect();
+    let motor_ids: Vec<_> = bus.joints.iter().map(|joint| joint.motor_id).collect();
+    let slots = arm_home_slots(side, &bus.hardware_id, &names, &motor_ids, mixed_raw)
+        .map_err(|reason| format!("{bus_id} {label}布局不符：{reason}"))?;
+    let stamp_ns = bus
+        .stamp_ns
+        .as_deref()
+        .ok_or_else(|| format!("{label}反馈缺少源帧时间戳"))?;
+    let joint_names = slots.map(|slot| bus.joints[slot].name.as_str());
     let mut start_raw = [0; 5];
     let mut limits = Vec::with_capacity(joint_names.len());
     for (i, name) in joint_names.iter().enumerate() {
-        start_raw[i] = bus
-            .joints
-            .iter()
-            .find(|joint| joint.name == *name && joint.mode == "position")
-            .and_then(|joint| joint.position_raw)
+        start_raw[i] = bus.joints[slots[i]]
+            .position_raw
             .ok_or_else(|| format!("{name} 缺少编码器位置反馈"))?;
         limits.push(
             bus.control
@@ -65,7 +72,8 @@ fn plan(snapshot: &Snapshot) -> Result<Value, String> {
                 .ok_or_else(|| format!("{name} 缺少 S1 运动约束"))?,
         );
     }
-    let result = right_wrist_roundtrip(
+    let result = wrist_roundtrip(
+        side,
         start_raw,
         std::array::from_fn(|i| limits[i].tolerance_rad),
         raw_to_rad,

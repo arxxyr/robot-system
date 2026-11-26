@@ -75,7 +75,7 @@ CLI 使用 `robotctl invoke single-joint --hardware-id … --joint-name … --ta
 ## 可视化、IK 与底盘
 
 - **完整 URDF** 在「可视化」通过 WebGL 2 加载。部署需将 `ROBOT_STATUS_URDF_DIR` 指向包含 `xlerobot.urdf` 和 `meshes/` 的模型目录，版本对应 `dimos-deploy@9ece6bd`。后端启动时按[模型清单](../crates/robot-rpc/src/pose_assets/xlerobot.b3)核验文件。前端用状态快照更新关节，灰色表示缺少当前反馈；缩放、平移和复位视角只影响本地画布。
-- **右臂腕点 IK 预览** 点击后取同一帧 bus2 的五轴反馈，计算腕俯仰轴在右肩坐标系沿 X 前移 10 毫米、再回到起点的两段目标。`GET /api/kinematics/right-arm/preview` 仅规划并返回模型结果或拒绝原因，右侧 S1 的九槽执行路径另行验收。[预览实现](../crates/robot-rpc/src/status_ik.rs)
+- **腕点 IK 只读预览** 在「可视化」展开预览，选择左臂（bus1）或右臂（bus2），点击「预览前移 10 毫米并返回」。页面从所选侧的一帧新鲜反馈，计算腕俯仰轴沿同侧肩基座 X 轴前移 10 毫米及返回的五轴目标。表格以 raw 显示起点和两段目标，超过主动限位时显示对应关节和原因。每次点击只发一个 GET，切换手臂会清除上次结果。断扭时也可预览，Web 配置须引用该侧的 `motion_config`。[预览实现](../crates/robot-rpc/src/status_ik.rs)
 - **底盘** 正式页面保留状态展示。方向按钮仅用于显式启用 `test-base-command` 和模拟配置的构建，复用右侧 S1，右臂保持原位。按住时由同一连接续租，松手请求停止，断线停止续租。三轮轮速组合已做架空验证，地面方向和停车距离待现场验证。[底盘控制实现](../crates/robot-rpc/src/status_base.rs)
 
 ## 当前WebSocket入口
@@ -92,7 +92,7 @@ target/verify-status/debug/robot-status --config configs/xlerobot-status.toml
 | 传输 | 入口与用途 |
 |---|---|
 | WebSocket | `/api/ws` 推送最新共享快照，控制模式复用同一连接发送命令、收取回执。同一页面切换标签时复用连接。 |
-| HTTP 只读 | `/`、`/assets/*`、`/api/state`、`/api/resources`、`/api/cameras`、`/api/cameras/{id}/frame` 和右臂 IK 预览。 |
+| HTTP 只读 | `/`、`/assets/*`、`/api/state`、`/api/resources`、`/api/cameras`、`/api/cameras/{id}/frame` 及两侧预览 `/api/kinematics/left-arm/preview`、`/api/kinematics/right-arm/preview`。 |
 | HTTP 校准 | `/api/calibration/model` 读写网页显示修正；`/api/calibration/motor/start` 申请交接，`/api/calibration/motor` 查询会话或执行显式维护步骤。电机写操作要求已开放控制的总线和同源请求。 |
 
 外网由既有 Nginx 将同一站点的页面、静态资源、HTTP API 及 WebSocket 转到 Web 上游。保留原 Host 和 Origin，允许 WebSocket 升级；具体访问入口和接入管理在部署环境中维护。外网只读通过和本地浏览器经 Web 提交的实机动作分别验收，外网写入仍待验收。

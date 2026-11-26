@@ -1,4 +1,4 @@
-//! 右腕点沿肩基座 X 轴前移 10 mm，再按同一次关节反馈返回。仅计算目标。
+//! 所选臂的腕点沿该肩基座 X 轴前移 10 mm，再按同一次关节反馈返回。仅计算目标。
 
 use super::{Side, XLeRobotArmIkSolver};
 use robot_kinematics::{ArmIkSolver, Pose};
@@ -14,20 +14,34 @@ pub const ARM_JOINT_NAMES: [&str; 5] = [
 
 /// 两段独立记录。前移被拒绝时，回程没有可用的量化起点。
 #[derive(Debug)]
-pub struct RightWristPreview {
+pub struct WristPreview {
     pub origin: Pose,
     pub target: Pose,
     pub forward: Result<[i32; 5], String>,
     pub back: Option<Result<[i32; 5], String>>,
 }
 
-/// 起点由调用方从同一帧截取。编码和主动约束由调用方提供，运动学库不依赖硬件适配器。
+/// 既有右臂调用方使用的结果类型。
+pub use WristPreview as RightWristPreview;
+
+/// 右臂维护预览沿用原调用方式。
 pub fn right_wrist_roundtrip(
     start_raw: [i32; 5],
     tolerance_rad: [f64; 5],
     raw_to_rad: fn(i32) -> f32,
     encode: impl Fn(usize, f64, f64) -> Result<i32, String>,
 ) -> Result<RightWristPreview, String> {
+    wrist_roundtrip(Side::Right, start_raw, tolerance_rad, raw_to_rad, encode)
+}
+
+/// 起点由调用方从同一帧截取。编码和主动约束由调用方提供，运动学库不依赖硬件适配器。
+pub fn wrist_roundtrip(
+    side: Side,
+    start_raw: [i32; 5],
+    tolerance_rad: [f64; 5],
+    raw_to_rad: fn(i32) -> f32,
+    encode: impl Fn(usize, f64, f64) -> Result<i32, String>,
+) -> Result<WristPreview, String> {
     if !start_raw.iter().all(|raw| (0..=4095).contains(raw)) {
         return Err("五轴起点须是单圈编码器反馈 0…4095 raw".into());
     }
@@ -37,7 +51,7 @@ pub fn right_wrist_roundtrip(
     {
         return Err("缺少五轴有效的到位容差".into());
     }
-    let model = XLeRobotArmIkSolver::new(Side::Right);
+    let model = XLeRobotArmIkSolver::new(side);
     let as_radians = |raw| f64::from(raw_to_rad(raw));
     let start = start_raw.map(as_radians);
     let origin = model.forward_pose(&start).map_err(|e| e.to_string())?;
@@ -73,7 +87,7 @@ pub fn right_wrist_roundtrip(
         check_return_branch(&raw.map(as_radians), &start, &tolerance_rad)?;
         Ok(raw)
     });
-    Ok(RightWristPreview {
+    Ok(WristPreview {
         origin,
         target,
         forward,
@@ -91,7 +105,7 @@ pub fn check_return_branch(
         || recovered.len() != original.len()
         || tolerances.len() != original.len()
     {
-        return Err("右臂 IK 分支复核需要五轴反馈、解和到位容差".into());
+        return Err("手臂 IK 分支复核需要五轴反馈、解和到位容差".into());
     }
     for (i, ((value, start), tolerance)) in
         recovered.iter().zip(original).zip(tolerances).enumerate()
