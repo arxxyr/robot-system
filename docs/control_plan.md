@@ -74,7 +74,7 @@ CLI 使用 `robotctl invoke single-joint --hardware-id … --joint-name … --ta
 
 ## 可视化、IK 与底盘
 
-- **完整 URDF** 在「可视化」通过 WebGL 2 加载。部署需将 `ROBOT_STATUS_URDF_DIR` 指向包含 `xlerobot.urdf` 和 `meshes/` 的模型目录，版本对应 `dimos-deploy@9ece6bd`。后端启动时按[模型清单](../crates/robot-rpc/src/pose_assets/xlerobot.b3)核验文件。前端用状态快照更新关节，灰色表示缺少当前反馈；缩放、平移和复位视角只影响本地画布。
+- **URDF 可视化** 通过 WebGL 2 加载 `dimos-deploy@9ece6bd` 的 XLeRobot 模型。该模型的 `base_link` 包含车架和四只固定脚轮，缺少实机的三轮驱动底盘。部署需将 `ROBOT_STATUS_URDF_DIR` 指向包含 `xlerobot.urdf` 和 `meshes/` 的模型目录。后端启动时按[模型清单](../crates/robot-rpc/src/pose_assets/xlerobot.b3)核验文件。前端用状态快照更新关节，灰色表示缺少当前反馈；缩放、平移和复位视角只影响本地画布。
 - **腕点 IK 只读预览** 在「可视化」展开预览，选择左臂（bus1）或右臂（bus2），点击「预览前移 10 毫米并返回」。页面从所选侧的一帧新鲜反馈，计算腕俯仰轴沿同侧肩基座 X 轴前移 10 毫米及返回的五轴目标。表格以 raw 显示起点和两段目标，超过主动限位时显示对应关节和原因。每次点击只发一个 GET，切换手臂会清除上次结果。断扭时也可预览，Web 配置须引用该侧的 `motion_config`。[预览实现](../crates/robot-rpc/src/status_ik.rs)
 - **底盘** 正式页面保留状态展示。方向按钮仅用于显式启用 `test-base-command` 和模拟配置的构建，复用右侧 S1，右臂保持原位。按住时由同一连接续租，松手请求停止，断线停止续租。三轮轮速组合已做架空验证，地面方向和停车距离待现场验证。[底盘控制实现](../crates/robot-rpc/src/status_base.rs)
 
