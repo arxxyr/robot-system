@@ -46,7 +46,7 @@
 
 2026-11-26，Orin 正式网页更新到 `c139da0`。浏览器对左右臂各发一次预览 GET，均从实时反馈算出前移 10 毫米和返回目标，各侧五轴回程目标均与起点一致。同一 WebSocket 收到 14 帧，发送 0 条控制消息。两侧 S0、S1、网关和校准监听在网页切换期间持续运行。验收时两条总线均反馈已断扭，急停主备均为 0（已解除）。
 
-Orin 部署与回滚记录位于 `/home/loosqk/robot-checks/`。当前网页使用 `web-left-ik-deploy-20261126/bin/robot-status`，同目录下的 `ops/switch-web.sh rollback` 可恢复上一版网页。双侧 S1 使用 `web-left-home-20261125`，0.1.0 发布基线为 `deploy-0.1.0-20261112`。[安装与回滚说明](../scripts/systemd/README.md)
+Orin 部署与回滚记录位于 `/home/loosqk/robot-checks/`。当前网页使用 `web-drive-wheels-20261126/bin/robot-status`（开发提交 `4670faa`），已在原车架下显示前、左、右三只全向轮。该候选的 `ops/switch-web.sh rollback` 可恢复上一版双臂预览网页。双侧 S1 使用 `web-left-home-20261125`，0.1.0 发布基线为 `deploy-0.1.0-20261112`。[安装与回滚说明](../scripts/systemd/README.md)
 
 ## 原硬件合同与未闭环项
 
