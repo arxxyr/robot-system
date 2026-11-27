@@ -112,6 +112,9 @@ pub fn right_arm_joint_names() -> [String; 5] {
     arm_joint_names(Side::Right)
 }
 
+/// 单臂五个主动关节的电机空间回位目标（弧度）。
+pub const ARM_HOME_TARGET_RAD: f32 = 0.0;
+
 /// 核对该侧总线的完整布局，按模型轴序返回五个主动位置槽。
 /// 关节的实际槽号取自配置；右侧三轮在 ID7–9 范围内可自由排列。
 pub fn arm_home_slots(
@@ -182,7 +185,7 @@ pub fn arm_home_duration_ms(
         if !start.is_finite() || !speed_limit.is_finite() || speed_limit <= 0.0 {
             return Err("手臂回位起点或速率限制无效");
         }
-        let travel = start.abs();
+        let travel = (start - f64::from(ARM_HOME_TARGET_RAD)).abs();
         let milliseconds = (travel / speed_limit * 1_000.0).ceil();
         if milliseconds > f64::from(u32::MAX) {
             return Err("手臂回位时长超出可表示范围");

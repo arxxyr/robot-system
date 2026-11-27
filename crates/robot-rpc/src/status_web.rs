@@ -891,6 +891,18 @@ fn router(state: WebState) -> Router {
                 ik::preview(&state, Side::Right)
             }),
         )
+        .route(
+            "/api/kinematics/left-arm/home-reference",
+            axum::routing::get(async |State(state): State<WebState>| {
+                ik::home_reference(&state, Side::Left)
+            }),
+        )
+        .route(
+            "/api/kinematics/right-arm/home-reference",
+            axum::routing::get(async |State(state): State<WebState>| {
+                ik::home_reference(&state, Side::Right)
+            }),
+        )
         .route("/api/ws", axum::routing::get(state_socket))
         .with_state(state)
         .merge(cameras)

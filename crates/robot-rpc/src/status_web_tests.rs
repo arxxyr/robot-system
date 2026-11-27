@@ -522,9 +522,11 @@ fn request(method: &str, path: &str) -> Request<Body> {
 
 const RIGHT_IK_PATH: &str = "/api/kinematics/right-arm/preview";
 const LEFT_IK_PATH: &str = "/api/kinematics/left-arm/preview";
+const LEFT_HOME_PATH: &str = "/api/kinematics/left-arm/home-reference";
+const RIGHT_HOME_PATH: &str = "/api/kinematics/right-arm/home-reference";
 const IK_START: [i32; 5] = [1917, 2210, 2275, 1982, 2243];
 
-fn ik_feedback(side: Side, raw: [i32; 5]) -> (SourceState, RobotState) {
+fn arm_feedback(side: Side, raw: [i32; 5]) -> (SourceState, RobotState) {
     let bus_number = match side {
         Side::Left => 1,
         Side::Right => 2,
@@ -550,7 +552,7 @@ fn ik_feedback(side: Side, raw: [i32; 5]) -> (SourceState, RobotState) {
     (SourceState::new(bus), frame)
 }
 
-async fn ik_json(app: Router, path: &str, status: StatusCode) -> serde_json::Value {
+async fn arm_json(app: Router, path: &str, status: StatusCode) -> serde_json::Value {
     let response = app.oneshot(request("GET", path)).await.unwrap();
     assert_eq!(response.status(), status);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
@@ -561,7 +563,7 @@ async fn ik_json(app: Router, path: &str, status: StatusCode) -> serde_json::Val
 #[tokio::test]
 async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_leg() {
     let (state, latest, _stop, _incoming) = web_state();
-    let (mut bus, frame) = ik_feedback(Side::Right, IK_START);
+    let (mut bus, frame) = arm_feedback(Side::Right, IK_START);
     bus.accept(Ok(frame), 1);
     let view = bus.view(1, 2000);
     let publish = |bus| {
@@ -572,7 +574,7 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
     };
     publish(view.clone());
     let app = router(state);
-    let solved = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
+    let solved = arm_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
     assert_eq!(solved["joint_names"][0], "right_arm_shoulder_pan");
     assert_eq!(solved["stamp_ns"], "1");
     assert_eq!(solved["start"]["joints_raw"], serde_json::json!(IK_START));
@@ -587,10 +589,10 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
     assert_eq!(target[1], start[1]);
     assert_eq!(target[2], start[2]);
 
-    let (mut measured, edge) = ik_feedback(Side::Right, [2086, 1068, 2997, 2336, 1009]);
+    let (mut measured, edge) = arm_feedback(Side::Right, [2086, 1068, 2997, 2336, 1009]);
     measured.accept(Ok(edge), 1);
     publish(measured.view(1, 2000));
-    let blocked = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
+    let blocked = arm_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
     assert!(blocked["forward"]["joints_raw"].is_array());
     let reason = blocked["return"]["error"].as_str().unwrap();
     assert!(
@@ -608,7 +610,7 @@ async fn right_ik_preview_freezes_one_frame_and_respects_active_limits_in_each_l
         .unwrap()
         .max_position_rad = f64::from(robot_adapter_feetech::raw_to_rad(1920));
     publish(view);
-    let blocked = ik_json(app, RIGHT_IK_PATH, StatusCode::OK).await;
+    let blocked = arm_json(app, RIGHT_IK_PATH, StatusCode::OK).await;
     assert!(
         blocked["forward"]["error"]
             .as_str()
@@ -626,10 +628,10 @@ async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_com
     let (commands, mut operations) = mpsc::channel(control::MAILBOX_CAPACITY);
     state.commands = commands;
     state.control_enabled = true;
-    let (mut left, mut frame) = ik_feedback(Side::Left, IK_START);
+    let (mut left, mut frame) = arm_feedback(Side::Left, IK_START);
     frame.stamp_ns = 2;
     left.accept(Ok(frame), 2);
-    let (mut right, frame) = ik_feedback(Side::Right, IK_START);
+    let (mut right, frame) = arm_feedback(Side::Right, IK_START);
     right.accept(Ok(frame), 2);
     let app = router(state);
     let publish = |buses| {
@@ -641,8 +643,8 @@ async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_com
     let left = left.view(2, 2000);
     let right = right.view(2, 2000);
     publish(vec![right.clone(), left.clone()]);
-    let solved = ik_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
-    let other = ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
+    let solved = arm_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
+    let other = arm_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await;
     assert_eq!(solved["stamp_ns"], "2");
     assert_eq!(other["stamp_ns"], "1");
     assert_eq!(
@@ -670,7 +672,7 @@ async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_com
         .unwrap()
         .max_position_rad = f64::from(robot_adapter_feetech::raw_to_rad(1920));
     publish(vec![restricted, right.clone()]);
-    let blocked = ik_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
+    let blocked = arm_json(app.clone(), LEFT_IK_PATH, StatusCode::OK).await;
     assert!(
         blocked["forward"]["error"]
             .as_str()
@@ -679,7 +681,7 @@ async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_com
     );
     assert!(blocked["return"]["joints_raw"].is_null());
     assert_eq!(
-        ik_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await,
+        arm_json(app.clone(), RIGHT_IK_PATH, StatusCode::OK).await,
         other
     );
 
@@ -692,14 +694,14 @@ async fn left_ik_preview_uses_its_own_frame_model_and_limits_without_sending_com
         .motor_id = 7;
     publish(vec![bad_head, right.clone()]);
     assert!(
-        ik_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
+        arm_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
             .as_str()
             .unwrap()
             .contains("布局")
     );
     publish(vec![right]);
     assert!(
-        ik_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
+        arm_json(app.clone(), LEFT_IK_PATH, StatusCode::SERVICE_UNAVAILABLE).await["error"]
             .as_str()
             .unwrap()
             .contains("bus1")
@@ -718,12 +720,12 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     let app = router(state);
     let unavailable = StatusCode::SERVICE_UNAVAILABLE;
     assert!(
-        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
+        arm_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("bus2")
     );
-    let (mut bus, frame) = ik_feedback(Side::Right, IK_START);
+    let (mut bus, frame) = arm_feedback(Side::Right, IK_START);
     let publish = |bus: &SourceState| {
         latest.send_replace(Snapshot {
             stale_after_ms: 2000,
@@ -734,7 +736,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     publish(&bus);
     clock.set(MonoRawNs(3_000_000_000));
     assert!(
-        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
+        arm_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("stale")
@@ -745,7 +747,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(invalid), 1);
     publish(&bus);
     assert!(
-        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
+        arm_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("invalid")
@@ -755,7 +757,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(invalid), 1);
     publish(&bus);
     assert!(
-        ik_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
+        arm_json(app.clone(), RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("非有限")
@@ -764,7 +766,7 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
     bus.accept(Ok(frame), 1);
     publish(&bus);
     assert!(
-        ik_json(app, RIGHT_IK_PATH, unavailable).await["error"]
+        arm_json(app, RIGHT_IK_PATH, unavailable).await["error"]
             .as_str()
             .unwrap()
             .contains("运动约束")
@@ -772,10 +774,153 @@ async fn right_ik_preview_rejects_unavailable_stale_and_invalid_cached_frames() 
 }
 
 #[tokio::test]
+async fn home_reference_compares_each_arm_in_model_order_using_its_source_frame() {
+    let (mut state, latest, _stop, _incoming) = web_state();
+    state.clock = Arc::new(MockClock::new(MonoRawNs(2)));
+    let (commands, mut operations) = mpsc::channel(control::MAILBOX_CAPACITY);
+    state.commands = commands;
+    state.control_enabled = true;
+    let app = router(state);
+
+    let left_raw = [2026, 2027, 2047, 2067, 2068];
+    let (mut left, mut left_frame) = arm_feedback(Side::Left, left_raw);
+    left_frame.stamp_ns = 2;
+    left.accept(Ok(left_frame), 2);
+    let mut left = left.view(2, 2000);
+    left.joints.reverse();
+
+    let right_raw = [2047, 2046, 2997, 2047, 2047];
+    let (mut right, mut frame) = arm_feedback(Side::Right, right_raw);
+    // 首轴的亚刻度误差四舍五入后为 0 raw；S1 仍须以原始弧度比较零容差。
+    let shoulder_slot = right
+        .source
+        .layout
+        .joints
+        .iter()
+        .position(|name| name == "right_arm_shoulder_pan")
+        .unwrap();
+    frame.position_rad[shoulder_slot] = f64::from(robot_adapter_feetech::RAD_PER_TICK) * 0.25;
+    right.accept(Ok(frame), 2);
+    let mut right = right.view(2, 2000);
+    // 右肘超出主动限位时仍保留参考姿态的实测偏差。
+    right
+        .control
+        .joints
+        .iter_mut()
+        .find(|j| j.name == "right_arm_shoulder_pan")
+        .unwrap()
+        .tolerance_rad = 0.0;
+    latest.send_replace(Snapshot {
+        stale_after_ms: 2000,
+        buses: vec![right, left],
+    });
+    for (side, path, stamp, raw, within) in [
+        (
+            Side::Left,
+            LEFT_HOME_PATH,
+            "2",
+            left_raw,
+            [false, true, true, true, false],
+        ),
+        (
+            Side::Right,
+            RIGHT_HOME_PATH,
+            "1",
+            right_raw,
+            [false, true, false, true, true],
+        ),
+    ] {
+        let result = arm_json(app.clone(), path, StatusCode::OK).await;
+        let names = robot_kinematics_xlerobot::arm_joint_names(side);
+        let expected = (0..5)
+            .map(|i| {
+                serde_json::json!({
+                    "name": names[i],
+                    "position_raw": raw[i],
+                    "target_raw": 2047,
+                    "error_raw": raw[i] - 2047,
+                    "within_tolerance": within[i],
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            result,
+            serde_json::json!({"stamp_ns":stamp, "joints":expected})
+        );
+    }
+    assert!(matches!(
+        operations.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn home_reference_rejects_incomplete_stale_or_wrong_layout_feedback() {
+    let (mut state, latest, _stop, _incoming) = web_state();
+    let clock = Arc::new(MockClock::new(MonoRawNs(1)));
+    state.clock = clock.clone();
+    let app = router(state);
+    let (mut source, frame) = arm_feedback(Side::Left, IK_START);
+    source.accept(Ok(frame), 1);
+    let valid = source.view(1, 2000);
+    let publish = |bus| {
+        latest.send_replace(Snapshot {
+            stale_after_ms: 2000,
+            buses: vec![bus],
+        })
+    };
+    let status = StatusCode::SERVICE_UNAVAILABLE;
+
+    let mut wrong_layout = valid.clone();
+    wrong_layout.joints[0].motor_id = wrong_layout.joints[1].motor_id;
+    let mut missing_joint = valid.clone();
+    missing_joint.joints[0].position_raw = None;
+    let mut missing_limits = valid.clone();
+    missing_limits.control.joints.clear();
+    let mut missing_stamp = valid.clone();
+    missing_stamp.stamp_ns = None;
+    for (bus, reason) in [
+        (wrong_layout, "布局"),
+        (missing_joint, "编码器位置"),
+        (missing_limits, "运动约束"),
+        (missing_stamp, "时间戳"),
+    ] {
+        publish(bus);
+        let result = arm_json(app.clone(), LEFT_HOME_PATH, status).await;
+        assert!(
+            result["error"].as_str().unwrap().contains(reason),
+            "{result}"
+        );
+        assert!(result.get("joints").is_none());
+    }
+    publish(valid);
+    assert!(
+        arm_json(app.clone(), RIGHT_HOME_PATH, status).await["error"]
+            .as_str()
+            .unwrap()
+            .contains("bus2")
+    );
+    clock.set(MonoRawNs(3_000_000_000));
+    assert!(
+        arm_json(app, LEFT_HOME_PATH, status).await["error"]
+            .as_str()
+            .unwrap()
+            .contains("stale")
+    );
+}
+
+#[tokio::test]
 async fn http_without_token_remains_read_only_and_removes_sse() {
     let (state, _latest, _stop, _incoming) = web_state();
     let app = router(state.clone());
-    for path in ["/api/state", "/api/ws", LEFT_IK_PATH, RIGHT_IK_PATH] {
+    for path in [
+        "/api/state",
+        "/api/ws",
+        LEFT_IK_PATH,
+        RIGHT_IK_PATH,
+        LEFT_HOME_PATH,
+        RIGHT_HOME_PATH,
+    ] {
         assert_eq!(
             app.clone()
                 .oneshot(request("POST", path))

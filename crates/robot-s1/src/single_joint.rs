@@ -193,7 +193,9 @@ impl SingleJointPlan {
         req: &ActionRequest,
         ctx: &ActionContext<'_>,
     ) -> Result<Self, ActionStartError> {
-        use robot_kinematics_xlerobot::{Side, arm_home_duration_ms, arm_home_slots};
+        use robot_kinematics_xlerobot::{
+            ARM_HOME_TARGET_RAD, Side, arm_home_duration_ms, arm_home_slots,
+        };
         use robot_msg::schema_id::{SCHEMA_LEFT_ARM_HOME_PAYLOAD, SCHEMA_RIGHT_ARM_HOME_PAYLOAD};
 
         let hardware = ctx.hardware;
@@ -238,7 +240,7 @@ impl SingleJointPlan {
         let mut speeds = [0.0; 5];
         for (axis, slot) in slots.into_iter().enumerate() {
             let name = &hardware.joints[slot];
-            targets[axis] = (slot, 0.0);
+            targets[axis] = (slot, f64::from(ARM_HOME_TARGET_RAD));
             start[axis] = position_for_s0(*feedback.positions.get(slot).ok_or_else(|| {
                 ActionStartError::Rejected("回位反馈维度与硬件布局不匹配".into())
             })?);
@@ -528,9 +530,13 @@ impl SingleJointExecution {
             .zip(&self.target)
             .zip(&self.limits)
             .any(|((&position, &target), limit)| {
-                limit
-                    .as_ref()
-                    .is_some_and(|limit| (position - target).abs() > limit.tolerance_rad)
+                limit.as_ref().is_some_and(|limit| {
+                    !robot_adapter_feetech::convert::within_position_tolerance(
+                        position,
+                        target,
+                        limit.tolerance_rad,
+                    )
+                })
             })
         {
             self.stable_since_ns = None;

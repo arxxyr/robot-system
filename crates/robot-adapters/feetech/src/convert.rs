@@ -50,6 +50,12 @@ pub fn rad_to_raw(rad: f32) -> i32 {
     tick.saturating_add(i32::from(STS3215_MAX_POSITION))
 }
 
+/// 以实测弧度比较编码后的目标，包含到位容差边界。
+#[must_use]
+pub fn within_position_tolerance(position: f64, target: f64, tolerance_rad: f64) -> bool {
+    (position - target).abs() <= tolerance_rad
+}
+
 /// 同时检查请求位置及 S0 实际传输的 f32 表示，主动目标不扩展限位。
 #[must_use]
 #[allow(clippy::cast_possible_truncation, reason = "检查 S0 实际 f32 编码")]

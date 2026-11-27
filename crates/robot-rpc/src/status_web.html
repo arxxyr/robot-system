@@ -253,6 +253,11 @@
     .pose-calibration p { margin: 9px 0; }
     .pose-calibration output { font-variant-numeric: tabular-nums; }
     .pose-calibration input { font: inherit; width: 6em; margin: 0 5px; }
+    .arm-readout + .arm-readout { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .arm-readout table { font-variant-numeric: tabular-nums; }
+    .arm-readout tbody th { color: var(--ink); border-top: 1px solid #edf1f5; }
+    .arm-readout caption { padding: 8px 0; text-align: left; }
+    @media (max-width: 560px) { .arm-readout :is(th, td) { padding: 7px 4px; } }
     .cal-help { line-height: 1.55; }
     .cal-help h3 { margin: 14px 0 4px; font-size: 1rem; }
     .cal-help ol { margin: 4px 0 12px; padding-inline-start: 1.6em; }
@@ -372,26 +377,40 @@
         </div>
       </div>
       <details class="pose-calibration" id="ik-preview">
-        <summary>腕点 IK 只读预览</summary>
-        <p>用所选手臂一帧五轴反馈，计算腕俯仰轴沿同侧肩基座 X 轴前移 10 毫米及返回的目标。</p>
-        <label for="ik-side">手臂</label>
-        <select id="ik-side">
-          <option value="left">左臂（bus1）</option>
-          <option value="right" selected>右臂（bus2）</option>
-        </select>
-        <button type="button" class="secondary" id="ik-run" disabled>预览前移 10 毫米并返回</button>
-        <p id="ik-status" role="status"></p>
-        <div id="ik-result" hidden>
-          <p id="ik-points"></p>
-          <p>前移：<output id="ik-forward"></output></p>
-          <p>回程：<output id="ik-return"></output></p>
-          <details>
-            <summary>五轴编码器位置（raw）</summary>
-            <div class="table-wrap"><table aria-label="五轴起点与两程目标">
-              <thead><tr><th>关节</th><th>本次起点</th><th>前移目标</th><th>回程目标</th></tr></thead>
-              <tbody id="ik-joints"></tbody>
-            </table></div>
-          </details>
+        <summary>回位参考对照与腕点 IK 预览（只读）</summary>
+        <p><label for="ik-side">手臂</label>
+          <select id="ik-side">
+            <option value="left">左臂（bus1）</option>
+            <option value="right" selected>右臂（bus2）</option>
+          </select>
+        </p>
+        <div class="arm-readout">
+          <button type="button" class="secondary" id="home-reference-run" aria-controls="home-reference-result" disabled>读取回位参考对照</button>
+          <p id="home-reference-status" role="status"></p>
+          <div id="home-reference-result" class="table-wrap" hidden>
+            <table>
+              <caption>五轴编码器位置（raw），偏差为实测减去回位目标</caption>
+              <thead><tr><th scope="col">关节</th><th scope="col">实测</th><th scope="col">回位目标</th><th scope="col">偏差</th><th scope="col">判定</th></tr></thead>
+              <tbody id="home-reference-joints"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="arm-readout">
+          <p>用所选手臂一帧五轴反馈，计算腕俯仰轴沿同侧肩基座 X 轴前移 10 毫米及返回的目标。</p>
+          <button type="button" class="secondary" id="ik-run" aria-controls="ik-result" disabled>预览前移 10 毫米并返回</button>
+          <p id="ik-status" role="status"></p>
+          <div id="ik-result" hidden>
+            <p id="ik-points"></p>
+            <p>前移：<output id="ik-forward"></output></p>
+            <p>回程：<output id="ik-return"></output></p>
+            <details>
+              <summary>五轴编码器位置（raw）</summary>
+              <div class="table-wrap"><table aria-label="五轴起点与两程目标">
+                <thead><tr><th>关节</th><th>本次起点</th><th>前移目标</th><th>回程目标</th></tr></thead>
+                <tbody id="ik-joints"></tbody>
+              </table></div>
+            </details>
+          </div>
         </div>
       </details>
       <details class="pose-calibration cal-help">
@@ -475,7 +494,7 @@
       const panels = { overview: document.getElementById('overview'), camera: document.getElementById('panel-camera'), joints: document.getElementById('panel-joints'), pose: document.getElementById('panel-pose'), base: document.getElementById('panel-base'), resources: elements.resources };
       let activeView = 'overview';
       const pose = Object.fromEntries(['canvas', 'tools', 'zoom-in', 'zoom-out', 'pan', 'reset', 'joint', 'freshness', 'message', 'source', 'angle', 'raw', 'range', 'limit-note'].map(key => [key, document.getElementById(`pose-${key}`)]));
-      let poseView, poseModel, poseLoading, calibration, resetWristPreview;
+      let poseView, poseModel, poseLoading, calibration, resetArmPreviews;
       let poseOverrides = {};
       const overviewBusCards = new Map();
       let overviewBusOrder = [];
@@ -601,7 +620,7 @@
             const response = await fetch('/assets/xlerobot-pose.json');
             if (!response.ok) throw new Error('无法读取关节映射');
             poseModel = await response.json();
-            resetWristPreview = module.initWristPreview(jointLabel);
+            resetArmPreviews = module.initArmPreviews(jointLabel);
             for (const entry of poseModel.nodes) {
               const side = entry.joint.startsWith('left_') ? '左' : entry.joint.startsWith('right_') ? '右' : '';
               pose.joint.add(new Option(side + jointLabel(entry.joint), entry.joint));
@@ -1602,7 +1621,7 @@
       }
       function closeSession() {
         stopBase();
-        resetWristPreview?.();
+        resetArmPreviews?.();
         const previous = activeSession;
         activeSession = null;
         connected = false;

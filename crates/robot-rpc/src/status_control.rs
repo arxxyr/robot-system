@@ -18,7 +18,7 @@ use crate::proto::{
     TaskStatus,
 };
 use robot_core::time::RobotClock;
-use robot_kinematics_xlerobot::{Side, arm_home_duration_ms, arm_home_slots};
+use robot_kinematics_xlerobot::{ARM_HOME_TARGET_RAD, Side, arm_home_duration_ms, arm_home_slots};
 
 #[path = "status_base.rs"]
 mod base;
@@ -758,6 +758,7 @@ fn home_duration_bound(
     )
     .map_err(str::to_owned)?;
     // S1 从接收任务时的新反馈起步。以各轴可接受的最远起点预算，同一时长算法覆盖两个采样时刻。
+    let target = f64::from(ARM_HOME_TARGET_RAD);
     let mut farthest = [0.0; 5];
     let mut speeds = [0.0; 5];
     for (axis, slot) in slots.into_iter().enumerate() {
@@ -775,11 +776,15 @@ fn home_duration_bound(
             .and_then(|joint| joint.position_rad)
             .ok_or_else(|| format!("{name} 缺少新鲜位置反馈"))?;
         if !(min..=max).contains(&current)
-            || !(limit.min_position_rad..=limit.max_position_rad).contains(&0.0)
+            || !(limit.min_position_rad..=limit.max_position_rad).contains(&target)
         {
             return Err(format!("{name} 的起点或回位目标越出校准范围"));
         }
-        farthest[axis] = min.abs().max(max.abs());
+        farthest[axis] = if (min - target).abs() > (max - target).abs() {
+            min
+        } else {
+            max
+        };
         speeds[axis] = limit.max_velocity_rad_s;
     }
     arm_home_duration_ms(farthest, speeds).map_err(str::to_owned)

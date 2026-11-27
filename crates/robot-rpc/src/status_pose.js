@@ -1,56 +1,84 @@
-// 预览取服务端同一帧的反馈。画布后续收到的姿态只更新实时模型。
-export function initWristPreview(jointLabel) {
-  const ui = Object.fromEntries(['side', 'run', 'status', 'result', 'points', 'forward', 'return', 'joints']
-    .map(name => [name, document.getElementById('ik-' + name)]));
-  const xyz = values => values.map(value => Math.round(value)).join(', ');
-  const verdict = leg => leg.error || (leg.joints_raw ? '通过' : '前移未通过，回程未计算');
-  let pending;
-  function reset() {
-    pending?.abort();
-    pending = null;
-    ui.status.textContent = '';
-    ui.result.hidden = true;
-    ui.run.disabled = false;
+// 两项只读操作各自固定一次点击取得的反馈帧，实时模型仍独立更新。
+export function initArmPreviews(jointLabel) {
+  const byId = id => document.getElementById(id);
+  const sideSelect = byId('ik-side');
+  function jointRow(name, values) {
+    const row = document.createElement('tr');
+    const heading = document.createElement('th');
+    heading.scope = 'row';
+    heading.textContent = jointLabel(name);
+    row.append(heading);
+    for (const value of values) row.insertCell().textContent = value ?? '—';
+    return row;
   }
-  ui.side.addEventListener('change', reset);
-  ui.run.disabled = false;
-  ui.run.addEventListener('click', async () => {
-    if (ui.run.disabled) return;
-    const side = ui.side.value;
-    const label = side === 'left' ? '左' : '右';
-    const bus = side === 'left' ? 'bus1' : 'bus2';
-    const request = new AbortController();
-    pending = request;
-    ui.run.disabled = true;
-    ui.result.hidden = true;
-    ui.status.textContent = `正在读取${bus} ${label}臂反馈并计算…`;
-    try {
-      const response = await fetch(`/api/kinematics/${side}-arm/preview`, {cache: 'no-store', signal: request.signal});
-      const result = await response.json();
-      if (request.signal.aborted) return;
-      if (!response.ok) throw new Error(result.error || '服务返回 HTTP ' + response.status);
-      ui.points.textContent = label + '肩基座 XYZ（毫米）　起点 (' + xyz(result.start.xyz_mm)
-        + ') → 前移目标 (' + xyz(result.target_xyz_mm) + ')';
-      ui.forward.textContent = verdict(result.forward);
-      ui.return.textContent = verdict(result.return);
-      ui.joints.replaceChildren(...result.joint_names.map((name, i) => {
-        const row = document.createElement('tr');
-        const values = [jointLabel(name), result.start.joints_raw[i],
-          result.forward.joints_raw?.[i], result.return.joints_raw?.[i]];
-        for (const value of values) row.insertCell().textContent = value ?? '—';
-        return row;
-      }));
-      ui.status.textContent = `本次起点已固定 · ${bus} 反馈帧 ${result.stamp_ns}`;
-      ui.result.hidden = false;
-    } catch (error) {
-      if (!request.signal.aborted) ui.status.textContent = '无法预览：' + error.message;
-    } finally {
-      if (pending === request) {
-        pending = null;
-        ui.run.disabled = false;
+
+  function bindReadout(prefix, endpoint, render) {
+    const run = byId(prefix + '-run');
+    const status = byId(prefix + '-status');
+    const result = byId(prefix + '-result');
+    let pending;
+    run.disabled = false;
+    run.addEventListener('click', async () => {
+      if (run.disabled) return;
+      const side = sideSelect.value;
+      const label = side === 'left' ? '左' : '右';
+      const bus = side === 'left' ? 'bus1' : 'bus2';
+      const request = new AbortController();
+      pending = request;
+      run.disabled = true;
+      result.hidden = true;
+      status.textContent = `正在读取${bus} ${label}臂反馈…`;
+      try {
+        const response = await fetch(`/api/kinematics/${side}-arm/${endpoint}`, {cache: 'no-store', signal: request.signal});
+        const data = await response.json();
+        if (request.signal.aborted) return;
+        if (!response.ok) throw new Error(data.error || '服务返回 HTTP ' + response.status);
+        const summary = render(data, label);
+        status.textContent = `${label}臂 · ${bus} 反馈帧 ${data.stamp_ns} · ${summary}`;
+        result.hidden = false;
+      } catch (error) {
+        if (!request.signal.aborted) status.textContent = `${label}臂读取失败：${error.message}`;
+      } finally {
+        if (pending === request) {
+          pending = null;
+          run.disabled = false;
+        }
       }
-    }
+    });
+    return () => {
+      pending?.abort();
+      pending = null;
+      status.textContent = '';
+      result.hidden = true;
+      run.disabled = false;
+    };
+  }
+
+  const resetHome = bindReadout('home-reference', 'home-reference', data => {
+    const joints = data.joints;
+    byId('home-reference-joints').replaceChildren(...joints.map(joint => jointRow(joint.name, [
+      joint.position_raw, joint.target_raw, joint.error_raw > 0 ? '+' + joint.error_raw : joint.error_raw,
+      joint.within_tolerance ? '容差内' : '容差外',
+    ])));
+    return `仅本帧 ${joints.filter(joint => joint.within_tolerance).length}/${joints.length} 轴在容差内`;
   });
+  const resetIk = bindReadout('ik', 'preview', (data, label) => {
+    const xyz = values => values.map(value => Math.round(value)).join(', ');
+    const verdict = leg => leg.error || (leg.joints_raw ? '通过' : '前移未通过，回程未计算');
+    byId('ik-points').textContent = label + '肩基座 XYZ（毫米）　起点 (' + xyz(data.start.xyz_mm)
+      + ') → 前移目标 (' + xyz(data.target_xyz_mm) + ')';
+    byId('ik-forward').textContent = verdict(data.forward);
+    byId('ik-return').textContent = verdict(data.return);
+    byId('ik-joints').replaceChildren(...data.joint_names.map((name, i) => jointRow(name, [
+      data.start.joints_raw[i], data.forward.joints_raw?.[i], data.return.joints_raw?.[i],
+    ])));
+    return '本次起点已固定';
+  });
+  function reset() {
+    resetHome();
+    resetIk();
+  }
+  sideSelect.addEventListener('change', reset);
   return reset;
 }
 

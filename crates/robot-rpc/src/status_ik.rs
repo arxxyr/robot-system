@@ -1,17 +1,31 @@
-//! 双侧腕点预览各自使用同侧总线的一帧反馈和 S1 运动约束。
+//! 双侧腕点预览与回位参考核对读取所选侧的一帧反馈及 S1 运动约束。
 
-use super::{Snapshot, WebState, feetech_raw};
+use super::{JointView, Snapshot, WebState, control::JointLimit, feetech_raw};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use robot_adapter_feetech::{convert::checked_position_target, raw_to_rad};
-use robot_kinematics_xlerobot::{Side, arm_home_slots, preview::wrist_roundtrip};
+use robot_adapter_feetech::{
+    convert::{checked_position_target, within_position_tolerance},
+    rad_to_raw, raw_to_rad,
+};
+use robot_kinematics_xlerobot::{
+    ARM_HOME_TARGET_RAD, Side, arm_home_slots, preview::wrist_roundtrip,
+};
 use serde_json::{Value, json};
 
 pub(super) fn preview(state: &WebState, side: Side) -> Response {
     let snapshot = state.latest.borrow().at_time(state.clock.now().0);
-    match plan(&snapshot, side) {
-        Ok(plan) => Json(plan).into_response(),
+    response(arm_frame(&snapshot, side).and_then(|frame| plan(&frame, side)))
+}
+
+pub(super) fn home_reference(state: &WebState, side: Side) -> Response {
+    let snapshot = state.latest.borrow().at_time(state.clock.now().0);
+    response(arm_frame(&snapshot, side).and_then(|frame| compare_home(&frame)))
+}
+
+fn response(result: Result<Value, String>) -> Response {
+    match result {
+        Ok(value) => Json(value).into_response(),
         Err(error) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": error })),
@@ -20,7 +34,15 @@ pub(super) fn preview(state: &WebState, side: Side) -> Response {
     }
 }
 
-fn plan(snapshot: &Snapshot, side: Side) -> Result<Value, String> {
+struct ArmFrame<'a> {
+    stamp_ns: &'a str,
+    joints: [&'a JointView; 5],
+    start_raw: [i32; 5],
+    limits: Vec<&'a JointLimit>,
+    max_duration_ms: u32,
+}
+
+fn arm_frame(snapshot: &Snapshot, side: Side) -> Result<ArmFrame<'_>, String> {
     let (bus_id, robot_id, label) = match side {
         Side::Left => ("bus1", "xlerobot_bus1_full", "左臂"),
         Side::Right => ("bus2", "xlerobot_bus2_full", "右臂"),
@@ -57,11 +79,12 @@ fn plan(snapshot: &Snapshot, side: Side) -> Result<Value, String> {
         .stamp_ns
         .as_deref()
         .ok_or_else(|| format!("{label}反馈缺少源帧时间戳"))?;
-    let joint_names = slots.map(|slot| bus.joints[slot].name.as_str());
+    let joints = slots.map(|slot| &bus.joints[slot]);
     let mut start_raw = [0; 5];
-    let mut limits = Vec::with_capacity(joint_names.len());
-    for (i, name) in joint_names.iter().enumerate() {
-        start_raw[i] = bus.joints[slots[i]]
+    let mut limits = Vec::with_capacity(joints.len());
+    for (i, joint) in joints.iter().enumerate() {
+        let name = &joint.name;
+        start_raw[i] = joint
             .position_raw
             .ok_or_else(|| format!("{name} 缺少编码器位置反馈"))?;
         limits.push(
@@ -72,18 +95,48 @@ fn plan(snapshot: &Snapshot, side: Side) -> Result<Value, String> {
                 .ok_or_else(|| format!("{name} 缺少 S1 运动约束"))?,
         );
     }
+    Ok(ArmFrame {
+        stamp_ns,
+        joints,
+        start_raw,
+        limits,
+        max_duration_ms: bus.control.max_duration_ms,
+    })
+}
+
+fn compare_home(frame: &ArmFrame<'_>) -> Result<Value, String> {
+    let target_raw = rad_to_raw(ARM_HOME_TARGET_RAD);
+    let encoded_target = f64::from(raw_to_rad(target_raw));
+    let mut joints = Vec::with_capacity(frame.joints.len());
+    for (axis, joint) in frame.joints.iter().enumerate() {
+        let position = joint
+            .position_rad
+            .ok_or_else(|| format!("{} 缺少位置角反馈", joint.name))?;
+        let raw = frame.start_raw[axis];
+        joints.push(json!({
+            "name": joint.name,
+            "position_raw": raw,
+            "target_raw": target_raw,
+            "error_raw": i64::from(raw) - i64::from(target_raw),
+            "within_tolerance": within_position_tolerance(position, encoded_target, frame.limits[axis].tolerance_rad)
+        }));
+    }
+    Ok(json!({ "stamp_ns": frame.stamp_ns, "joints": joints }))
+}
+
+fn plan(frame: &ArmFrame<'_>, side: Side) -> Result<Value, String> {
     let result = wrist_roundtrip(
         side,
-        start_raw,
-        std::array::from_fn(|i| limits[i].tolerance_rad),
+        frame.start_raw,
+        std::array::from_fn(|i| frame.limits[i].tolerance_rad),
         raw_to_rad,
         |i, target, start| {
-            let limit = limits[i];
+            let limit = frame.limits[i];
             let range = [limit.min_position_rad, limit.max_position_rad];
             checked_position_target(
                 target,
                 start,
-                bus.control.max_duration_ms,
+                frame.max_duration_ms,
                 range,
                 limit.max_velocity_rad_s,
             )
@@ -103,9 +156,9 @@ fn plan(snapshot: &Snapshot, side: Side) -> Result<Value, String> {
         },
     )?;
     Ok(json!({
-        "stamp_ns": stamp_ns,
-        "joint_names": joint_names,
-        "start": {"xyz_mm": result.origin.translation.map(|m| m * 1000.0), "joints_raw": start_raw},
+        "stamp_ns": frame.stamp_ns,
+        "joint_names": frame.joints.map(|joint| joint.name.as_str()),
+        "start": {"xyz_mm": result.origin.translation.map(|m| m * 1000.0), "joints_raw": frame.start_raw},
         "target_xyz_mm": result.target.translation.map(|m| m * 1000.0),
         "forward": leg(Some(result.forward)),
         "return": leg(result.back),
